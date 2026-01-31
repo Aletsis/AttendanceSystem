@@ -1,0 +1,42 @@
+@using AttendanceSystem.Application.Features.Positions.Commands.CreatePosition
+@using AttendanceSystem.Application.Features.Positions.Commands.UpdatePosition
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="Name" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
+        <MudTextField @bind-Value="Description" Label="Descripción" Lines="3" />
+        <MudNumericField @bind-Value="BaseSalary" Label="Salario Base" Min="0" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AttachMoney" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public Guid? PositionId { get; set; }
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public decimal BaseSalary { get; set; }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(Name))
+        {
+            return;
+        }
+
+        if (PositionId.HasValue)
+        {
+            MudDialog.Close(DialogResult.Ok(new UpdatePositionCommand(PositionId.Value, Name, Description, BaseSalary)));
+        }
+        else
+        {
+            MudDialog.Close(DialogResult.Ok(new CreatePositionCommand(Name, Description, BaseSalary)));
+        }
+    }
+}

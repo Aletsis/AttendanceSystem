@@ -1,0 +1,157 @@
+@using AttendanceSystem.Application.Features.Positions.Commands.CreatePosition
+@using ClosedXML.Excel
+@using MediatR
+@using Microsoft.AspNetCore.Components.Forms
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-4">
+            Suba un archivo Excel (.xlsx) con los datos de los puestos.
+            <br />
+            <b>Columnas requeridas:</b> Nombre, Descripción, Salario Base.
+        </MudText>
+
+        <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                    Seleccionar Archivo
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+
+        @if (_processing)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+            <MudText Class="mt-2">Procesando archivo... @(_progressText)</MudText>
+        }
+        
+        @if (_summary.Any())
+        {
+             <MudAlert Severity="Severity.Info" Class="mt-2">Resultados de la importación:</MudAlert>
+             <MudList T="string" Dense="true" ReadOnly="true">
+                 @foreach(var item in _summary)
+                 {
+                     <MudListItem Text="@item" />
+                 }
+             </MudList>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private bool _processing = false;
+    private string _progressText = "";
+    private List<string> _summary = new();
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task UploadFiles(IBrowserFile file)
+    {
+        if (file == null) return;
+
+        _processing = true;
+        _summary.Clear();
+        _progressText = "Leyendo archivo...";
+        await InvokeAsync(StateHasChanged);
+
+        long maxFileSize = 1024 * 1024 * 10; 
+
+        try
+        {
+            using var stream = new MemoryStream();
+            await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
+            stream.Position = 0;
+
+            if (file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                await ProcessExcel(stream);
+            }
+            else
+            {
+                Snackbar.Add("Formato no soportado. Use .xlsx", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al subir: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _processing = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ProcessExcel(Stream stream)
+    {
+        int successCount = 0;
+        int errorCount = 0;
+        var errorMessages = new List<string>();
+
+        await Task.Run(async () =>
+        {
+            using var workbook = new XLWorkbook(stream);
+            var worksheet = workbook.Worksheets.FirstOrDefault();
+            if (worksheet == null) return;
+
+            var rows = worksheet.RangeUsed().RowsUsed().Skip(1); 
+
+            foreach (var row in rows)
+            {
+                try
+                {
+                    // 1:Nombre, 2:Descripcion, 3:SalarioBase
+                    var nombre = row.Cell(1).GetValue<string>();
+                    var descripcion = row.Cell(2).GetValue<string>();
+                    
+                    decimal salarioBase = 0;
+                    if (!row.Cell(3).TryGetValue<decimal>(out salarioBase))
+                        salarioBase = 0; 
+                    
+                    if (string.IsNullOrWhiteSpace(nombre)) continue;
+                    
+                    // CreatePositionCommand(string Name, string Description, decimal BaseSalary)
+                    var command = new CreatePositionCommand(nombre, descripcion, salarioBase);
+
+                    var result = await Mediator.Send(command);
+                    if (result.IsSuccess)
+                        successCount++;
+                    else
+                    {
+                        errorCount++;
+                         if(errorMessages.Count < 5) errorMessages.Add($"Fila {row.RowNumber()}: {result.Error}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    errorCount++;
+                     if(errorMessages.Count < 5) errorMessages.Add($"Fila {row.RowNumber()}: {ex.Message}");
+                }
+            }
+        });
+
+        _summary.Add($"Importación completada.");
+        _summary.Add($"Exitosos: {successCount}");
+        _summary.Add($"Fallidos: {errorCount}");
+        foreach (var err in errorMessages) _summary.Add(err);
+
+        if (errorCount > 0 && errorMessages.Count >= 5) _summary.Add("...");
+        
+        if (successCount > 0)
+        {
+             Snackbar.Add($"Se importaron {successCount} puestos.", Severity.Success);
+             MudDialog.Close(DialogResult.Ok(true));
+        }
+        else
+        {
+             Snackbar.Add("No se pudo importar ningún puesto.", Severity.Warning);
+        }
+    }
+}

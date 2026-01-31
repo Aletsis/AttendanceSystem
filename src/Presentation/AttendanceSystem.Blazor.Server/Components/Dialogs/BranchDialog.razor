@@ -1,0 +1,42 @@
+@using AttendanceSystem.Application.Features.Branches.Commands.CreateBranch
+@using AttendanceSystem.Application.Features.Branches.Commands.UpdateBranch
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="Name" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
+        <MudTextField @bind-Value="Description" Label="Descripción" Lines="3" />
+        <MudTextField @bind-Value="Address" Label="Dirección" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public Guid? BranchId { get; set; }
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Description { get; set; } = string.Empty;
+    [Parameter] public string Address { get; set; } = string.Empty;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(Name))
+        {
+            return;
+        }
+
+        if (BranchId.HasValue)
+        {
+            MudDialog.Close(DialogResult.Ok(new UpdateBranchCommand(BranchId.Value, Name, Description, Address)));
+        }
+        else
+        {
+            MudDialog.Close(DialogResult.Ok(new CreateBranchCommand(Name, Description, Address)));
+        }
+    }
+}

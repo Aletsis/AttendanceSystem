@@ -1,0 +1,120 @@
+@page "/users"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Administrador")]
+@using AttendanceSystem.Application.Features.Users.Queries.GetUsers
+@using AttendanceSystem.Application.Features.Users.Commands.DeleteUser
+@using AttendanceSystem.Application.Features.Users
+@inject IMediator Mediator
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Usuarios</PageTitle>
+
+<MudText Typo="Typo.h5" GutterBottom="true">Gestión de Usuarios</MudText>
+
+<MudDataGrid T="UserDto" Items="@_users" Loading="@_loading" Filterable="true">
+    <ToolBarContent>
+        <MudText Typo="Typo.h6">Usuarios</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+            Nuevo Usuario
+        </MudButton>
+    </ToolBarContent>
+    <Columns>
+        <PropertyColumn Property="x => x.UserName" Title="Usuario" />
+        <PropertyColumn Property="x => x.FullName" Title="Nombre Completo" />
+        <PropertyColumn Property="x => x.Email" Title="Email" />
+        <PropertyColumn Property="x => x.IsActive" Title="Activo">
+            <CellTemplate>
+                @if (context.Item.IsActive)
+                {
+                    <MudChip Color="Color.Success" Size="Size.Small">Si</MudChip>
+                }
+                else
+                {
+                    <MudChip Color="Color.Error" Size="Size.Small">No</MudChip>
+                }
+            </CellTemplate>
+        </PropertyColumn>
+        <TemplateColumn CellClass="d-flex justify-end">
+            <CellTemplate>
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" OnClick="@(() => OpenEditDialog(context.Item))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteUser(context.Item))" />
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+</MudDataGrid>
+
+@code {
+    private List<UserDto> _users = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        _loading = true;
+        try
+        {
+            _users = await Mediator.Send(new GetUsersQuery());
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar usuarios: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = DialogService.Show<UserDialog>("Nuevo Usuario", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadUsers();
+        }
+    }
+
+    private async Task OpenEditDialog(UserDto user)
+    {
+        var parameters = new DialogParameters { ["User"] = user };
+        var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        var dialog = DialogService.Show<UserDialog>("Editar Usuario", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadUsers();
+        }
+    }
+
+    private async Task DeleteUser(UserDto user)
+    {
+         bool? result = await DialogService.ShowMessageBox(
+            "Eliminar Usuario", 
+            $"¿Está seguro que desea eliminar al usuario '{user.UserName}'?", 
+            yesText: "Eliminar", cancelText: "Cancelar");
+
+        if (result == true)
+        {
+             try
+             {
+                 await Mediator.Send(new DeleteUserCommand(user.Id));
+                 Snackbar.Add("Usuario eliminado", Severity.Success);
+                 await LoadUsers();
+             }
+             catch (Exception ex)
+             {
+                 Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+             }
+        }
+    }
+}

@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <PlatformTarget>x86</PlatformTarget>
+    <Platforms>AnyCPU;x86</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Grpc.AspNetCore" Version="2.76.0" />
+    <PackageReference Include="Google.Protobuf" Version="3.33.2" />
+    <PackageReference Include="Grpc.Tools" Version="2.76.0">
+      <PrivateAssets>all</PrivateAssets>
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+    </PackageReference>
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\AttendanceSystem.Application\AttendanceSystem.Application.csproj" />
+
+  </ItemGroup>
+
+  <!-- Configuración de Protobuf para gRPC Server -->
+  <ItemGroup>
+    <Protobuf Include="Protos\zkteco.proto" GrpcServices="Server" />
+  </ItemGroup>
+
+  <!-- Referencia al assembly de interoperabilidad de zkemkeeper -->
+  <ItemGroup>
+    <Reference Include="Interop.zkemkeeper">
+      <HintPath>lib\Interop.zkemkeeper.dll</HintPath>
+      <EmbedInteropTypes>false</EmbedInteropTypes>
+    </Reference>
+  </ItemGroup>
+
+  <!-- Copiar todas las DLLs de lib al directorio de salida -->
+  <ItemGroup>
+    <None Include="lib\*.dll">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

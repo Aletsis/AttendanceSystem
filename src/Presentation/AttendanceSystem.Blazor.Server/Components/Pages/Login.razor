@@ -1,0 +1,101 @@
+@page "/login"
+@layout Layout.LoginLayout
+@using System.ComponentModel.DataAnnotations
+@using Microsoft.AspNetCore.Authorization
+@attribute [AllowAnonymous]
+@inject NavigationManager Navigation
+
+<PageTitle>Iniciar Sesión - Sistema de Asistencia</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="min-height: 100vh;">
+    <MudPaper Elevation="8" Class="pa-8" Style="width: 100%; max-width: 450px;">
+        <MudStack Spacing="4">
+            <MudStack AlignItems="AlignItems.Center" Spacing="2">
+                <MudAvatar Color="Color.Primary" Size="Size.Large" Style="width: 80px; height: 80px;">
+                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Class="mr-2" />
+                </MudAvatar>
+                <MudText Typo="Typo.h4" Align="Align.Center">Iniciar Sesión</MudText>
+                <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
+                    Ingrese sus credenciales para continuar
+                </MudText>
+            </MudStack>
+
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <MudAlert Severity="Severity.Error" Dense="true">@errorMessage</MudAlert>
+            }
+
+            <!-- Formulario HTML tradicional para POST al controlador -->
+            <form method="post" action="Account/Login">
+                <AntiforgeryToken />
+                <input type="hidden" name="ReturnUrl" value="/" />
+
+                <MudStack Spacing="3">
+                    <MudTextField @bind-Value="model.Username"
+                                  Label="Usuario"
+                                  Variant="Variant.Outlined"
+                                  For="@(() => model.Username)"
+                                  Adornment="Adornment.Start"
+                                  AdornmentIcon="@Icons.Material.Filled.Person"
+                                  name="Username"
+                                  id="username" />
+
+                    <MudTextField @bind-Value="model.Password"
+                                  Label="Contraseña"
+                                  Variant="Variant.Outlined"
+                                  For="@(() => model.Password)"
+                                  InputType="@PasswordInput"
+                                  Adornment="Adornment.End"
+                                  AdornmentIcon="@PasswordIcon"
+                                  OnAdornmentClick="TogglePasswordVisibility"
+                                  name="Password"
+                                  id="password" />
+
+                    <MudButton ButtonType="ButtonType.Submit"
+                               Variant="Variant.Filled"
+                               Color="Color.Primary"
+                               FullWidth="true"
+                               Size="Size.Large"
+                               HtmlTag="button"
+                               type="submit">
+                        <MudText>Iniciar Sesión</MudText>
+                    </MudButton>
+                </MudStack>
+            </form>
+        </MudStack>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private LoginModel model = new();
+    private string errorMessage = string.Empty;
+    private bool isPasswordVisible = false;
+
+    private InputType PasswordInput => isPasswordVisible ? InputType.Text : InputType.Password;
+    private string PasswordIcon => isPasswordVisible ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff;
+
+    protected override void OnInitialized()
+    {
+        // Leer mensaje de error de query string si existe
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("error", out var error))
+        {
+            errorMessage = error.ToString();
+        }
+    }
+
+    private void TogglePasswordVisibility()
+    {
+        isPasswordVisible = !isPasswordVisible;
+    }
+
+    public class LoginModel
+    {
+        [Required(ErrorMessage = "El usuario es requerido")]
+        public string Username { get; set; } = string.Empty;
+
+        [Required(ErrorMessage = "La contraseña es requerida")]
+        public string Password { get; set; } = string.Empty;
+    }
+}
+

@@ -1,0 +1,381 @@
+@using AttendanceSystem.Application.Features.Employees.Commands
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
+@using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
+@using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
+@using AttendanceSystem.Application.DTOs
+@using MediatR
+@using ShiftTypeEnum = AttendanceSystem.Domain.Enumerations.ShiftType
+@using WeekDayEnum = AttendanceSystem.Domain.Enumerations.WeekDay
+@using StatusEnum = AttendanceSystem.Domain.Enumerations.EmployeeStatus
+@using GenderEnum = AttendanceSystem.Domain.Enumerations.Gender
+@using OvertimeEnum = AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod
+@using OvertimeCapEnum = AttendanceSystem.Domain.Enumerations.OvertimeCapType
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else
+        {
+            <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+                <MudTabPanel Text="General">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="Id" Label="ID de Empleado" Required="true" RequiredError="El ID es requerido" Disabled="@(EmployeeId != null)" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="FirstName" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="LastName" Label="Apellido" Required="true" RequiredError="El apellido es requerido" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudDatePicker @bind-Date="_hireDate" Label="Fecha de Contratación" Required="true" Editable="true" Mask="@(new DateMask("dd/MM/yyyy"))" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="Email" Label="Email" InputType="InputType.Email" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="PhoneNumber" Label="Teléfono" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="GenderEnum" @bind-Value="Gender" Label="Sexo" Required="true" RequiredError="El sexo es requerido">
+                                @foreach (var gender in Enum.GetValues<GenderEnum>())
+                                {
+                                    <MudSelectItem T="GenderEnum" Value="@gender">@(gender == GenderEnum.Male ? "Masculino" : "Femenino")</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true" Disabled="@(string.IsNullOrEmpty(EmployeeId))">
+                                @foreach (var status in Enum.GetValues<StatusEnum>())
+                                {
+                                    <MudSelectItem T="StatusEnum" Value="@status">@status.ToString()</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+                <MudTabPanel Text="Puesto">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="Guid" @bind-Value="BranchId" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida">
+                                @foreach (var branch in _branches)
+                                {
+                                    <MudSelectItem T="Guid" Value="@branch.Id">@branch.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="Guid" Value="DepartmentId" ValueChanged="OnDepartmentChanged" Label="Departamento" Required="true" RequiredError="El departamento es requerido">
+                                @foreach (var department in _departments)
+                                {
+                                    <MudSelectItem T="Guid" Value="@department.Id">@department.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="Guid" @bind-Value="PositionId" Label="Puesto" Required="true" RequiredError="El puesto es requerido" Disabled="@(DepartmentId == Guid.Empty)">
+                                @foreach (var position in _filteredPositions)
+                                {
+                                    <MudSelectItem T="Guid" Value="@position.Id">@position.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+                <MudTabPanel Text="Horario">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="ShiftTypeEnum?" @bind-Value="_selectedShiftType" Label="Turno" Clearable="true">
+                                @foreach (var type in Enum.GetValues<ShiftTypeEnum>())
+                                {
+                                    <MudSelectItem T="ShiftTypeEnum?" Value="@type">@type.ToString()</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue)">
+                                @foreach (var shift in FilteredSchedules)
+                                {
+                                    <MudSelectItem T="Guid?" Value="@shift.Id">@shift.Name</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true">
+                                @foreach (var day in Enum.GetValues<WeekDayEnum>())
+                                {
+                                    <MudSelectItem T="WeekDayEnum?" Value="@day">@day.ToString()</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" Class="d-flex align-center">
+                            <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized)">
+                                @foreach (var method in Enum.GetValues<OvertimeEnum>())
+                                {
+                                    <MudSelectItem T="OvertimeEnum" Value="@method">
+                                        @(method switch
+                                        {
+                                            OvertimeEnum.NoRounding => "Sin redondeo",
+                                            OvertimeEnum.RoundByHalfHour => "Medias Horas",
+                                            OvertimeEnum.RoundByHour => "Horas Completas",
+                                            _ => method.ToString()
+                                        })
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="OvertimeCapEnum" @bind-Value="OvertimeCapType" Label="Tope Tiempo Extra">
+                                @foreach (var type in Enum.GetValues<OvertimeCapEnum>())
+                                {
+                                    <MudSelectItem T="OvertimeCapEnum" Value="@type">
+                                        @(type switch
+                                        {
+                                            OvertimeCapEnum.None => "Sin Tope",
+                                            OvertimeCapEnum.Daily => "Por Día",
+                                            OvertimeCapEnum.Period => "Por Periodo",
+                                            _ => type.ToString()
+                                        })
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                         <MudItem xs="12" sm="6">
+                            <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None)" Min="0" />
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+            </MudTabs>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="_loading">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string? EmployeeId { get; set; }
+    [Parameter] public string Id { get; set; } = string.Empty;
+    [Parameter] public string FirstName { get; set; } = string.Empty;
+    [Parameter] public string LastName { get; set; } = string.Empty;
+    [Parameter] public string Email { get; set; } = string.Empty;
+    [Parameter] public string? PhoneNumber { get; set; }
+    [Parameter] public DateTime HireDate { get; set; } = DateTime.Today;
+    [Parameter] public Guid BranchId { get; set; }
+    [Parameter] public Guid DepartmentId { get; set; }
+    [Parameter] public Guid PositionId { get; set; }
+    [Parameter] public StatusEnum Status { get; set; }
+    [Parameter] public ShiftTypeEnum? ShiftType { get; set; }
+    [Parameter] public Guid? ScheduleId { get; set; }
+    [Parameter] public WeekDayEnum? RestDay { get; set; }
+    [Parameter] public bool OvertimeAuthorized { get; set; }
+    [Parameter] public GenderEnum Gender { get; set; }
+    [Parameter] public OvertimeEnum OvertimeCalculationMethod { get; set; }
+    [Parameter] public OvertimeCapEnum OvertimeCapType { get; set; }
+    [Parameter] public double? OvertimeCapMinutes { get; set; }
+
+    private DateTime? _hireDate;
+    private bool _loading = true;
+    private ShiftTypeEnum? _selectedShiftType;
+    private List<BranchDto> _branches = new();
+    private List<DepartmentDto> _departments = new();
+    private List<PositionDto> _positions = new();
+    private List<ShiftDto> _shifts = new();
+
+    private IEnumerable<ShiftDto> FilteredSchedules
+    {
+        get
+        {
+            if (!_selectedShiftType.HasValue) return Enumerable.Empty<ShiftDto>();
+            return _shifts.Where(s => s.ShiftType == _selectedShiftType.Value).ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        _hireDate = HireDate;
+        
+        // Si estamos editando, usar el EmployeeId como Id
+        if (!string.IsNullOrEmpty(EmployeeId))
+        {
+            Id = EmployeeId;
+        }
+
+        await LoadData();
+        
+        // Inicializar el tipo de turno seleccionado basado en el horario actual
+        // Inicializar el tipo de turno seleccionado
+        if (ShiftType.HasValue)
+        {
+            _selectedShiftType = ShiftType;
+        }
+        else if (ScheduleId.HasValue)
+        {
+            var currentSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
+            if (currentSchedule != null)
+            {
+                _selectedShiftType = currentSchedule.ShiftType;
+            }
+        }
+    }
+
+    private IEnumerable<PositionDto> _filteredPositions = new List<PositionDto>();
+
+    private void OnDepartmentChanged(Guid newDepartmentId)
+    {
+        DepartmentId = newDepartmentId;
+        UpdateFilteredPositions();
+        
+        // Reset Position if it's no longer valid for the new department
+        if (PositionId != Guid.Empty && !_filteredPositions.Any(p => p.Id == PositionId))
+        {
+            PositionId = Guid.Empty;
+        }
+    }
+
+    private void UpdateFilteredPositions()
+    {
+        if (DepartmentId == Guid.Empty)
+        {
+            _filteredPositions = new List<PositionDto>();
+            // If we want to show all when no department is selected: 
+            // _filteredPositions = _positions; 
+        }
+        else
+        {
+            var selectedDepartment = _departments.FirstOrDefault(d => d.Id == DepartmentId);
+            if (selectedDepartment != null && selectedDepartment.PositionIds != null)
+            {
+                var validPositionIds = new HashSet<Guid>(selectedDepartment.PositionIds);
+                _filteredPositions = _positions.Where(p => validPositionIds.Contains(p.Id)).ToList();
+            }
+            else
+            {
+                _filteredPositions = new List<PositionDto>();
+            }
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+
+        // Ejecutar consultas secuencialmente para evitar conflictos de concurrencia con DbContext
+        var branchesResult = await Sender.Send(new GetBranchesQuery());
+        var departmentsResult = await Sender.Send(new GetDepartmentsQuery());
+        var positionsResult = await Sender.Send(new GetPositionsQuery());
+        var shiftsResult = await Sender.Send(new GetShiftsQuery());
+
+        if (branchesResult.IsSuccess)
+            _branches = branchesResult.Value.ToList();
+        else
+            Snackbar.Add("Error al cargar sucursales", Severity.Error);
+
+        if (departmentsResult.IsSuccess)
+            _departments = departmentsResult.Value.ToList();
+        else
+            Snackbar.Add("Error al cargar departamentos", Severity.Error);
+
+        if (positionsResult.IsSuccess)
+            _positions = positionsResult.Value.ToList();
+        else
+            Snackbar.Add("Error al cargar puestos", Severity.Error);
+
+        if (shiftsResult.IsSuccess)
+            _shifts = shiftsResult.Value.ToList();
+        else
+            Snackbar.Add("Error al cargar turnos", Severity.Error);
+            
+        UpdateFilteredPositions(); // Update filter after data load
+
+        _loading = false;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        if (string.IsNullOrWhiteSpace(Id) || 
+            string.IsNullOrWhiteSpace(FirstName) || 
+            string.IsNullOrWhiteSpace(LastName) ||
+            BranchId == Guid.Empty ||
+            DepartmentId == Guid.Empty ||
+            PositionId == Guid.Empty ||
+            !_hireDate.HasValue ||
+            Gender == 0)
+        {
+            Snackbar.Add("Por favor complete todos los campos requeridos", Severity.Warning);
+            return;
+        }
+
+        // Si es un nuevo empleado, validar que el ID no exista
+        if (string.IsNullOrEmpty(EmployeeId))
+        {
+            // Verificamos si ya existe el ID
+            var existingEmployeeResult = await Sender.Send(new GetEmployeeByIdQuery(Id));
+            if (existingEmployeeResult.IsSuccess)
+            {
+                Snackbar.Add($"El ID '{Id}' ya se encuentra registrado. Utilice un ID diferente.", Severity.Error);
+                return;
+            }
+        }
+
+        if (!string.IsNullOrEmpty(EmployeeId))
+        {
+            MudDialog.Close(DialogResult.Ok(new UpdateEmployeeCommand(
+                Id,
+                FirstName,
+                LastName,
+                Email,
+                PhoneNumber,
+                _hireDate.Value,
+                Gender,
+                Status,
+                BranchId.ToString(),
+                DepartmentId.ToString(),
+                PositionId.ToString(),
+                _selectedShiftType,
+                ScheduleId?.ToString(),
+                (int?)RestDay,
+                OvertimeAuthorized,
+                OvertimeCalculationMethod,
+                OvertimeCapType,
+                OvertimeCapMinutes)));
+        }
+        else
+        {
+            MudDialog.Close(DialogResult.Ok(new CreateEmployeeCommand(
+                Id,
+                FirstName,
+                LastName,
+                Email,
+                PhoneNumber,
+                _hireDate.Value,
+                Gender,
+                BranchId.ToString(),
+                DepartmentId.ToString(),
+                PositionId.ToString(),
+                _selectedShiftType,
+                ScheduleId?.ToString(),
+                (int?)RestDay,
+                OvertimeAuthorized,
+                OvertimeCalculationMethod,
+                OvertimeCapType,
+                OvertimeCapMinutes)));
+        }
+    }
+}

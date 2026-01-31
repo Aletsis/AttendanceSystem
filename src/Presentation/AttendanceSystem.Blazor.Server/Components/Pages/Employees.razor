@@ -1,0 +1,267 @@
+@page "/employees"
+@using MediatR
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Employees.Commands
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Domain.Enumerations
+@using System.IO
+@using ClosedXML.Excel
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@using Microsoft.JSInterop
+
+<PageTitle>Empleados</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h3" GutterBottom="true">Empleados</MudText>
+    <MudText Typo="Typo.subtitle1" Class="mb-4">Gestiona los empleados de la empresa.</MudText>
+
+    <MudTable Items="@_employees" Hover="true" Loading="@_loading" Filter="new Func<EmployeeDto,bool>(FilterFunc)" Dense="true">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Lista de Empleados</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_searchString" Placeholder="Buscar" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog" Class="ml-4">Nuevo Empleado</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportEmployees" Class="ml-2">Importar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel" Class="ml-2">Exportar</MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>ID</MudTh>
+            <MudTh>Nombre Completo</MudTh>
+            <MudTh>Sucursal</MudTh>
+            <MudTh>Departamento</MudTh>
+            <MudTh>Puesto</MudTh>
+            <MudTh>Horario</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Acciones</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="ID">@context.Id</MudTd>
+            <MudTd DataLabel="Nombre Completo">@context.FullName</MudTd>
+            <MudTd DataLabel="Sucursal">@context.BranchName</MudTd>
+            <MudTd DataLabel="Departamento">@context.DepartmentName</MudTd>
+            <MudTd DataLabel="Puesto">@context.PositionName</MudTd>
+            <MudTd DataLabel="Horario">@(context.ScheduleName ?? "N/A")</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@(context.Status == EmployeeStatus.Alta ? Color.Success : context.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">
+                    @(context.Status.ToString())
+                </MudChip>
+            </MudTd>
+            <MudTd DataLabel="Acciones">
+                <MudTooltip Text="Ver Detalles">
+                    <MudIconButton Icon="@Icons.Material.Filled.Visibility" Color="Color.Primary" OnClick="@(() => OpenDetailsDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Editar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Eliminar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteEmployee(context.Id))" Size="Size.Small" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private IEnumerable<EmployeeDto> _employees = new List<EmployeeDto>();
+    private bool _loading = true;
+    private string _searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEmployees();
+    }
+
+    private async Task LoadEmployees()
+    {
+        _loading = true;
+        var result = await Sender.Send(new GetAllEmployeesQuery());
+        if (result.IsSuccess)
+        {
+            _employees = result.Value;
+        }
+        else
+        {
+            Snackbar.Add($"Error al cargar empleados: {result.Error}", Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private bool FilterFunc(EmployeeDto employee)
+    {
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+        if (employee.Id.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (employee.FullName.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<EmployeeDialog>("Nuevo Empleado", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is CreateEmployeeCommand command)
+        {
+             var createResult = await Sender.Send(command);
+             if (createResult.IsSuccess)
+             {
+                 Snackbar.Add("Empleado creado correctamente", Severity.Success);
+                 await LoadEmployees();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al crear: {createResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task OpenDetailsDialog(EmployeeDto employee)
+    {
+        var parameters = new DialogParameters { { "EmployeeId", employee.Id } };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        
+        await DialogService.ShowAsync<EmployeeDetailsDialog>("Detalles del Empleado", parameters, options);
+    }
+
+    private async Task OpenEditDialog(EmployeeDto employee)
+    {
+        var parameters = new DialogParameters
+        {
+            { "EmployeeId", employee.Id },
+            { "FirstName", employee.FirstName },
+            { "LastName", employee.LastName },
+            { "Email", employee.Email },
+            { "PhoneNumber", employee.PhoneNumber },
+            { "HireDate", employee.HireDate },
+            { "BranchId", employee.BranchId },
+            { "DepartmentId", employee.DepartmentId },
+            { "PositionId", employee.PositionId },
+            { "Status", employee.Status },
+            { "ShiftType", employee.ShiftType },
+            { "ScheduleId", employee.ScheduleId },
+            { "RestDay", (WeekDay?)employee.RestDay },
+            { "OvertimeAuthorized", employee.OvertimeAuthorized },
+            { "Gender", employee.Gender },
+            { "OvertimeCalculationMethod", employee.OvertimeCalculationMethod },
+            { "OvertimeCapType", employee.OvertimeCapType },
+            { "OvertimeCapMinutes", employee.OvertimeCapMinutes }
+        };
+        
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<EmployeeDialog>("Editar Empleado", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is UpdateEmployeeCommand command)
+        {
+             var updateResult = await Sender.Send(command);
+             if (updateResult.IsSuccess)
+             {
+                 Snackbar.Add("Empleado actualizado correctamente", Severity.Success);
+                 await LoadEmployees();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al actualizar: {updateResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task DeleteEmployee(string employeeId)
+    {
+        bool? confirm = await DialogService.ShowMessageBox(
+            "Confirmar eliminación",
+            $"¿Está seguro de eliminar el empleado con ID {employeeId}?",
+            yesText: "Eliminar", cancelText: "Cancelar");
+
+        if (confirm == true)
+        {
+            var result = await Sender.Send(new DeleteEmployeeCommand(employeeId));
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Empleado eliminado correctamente", Severity.Success);
+                await LoadEmployees();
+            }
+            else
+            {
+                Snackbar.Add($"Error al eliminar: {result.Error}", Severity.Error);
+            }
+        }
+    }
+    private async Task ExportToExcel()
+    {
+        try
+        {
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Empleados");
+
+            // Headers
+            worksheet.Cell(1, 1).Value = "ID";
+            worksheet.Cell(1, 2).Value = "Nombre";
+            worksheet.Cell(1, 3).Value = "Apellido";
+            worksheet.Cell(1, 4).Value = "Email";
+            worksheet.Cell(1, 5).Value = "Telefono";
+            worksheet.Cell(1, 6).Value = "Fecha Contratación";
+            worksheet.Cell(1, 7).Value = "Genero";
+            worksheet.Cell(1, 8).Value = "Sucursal";
+            worksheet.Cell(1, 9).Value = "Departamento";
+            worksheet.Cell(1, 10).Value = "Puesto";
+            worksheet.Cell(1, 11).Value = "Horario";
+            worksheet.Cell(1, 12).Value = "Dia Descanso";
+
+            int row = 2;
+            foreach (var emp in _employees)
+            {
+                worksheet.Cell(row, 1).Value = emp.Id;
+                worksheet.Cell(row, 2).Value = emp.FirstName;
+                worksheet.Cell(row, 3).Value = emp.LastName;
+                worksheet.Cell(row, 4).Value = emp.Email;
+                worksheet.Cell(row, 5).Value = emp.PhoneNumber;
+                worksheet.Cell(row, 6).Value = emp.HireDate;
+                worksheet.Cell(row, 7).Value = emp.Gender.ToString();
+                worksheet.Cell(row, 8).Value = emp.BranchName;
+                worksheet.Cell(row, 9).Value = emp.DepartmentName;
+                worksheet.Cell(row, 10).Value = emp.PositionName;
+                worksheet.Cell(row, 11).Value = emp.ScheduleName;
+                worksheet.Cell(row, 12).Value = emp.RestDayName;
+                row++;
+            }
+            
+            worksheet.Columns().AdjustToContents();
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            stream.Position = 0;
+
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", $"Empleados_{DateTime.Now:yyyyMMdd}.xlsx", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ImportEmployees()
+    {
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<ImportEmployeesDialog>("Importar Empleados", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadEmployees();
+        }
+    }
+}

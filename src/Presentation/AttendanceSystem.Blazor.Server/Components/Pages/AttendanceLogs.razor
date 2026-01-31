@@ -1,0 +1,242 @@
+@page "/attendance/logs"
+@using MediatR
+@using AttendanceSystem.Application.Features.Attendance.Queries.GetAttendanceLogs
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
+@using AttendanceSystem.Application.Common
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Domain.ValueObjects
+@using System.Linq
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+@using AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance
+@using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
+@using AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift
+@inject IDialogService DialogService
+
+<MudText Typo="Typo.h5" Class="mb-4">Bitácora de Asistencia (Logs)</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="4">
+        <MudDatePicker Label="Fecha" @bind-Date="SelectedDate" />
+    </MudItem>
+    <MudItem xs="12" sm="4">
+        <MudAutocomplete T="EmployeeDto" 
+                        Label="Empleado (Busque por ID o Nombre)"
+                        @bind-Value="SelectedEmployeeObj" 
+                        SearchFunc="@SearchEmployees"
+                        ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
+                        Clearable="true"
+                        AdornmentColor="Color.Primary"
+                        ResetValueOnEmptyText="true" />
+    </MudItem>
+    
+    <MudItem xs="12" Class="d-flex align-center justify-end gap-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="OpenChangeShiftDialog" Disabled="@(SelectedEmployeeObj == null)">
+            Cambiar Horario
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="OpenManualLogDialog" Disabled="@(SelectedEmployeeObj == null)">
+            Agregar Manual
+        </MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData">Ver Logs</MudButton>
+    </MudItem>
+</MudGrid>
+
+<MudDataGrid Items="@LogsList" Filterable="true" Sortable="true" Class="mt-4">
+    <Columns>
+        <PropertyColumn Property="x => x.EmployeeId" Title="ID Empleado" />
+        <PropertyColumn Property="x => x.EmployeeName" Title="Nombre" />
+        <PropertyColumn Property="x => x.CheckTime" Title="Fecha/Hora" Format="dd/MM/yyyy HH:mm:ss" />
+        
+        <TemplateColumn Title="Tipo (Asignación)">
+            <CellTemplate>
+                <div class="d-flex align-center gap-2">
+                    <MudChip Size="Size.Small" Color="@GetEntryTypeColor(context.Item.EntryType)" Variant="Variant.Text">
+                        @context.Item.EntryType
+                    </MudChip>
+                    <MudMenu Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Dense="true">
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida"))">Asignar como Salida</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar</MudMenuItem>
+                    </MudMenu>
+                </div>
+            </CellTemplate>
+        </TemplateColumn>
+
+        <PropertyColumn Property="x => x.VerifyMethod" Title="Método" />
+        <PropertyColumn Property="x => x.DeviceName" Title="Dispositivo" />
+        <PropertyColumn Property="x => x.Status" Title="Estado (Procesamiento)" />
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="AttendanceLogViewDto" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private DateTime? SelectedDate = DateTime.Today;
+    private EmployeeDto? SelectedEmployeeObj;
+
+    private List<AttendanceLogViewDto> LogsList = new();
+    
+    // Cache for autocomplete
+    private List<EmployeeDto> _allEmployees = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Mediator.Send(new GetAllEmployeesQuery());
+        if (result.IsSuccess)
+        {
+            _allEmployees = result.Value.OrderBy(e => e.FullName).ToList();
+        }
+        
+        await LoadData();
+    }
+
+    private Task<IEnumerable<EmployeeDto>> SearchEmployees(string value, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return Task.FromResult<IEnumerable<EmployeeDto>>(_allEmployees);
+        }
+
+        var result = _allEmployees.Where(e => 
+            e.Id.Contains(value, StringComparison.InvariantCultureIgnoreCase) || 
+            e.FullName.Contains(value, StringComparison.InvariantCultureIgnoreCase)
+        );
+        
+        return Task.FromResult(result);
+    }
+
+    private Color GetEntryTypeColor(string type)
+    {
+        return type switch
+        {
+            "Entrada" => Color.Success,
+            "Salida" => Color.Info,
+            _ => Color.Default
+        };
+    }
+
+    private async Task OpenManualLogDialog()
+    {
+        if (SelectedEmployeeObj == null || SelectedDate == null) return;
+
+        var parameters = new DialogParameters<ManualLogDialog>
+        {
+            { x => x.Values, new ManualLogDialog.ManualLogCallbackValues(SelectedEmployeeObj.FullName, DateOnly.FromDateTime(SelectedDate.Value)) }
+        };
+
+        var dialog = await DialogService.ShowAsync<ManualLogDialog>("Registro Manual", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is ManualLogDialog.ManualLogResult logResult)
+        {
+            await CreateManualLog(logResult.DateTime, logResult.Type);
+        }
+    }
+
+    private async Task CreateManualLog(DateTime dateTime, string type)
+    {
+        if (SelectedEmployeeObj == null) return;
+
+        var command = new RegisterManualAttendanceCommand(
+            SelectedEmployeeObj.Id,
+            dateTime,
+            type);
+
+        var result = await Mediator.Send(command);
+
+        if (result.IsSuccess)
+        {
+            Snackbar.Add("Registro manual agregado correctamente", Severity.Success);
+            await LoadData();
+        }
+        else
+        {
+            Snackbar.Add(result.Error, Severity.Error);
+        }
+    }
+
+    private async Task OpenChangeShiftDialog()
+    {
+        if (SelectedEmployeeObj == null || SelectedDate == null) return;
+
+        var shiftResult = await Mediator.Send(new GetShiftsQuery());
+        if (!shiftResult.IsSuccess)
+        {
+            Snackbar.Add("Error cargando horarios", Severity.Error);
+            return;
+        }
+        
+        var shifts = shiftResult.Value.ToList();
+        
+        var parameters = new DialogParameters<ChangeShiftDialog>
+        {
+            { x => x.Values, new ChangeShiftDialog.ChangeShiftCallbackValues(SelectedEmployeeObj.FullName, DateOnly.FromDateTime(SelectedDate.Value)) },
+            { "Shifts", shifts } 
+        };
+
+        var dialog = await DialogService.ShowAsync<ChangeShiftDialog>("Cambiar Horario", parameters);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is Guid shiftId)
+        {
+            await UpdateDailyShift(shiftId);
+        }
+    }
+
+    private async Task UpdateDailyShift(Guid shiftId)
+    {
+         if (SelectedEmployeeObj == null || SelectedDate == null) return;
+
+         var command = new UpdateDailyShiftCommand(
+             SelectedEmployeeObj.Id,
+             DateOnly.FromDateTime(SelectedDate.Value),
+             shiftId);
+
+         var result = await Mediator.Send(command);
+
+         if (result.IsSuccess)
+         {
+             Snackbar.Add("Horario actualizado correctamente", Severity.Success);
+             await LoadData();
+         }
+         else
+         {
+             Snackbar.Add(result.Error, Severity.Error);
+         }
+    }
+
+    private async Task AssignLog(AttendanceLogViewDto record, string type)
+    {
+        var command = new ManuallyAssignAttendanceCommand(
+            record.EmployeeId, 
+            DateOnly.FromDateTime(record.CheckTime), 
+            record.Id.ToString(), 
+            type);
+
+        var result = await Mediator.Send(command);
+
+        if (result.IsSuccess)
+        {
+            Snackbar.Add("Asignación actualizada correctamente", Severity.Success);
+            await LoadData(); 
+        }
+        else
+        {
+            Snackbar.Add(result.Error, Severity.Error);
+        }
+    }
+
+    private async Task LoadData()
+    {
+        if (SelectedDate == null) return;
+
+        var employeeId = SelectedEmployeeObj?.Id ?? string.Empty;
+
+        var result = await Mediator.Send(new GetAttendanceLogsQuery(SelectedDate.Value, employeeId));
+        LogsList = result.ToList();
+    }
+
+}

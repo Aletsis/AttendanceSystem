@@ -1,0 +1,36 @@
+@page "/Error"
+@using System.Diagnostics
+@using Microsoft.AspNetCore.Authorization
+@attribute [AllowAnonymous]
+@inject IHttpContextAccessor HttpContextAccessor
+
+<PageTitle>Error</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-16">
+    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="my-2">
+        An error has occurred. This application may no longer respond until reloaded.
+    </MudAlert>
+
+    <MudText Typo="Typo.h3" GutterBottom="true" Color="Color.Error">Error</MudText>
+    <MudText Typo="Typo.h5" GutterBottom="true">An unhandled exception occurred while processing the request.</MudText>
+
+    @if (ShowRequestId)
+    {
+        <MudText Typo="Typo.body1">
+            <strong>Request ID:</strong> <code>@RequestId</code>
+        </MudText>
+    }
+</MudContainer>
+
+@code {
+    [CascadingParameter]
+    private HttpContext? HttpContext { get; set; }
+
+    private string? RequestId { get; set; }
+    private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
+
+    protected override void OnInitialized()
+    {
+        RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
+    }
+}

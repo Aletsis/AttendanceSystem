@@ -1,0 +1,61 @@
+@using MudBlazor
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Devices.Commands.CreateDevice
+@using AttendanceSystem.Application.Features.Devices.Commands.UpdateDevice
+@using AttendanceSystem.Domain.Enumerations
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" @bind-IsValid="@success">
+            <MudTextField @bind-Value="Name" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
+            <MudTextField @bind-Value="IpAddress" Label="Dirección IP" Required="true" RequiredError="La IP es requerida" />
+            <MudNumericField @bind-Value="Port" Label="Puerto" Required="true" Min="1" Max="65535" />
+            <MudTextField @bind-Value="Location" Label="Ubicación" />
+            
+            <MudSelect T="DeviceDownloadMethod" Label="Método de Descarga" @bind-Value="DownloadMethod" Required="true" Class="mb-3">
+                <MudSelectItem Value="@DeviceDownloadMethod.Sdk">SDK (Pull)</MudSelectItem>
+                <MudSelectItem Value="@DeviceDownloadMethod.Adms">ADMS (Push)</MudSelectItem>
+            </MudSelect>
+
+            <MudSwitch @bind-Value="ShouldClearAfterDownload" Label="Borrar registros después de descargar" Color="Color.Secondary" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string? DeviceId { get; set; }
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string IpAddress { get; set; } = string.Empty;
+    [Parameter] public int Port { get; set; } = 4370;
+    [Parameter] public string? Location { get; set; }
+    [Parameter] public bool ShouldClearAfterDownload { get; set; }
+    [Parameter] public DeviceDownloadMethod DownloadMethod { get; set; } = DeviceDownloadMethod.Sdk;
+
+    private bool success;
+    private MudForm form = default!;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        form.Validate();
+
+        if (success)
+        {
+            if (string.IsNullOrEmpty(DeviceId))
+            {
+                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod)));
+            }
+            else
+            {
+                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod)));
+            }
+        }
+    }
+}

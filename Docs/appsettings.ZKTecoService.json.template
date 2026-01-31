@@ -1,0 +1,33 @@
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "Grpc": "Information",
+      "AttendanceSystem.ZKTeco": "Debug"
+    },
+    "File": {
+      "Path": "logs/zkteco-.log",
+      "RollingInterval": "Day",
+      "RetainedFileCountLimit": 30,
+      "FileSizeLimitBytes": 10485760
+    }
+  },
+  "GrpcPort": 5001,
+  "ZKTeco": {
+    "DeviceIP": "192.168.1.100",
+    "DevicePort": 4370,
+    "ConnectionTimeout": 30,
+    "ReadTimeout": 30,
+    "AutoReconnect": true,
+    "ReconnectIntervalSeconds": 60,
+    "MaxRetries": 3,
+    "EnableRealTimeEvents": true
+  },
+  "AllowedHosts": "*",
+  "Performance": {
+    "MaxConcurrentCalls": 100,
+    "KeepAliveInterval": 30,
+    "KeepAliveTimeout": 15
+  }
+}

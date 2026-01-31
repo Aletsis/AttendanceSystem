@@ -1,0 +1,305 @@
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Abstractions
+@using MediatR
+@using AttendanceSystem.Application.Features.Devices.Queries.GetDeviceUsers
+@using AttendanceSystem.Application.Features.Devices.Commands.DeleteDeviceUser
+@using AttendanceSystem.Application.Features.Devices.Commands.DeleteDeviceUserFingerprints
+@using AttendanceSystem.Application.Features.Devices.Commands.SetDeviceTime
+@using AttendanceSystem.Application.Features.Devices.Commands.ResetDeviceToFactory
+@inject ISender Sender
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<MudDialog>
+    <DialogContent>
+        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+            <MudTabPanel Text="Información" Icon="@Icons.Material.Filled.Info">
+                <MudGrid>
+                    <MudItem xs="12">
+                        <MudText Typo="Typo.h6" Class="mb-4">Información del Dispositivo</MudText>
+                    </MudItem>
+
+                    <!-- Información Básica -->
+                    <MudItem xs="12">
+                        <MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
+                            <MudText Typo="Typo.subtitle1" Class="mb-3" Color="Color.Primary">
+                                <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-2" />
+                                Información Básica
+                            </MudText>
+                            <MudGrid>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">Nombre:</MudText>
+                                    <MudText Typo="Typo.body1" Class="font-weight-bold">@Device.Name</MudText>
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">Estado:</MudText>
+                                    <MudChip T="string" Size="Size.Small" Color="@(Device.IsActive ? Color.Success : Color.Default)">
+                                        @(Device.IsActive ? "Activo" : "Inactivo")
+                                    </MudChip>
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">Ubicación:</MudText>
+                                    <MudText Typo="Typo.body1">@(Device.Location ?? "No especificada")</MudText>
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">IP:</MudText>
+                                    <MudText Typo="Typo.body1" Class="font-weight-bold">@Device.IpAddress : @Device.Port</MudText>
+                                </MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                    </MudItem>
+
+                    <!-- Capacidades -->
+                     <MudItem xs="12">
+                        <MudSimpleTable Style="overflow-x: auto;" Dense="true" Hover="true" Striped="true">
+                            <thead>
+                                <tr>
+                                    <th>Tipo de Dato</th>
+                                    <th style="text-align:center">Usado</th>
+                                    <th style="text-align:center">Capacidad</th>
+                                    <th style="text-align:right">% Uso</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1"/> Usuarios</td>
+                                    <td style="text-align:center">@(Device.UserCount?.ToString() ?? "-")</td>
+                                    <td style="text-align:center">@(Device.UserCapacity?.ToString() ?? "-")</td>
+                                    <td style="text-align:right">@GetUsagePercentage(Device.UserCount, Device.UserCapacity)</td>
+                                </tr>
+                                <tr>
+                                    <td><MudIcon Icon="@Icons.Material.Filled.Fingerprint" Size="Size.Small" Class="mr-1"/> Huellas</td>
+                                    <td style="text-align:center">@(Device.FingerprintCount?.ToString() ?? "-")</td>
+                                    <td style="text-align:center">@(Device.FingerprintCapacity?.ToString() ?? "-")</td>
+                                    <td style="text-align:right">@GetUsagePercentage(Device.FingerprintCount, Device.FingerprintCapacity)</td>
+                                </tr>
+                                <tr>
+                                    <td><MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Small" Class="mr-1"/> Registros</td>
+                                    <td style="text-align:center">@(Device.AttendanceRecordCount?.ToString() ?? "-")</td>
+                                    <td style="text-align:center">@(Device.AttendanceRecordCapacity?.ToString() ?? "-")</td>
+                                    <td style="text-align:right">@GetUsagePercentage(Device.AttendanceRecordCount, Device.AttendanceRecordCapacity)</td>
+                                </tr>
+                            </tbody>
+                        </MudSimpleTable>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Usuarios" Icon="@Icons.Material.Filled.People">
+                <MudGrid>
+                    <MudItem xs="12" Class="d-flex justify-space-between align-center">
+                        <MudText Typo="Typo.h6">Gestión de Usuarios</MudText>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadUsers" Disabled="@_loadingUsers">
+                            @if (_loadingUsers)
+                            {
+                                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                                <MudText Class="ms-2">Cargando...</MudText>
+                            }
+                            else
+                            {
+                                <MudText>Cargar Usuarios del Dispositivo</MudText>
+                            }
+                        </MudButton>
+                    </MudItem>
+                    <MudItem xs="12">
+                         <MudTable Items="@_users" Hover="true" Loading="@_loadingUsers" Dense="true" Striped="true" FixedHeader="true" Height="400px">
+                             <HeaderContent>
+                                 <MudTh>ID</MudTh>
+                                 <MudTh>Nombre</MudTh>
+                                 <MudTh>Privilegio</MudTh>
+                                 <MudTh>Habilitado</MudTh>
+                                 <MudTh>Acciones</MudTh>
+                             </HeaderContent>
+                             <RowTemplate>
+                                 <MudTd DataLabel="ID">@context.UserId</MudTd>
+                                 <MudTd DataLabel="Nombre">@context.Name</MudTd>
+                                 <MudTd DataLabel="Privilegio">
+                                     @(context.Privilege == 14 ? "Admin" : "Usuario")
+                                 </MudTd>
+                                 <MudTd DataLabel="Habilitado">
+                                     <MudCheckBox T="bool" Value="@context.Enabled" ReadOnly="true" Dense="true" Size="Size.Small"></MudCheckBox>
+                                 </MudTd>
+                                 <MudTd DataLabel="Acciones">
+                                     <MudTooltip Text="Borrar Huellas">
+                                         <MudIconButton Icon="@Icons.Material.Filled.Fingerprint" Color="Color.Warning" Size="Size.Small" OnClick="@(() => DeleteFingerprints(context))"/>
+                                     </MudTooltip>
+                                     <MudTooltip Text="Eliminar Usuario">
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteUser(context))"/>
+                                     </MudTooltip>
+                                 </MudTd>
+                             </RowTemplate>
+                             <PagerContent>
+                                 <MudTablePager />
+                             </PagerContent>
+                         </MudTable>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Configuración Remota" Icon="@Icons.Material.Filled.SettingsRemote">
+                 <MudGrid>
+                     <MudItem xs="12">
+                         <MudText Typo="Typo.h6" Class="mb-4">Herramientas de Configuración</MudText>
+                         <MudAlert Severity="Severity.Warning" Class="mb-4">Estas acciones afectan directamente al dispositivo físico. Úselas con precaución.</MudAlert>
+                     </MudItem>
+
+                     <MudItem xs="12" md="6">
+                         <MudCard Elevation="3">
+                             <MudCardHeader>
+                                 <CardHeaderContent>
+                                     <MudText Typo="Typo.h6">Sincronización de Hora</MudText>
+                                 </CardHeaderContent>
+                                 <CardHeaderActions>
+                                     <MudIcon Icon="@Icons.Material.Filled.AccessTime" />
+                                 </CardHeaderActions>
+                             </MudCardHeader>
+                             <MudCardContent>
+                                 <MudText>Configura la fecha y hora del dispositivo a la hora actual del servidor.</MudText>
+                                 <MudText Class="mt-2" Typo="Typo.caption">Hora del Servidor: @DateTime.Now.ToString("g")</MudText>
+                             </MudCardContent>
+                             <MudCardActions>
+                                 <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="SyncTime" Disabled="@_processingAction">Sincronizar Hora</MudButton>
+                             </MudCardActions>
+                         </MudCard>
+                     </MudItem>
+
+                      <MudItem xs="12" md="6">
+                         <MudCard Elevation="3">
+                             <MudCardHeader>
+                                 <CardHeaderContent>
+                                     <MudText Typo="Typo.h6" Color="Color.Error">Restablecimiento de Fábrica</MudText>
+                                 </CardHeaderContent>
+                                 <CardHeaderActions>
+                                     <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error"/>
+                                 </CardHeaderActions>
+                             </MudCardHeader>
+                             <MudCardContent>
+                                 <MudText>Borra <b>TODOS</b> los datos del dispositivo (Usuarios, Huellas, Registros, Logs).</MudText>
+                                 <MudText Color="Color.Error" Class="mt-2 font-weight-bold">Esta acción no se puede deshacer.</MudText>
+                             </MudCardContent>
+                             <MudCardActions>
+                                 <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="FactoryReset" Disabled="@_processingAction">Restablecer Datos</MudButton>
+                             </MudCardActions>
+                         </MudCard>
+                     </MudItem>
+                 </MudGrid>
+            </MudTabPanel>
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel" Color="Color.Primary">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] 
+    IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter]
+    public required DeviceDto Device { get; set; }
+
+    private List<DeviceUserDto> _users = new();
+    private bool _loadingUsers = false;
+    private bool _processingAction = false;
+
+    void Cancel()
+    {
+        MudDialog?.Close();
+    }
+
+    private async Task LoadUsers()
+    {
+        _loadingUsers = true;
+        
+        var result = await Sender.Send(new GetDeviceUsersQuery(Device.DeviceId));
+        
+        if (result.IsSuccess)
+        {
+            _users = result.Value.ToList();
+            Snackbar.Add($"{_users.Count} usuarios obtenidos", Severity.Success);
+        }
+        else
+        {
+             Snackbar.Add($"Error: {result.Error}", Severity.Error);
+        }
+        
+        _loadingUsers = false;
+    }
+
+    private async Task DeleteUser(DeviceUserDto user)
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "Confirmar Eliminación", 
+            $"¿Está seguro de eliminar al usuario {user.Name} ({user.UserId}) del dispositivo? Esta acción borrará sus huellas y datos.", 
+            yesText: "Eliminar", cancelText: "Cancelar");
+
+        if (confirm == true)
+        {
+            var result = await Sender.Send(new DeleteDeviceUserCommand(Device.DeviceId, user.UserId));
+            
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Usuario eliminado", Severity.Success);
+                _users.Remove(user);
+            }
+            else
+            {
+                 Snackbar.Add($"Error al eliminar usuario: {result.Error}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task DeleteFingerprints(DeviceUserDto user)
+    {
+         var confirm = await DialogService.ShowMessageBox(
+            "Confirmar Eliminación de Huellas", 
+            $"¿Borrar todas las huellas de {user.Name} ({user.UserId})?",
+            yesText: "Borrar", cancelText: "Cancelar");
+
+        if (confirm == true)
+        {
+             var result = await Sender.Send(new DeleteDeviceUserFingerprintsCommand(Device.DeviceId, user.UserId));
+             
+             if (result.IsSuccess) Snackbar.Add("Huellas eliminadas", Severity.Success);
+             else Snackbar.Add($"Error al eliminar huellas: {result.Error}", Severity.Error);
+        }
+    }
+
+    private async Task SyncTime()
+    {
+        _processingAction = true;
+        var result = await Sender.Send(new SetDeviceTimeCommand(Device.DeviceId, DateTime.Now));
+        
+        if (result.IsSuccess) Snackbar.Add("Hora sincronizada correctamente", Severity.Success);
+        else Snackbar.Add($"Error al sincronizar hora: {result.Error}", Severity.Error);
+        
+        _processingAction = false;
+    }
+
+    private async Task FactoryReset()
+    {
+        var confirm = await DialogService.ShowMessageBox(
+            "PELIGRO: RESTABLECIMIENTO DE FÁBRICA", 
+            "¿ESTÁ ABSOLUTAMENTE SEGURO? Se borrarán TODOS los usuarios y registros del dispositivo.",
+            yesText: "SÍ, BORRAR TODO", cancelText: "Cancelar");
+
+        if (confirm == true)
+        {
+             _processingAction = true;
+             var result = await Sender.Send(new ResetDeviceToFactoryCommand(Device.DeviceId));
+             
+             if (result.IsSuccess) Snackbar.Add("Dispositivo restablecido (Datos borrados)", Severity.Success);
+             else Snackbar.Add($"Error al restablecer: {result.Error}", Severity.Error);
+             
+             _processingAction = false;
+        }
+    }
+
+    string GetUsagePercentage(int? count, int? capacity)
+    {
+        if (!count.HasValue || !capacity.HasValue || capacity.Value == 0) return "-";
+        double pc = (double)count.Value / capacity.Value * 100;
+        return $"{pc:F1}%";
+    }
+}
+

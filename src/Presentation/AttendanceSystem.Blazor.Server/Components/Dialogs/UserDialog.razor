@@ -1,0 +1,105 @@
+@using AttendanceSystem.Application.Features.Users
+@using AttendanceSystem.Application.Features.Users.Commands.CreateUser
+@using AttendanceSystem.Application.Features.Users.Commands.UpdateUser
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" @bind-IsValid="@success">
+            <MudTextField @bind-Value="model.UserName" Label="Usuario" Required="true" RequiredError="El nombre de usuario es requerido" ReadOnly="@(!IsCreation)" />
+            <MudTextField @bind-Value="model.FullName" Label="Nombre Completo" Required="true" RequiredError="El nombre completo es requerido" />
+            <MudTextField @bind-Value="model.Email" Label="Correo Electrónico" Required="true" RequiredError="El correo es requerido" InputType="InputType.Email" />
+            
+            @if (IsCreation)
+            {
+                <MudTextField @bind-Value="password" Label="Contraseña" Required="true" RequiredError="La contraseña es requerida" InputType="InputType.Password" />
+            }
+            else
+            {
+                 <MudTextField @bind-Value="password" Label="Nueva Contraseña (Opcional)" InputType="InputType.Password" HelperText="Dejar en blanco para mantener la actual" />
+            }
+
+            <MudSwitch @bind-Value="model.IsActive" Label="Activo" Color="Color.Primary" />
+            
+            <MudSelect T="string" Label="Rol" @bind-Value="model.Role" Required="true" RequiredError="El rol es requerido">
+                <MudSelectItem Value="@("Usuario")">Usuario</MudSelectItem>
+                <MudSelectItem Value="@("Administrador")">Administrador</MudSelectItem>
+            </MudSelect>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!success)">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    [Parameter] public UserDto? User { get; set; }
+
+    private bool IsCreation => User == null;
+    private MudForm form;
+    private bool success;
+    
+    private UserViewModel model = new();
+    private string? password;
+
+    protected override void OnInitialized()
+    {
+        if (User != null)
+        {
+            model = new UserViewModel
+            {
+                Id = User.Id,
+                UserName = User.UserName,
+                Email = User.Email,
+                FullName = User.FullName,
+                IsActive = User.IsActive,
+                Role = User.Roles.FirstOrDefault() ?? "Usuario"
+            };
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        await form.Validate();
+        if (!success) return;
+
+        try 
+        {
+            var roles = new List<string> { model.Role };
+
+            if (IsCreation)
+            {
+               var command = new CreateUserCommand(model.UserName, model.Email, model.FullName, password!, model.IsActive, roles);
+               await Mediator.Send(command);
+               Snackbar.Add("Usuario creado exitosamente", Severity.Success);
+            }
+            else
+            {
+               var command = new UpdateUserCommand(model.Id!, model.Email, model.FullName, model.IsActive, roles, string.IsNullOrEmpty(password) ? null : password);
+               await Mediator.Send(command);
+               Snackbar.Add("Usuario actualizado exitosamente", Severity.Success);
+            }
+            
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    public class UserViewModel
+    {
+        public string? Id { get; set; }
+        public string UserName { get; set; } = "";
+        public string FullName { get; set; } = "";
+        public string Email { get; set; } = "";
+        public bool IsActive { get; set; } = true;
+        public string Role { get; set; } = "Usuario";
+    }
+}

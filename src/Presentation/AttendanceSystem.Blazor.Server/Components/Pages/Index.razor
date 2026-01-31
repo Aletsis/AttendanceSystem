@@ -1,0 +1,337 @@
+@page "/"
+@using MudBlazor
+@using MediatR
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
+@using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
+@using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
+@inject IMediator Mediator
+
+<PageTitle>Sistema de Asistencia</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h3" GutterBottom="true">
+        <MudIcon Icon="@Icons.Material.Filled.Dashboard" Class="mr-2" />
+        Panel de Control
+    </MudText>
+    <MudText Typo="Typo.body1" Class="mb-6">Bienvenido al sistema de control de asistencia con dispositivos ZKTeco.</MudText>
+    
+    @if (!_isLoading)
+    {
+        <!-- Estadísticas del Sistema -->
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="6" md="4" lg="2">
+                <MudCard Elevation="3">
+                    <MudCardContent Class="text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" Color="Color.Primary" />
+                        <MudText Typo="Typo.h4" Class="mt-2">@_totalEmployees</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Empleados Activos</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="2">
+                <MudCard Elevation="3">
+                    <MudCardContent Class="text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Devices" Size="Size.Large" Color="Color.Success" />
+                        <MudText Typo="Typo.h4" Class="mt-2">@_totalDevices</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Dispositivos</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="2">
+                <MudCard Elevation="3">
+                    <MudCardContent Class="text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Large" Color="Color.Info" />
+                        <MudText Typo="Typo.h4" Class="mt-2">@_totalBranches</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Sucursales</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="2">
+                <MudCard Elevation="3">
+                    <MudCardContent Class="text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Large" Color="Color.Warning" />
+                        <MudText Typo="Typo.h4" Class="mt-2">@_totalDepartments</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Departamentos</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="2">
+                <MudCard Elevation="3">
+                    <MudCardContent Class="text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Work" Size="Size.Large" Color="Color.Tertiary" />
+                        <MudText Typo="Typo.h4" Class="mt-2">@_totalPositions</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Puestos</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="2">
+                <MudCard Elevation="3">
+                    <MudCardContent Class="text-center">
+                        <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h4" Class="mt-2">@_totalShifts</MudText>
+                        <MudText Typo="Typo.body2" Color="Color.Secondary">Horarios</MudText>
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+        
+        <!-- Gestión de Personal -->
+        <MudText Typo="Typo.h5" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
+            Gestión de Personal
+        </MudText>
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Large" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Empleados</MudText>
+                        <MudText Typo="Typo.body2">Gestiona el registro de empleados</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/employees" FullWidth="true">Ir a Empleados</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Large" Color="Color.Info" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Sucursales</MudText>
+                        <MudText Typo="Typo.body2">Administra las sucursales</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/branches" FullWidth="true">Ir a Sucursales</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Large" Color="Color.Warning" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Departamentos</MudText>
+                        <MudText Typo="Typo.body2">Gestiona departamentos</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/departments" FullWidth="true">Ir a Departamentos</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.Work" Size="Size.Large" Color="Color.Tertiary" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Puestos</MudText>
+                        <MudText Typo="Typo.body2">Administra puestos de trabajo</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/positions" FullWidth="true">Ir a Puestos</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Horarios</MudText>
+                        <MudText Typo="Typo.body2">Configura turnos y horarios</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/shifts" FullWidth="true">Ir a Horarios</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+        
+        <!-- Dispositivos y Descargas -->
+        <MudText Typo="Typo.h5" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Devices" Class="mr-2" />
+            Dispositivos y Descargas
+        </MudText>
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.DeviceHub" Size="Size.Large" Color="Color.Success" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Dispositivos</MudText>
+                        <MudText Typo="Typo.body2">Gestiona dispositivos biométricos</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/devices" FullWidth="true">Ir a Dispositivos</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Large" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Descargar Registros</MudText>
+                        <MudText Typo="Typo.body2">Descarga logs de dispositivos</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/download" FullWidth="true">Ir a Descargas</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Large" Color="Color.Info" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Registros Manuales</MudText>
+                        <MudText Typo="Typo.body2">Gestiona registros manuales</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/manual-logs" FullWidth="true">Ir a Registros</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.Calculate" Size="Size.Large" Color="Color.Warning" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Calcular Asistencia</MudText>
+                        <MudText Typo="Typo.body2">Procesa registros de asistencia</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/calculation" FullWidth="true">Ir a Cálculo</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+        
+        <!-- Reportes y Análisis -->
+        <MudText Typo="Typo.h5" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Assessment" Class="mr-2" />
+            Reportes y Análisis
+        </MudText>
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Large" Color="Color.Primary" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Reporte de Asistencia</MudText>
+                        <MudText Typo="Typo.body2">Consulta asistencia diaria</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/reports" FullWidth="true">Ir a Reportes</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Large" Color="Color.Success" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Reportes Avanzados</MudText>
+                        <MudText Typo="Typo.body2">Análisis de incidencias</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/advanced-reports" FullWidth="true">Ir a Avanzados</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+            
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Large" Color="Color.Info" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Logs de Asistencia</MudText>
+                        <MudText Typo="Typo.body2">Revisa logs sin procesar</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/logs" FullWidth="true">Ir a Logs</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+        
+        <!-- Configuración -->
+        <MudText Typo="Typo.h5" Class="mb-3">
+            <MudIcon Icon="@Icons.Material.Filled.Settings" Class="mr-2" />
+            Configuración
+        </MudText>
+        <MudGrid Class="mb-6">
+            <MudItem xs="12" sm="6" md="4" lg="3">
+                <MudCard Elevation="2" Class="hover-card">
+                    <MudCardContent>
+                        <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Large" Color="Color.Secondary" />
+                        <MudText Typo="Typo.h6" Class="mt-2">Configuración</MudText>
+                        <MudText Typo="Typo.body2">Ajustes del sistema</MudText>
+                    </MudCardContent>
+                    <MudCardActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/settings" FullWidth="true">Ir a Configuración</MudButton>
+                    </MudCardActions>
+                </MudCard>
+            </MudItem>
+        </MudGrid>
+    }
+    else
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
+    }
+</MudContainer>
+
+@code {
+    private bool _isLoading = true;
+    private int _totalEmployees = 0;
+    private int _totalDevices = 0;
+    private int _totalBranches = 0;
+    private int _totalDepartments = 0;
+    private int _totalPositions = 0;
+    private int _totalShifts = 0;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatistics();
+    }
+
+    private async Task LoadStatistics()
+    {
+        _isLoading = true;
+        
+        try
+        {
+            // Cargar estadísticas del sistema
+            var employeesResult = await Mediator.Send(new GetAllEmployeesQuery());
+            _totalEmployees = employeesResult.IsSuccess ? employeesResult.Value.Count : 0;
+            
+            var devicesResult = await Mediator.Send(new GetActiveDevicesQuery());
+            _totalDevices = devicesResult.IsSuccess ? devicesResult.Value.Count() : 0;
+            
+            var branchesResult = await Mediator.Send(new GetBranchesQuery());
+            _totalBranches = branchesResult.IsSuccess ? branchesResult.Value.Count() : 0;
+            
+            var departmentsResult = await Mediator.Send(new GetDepartmentsQuery());
+            _totalDepartments = departmentsResult.IsSuccess ? departmentsResult.Value.Count() : 0;
+            
+            var positionsResult = await Mediator.Send(new GetPositionsQuery());
+            _totalPositions = positionsResult.IsSuccess ? positionsResult.Value.Count() : 0;
+            
+            var shiftsResult = await Mediator.Send(new GetShiftsQuery());
+            _totalShifts = shiftsResult.IsSuccess ? shiftsResult.Value.Count() : 0;
+        }
+        catch (Exception)
+        {
+            // En caso de error, mantener los valores en 0
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+}

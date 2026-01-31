@@ -1,0 +1,211 @@
+syntax = "proto3";
+
+option csharp_namespace = "AttendanceSystem.ZKTeco.Grpc";
+
+// Servicio gRPC para comunicación con dispositivos ZKTeco
+service ZKTecoService {
+  // Conectar a un dispositivo ZKTeco
+  rpc ConnectDevice (ConnectDeviceRequest) returns (ConnectDeviceResponse);
+  
+  // Obtener registros de asistencia desde el dispositivo
+  rpc GetAttendanceLogs (GetAttendanceLogsRequest) returns (GetAttendanceLogsResponse);
+  
+  // Limpiar los registros del dispositivo
+  rpc ClearDeviceLogs (ClearDeviceLogsRequest) returns (ClearDeviceLogsResponse);
+  
+  // Desconectar del dispositivo
+  rpc DisconnectDevice (DisconnectDeviceRequest) returns (DisconnectDeviceResponse);
+  
+  // Registrar un empleado en el dispositivo
+  rpc RegisterEmployee (RegisterEmployeeRequest) returns (RegisterEmployeeResponse);
+  
+  // Eliminar un empleado del dispositivo
+  rpc DeleteEmployee (DeleteEmployeeRequest) returns (DeleteEmployeeResponse);
+  
+  // Obtener información del dispositivo
+  rpc GetDeviceInfo (GetDeviceInfoRequest) returns (GetDeviceInfoResponse);
+
+  // Obtener todos los usuarios del dispositivo
+  rpc GetAllUsers (GetAllUsersRequest) returns (GetAllUsersResponse);
+
+  // Eliminar huellas de un usuario
+  rpc DeleteUserFingerprints (DeleteUserFingerprintsRequest) returns (DeleteUserFingerprintsResponse);
+
+  // Restablecer a valores de fábrica
+  rpc ResetToFactorySettings (ResetToFactorySettingsRequest) returns (ResetToFactorySettingsResponse);
+
+  // Configurar fecha y hora del dispositivo
+  rpc SetDeviceTime (SetDeviceTimeRequest) returns (SetDeviceTimeResponse);
+}
+
+// ========== Mensajes de Conexión ==========
+
+message ConnectDeviceRequest {
+  string ip_address = 1;
+  int32 port = 2;
+  int32 timeout_seconds = 3; // Timeout de conexión en segundos
+}
+
+message ConnectDeviceResponse {
+  bool success = 1;
+  string message = 2;
+  string device_serial_number = 3;
+}
+
+message DisconnectDeviceRequest {
+  // Vacío - desconecta el dispositivo actual
+}
+
+message DisconnectDeviceResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ========== Mensajes de Asistencia ==========
+
+message GetAttendanceLogsRequest {
+  string device_id = 1;
+  string from_date = 2; // Formato ISO 8601: "2026-01-01T00:00:00Z"
+  string to_date = 3;   // Formato ISO 8601: "2026-01-31T23:59:59Z"
+}
+
+message GetAttendanceLogsResponse {
+  bool success = 1;
+  string message = 2;
+  repeated AttendanceRecord records = 3;
+  int32 total_count = 4;
+}
+
+message AttendanceRecord {
+  string device_id = 1;
+  string user_id = 2;
+  string check_time = 3; // Formato ISO 8601
+  int32 verify_mode = 4; // 0: Password, 1: Fingerprint, 2: Card, etc.
+  int32 in_out_mode = 5; // 0: Check-in, 1: Check-out, 2: Break-out, 3: Break-in, etc.
+  int32 work_code = 6;
+}
+
+message ClearDeviceLogsRequest {
+  string device_id = 1;
+}
+
+message ClearDeviceLogsResponse {
+  bool success = 1;
+  string message = 2;
+  int32 records_cleared = 3;
+}
+
+// ========== Mensajes de Empleados ==========
+
+message RegisterEmployeeRequest {
+  string device_id = 1;
+  string employee_id = 2;
+  string name = 3;
+  string password = 4; // Opcional
+  int32 privilege = 5; // 0: Usuario normal, 14: Administrador
+  bool enabled = 6;
+  string card_number = 7;
+  repeated UserFingerprint fingerprints = 8;
+  string face_template = 9;
+}
+
+message UserFingerprint {
+  int32 finger_index = 1;
+  string template_data = 2; // Base64
+}
+
+message RegisterEmployeeResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message DeleteEmployeeRequest {
+  string device_id = 1;
+  string employee_id = 2;
+}
+
+message DeleteEmployeeResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ========== Mensajes de Información del Dispositivo ==========
+
+message GetDeviceInfoRequest {
+  // Vacío - obtiene información del dispositivo conectado
+}
+
+message GetDeviceInfoResponse {
+  bool success = 1;
+  string message = 2;
+  DeviceInfo device_info = 3;
+}
+
+message DeviceInfo {
+  string serial_number = 1;
+  string device_name = 2;
+  string firmware_version = 3;
+  string platform = 4;
+  int32 user_count = 5;
+  int32 fingerprint_count = 6;
+  int32 face_count = 7;
+  int32 attendance_record_count = 8;
+  int32 user_capacity = 9;
+  int32 fingerprint_capacity = 10;
+  int32 face_capacity = 11;
+  int32 attendance_record_capacity = 12;
+}
+
+// ========== Mensajes de Usuarios ==========
+
+message GetAllUsersRequest {
+  string device_id = 1;
+}
+
+message GetAllUsersResponse {
+  bool success = 1;
+  string message = 2;
+  repeated DeviceUser users = 3;
+}
+
+message DeviceUser {
+  string user_id = 1;
+  string name = 2;
+  string password = 3;
+  int32 privilege = 4;
+  bool enabled = 5;
+  string card_number = 6;
+  repeated UserFingerprint fingerprints = 7;
+  string face_template = 8;
+}
+
+message DeleteUserFingerprintsRequest {
+  string device_id = 1;
+  string user_id = 2;
+}
+
+message DeleteUserFingerprintsResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// ========== Mensajes de Configuración ==========
+
+message ResetToFactorySettingsRequest {
+  string device_id = 1;
+}
+
+message ResetToFactorySettingsResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message SetDeviceTimeRequest {
+  string device_id = 1;
+  string date_time = 2; // ISO 8601
+}
+
+message SetDeviceTimeResponse {
+  bool success = 1;
+  string message = 2;
+}

@@ -1,0 +1,78 @@
+@using AttendanceSystem.Application.Features.Departments.Commands.CreateDepartment
+@using AttendanceSystem.Application.Features.Departments.Commands.UpdateDepartment
+@using MediatR
+@using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
+@using AttendanceSystem.Application.DTOs
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="Name" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
+        <MudTextField @bind-Value="Description" Label="Descripción" Lines="3" />
+        <MudSelect T="Guid" Label="Puestos" MultiSelection="true" @bind-SelectedValues="_selectedPositionIds">
+            @foreach (var position in _positions)
+            {
+                <MudSelectItem T="Guid" Value="@position.Id">@position.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    [Inject] ISender Sender { get; set; } = default!;
+
+    [Parameter] public Guid? DepartmentId { get; set; }
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public string Description { get; set; } = string.Empty;
+
+    private IEnumerable<PositionDto> _positions = new List<PositionDto>();
+    private IEnumerable<Guid> _selectedPositionIds = new HashSet<Guid>();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var positionsResult = await Sender.Send(new GetPositionsQuery());
+        if (positionsResult.IsSuccess)
+        {
+            _positions = positionsResult.Value;
+        }
+
+        if (DepartmentId.HasValue)
+        {
+            var deptResult = await Sender.Send(new AttendanceSystem.Application.Features.Departments.Queries.GetDepartmentById.GetDepartmentByIdQuery(DepartmentId.Value));
+            if (deptResult.IsSuccess)
+            {
+                var department = deptResult.Value;
+                Name = department.Name; // Ensure name/desc are synced from source of truth
+                Description = department.Description;
+                
+                if (department.PositionIds != null)
+                {
+                    _selectedPositionIds = department.PositionIds;
+                }
+            }
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(Name))
+        {
+            return;
+        }
+
+        if (DepartmentId.HasValue)
+        {
+            MudDialog.Close(DialogResult.Ok(new UpdateDepartmentCommand(DepartmentId.Value, Name, Description, _selectedPositionIds.ToList())));
+        }
+        else
+        {
+            MudDialog.Close(DialogResult.Ok(new CreateDepartmentCommand(Name, Description, _selectedPositionIds.ToList())));
+        }
+    }
+}

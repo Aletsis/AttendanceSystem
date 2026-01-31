@@ -1,0 +1,36 @@
+<MudNavMenu>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Inicio</MudNavLink>
+    <MudNavGroup Title="Gestión de personal" Expanded="false" Icon="@Icons.Material.Filled.People" >
+        <MudNavLink Href="/employees" Icon="@Icons.Material.Filled.PersonAdd">Empleados</MudNavLink>
+        <AuthorizeView Roles="Administrador">
+            <MudNavLink Href="/branches" Icon="@Icons.Material.Filled.Business">Sucursales</MudNavLink>
+            <MudNavLink Href="/departments" Icon="@Icons.Material.Filled.AccountTree">Departamentos</MudNavLink>
+            <MudNavLink Href="/positions" Icon="@Icons.Material.Filled.Work">Puestos</MudNavLink>
+            <MudNavLink Href="/shifts" Icon="@Icons.Material.Filled.Schedule">Horarios</MudNavLink>
+        </AuthorizeView>
+    </MudNavGroup>
+    <AuthorizeView Roles="Administrador">
+    <MudNavGroup Title="Dispositivos y descargas" Expanded="false" Icon="@Icons.Material.Filled.Devices" >
+        <MudNavLink Href="/devices" Icon="@Icons.Material.Filled.DeviceHub">Dispositivos</MudNavLink>
+        <MudNavLink Href="/attendance/download" Icon="@Icons.Material.Filled.Download">Descargas</MudNavLink>
+        <MudNavLink Href="/attendance/download-logs" Icon="@Icons.Material.Filled.History">Historial de Descargas</MudNavLink>
+        <MudNavLink Href="/attendance/manual-logs" Icon="@Icons.Material.Filled.EditNote">Registros manuales</MudNavLink>
+        <MudNavLink Href="/attendance/calculation" Icon="@Icons.Material.Filled.Calculate">Cálculo de asistencia</MudNavLink>
+    </MudNavGroup>
+    </AuthorizeView>
+    <MudNavGroup Title="Reportes y análisis" Expanded="false" Icon="@Icons.Material.Filled.Assessment" >
+        <MudNavLink Href="/attendance/reports" Icon="@Icons.Material.Filled.TableChart">Reporte de Asistencia</MudNavLink>
+        <MudNavLink Href="/attendance/cards" Icon="@Icons.Material.Filled.Badge">Impresión de Checadores</MudNavLink>
+        <MudNavLink Href="/attendance/advanced-reports" Icon="@Icons.Material.Filled.Analytics">Reportes avanzados</MudNavLink>
+        <AuthorizeView Roles="Administrador">
+        <MudNavLink Href="/attendance/logs" Icon="@Icons.Material.Filled.ListAlt">Logs de Asistencia</MudNavLink>
+        </AuthorizeView>
+    </MudNavGroup>
+    <AuthorizeView Roles="Administrador">
+    <MudNavGroup Title="Configuración" Expanded="false" Icon="@Icons.Material.Filled.Settings" >
+        <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Tune">Configuración</MudNavLink>
+        <MudNavLink Href="/users" Icon="@Icons.Material.Filled.SupervisedUserCircle">Usuarios</MudNavLink>
+        <MudNavLink Href="/hangfire" Icon="@Icons.Material.Filled.Schedule" Target="_blank">Hangfire</MudNavLink>
+    </MudNavGroup>
+    </AuthorizeView>
+</MudNavMenu>

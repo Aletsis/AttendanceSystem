@@ -1,0 +1,24 @@
+@inject NavigationManager NavigationManager
+
+@code {
+    protected override void OnInitialized()
+    {
+        var currentPath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        
+        // Evitar bucle infinito si ya estamos en login
+        if (currentPath.StartsWith("login", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+        
+        // Redirigir a login con returnUrl si no estamos en la raíz
+        if (!string.IsNullOrEmpty(currentPath) && currentPath != "/")
+        {
+            NavigationManager.NavigateTo($"/login?returnUrl={Uri.EscapeDataString(currentPath)}");
+        }
+        else
+        {
+            NavigationManager.NavigateTo("/login");
+        }
+    }
+}

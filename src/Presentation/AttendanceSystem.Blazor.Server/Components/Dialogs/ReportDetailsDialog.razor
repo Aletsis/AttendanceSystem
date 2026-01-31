@@ -1,0 +1,79 @@
+@using MediatR
+@using AttendanceSystem.Application.Features.Attendance.Commands.SetDailyRestDayOverride
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudTable Items="@Records" Hover="true" Striped="true" Density="Density.Small">
+            <HeaderContent>
+                <MudTh>Fecha</MudTh>
+                <MudTh>Horario</MudTh>
+                <MudTh>Entrada</MudTh>
+                <MudTh>Salida</MudTh>
+                
+                @if (ReportType == "Retardos") { <MudTh>Retardo (min)</MudTh> }
+                @if (ReportType == "HorasExtra") { <MudTh>Extra (min)</MudTh> }
+                @if (ReportType == "DescansoTrabajado") { <MudTh>Tipo</MudTh> }
+                @if (ReportType == "HorasLaboradas") { <MudTh>Horas</MudTh> }
+                @if (ReportType == "DescansoErroneo") { <MudTh>Acciones</MudTh> }
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Date.ToShortDateString()</MudTd>
+                <MudTd>@context.ShiftName</MudTd>
+                <MudTd>@context.CheckIn</MudTd>
+                <MudTd>@context.CheckOut</MudTd>
+
+                @if (ReportType == "Retardos") { <MudTd Style="color:red">@context.LateMinutes</MudTd> }
+                @if (ReportType == "HorasExtra") { <MudTd Style="color:green">@context.OvertimeMinutes</MudTd> }
+                @if (ReportType == "DescansoTrabajado") { <MudTd>Descanso Trabajado</MudTd> }
+                @if (ReportType == "HorasLaboradas") { <MudTd>@context.WorkedHours</MudTd> }
+                @if (ReportType == "DescansoErroneo") 
+                { 
+                    <MudTd>
+                        @if (context.IsRestDay)
+                        {
+                             <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" OnClick="@(() => ToggleRestDay(context))">Hacer Laborable</MudButton>
+                        }
+                        else
+                        {
+                             <MudButton Variant="Variant.Filled" Color="Color.Success" Size="Size.Small" OnClick="@(() => ToggleRestDay(context))">Hacer Descanso</MudButton>
+                        }
+                    </MudTd> 
+                }
+            </RowTemplate>
+        </MudTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="Submit">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+
+    [Parameter] public List<AttendanceSystem.Application.DTOs.AdvancedReportDetailDto> Records { get; set; } = new();
+    [Parameter] public string ReportType { get; set; }
+
+    async Task ToggleRestDay(AttendanceSystem.Application.DTOs.AdvancedReportDetailDto item)
+    {
+        if (item.DailyAttendanceId == null) return;
+        
+        bool newStatus = !item.IsRestDay;
+        var command = new SetDailyRestDayOverrideCommand(item.DailyAttendanceId.Value, newStatus);
+        var result = await Mediator.Send(command);
+        
+        if (result)
+        {
+             Snackbar.Add(newStatus ? "Día marcado como Descanso." : "Día marcado como Laborable.", Severity.Success);
+             // Note: The UI won't update automatically because Records are immutable.
+             // We recommend closing and refreshing, or we could hack the DTO if it wasn't init-only.
+        }
+        else
+        {
+            Snackbar.Add("Error al actualizar.", Severity.Error);
+        }
+    }
+
+    void Submit() => MudDialog.Close(DialogResult.Ok(true));
+}

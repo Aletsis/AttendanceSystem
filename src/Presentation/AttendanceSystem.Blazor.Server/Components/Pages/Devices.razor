@@ -1,0 +1,241 @@
+@page "/devices"
+@using MediatR
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Devices.Queries.GetAllDevices
+@using AttendanceSystem.Application.Features.Devices.Commands.CreateDevice
+@using AttendanceSystem.Application.Features.Devices.Commands.UpdateDevice
+@using AttendanceSystem.Application.Features.Devices.Commands.RefreshDeviceInfo
+@using AttendanceSystem.Application.Features.Devices.Commands.ImportUsersFromDevice
+@using AttendanceSystem.Application.Abstractions
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Administrador")]
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Dispositivos</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h3" GutterBottom="true">Dispositivos</MudText>
+    <MudText Typo="Typo.subtitle1" Class="mb-4">Gestiona los relojes checadores del sistema.</MudText>
+
+    <MudTable Items="@_devices" Hover="true" Loading="@_loading" Filter="new Func<DeviceDto,bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Lista de Dispositivos</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_searchString" Placeholder="Buscar" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog" Class="ml-4">Nuevo Dispositivo</MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>IP</MudTh>
+            <MudTh>Puerto</MudTh>
+            <MudTh>Ubicación</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Última Descarga</MudTh>
+            <MudTh>Acciones</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Name</MudTd>
+            <MudTd DataLabel="IP">@context.IpAddress</MudTd>
+            <MudTd DataLabel="Puerto">@context.Port</MudTd>
+            <MudTd DataLabel="Ubicación">@context.Location</MudTd>
+            <MudTd DataLabel="Estado">
+                <MudChip T="string" Color="@GetStatusColor(context.Status)" Size="Size.Small">@context.Status</MudChip>
+            </MudTd>
+            <MudTd DataLabel="Última Descarga">@(context.LastDownloadAt?.ToString("g") ?? "Nunca")</MudTd>
+            <MudTd DataLabel="Acciones">
+                <MudTooltip Text="Sincronizar Empleados">
+                    <MudIconButton Icon="@Icons.Material.Filled.PersonAdd" Color="Color.Secondary" OnClick="@(() => SyncEmployees(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Ver Detalles">
+                    <MudIconButton Icon="@Icons.Material.Filled.Info" Color="Color.Primary" OnClick="@(() => OpenDetailsDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Actualizar Información">
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Info" OnClick="@(() => RefreshDevice(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Editar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private IEnumerable<DeviceDto> _devices = new List<DeviceDto>();
+    private bool _loading = true;
+    private string _searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDevices();
+    }
+
+    private async Task LoadDevices()
+    {
+        _loading = true;
+        var result = await Sender.Send(new GetAllDevicesQuery());
+        if (result.IsSuccess)
+        {
+            _devices = result.Value;
+        }
+        else
+        {
+            Snackbar.Add($"Error al cargar dispositivos: {result.Error}", Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private bool FilterFunc(DeviceDto device)
+    {
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+        if (device.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (device.IpAddress.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (device.Location?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        return false;
+    }
+
+    private Color GetStatusColor(string status)
+    {
+        return status switch
+        {
+            "Online" or "En Línea" => Color.Success,
+            "Offline" or "Desconectado" => Color.Dark,
+            "Error" => Color.Error,
+            _ => Color.Default
+        };
+    }
+
+    private async Task SyncEmployees(DeviceDto device)
+    {
+        bool? result = await DialogService.ShowMessageBox(
+            "Confirmar Sincronización", 
+            $"¿Está seguro de que desea IMPORTAR los usuarios y datos biométricos del dispositivo '{device.Name}' a la Base de Datos?\nEsto puede tomar unos momentos.", 
+            yesText: "Importar", cancelText: "Cancelar");
+
+        if (result == true)
+        {
+            Snackbar.Add($"Importando usuarios de {device.Name}...", Severity.Info);
+            
+            try
+            {
+                var command = new ImportUsersFromDeviceCommand(device.DeviceId); 
+                var syncResult = await Sender.Send(command);
+
+                if (syncResult.IsSuccess)
+                {
+                    Snackbar.Add($"Sincronización completada. {syncResult.Value} empleados actualizados/procesados.", Severity.Success);
+                }
+                else
+                {
+                    Snackbar.Add($"Error al sincronizar: {syncResult.Error}", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Excepción al sincronizar: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters();
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<DeviceDialog>("Nuevo Dispositivo", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is CreateDeviceCommand command)
+        {
+             var createResult = await Sender.Send(command);
+             if (createResult.IsSuccess)
+             {
+                 Snackbar.Add("Dispositivo creado correctamente", Severity.Success);
+                 await LoadDevices();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al crear: {createResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task OpenEditDialog(DeviceDto device)
+    {
+        var parameters = new DialogParameters
+        {
+            { "DeviceId", device.DeviceId },
+            { "Name", device.Name },
+            { "IpAddress", device.IpAddress },
+            { "Port", device.Port },
+            { "Location", device.Location },
+            { "ShouldClearAfterDownload", device.ShouldClearAfterDownload },
+            { "DownloadMethod", device.DownloadMethod }
+        };
+        
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<DeviceDialog>("Editar Dispositivo", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is UpdateDeviceCommand command)
+        {
+             var updateResult = await Sender.Send(command);
+             if (updateResult.IsSuccess)
+             {
+                 Snackbar.Add("Dispositivo actualizado correctamente", Severity.Success);
+                 await LoadDevices();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al actualizar: {updateResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task OpenDetailsDialog(DeviceDto device)
+    {
+        var parameters = new DialogParameters<DeviceDetailsDialog>();
+        parameters.Add(x => x.Device, device);
+
+        var options = new DialogOptions 
+        { 
+            MaxWidth = MaxWidth.Medium, 
+            FullWidth = true,
+            CloseButton = true
+        };
+
+        await DialogService.ShowAsync<DeviceDetailsDialog>("Detalles del Dispositivo", parameters, options);
+    }
+
+    private async Task RefreshDevice(DeviceDto device)
+    {
+        Snackbar.Add($"Conectando con {device.Name}...", Severity.Info);
+        try 
+        {
+            var result = await Sender.Send(new RefreshDeviceInfoCommand(Guid.Parse(device.DeviceId)));
+            if (result.IsSuccess)
+            {
+                Snackbar.Add($"Información actualizada correctamente", Severity.Success);
+                await LoadDevices();
+            }
+            else
+            {
+                Snackbar.Add($"No se pudo actualizar: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al actualizar: {ex.Message}", Severity.Error);
+        }
+    }
+}

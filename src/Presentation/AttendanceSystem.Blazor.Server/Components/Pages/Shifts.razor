@@ -1,0 +1,172 @@
+@page "/shifts"
+@using MediatR
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Domain.Enumerations
+@using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
+@using AttendanceSystem.Application.Features.Shifts.Commands.CreateShift
+@using AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Domain.ValueObjects
+@using AttendanceSystem.Application.Features.Shifts.Commands.DeleteShift
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Horarios</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h3" GutterBottom="true">Horarios y Turnos</MudText>
+    <MudText Typo="Typo.subtitle1" Class="mb-4">Gestiona los horarios laborales.</MudText>
+
+    <MudTable Items="@_shifts" Hover="true" Loading="@_loading" Filter="new Func<ShiftDto,bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Lista de Turnos</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_searchString" Placeholder="Buscar" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog" Class="ml-4">Nuevo Turno</MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Inicio</MudTh>
+            <MudTh>Fin</MudTh>
+            <MudTh>Duración</MudTh>
+            <MudTh>Tolerancia</MudTh>
+            <MudTh>Tipo</MudTh>
+            <MudTh>Acciones</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Name</MudTd>
+            <MudTd DataLabel="Inicio">@context.StartTime.ToString(@"hh\:mm")</MudTd>
+            <MudTd DataLabel="Fin">@context.EndTime.ToString(@"hh\:mm")</MudTd>
+            <MudTd DataLabel="Duración">@context.WorkHours.ToString(@"hh\:mm")</MudTd>
+            <MudTd DataLabel="Tolerancia">@context.ToleranceMinutes min</MudTd>
+            <MudTd DataLabel="Tipo">@context.ShiftType</MudTd>
+            <MudTd DataLabel="Acciones">
+                <MudTooltip Text="Editar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Eliminar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteShift(context))" Size="Size.Small" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private IEnumerable<ShiftDto> _shifts = new List<ShiftDto>();
+    private bool _loading = true;
+    private string _searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadShifts();
+    }
+
+    private async Task LoadShifts()
+    {
+        _loading = true;
+        var result = await Sender.Send(new GetShiftsQuery());
+        if (result.IsSuccess)
+        {
+            _shifts = result.Value;
+        }
+        else
+        {
+            Snackbar.Add($"Error al cargar turnos: {result.Error}", Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private bool FilterFunc(ShiftDto shift)
+    {
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+        if (shift.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters();
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<ShiftDialog>("Nuevo Turno", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is CreateShiftCommand command)
+        {
+             var createResult = await Sender.Send(command);
+             if (createResult.IsSuccess)
+             {
+                 Snackbar.Add("Turno creado correctamente", Severity.Success);
+                 await LoadShifts();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al crear: {createResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task OpenEditDialog(ShiftDto shift)
+    {
+        var parameters = new DialogParameters
+        {
+            { "ShiftId", shift.Id },
+            { "Name", shift.Name },
+            { "StartTime", shift.StartTime },
+            { "WorkHours", shift.WorkHours },
+            { "ToleranceMinutes", shift.ToleranceMinutes },
+            { "ShiftType", shift.ShiftType }
+        };
+        
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<ShiftDialog>("Editar Turno", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled && result.Data is UpdateShiftCommand command)
+        {
+             var updateResult = await Sender.Send(command);
+             if (updateResult.IsSuccess)
+             {
+                 Snackbar.Add("Turno actualizado correctamente", Severity.Success);
+                 await LoadShifts();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al actualizar: {updateResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task DeleteShift(ShiftDto shift)
+    {
+        var confirmed = await DialogService.ShowMessageBox(
+            "Eliminar Turno", 
+            $"¿Estás seguro que deseas eliminar el turno '{shift.Name}'?", 
+            yesText: "Eliminar", cancelText: "Cancelar", noText: null,
+            options: new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraSmall });
+
+        if (confirmed == true)
+        {
+            var command = new DeleteShiftCommand(ShiftId.From(shift.Id));
+            var result = await Sender.Send(command);
+
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Turno eliminado correctamente", Severity.Success);
+                await LoadShifts();
+            }
+            else
+            {
+                Snackbar.Add($"Error al eliminar turno: {result.Error}", Severity.Error);
+            }
+        }
+    }
+}

@@ -1,0 +1,39 @@
+@using AttendanceSystem.Domain.Aggregates.ShiftAggregate
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-4">Seleccione el nuevo turno para el día <b>@Values.Date.ToString("dd/MM/yyyy")</b> para <b>@Values.EmployeeName</b>.</MudText>
+        
+        <MudSelect T="Guid" Label="Turno" @bind-Value="SelectedShiftId" Required="true" AnchorOrigin="Origin.BottomCenter">
+            @foreach (var shift in Shifts)
+            {
+                <MudSelectItem Value="@shift.Id">@shift.Name (@shift.StartTime.ToString(@"hh\:mm") - @shift.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(SelectedShiftId == Guid.Empty)">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+    
+    [Parameter] public ChangeShiftCallbackValues Values { get; set; } = null!;
+    [Parameter] public List<AttendanceSystem.Application.DTOs.ShiftDto> Shifts { get; set; } = new();
+
+    private Guid SelectedShiftId;
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (SelectedShiftId != Guid.Empty)
+        {
+            MudDialog.Close(DialogResult.Ok(SelectedShiftId));
+        }
+    }
+
+    public record ChangeShiftCallbackValues(string EmployeeName, DateOnly Date);
+}

@@ -1,0 +1,267 @@
+using MediatR;
+using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
+using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
+using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
+using Microsoft.Extensions.Logging;
+
+namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
+
+
+public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDailyAttendanceCommand, int>
+{
+    private readonly IDailyAttendanceRepository _dailyRepo;
+    private readonly IAttendanceRepository _attendanceRepo;
+    private readonly IEmployeeRepository _employeeRepo;
+    private readonly IShiftRepository _shiftRepo;
+    private readonly IUnitOfWork _unitOfWork;
+    private readonly ILogger<ProcessDailyAttendanceCommandHandler> _logger;
+
+    public ProcessDailyAttendanceCommandHandler(
+        IDailyAttendanceRepository dailyRepo,
+        IAttendanceRepository attendanceRepo,
+        IEmployeeRepository employeeRepo,
+        IShiftRepository shiftRepo,
+        IUnitOfWork unitOfWork,
+        ILogger<ProcessDailyAttendanceCommandHandler> logger)
+    {
+        _dailyRepo = dailyRepo;
+        _attendanceRepo = attendanceRepo;
+        _employeeRepo = employeeRepo;
+        _shiftRepo = shiftRepo;
+        _unitOfWork = unitOfWork;
+        _logger = logger;
+    }
+
+
+    public async Task<int> Handle(ProcessDailyAttendanceCommand request, CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Iniciando procesamiento de asistencia diaria. Rango: {StartDate} - {EndDate}, BranchId: {BranchId}, EmployeeId: {EmployeeId}",
+            request.StartDate,
+            request.EndDate,
+            request.BranchId?.Value,
+            request.EmployeeId?.Value);
+
+        int processedCount = 0;
+        
+        // 1. Get all employees
+        var employees = (await _employeeRepo.GetAllAsync(cancellationToken)).ToList();
+        _logger.LogDebug("Obtenidos {EmployeeCount} empleados de la base de datos", employees.Count);
+
+        // Filter by Branch if specified
+        if (request.BranchId != null)
+        {
+            employees = employees.Where(e => e.BranchId == request.BranchId).ToList();
+            _logger.LogDebug("Filtrado por sucursal {BranchId}: {EmployeeCount} empleados", request.BranchId.Value, employees.Count);
+        }
+
+        // Filter by Employee if specified
+        if (request.EmployeeId != null)
+        {
+            employees = employees.Where(e => e.Id == request.EmployeeId).ToList();
+            _logger.LogDebug("Filtrado por empleado {EmployeeId}: {EmployeeCount} empleados", request.EmployeeId.Value, employees.Count);
+        }
+        
+        var totalDays = (request.EndDate.Date - request.StartDate.Date).Days + 1;
+        _logger.LogInformation(
+            "Procesando asistencia para {EmployeeCount} empleados durante {DayCount} días",
+            employees.Count,
+            totalDays);
+        
+        // 2. Iterate dates
+        for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
+        {
+            foreach (var employee in employees)
+            {
+                // Skip if not active? 
+                if (employee.Status != EmployeeStatus.Alta) continue; // Basic filter
+
+                // 3. Determine Shift & Search Scope Logic
+                Shift? shift = null;
+                bool isRestDay = false;
+                var searchStartDate = DateOnly.FromDateTime(date);
+                var searchEndDate = searchStartDate; // Default to single day
+
+                if (employee.RestDay.HasValue)
+                {
+                    // Map DayOfWeek
+                    var dayOfWeek = (AttendanceSystem.Domain.Enumerations.WeekDay)(int)date.DayOfWeek; 
+                    if (employee.RestDay == dayOfWeek)
+                    {
+                        isRestDay = true;
+                    }
+                }
+
+                if (!isRestDay && employee.ScheduleId != null)
+                {
+                    shift = await _shiftRepo.GetByIdAsync(employee.ScheduleId, cancellationToken);
+                }
+
+                // Check for Night Shift (e.g., 22:00 - 06:00)
+                // If it's a night shift, we extend search to the next day to catch the exit
+                bool isNightShift = false;
+                if (shift != null && shift.EndTime < shift.StartTime)
+                {
+                    isNightShift = true;
+                    searchEndDate = searchStartDate.AddDays(1);
+                }
+
+                // 4. Fetch Records
+                var recordsEnumerable = await _attendanceRepo.GetByDateRangeAsync(searchStartDate, searchEndDate, employee.Id, cancellationToken);
+                // Important: If night shift, we might have many records. Use List to process.
+                var records = recordsEnumerable.OrderBy(r => r.CheckTime).ToList();
+
+                // 5. Determine Actual In/Out
+                DateTime? checkIn = null;
+                DateTime? checkOut = null;
+                AttendanceRecord? checkInRecord = null;
+                AttendanceRecord? checkOutRecord = null;
+
+                if (shift != null && !isRestDay && records.Any())
+                {
+                    // "Best Fit" Logic using Scheduled Times
+                    var scheduledIn = date.Add(shift.StartTime);
+                    var scheduledOut = date.Add(shift.EndTime);
+                    if (isNightShift) 
+                    { 
+                        scheduledOut = scheduledOut.AddDays(1); 
+                    }
+
+                    // Define a tolerance window to associate a record with a shift event (e.g. 14 hours)
+                    // This allows for significant overtime (e.g. working 15 hours on an 8 hour shift)
+                    double maxDistanceMinutes = 840; 
+
+                    // Find best candidate for IN
+                    // We look for the record closest to scheduledIn
+                    var matchIn = records
+                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+                        .Where(x => x.Diff <= maxDistanceMinutes)
+                        .OrderBy(x => x.Diff)
+                        .FirstOrDefault();
+
+                    if (matchIn != null)
+                    {
+                        checkInRecord = matchIn.Record;
+                        checkIn = matchIn.Record.CheckTime;
+                    }
+
+                    // Find best candidate for OUT
+                    // We look for the record closest to scheduledOut
+                    var matchOut = records
+                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+                        .Where(x => x.Diff <= maxDistanceMinutes)
+                        .OrderBy(x => x.Diff)
+                        .FirstOrDefault();
+
+                    if (matchOut != null)
+                    {
+                        // Check for overlap: If the SAME record matches both In and Out (rare but possible if short shift or single punch)
+                        if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                        {
+                            // It matched both. Decide based on which is closer.
+                            if (matchOut.Diff < matchIn!.Diff)
+                            {
+                                // Closer to Out -> It's an Out
+                                checkOutRecord = matchOut.Record;
+                                checkOut = matchOut.Record.CheckTime;
+                                checkIn = null;
+                                checkInRecord = null;
+                            }
+                            // Else keep as In
+                        }
+                        else
+                        {
+                            checkOutRecord = matchOut.Record;
+                            checkOut = matchOut.Record.CheckTime;
+                        }
+                    }
+
+                    // Logic Check: Ensure Out is after In
+                    if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
+                    {
+                         // If Out is <= In, keep the one with smaller Diff, discard the other to avoid logical error
+                         // Or just discard Out as invalid? 
+                         // Let's discard the one that has the larger deviation from its target.
+                         double diffIn = Math.Abs((checkIn.Value - scheduledIn).TotalMinutes);
+                         double diffOut = Math.Abs((checkOut.Value - scheduledOut).TotalMinutes);
+
+                         if (diffIn <= diffOut)
+                         {
+                             checkOut = null;
+                             checkOutRecord = null;
+                         }
+                         else
+                         {
+                             checkIn = null;
+                             checkInRecord = null;
+                         }
+                    }
+                }
+                else if (records.Any())
+                {
+                    // Fallback for No-Shift / Rest Day: use simple First/Last of the *first* day (searchStartDate)
+                    // Filter to date only to behave like calendar day
+                    var dayRecords = records.Where(r => r.CheckTime.Date == date.Date).ToList();
+
+                    if (dayRecords.Any())
+                    {
+                        var first = dayRecords.First();
+                        checkIn = first.CheckTime;
+                        checkInRecord = first;
+
+                        if (dayRecords.Count > 1)
+                        {
+                            var last = dayRecords.Last();
+                            checkOut = last.CheckTime;
+                            checkOutRecord = last;
+                        }
+                    }
+                }
+
+                // Marcar registros como procesados
+                if (checkInRecord != null && checkInRecord.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
+                {
+                    checkInRecord.MarkAsProcessed();
+                    await _attendanceRepo.UpdateAsync(checkInRecord, cancellationToken);
+                }
+
+                if (checkOutRecord != null && checkOutRecord.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
+                {
+                    checkOutRecord.MarkAsProcessed();
+                    await _attendanceRepo.UpdateAsync(checkOutRecord, cancellationToken);
+                }
+
+                // 6. Create DailyAttendance
+                var dailyAttendance = DailyAttendance.Create(
+                    employee.Id,
+                    date,
+                    shift,
+                    checkIn,
+                    checkOut,
+                    isRestDay,
+                    checkInRecord?.Id,
+                    checkOutRecord?.Id);
+
+                // 7. Save or Update
+                var existing = await _dailyRepo.GetByEmployeeAndDateAsync(employee.Id, date, cancellationToken);
+                if (existing != null)
+                {
+                    _dailyRepo.Remove(existing);
+                }
+                
+                _dailyRepo.Add(dailyAttendance);
+                processedCount++;
+            }
+        }
+        
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        
+        _logger.LogInformation(
+            "Procesamiento de asistencia diaria completado. Registros procesados: {ProcessedCount}",
+            processedCount);
+        
+        return processedCount;
+    }
+}

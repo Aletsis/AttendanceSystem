@@ -1,0 +1,53 @@
+@using System.ComponentModel.DataAnnotations
+@using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="form" @bind-IsValid="@success">
+            <MudGrid>
+                <MudItem xs="12">
+                    <MudText>Agregando registro manual para: <b>@Values.EmployeeName</b></MudText>
+                    <MudText>Fecha: <b>@Values.Date.ToString("dd/MM/yyyy")</b></MudText>
+                </MudItem>
+                <MudItem xs="12">
+                    <MudTimePicker Label="Hora" @bind-Time="Time" Required="true" AmPm="false" />
+                </MudItem>
+                <MudItem xs="12">
+                     <MudSelect Label="Tipo" @bind-Value="Type" Required="true" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem Value="@("Entrada")">Entrada</MudSelectItem>
+                        <MudSelectItem Value="@("Salida")">Salida</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!success)">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public ManualLogCallbackValues Values { get; set; } = null!;
+
+    private MudForm form = default!;
+    private bool success;
+    private TimeSpan? Time = DateTime.Now.TimeOfDay;
+    private string Type = "Entrada";
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (Time.HasValue)
+        {
+            var dateTime = Values.Date.ToDateTime(TimeOnly.FromTimeSpan(Time.Value));
+            MudDialog.Close(DialogResult.Ok(new ManualLogResult(dateTime, Type)));
+        }
+    }
+
+    public record ManualLogCallbackValues(string EmployeeName, DateOnly Date);
+    public record ManualLogResult(DateTime DateTime, string Type);
+}

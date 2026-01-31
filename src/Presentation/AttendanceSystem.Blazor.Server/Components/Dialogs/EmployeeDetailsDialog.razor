@@ -1,0 +1,184 @@
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Devices.Queries.GetAllDevices
+@using AttendanceSystem.Application.Features.Devices.Commands.SendEmployeeToDevice
+@using AttendanceSystem.Domain.Enumerations
+@using MediatR
+@using MudBlazor
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+        }
+        else if (_employee == null)
+        {
+            <MudAlert Severity="Severity.Error">No se encontró el empleado.</MudAlert>
+        }
+        else
+        {
+            <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-4">
+                <MudTabPanel Text="Información General">
+                    <MudGrid>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">ID</MudText>
+                            <MudText>@_employee.Id</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Nombre Completo</MudText>
+                            <MudText>@_employee.FullName</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Departamento / Puesto</MudText>
+                            <MudText>@_employee.DepartmentName / @_employee.PositionName</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Sucursal</MudText>
+                            <MudText>@_employee.BranchName</MudText>
+                        </MudItem>
+                         <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Fecha Ingreso</MudText>
+                            <MudText>@_employee.HireDate.ToShortDateString()</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Estado</MudText>
+                             <MudChip T="string" Color="@(_employee.Status == EmployeeStatus.Alta ? Color.Success : Color.Error)" Size="Size.Small">
+                                @_employee.Status
+                            </MudChip>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+                <MudTabPanel Text="Biometría y Acceso">
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.subtitle2">Número de Tarjeta</MudText>
+                            <MudText>@(_employee.CardNumber ?? "No registrado")</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.subtitle2">Contraseña Dispositivo</MudText>
+                            <MudText>@(_employee.DevicePassword ?? "No establecida")</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.subtitle2">Huellas Registradas</MudText>
+                            <MudText>@_employee.FingerprintCount</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.subtitle2">Rostro Registrado</MudText>
+                            <MudChip T="string" Color="@(_employee.HasFace ? Color.Success : Color.Default)" Size="Size.Small">
+                                @(_employee.HasFace ? "Sí" : "No")
+                            </MudChip>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+                <MudTabPanel Text="Sincronización">
+                    <MudText Typo="Typo.body1" Class="mb-4">Enviar datos de este empleado (incluyendo biometría) a un dispositivo:</MudText>
+                    
+                    <MudGrid>
+                        <MudItem xs="12">
+                             <MudSelect T="string" Label="Seleccionar Dispositivo" @bind-Value="_selectedDeviceId" AnchorOrigin="Origin.BottomCenter">
+                                @foreach (var device in _devices)
+                                {
+                                    var statusIcon = device.Status == "En Línea" ? "🟢" : "🔴";
+                                    <MudSelectItem Value="@device.DeviceId">@statusIcon @device.Name (@device.IpAddress) - @device.Status</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" Class="d-flex justify-end">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" 
+                                       StartIcon="@Icons.Material.Filled.Send" 
+                                       OnClick="SendToDevice" 
+                                       Disabled="@(string.IsNullOrEmpty(_selectedDeviceId) || _sending)">
+                                @(_sending ? "Enviando..." : "Enviar a Dispositivo")
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+                </MudTabPanel>
+            </MudTabs>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string EmployeeId { get; set; } = string.Empty;
+
+    private EmployeeDto? _employee;
+    private List<DeviceDto> _devices = new();
+    private bool _loading = true;
+    private string _selectedDeviceId = "";
+    private bool _sending = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        _loading = true;
+        
+        // Load Employee
+        var empResult = await Sender.Send(new GetEmployeeByIdQuery(EmployeeId));
+        if (empResult.IsSuccess)
+        {
+            _employee = empResult.Value;
+        }
+        else
+        {
+            Snackbar.Add($"Error al cargar empleado: {empResult.Error}", Severity.Error);
+            MudDialog.Cancel();
+            return;
+        }
+
+        // Load Devices
+        var devResult = await Sender.Send(new GetAllDevicesQuery());
+        if (devResult.IsSuccess)
+        {
+            _devices = devResult.Value.Where(d => d.IsActive).ToList();
+        }
+
+        _loading = false;
+    }
+
+    private async Task SendToDevice()
+    {
+        if (string.IsNullOrEmpty(_selectedDeviceId)) return;
+
+        _sending = true;
+        StateHasChanged();
+
+        var device = _devices.FirstOrDefault(d => d.DeviceId == _selectedDeviceId);
+        
+        try
+        {
+            var result = await Sender.Send(new SendEmployeeToDeviceCommand(EmployeeId, _selectedDeviceId));
+            
+            if (result.IsSuccess)
+            {
+                Snackbar.Add($"Empleado enviado exitosamente a {device?.Name}", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Error al enviar: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excepción: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+            StateHasChanged();
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

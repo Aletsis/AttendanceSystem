@@ -1,0 +1,185 @@
+@using AttendanceSystem.Application.Features.Branches.Commands.CreateBranch
+@using AttendanceSystem.Application.Features.Branches.Commands
+@using ClosedXML.Excel
+@using MediatR
+@using Microsoft.AspNetCore.Components.Forms
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-4">
+            Suba un archivo Excel (.xlsx) con los datos de las sucursales.
+            <br />
+            <b>Columnas requeridas:</b> Nombre, Descripción, Dirección.
+        </MudText>
+
+        <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                    Seleccionar Archivo
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+
+        @if (_processing)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+            <MudText Class="mt-2">Procesando archivo... @(_progressText)</MudText>
+        }
+        
+        @if (_summary.Any())
+        {
+             <MudAlert Severity="Severity.Info" Class="mt-2">Resultados de la importación:</MudAlert>
+             <MudList T="string" Dense="true" ReadOnly="true">
+                 @foreach(var item in _summary)
+                 {
+                     <MudListItem Text="@item" />
+                 }
+             </MudList>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private bool _processing = false;
+    private string _progressText = "";
+    private List<string> _summary = new();
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task UploadFiles(IBrowserFile file)
+    {
+        if (file == null) return;
+
+        _processing = true;
+        _summary.Clear();
+        _progressText = "Leyendo archivo...";
+        await InvokeAsync(StateHasChanged);
+
+        long maxFileSize = 1024 * 1024 * 10; 
+
+        try
+        {
+            using var stream = new MemoryStream();
+            await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
+            stream.Position = 0;
+
+            if (file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                await ProcessExcel(stream);
+            }
+            else
+            {
+                Snackbar.Add("Formato no soportado. Use .xlsx", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al subir: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _processing = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ProcessExcel(Stream stream)
+    {
+        int successCount = 0;
+        int errorCount = 0;
+        var errorMessages = new List<string>();
+
+        var commands = new List<CreateBranchCommand>();
+
+        // 1. CPU Bound: Parse Excel
+        try 
+        {
+            await Task.Run(() =>
+            {
+                using var workbook = new XLWorkbook(stream);
+                var worksheet = workbook.Worksheets.FirstOrDefault();
+                if (worksheet == null) return;
+
+                var range = worksheet.RangeUsed();
+                if (range == null) return;
+
+                var rows = range.RowsUsed().Skip(1); 
+                foreach (var row in rows)
+                {
+                    try
+                    {
+                        var nombre = row.Cell(1).GetValue<string>();
+                        var descripcion = row.Cell(2).GetValue<string>();
+                        var direccion = row.Cell(3).GetValue<string>();
+
+                        if (!string.IsNullOrWhiteSpace(nombre))
+                        {
+                            commands.Add(new CreateBranchCommand(nombre, descripcion, direccion));
+                        }
+                    }
+                    catch
+                    {
+                        // Ignore parse errors for now or log
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+             _summary.Add($"Error leyendo Excel: {ex.Message}");
+             return;
+        }
+
+        // 2. I/O Bound: Send Commands
+        _progressText = $"Importando {commands.Count} registros...";
+        await InvokeAsync(StateHasChanged);
+
+        foreach (var command in commands)
+        {
+             try 
+             {
+                 var result = await Mediator.Send(command);
+                 if (result.IsSuccess)
+                     successCount++;
+                 else
+                 {
+                     errorCount++;
+                     if(errorMessages.Count < 5) errorMessages.Add($"Error: {result.Error}");
+                 }
+             }
+             catch(Exception ex)
+             {
+                 errorCount++;
+                 if(errorMessages.Count < 5) errorMessages.Add($"Excepción: {ex.Message}");
+             }
+        }
+
+        _summary.Add($"Importación completada.");
+        _summary.Add($"Exitosos: {successCount}");
+        _summary.Add($"Fallidos: {errorCount}");
+        foreach (var err in errorMessages) _summary.Add(err);
+
+        if (errorCount > 0 && errorMessages.Count >= 5) _summary.Add("...");
+        
+        if (successCount > 0)
+        {
+             Snackbar.Add($"Se importaron {successCount} sucursales.", Severity.Success);
+             MudDialog.Close(DialogResult.Ok(true));
+        }
+        else if (errorCount > 0)
+        {
+             Snackbar.Add("Hubo errores en la importación.", Severity.Warning);
+        }
+        else
+        {
+             Snackbar.Add("No se encontraron registros válidos para importar.", Severity.Info);
+        }
+    }
+}

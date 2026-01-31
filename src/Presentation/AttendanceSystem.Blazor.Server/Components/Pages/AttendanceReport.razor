@@ -1,0 +1,225 @@
+@page "/attendance/reports"
+@using MediatR
+@using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Domain.ValueObjects
+@using AttendanceSystem.Blazor.Server.Services
+@using AttendanceSystem.Application.Features.Employees
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+@inject ReportExportService ExportService
+@inject IJSRuntime JS
+
+<MudText Typo="Typo.h5" Class="mb-4">Reporte de Asistencia</MudText>
+
+<MudGrid>
+    <MudItem xs="12" sm="3">
+        <MudDatePicker Label="Desde" @bind-Date="StartDate" />
+    </MudItem>
+    <MudItem xs="12" sm="3">
+        <MudDatePicker Label="Hasta" @bind-Date="EndDate" />
+    </MudItem>
+    <MudItem xs="12" sm="3">
+        <MudSelect T="Guid?" Label="Sucursal" Value="SelectedBranchId" ValueChanged="OnBranchChanged" Clearable="true" AdornmentColor="Color.Primary">
+            <MudSelectItem T="Guid?" Value="null">Todas</MudSelectItem>
+            @foreach (var branch in Branches)
+            {
+                <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" sm="3">
+        <MudAutocomplete T="EmployeeDto" 
+                        Label="Empleado (Busque por ID o Nombre)"
+                        @bind-Value="SelectedEmployeeObj" 
+                        SearchFunc="@SearchEmployees"
+                        ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
+                        Clearable="true"
+                        AdornmentColor="Color.Primary"
+                        ResetValueOnEmptyText="true" />
+    </MudItem>
+    
+    <MudItem xs="12" Class="d-flex align-center justify-end">
+        <MudButton Variant="Variant.Filled" Color="Color.Surface" OnClick="ExportPdf" Class="mr-2" StartIcon="@Icons.Material.Filled.PictureAsPdf">PDF</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="ExportExcel" Class="mr-2" StartIcon="@Icons.Material.Filled.TableView">Excel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData" Class="mr-2">Ver Reporte</MudButton>
+    </MudItem>
+</MudGrid>
+
+<MudDataGrid Items="@AttendanceList" WebConfig="false" @bind-FilteredItems="_filteredVisibleItems" Filterable="true" Sortable="true" Class="mt-4">
+    <Columns>
+        <PropertyColumn T="AttendanceReportViewDto" TProperty="string" Property="x => x.EmployeeId" Title="ID" SortBy="@SortByEmployeeId" />
+        <PropertyColumn Property="x => x.EmployeeName" Title="Empleado" />
+        <PropertyColumn Property="x => x.Date" Title="Fecha" Format="dd/MM/yyyy" />
+        <PropertyColumn Property="x => x.ShiftName" Title="Horario" />
+        <PropertyColumn Property="x => x.ScheduledCheckIn" Title="Entrada Prog." />
+        <PropertyColumn Property="x => x.ScheduledCheckOut" Title="Salida Prog." />
+        <PropertyColumn Property="x => x.ActualCheckIn" Title="Entrada Real" Format="HH:mm:ss" />
+        <PropertyColumn Property="x => x.ActualCheckOut" Title="Salida Real" Format="HH:mm:ss" />
+        <PropertyColumn Property="x => x.LateMinutes" Title="Retardo (min)" />
+        <PropertyColumn Property="x => x.RoundedOvertimeMinutes" Title="Extra (min)" />
+        <TemplateColumn Title="Estado">
+            <CellTemplate>
+                <div class="d-flex gap-1 flex-wrap">
+                @if (context.Item.IsAbsent) { <MudChip Color="Color.Error" Size="Size.Small">Falta</MudChip> }
+                @if (context.Item.IsRestDay) { <MudChip Color="Color.Info" Size="Size.Small">Descanso</MudChip> }
+                @if (context.Item.WorkedOnRestDay) { <MudChip Color="Color.Success" Size="Size.Small">Trabajo en Descanso</MudChip> }
+                @if (context.Item.MissingCheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Entrada</MudChip> }
+                @if (context.Item.MissingCheckOut) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Salida</MudChip> }
+                @if (context.Item.LateMinutes > 0) { <MudChip Color="Color.Warning" Size="Size.Small">Tarde</MudChip> }
+                </div>
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <PagerContent>
+        <MudDataGridPager T="AttendanceReportViewDto" />
+    </PagerContent>
+</MudDataGrid>
+
+@code {
+    private DateTime? StartDate = DateTime.Today;
+    private DateTime? EndDate = DateTime.Today;
+    private Guid? SelectedBranchId;
+    private EmployeeDto? SelectedEmployeeObj;
+
+    private List<AttendanceReportViewDto> AttendanceList = new();
+    private IEnumerable<AttendanceReportViewDto> _filteredVisibleItems;
+    private List<EmployeeDto> _allEmployees = new();
+    private List<BranchDto> Branches = new();
+    
+    // Cache for autocomplete
+    private List<EmployeeDto> FilteredEmployees => SelectedBranchId.HasValue
+        ? _allEmployees.Where(e => e.BranchId == SelectedBranchId.Value).ToList()
+        : _allEmployees;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var empResult = await Mediator.Send(new GetAllEmployeesQuery());
+        if (empResult.IsSuccess)
+        {
+            _allEmployees = empResult.Value.ToList();
+        }
+
+        var branchResult = await Mediator.Send(new GetBranchesQuery());
+        if (branchResult.IsSuccess)
+        {
+            Branches = branchResult.Value.ToList();
+        }
+
+        await LoadData();
+    }
+
+    private void OnBranchChanged(Guid? branchId)
+    {
+        SelectedBranchId = branchId;
+        SelectedEmployeeObj = null; 
+    }
+    
+    private Task<IEnumerable<EmployeeDto>> SearchEmployees(string value, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return Task.FromResult<IEnumerable<EmployeeDto>>(FilteredEmployees);
+        }
+
+        var result = FilteredEmployees.Where(e => 
+            e.Id.Contains(value, StringComparison.InvariantCultureIgnoreCase) || 
+            e.FullName.Contains(value, StringComparison.InvariantCultureIgnoreCase)
+        );
+        
+        return Task.FromResult(result);
+    }
+
+    private async Task LoadData()
+    {
+        if (StartDate == null || EndDate == null) return;
+        
+        var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
+        var employeeId = SelectedEmployeeObj?.Id;
+
+        // Note: Using Mediator to get view DTOs
+        var result = await Mediator.Send(new GetAttendanceReportQuery(
+            StartDate.Value, 
+            EndDate.Value,
+            branchId,
+            employeeId
+        ));
+
+        AttendanceList = result.ToList();
+    }
+
+    private async Task ExportExcel()
+    {
+        if (!AttendanceList.Any())
+        {
+            Snackbar.Add("No hay datos para exportar", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var data = _filteredVisibleItems != null && _filteredVisibleItems.Any() 
+                ? _filteredVisibleItems 
+                : AttendanceList;
+
+            var sortedData = data.OrderBy(x => 
+            {
+                 if (long.TryParse(x.EmployeeId, out var id)) return id;
+                 return long.MaxValue;
+            })
+            .ThenBy(x => x.EmployeeId)
+            .ThenBy(x => x.Date);
+
+            var bytes = ExportService.GenerateExcel(sortedData, StartDate.Value, EndDate.Value);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", $"ReporteAsistencia_{DateTime.Now:yyyyMMdd_HHmm}.xlsx", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar Excel: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ExportPdf()
+    {
+        if (!AttendanceList.Any())
+        {
+            Snackbar.Add("No hay datos para exportar", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var data = _filteredVisibleItems != null && _filteredVisibleItems.Any() 
+                 ? _filteredVisibleItems 
+                 : AttendanceList;
+                 
+            var sortedData = data.OrderBy(x => 
+            {
+                 if (long.TryParse(x.EmployeeId, out var id)) return id;
+                 return long.MaxValue;
+            })
+            .ThenBy(x => x.EmployeeId)
+            .ThenBy(x => x.Date);
+
+            var bytes = ExportService.GeneratePdf(sortedData, StartDate.Value, EndDate.Value);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", $"ReporteAsistencia_{DateTime.Now:yyyyMMdd_HHmm}.pdf", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar PDF: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private object SortByEmployeeId(AttendanceReportViewDto item)
+    {
+        if (long.TryParse(item.EmployeeId, out var id))
+            return id;
+        return item.EmployeeId;
+    }
+}

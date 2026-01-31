@@ -1,0 +1,452 @@
+@page "/attendance/manual-logs"
+@using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
+@using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.DTOs
+@using ClosedXML.Excel
+@using MediatR
+@using Microsoft.AspNetCore.Components.Forms
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h5" Class="mb-4">Registro Manual de Logs</MudText>
+
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
+    <MudTabPanel Text="Asignación Masiva">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudDateRangePicker Label="Rango de Fechas" @bind-DateRange="_dateRange" />
+            </MudItem>
+            <MudItem xs="12" sm="6" Class="d-flex gap-4">
+                <MudTimePicker Label="Hora" @bind-Time="_time" />
+                <MudSelect T="string" Label="Tipo" @bind-Value="_type" AnchorOrigin="Origin.BottomCenter">
+                    <MudSelectItem Value="@("Entrada")">Entrada</MudSelectItem>
+                    <MudSelectItem Value="@("Salida")">Salida</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudSelect T="Guid?" Label="Filtrar por Sucursal" Value="_selectedBranchId" ValueChanged="OnBranchChanged" Clearable="true">
+                    <MudSelectItem T="Guid?" Value="null">Todas</MudSelectItem>
+                    @foreach (var branch in _branches)
+                    {
+                        <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" Label="Empleados" MultiSelection="true" @bind-SelectedValues="_selectedEmployeeIds" 
+                           SelectAllText="Seleccionar Todos" MultiSelectionTextFunc="@(new Func<List<string>, string>(GetMultiSelectionText))"
+                           AdornmentIcon="@Icons.Material.Filled.Search">
+                    @foreach (var emp in _filteredEmployees)
+                    {
+                        <MudSelectItem T="string" Value="@emp.Id">@emp.Id - @emp.FullName</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" Class="d-flex justify-end mt-4">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ProcessBulkAssignment" Disabled="_processing">
+                    @if (_processing)
+                    {
+                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                        <MudText Class="ms-2">Procesando...</MudText>
+                    }
+                    else
+                    {
+                        <MudText>Registrar Logs</MudText>
+                    }
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudTabPanel>
+    
+    <MudTabPanel Text="Importar Archivo (Excel/CSV)">
+        <MudText Typo="Typo.body1" Class="mb-4">
+            Suba un archivo Excel (.xlsx) con las columnas: <b>EmployeeId</b>, <b>Date</b> (dd/MM/yyyy), <b>Time</b> (HH:mm), <b>Type</b> (Entrada/Salida).
+        </MudText>
+        
+        <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx, .csv">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                    Seleccionar Archivo
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+        
+        @if (_processingImport)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+            <MudText Class="mt-2">Procesando archivo...</MudText>
+        }
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private DateRange _dateRange = new DateRange(DateTime.Today, DateTime.Today);
+    private TimeSpan? _time = new TimeSpan(8, 0, 0); // Default 8:00 AM
+    private string _type = "Entrada";
+    private Guid? _selectedBranchId;
+    private IEnumerable<string> _selectedEmployeeIds = new HashSet<string>();
+    
+    private List<BranchDto> _branches = new();
+    private List<EmployeeDto> _allEmployees = new();
+    private List<EmployeeDto> _filteredEmployees = new();
+    
+    private bool _processing = false;
+    private bool _processingImport = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var branchesResult = await Mediator.Send(new GetBranchesQuery());
+        if (branchesResult.IsSuccess) _branches = branchesResult.Value.ToList();
+
+        var employeesResult = await Mediator.Send(new GetAllEmployeesQuery());
+        if (employeesResult.IsSuccess) _allEmployees = employeesResult.Value.ToList();
+        
+        UpdateFilteredEmployees();
+    }
+
+    private void OnBranchChanged(Guid? branchId)
+    {
+        _selectedBranchId = branchId;
+        UpdateFilteredEmployees();
+        _selectedEmployeeIds = new HashSet<string>(); // Clear selection
+    }
+
+    private void UpdateFilteredEmployees()
+    {
+        if (_selectedBranchId.HasValue)
+        {
+            _filteredEmployees = _allEmployees.Where(e => e.BranchId == _selectedBranchId.Value).ToList();
+        }
+        else
+        {
+            _filteredEmployees = _allEmployees;
+        }
+    }
+    
+    private string GetMultiSelectionText(List<string> selectedValues)
+    {
+        if (selectedValues == null || !selectedValues.Any())
+            return "Seleccione empleados";
+            
+        if (selectedValues.Count == _filteredEmployees.Count)
+            return "Todos los empleados seleccionados";
+            
+        return $"{selectedValues.Count} empleados seleccionados";
+    }
+
+    private async Task ProcessBulkAssignment()
+    {
+        if (_dateRange.Start == null || _dateRange.End == null)
+        {
+            Snackbar.Add("Seleccione un rango de fechas", Severity.Warning);
+            return;
+        }
+        
+        if (!_time.HasValue)
+        {
+            Snackbar.Add("Seleccione una hora", Severity.Warning);
+            return;
+        }
+
+        if (!_selectedEmployeeIds.Any())
+        {
+            Snackbar.Add("Seleccione al menos un empleado", Severity.Warning);
+            return;
+        }
+
+        _processing = true;
+        int successCount = 0;
+        int errorCount = 0;
+        var errorMessages = new List<string>();
+
+        try
+        {
+            // Iterate Dates
+            for (var date = _dateRange.Start.Value; date <= _dateRange.End.Value; date = date.AddDays(1))
+            {
+                var dateTime = date.Date + _time.Value;
+                
+                // Iterate Employees
+                foreach (var empId in _selectedEmployeeIds)
+                {
+                    try
+                    {
+                        var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, _type));
+                        if (result.IsSuccess)
+                            successCount++;
+                        else
+                        {
+                            errorCount++;
+                            // Only add unique messages to avoid spam
+                            if (!errorMessages.Contains(result.Error))
+                                errorMessages.Add(result.Error);
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        errorCount++;
+                        var msg = $"Error interno: {ex.Message}";
+                        if (!errorMessages.Contains(msg))
+                            errorMessages.Add(msg);
+                    }
+                }
+            }
+
+            if (errorCount == 0)
+            {
+                Snackbar.Add($"Se registraron {successCount} logs exitosamente.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Se registraron {successCount} logs. {errorCount} fallaron.", Severity.Warning);
+                foreach (var error in errorMessages.Take(3)) // Show first 3 errors
+                {
+                    Snackbar.Add(error, Severity.Error);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error crítico: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    private async Task UploadFiles(IBrowserFile file)
+    {
+        if (file == null) return;
+        
+        _processingImport = true;
+        // Limit size to 5MB
+        long maxFileSize = 1024 * 1024 * 5; 
+        
+        try
+        {
+            using var stream = new MemoryStream();
+            await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
+            stream.Position = 0;
+
+            if (file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                await ProcessExcel(stream);
+            }
+            else if (file.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+            {
+                await ProcessCsv(stream);
+            }
+            else
+            {
+                Snackbar.Add("Por favor suba un archivo .xlsx o .csv", Severity.Warning);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al subir archivo: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _processingImport = false;
+        }
+    }
+
+    private async Task ProcessExcel(Stream stream)
+    {
+        int successCount = 0;
+        int errorCount = 0;
+        var errorMessages = new List<string>();
+        
+        DateTime? minDate = null;
+        DateTime? maxDate = null;
+
+        try
+        {
+            using var workbook = new XLWorkbook(stream);
+            var worksheet = workbook.Worksheets.FirstOrDefault();
+            if (worksheet == null)
+            {
+                Snackbar.Add("El archivo Excel está vacío o no tiene hojas.", Severity.Error);
+                return;
+            }
+
+            // Assume Header Row 1
+            // Columns: EmployeeId, Date, Time, Type
+            // iterate rows
+            var rows = worksheet.RangeUsed().RowsUsed().Skip(1); // Skip header
+
+            foreach (var row in rows)
+            {
+                try
+                {
+                    var empId = row.Cell(1).GetValue<string>();
+                    // Date can be DateTime or string
+                    // Attempt to get DateTime
+                    DateTime date;
+                    if (!row.Cell(2).TryGetValue(out date))
+                    {
+                         // Try string parse if needed, usually Parse works if typed correctly in Excel
+                         // Or try text
+                         var dateStr = row.Cell(2).GetValue<string>();
+                         if (!DateTime.TryParse(dateStr, out date))
+                         {
+                             errorCount++; 
+                             continue;
+                         }
+                    }
+
+                    // Time
+                    TimeSpan time;
+                    if (row.Cell(3).DataType == XLDataType.TimeSpan)
+                    {
+                        time = row.Cell(3).GetValue<TimeSpan>();
+                    }
+                    else if (row.Cell(3).DataType == XLDataType.DateTime)
+                    {
+                        time = row.Cell(3).GetValue<DateTime>().TimeOfDay;
+                    }
+                    else
+                    {
+                         var timeStr = row.Cell(3).GetValue<string>();
+                         if (!TimeSpan.TryParse(timeStr, out time))
+                         {
+                             // Maybe it's "08:00"
+                             if (!TimeSpan.TryParse(timeStr, out time))
+                             {
+                                  errorCount++;
+                                  continue;
+                             }
+                         }
+                    }
+
+                    var type = row.Cell(4).GetValue<string>(); // Entrada/Salida
+                    var dateTime = date.Date + time;
+
+                    if (string.IsNullOrWhiteSpace(empId)) continue;
+                    
+                    var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, type));
+                    if (result.IsSuccess)
+                    {
+                        successCount++;
+                        if (minDate == null || date.Date < minDate) minDate = date.Date;
+                        if (maxDate == null || date.Date > maxDate) maxDate = date.Date;
+                    }
+                    else
+                    {
+                        errorCount++;
+                        if (!errorMessages.Contains($"Fila {row.RowNumber()}: {result.Error}"))
+                            errorMessages.Add($"Fila {row.RowNumber()}: {result.Error}");
+                    }
+                }
+                catch (Exception)
+                {
+                    errorCount++;
+                }
+            }
+            
+            if (errorCount == 0)
+                Snackbar.Add($"Importación completada: {successCount} registros creados.", Severity.Success);
+            else
+            {
+                Snackbar.Add($"Importación parcial: {successCount} creados, {errorCount} fallidos.", Severity.Warning);
+                // Show first few errors
+                foreach(var err in errorMessages.Take(5))
+                    Snackbar.Add(err, Severity.Error);
+            }
+
+            if (successCount > 0 && minDate.HasValue && maxDate.HasValue)
+            {
+                Snackbar.Add("Calculando asistencia para los registros importados...", Severity.Info);
+                await Mediator.Send(new ProcessDailyAttendanceCommand(minDate.Value, maxDate.Value));
+                Snackbar.Add("Asistencia calculada correctamente.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error procesando Excel: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ProcessCsv(Stream stream)
+    {
+        int successCount = 0;
+        int errorCount = 0;
+        var errorMessages = new List<string>();
+        
+        DateTime? minDate = null;
+        DateTime? maxDate = null;
+
+        try
+        {
+            using var reader = new StreamReader(stream);
+            string? line;
+            int lineNumber = 0;
+            
+            while ((line = await reader.ReadLineAsync()) != null)
+            {
+                lineNumber++;
+                if (lineNumber == 1) continue; // Skip header
+
+                var parts = line.Split(',');
+                if (parts.Length < 4) continue;
+
+                try
+                {
+                    var empId = parts[0].Trim();
+                    if (!DateTime.TryParse(parts[1].Trim(), out var date)) continue;
+                    if (!TimeSpan.TryParse(parts[2].Trim(), out var time)) continue;
+                    var type = parts[3].Trim();
+
+                    var dateTime = date.Date + time;
+
+                    if (string.IsNullOrWhiteSpace(empId)) continue;
+                    
+                    var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, type));
+                    if (result.IsSuccess)
+                    {
+                        successCount++;
+                        if (minDate == null || date.Date < minDate) minDate = date.Date;
+                        if (maxDate == null || date.Date > maxDate) maxDate = date.Date;
+                    }
+                    else
+                    {
+                        errorCount++;
+                        if (!errorMessages.Contains($"Fila {lineNumber}: {result.Error}"))
+                            errorMessages.Add($"Fila {lineNumber}: {result.Error}");
+                    }
+                }
+                catch
+                {
+                    errorCount++;
+                }
+            }
+            
+            if (errorCount == 0)
+                Snackbar.Add($"Importación completada: {successCount} registros creados.", Severity.Success);
+            else
+            {
+                Snackbar.Add($"Importación parcial: {successCount} creados, {errorCount} fallidos.", Severity.Warning);
+                foreach(var err in errorMessages.Take(5))
+                    Snackbar.Add(err, Severity.Error);
+            }
+
+            if (successCount > 0 && minDate.HasValue && maxDate.HasValue)
+            {
+                Snackbar.Add("Calculando asistencia para los registros importados...", Severity.Info);
+                await Mediator.Send(new ProcessDailyAttendanceCommand(minDate.Value, maxDate.Value));
+                Snackbar.Add("Asistencia calculada correctamente.", Severity.Success);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error procesando CSV: {ex.Message}", Severity.Error);
+        }
+    }
+}

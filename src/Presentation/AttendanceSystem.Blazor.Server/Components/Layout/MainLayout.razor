@@ -1,0 +1,56 @@
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.AspNetCore.Components.Authorization
+@using MudBlazor
+@inherits LayoutComponentBase
+
+<MudThemeProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudPopoverProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
+        <MudText Typo="Typo.h6">Sistema de Asistencia</MudText>
+        <MudSpacer />
+        <AuthorizeView>
+            <Authorized>
+                <MudText Typo="Typo.body2" Class="mr-4">
+                    <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1" />
+                    @context.User.Identity?.Name
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Logout" 
+                               Color="Color.Inherit" 
+                               Href="/logout"
+                               Title="Cerrar Sesión" />
+            </Authorized>
+        </AuthorizeView>
+        <AuthorizeView Roles="Administrador">
+            <Authorized Context="authContext">
+                <MudIconButton Icon="@Icons.Material.Filled.Settings" Color="Color.Inherit" Href="/settings" />
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
+    
+    <MudDrawer @bind-Open="@_drawerOpen" Elevation="2">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.h6">Menú</MudText>
+        </MudDrawerHeader>
+        <NavMenu />
+    </MudDrawer>
+    
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="my-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    bool _drawerOpen = true;
+
+    void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+}

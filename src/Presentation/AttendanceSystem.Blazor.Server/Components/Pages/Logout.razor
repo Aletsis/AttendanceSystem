@@ -1,0 +1,15 @@
+@page "/logout"
+@inject NavigationManager NavigationManager
+
+<PageTitle>Cerrando sesión...</PageTitle>
+
+<p>Cerrando sesión...</p>
+
+@code {
+    protected override void OnInitialized()
+    {
+        // Redirigir al controlador de cuenta para cerrar sesión correctamente
+        // forceLoad: true es CRITICO para que sea una petición HTTP nueva
+        NavigationManager.NavigateTo("Account/Logout", forceLoad: true);
+    }
+}

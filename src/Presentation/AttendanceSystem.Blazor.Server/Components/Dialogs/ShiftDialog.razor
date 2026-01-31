@@ -1,0 +1,91 @@
+@using AttendanceSystem.Domain.Enumerations
+@using AttendanceSystem.Application.Features.Shifts.Commands.CreateShift
+@using AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift
+
+<MudDialog>
+    <DialogContent>
+        <MudTextField @bind-Value="_name" Label="Nombre del Turno" Required="true" />
+        <MudTimePicker @bind-Time="_startTime" Label="Hora de Inicio" Required="true" Editable="true" />
+        <MudTimePicker @bind-Time="_endTime" Label="Hora de Fin" Required="true" Editable="true" />
+        <MudNumericField @bind-Value="_toleranceMinutes" Label="Tolerancia (minutos)" Min="0" />
+        <MudSelect @bind-Value="_shiftType" Label="Tipo de Turno">
+            @foreach (ShiftType type in Enum.GetValues(typeof(ShiftType)))
+            {
+                <MudSelectItem Value="@type">@type</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public Guid? ShiftId { get; set; }
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public TimeSpan? StartTime { get; set; }
+    [Parameter] public TimeSpan? WorkHours { get; set; }
+    [Parameter] public int ToleranceMinutes { get; set; }
+    [Parameter] public ShiftType ShiftType { get; set; }
+
+    private string _name = "";
+    private TimeSpan? _startTime;
+    private TimeSpan? _endTime;
+    private int _toleranceMinutes;
+    private ShiftType _shiftType;
+
+    protected override void OnInitialized()
+    {
+        _name = Name;
+        _startTime = StartTime ?? new TimeSpan(9, 0, 0); // Default 9 AM
+        _toleranceMinutes = ToleranceMinutes;
+        _shiftType = ShiftType;
+        
+        if (WorkHours.HasValue && StartTime.HasValue)
+        {
+             _endTime = StartTime.Value.Add(WorkHours.Value);
+        }
+        else
+        {
+             _endTime = _startTime.Value.Add(TimeSpan.FromHours(9)); // Default 9 hours
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_name) || _startTime == null || _endTime == null)
+        {
+            // Simple validation, MudBlazor handles required fields usually if Form is used, here manual check mainly
+             return;
+        }
+
+        var start = _startTime.Value;
+        var end = _endTime.Value;
+        
+        // Handle midnight crossing logic for duration calculation
+        // If end is smaller than start, assume next day
+        var durationEnd = end;
+        if (durationEnd <= start)
+        {
+            durationEnd = durationEnd.Add(TimeSpan.FromHours(24));
+        }
+        
+        var workHours = durationEnd - start;
+
+        if (ShiftId.HasValue)
+        {
+            var command = new UpdateShiftCommand(ShiftId.Value, _name, start, _toleranceMinutes, workHours, _shiftType);
+            MudDialog.Close(DialogResult.Ok(command));
+        }
+        else
+        {
+            var command = new CreateShiftCommand(_name, start, _toleranceMinutes, workHours, _shiftType);
+            MudDialog.Close(DialogResult.Ok(command));
+        }
+    }
+}

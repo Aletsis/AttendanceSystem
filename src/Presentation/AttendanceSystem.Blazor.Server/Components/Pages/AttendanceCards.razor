@@ -1,0 +1,660 @@
+@page "/attendance/cards"
+@using MediatR
+@using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Domain.ValueObjects
+@using AttendanceSystem.Blazor.Server.Services
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@inject ReportExportService ReportService
+
+<style>
+    @@media print {
+        .no-print { display: none !important; }
+        .page-break { page-break-after: always; }
+        .print-container {
+            width: 100%;
+            background-color: white;
+            color: black;
+            font-family: Arial, sans-serif;
+        }
+        body { background-color: white; color: black; }
+        .mud-layout { display: block; }
+        .mud-main-content { padding: 0; margin: 0; }
+        .mud-appbar { display: none; }
+        .mud-drawer { display: none; }
+        
+        /* Ensure table borders print correctly */
+        .card-table, .card-table th, .card-table td {
+            border: 1px solid #000 !important;
+        }
+    }
+
+    .attendance-card {
+        border: 1px solid #ccc;
+        padding: 20px;
+        margin-bottom: 20px;
+        background: white;
+        color: black;
+        max-width: 800px; /* Limit width for readability on screen */
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .card-header {
+        text-align: center;
+        border-bottom: 2px solid #000;
+        margin-bottom: 10px;
+        padding-bottom: 5px;
+    }
+
+    .card-title {
+        font-size: 1.5rem;
+        font-weight: bold;
+        text-transform: uppercase;
+    }
+
+    .card-subtitle {
+        font-size: 1.2rem;
+        font-weight: bold;
+    }
+
+    .card-info {
+        display: flex;
+        justify-content: space-between;
+        margin-bottom: 15px;
+        font-weight: bold;
+        font-size: 1rem;
+    }
+
+    .card-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+
+    .card-table th, .card-table td {
+        border: 1px solid #000;
+        padding: 6px;
+        text-align: center;
+    }
+
+    .card-table th {
+        background-color: #f0f0f0;
+        font-weight: bold;
+    }
+
+    .total-row {
+        font-weight: bold;
+        background-color: #f0f0f0;
+    }
+
+    .signature-section {
+        margin-top: 30px;
+        display: flex;
+        justify-content: space-around;
+        page-break-inside: avoid;
+    }
+
+    .signature-box {
+        text-align: center;
+        width: 35%;
+    }
+
+    .signature-box-line {
+        border-bottom: 1px solid #000;
+        margin-bottom: 5px;
+        height: 60px; /* Space for signature */
+    }
+
+    .signature-box-square {
+        border: 1px solid #000;
+        margin-bottom: 5px;
+        height: 80px; /* Space for fingerprint */
+        width: 100px;
+        margin-left: auto;
+        margin-right: auto;
+    }
+
+    .signature-label {
+        font-size: 0.9rem;
+    }
+</style>
+
+<div class="no-print">
+    <MudText Typo="Typo.h5" Class="mb-4">Impresión de Checadores</MudText>
+
+    <MudGrid>
+        <MudItem xs="12" sm="3">
+            <MudSelect T="string" Label="Modo de Selección" Value="DateSelectionMode" ValueChanged="OnDateSelectionModeChanged">
+                <MudSelectItem Value="@("Range")">Rango de Fechas</MudSelectItem>
+                <MudSelectItem Value="@("Period")">Periodo Laboral</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        @if (DateSelectionMode == "Range")
+        {
+            <MudItem xs="12" sm="3">
+                <MudDatePicker Label="Desde" @bind-Date="StartDate" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudDatePicker Label="Hasta" @bind-Date="EndDate" />
+            </MudItem>
+        }
+        else
+        {
+            <MudItem xs="12" sm="2">
+                <MudSelect T="int" Label="Año" Value="SelectedYear" ValueChanged="OnYearChanged">
+                    @for (int y = DateTime.Today.Year - 1; y <= DateTime.Today.Year + 1; y++)
+                    {
+                        <MudSelectItem Value="@y">@y</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                 <MudSelect T="AttendanceSystem.Domain.Enumerations.WorkPeriodMode" Label="Tipo de Periodo" Value="SelectedPeriodMode" ValueChanged="OnPeriodModeChanged">
+                    <MudSelectItem Value="AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Weekly">Semanal</MudSelectItem>
+                    <MudSelectItem Value="AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Fortnightly">Quincenal</MudSelectItem>
+                    <MudSelectItem Value="AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Monthly">Mensual</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="PredefinedPeriod" Label="Periodo" Value="SelectedPeriod" ValueChanged="OnPeriodChanged" ToStringFunc="@(p => p?.Name)">
+                    @foreach (var period in AvailablePeriods)
+                    {
+                        <MudSelectItem Value="@period">@period.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        }
+
+        <MudItem xs="12" sm="3">
+            <MudSelect T="Guid?" Label="Sucursal" Value="SelectedBranchId" ValueChanged="OnBranchChanged" Clearable="true">
+                <MudSelectItem T="Guid?" Value="null">Todas</MudSelectItem>
+                @foreach (var branch in Branches)
+                {
+                    <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="3">
+             <MudSelect T="string" Label="Tipo de Filtro" @bind-Value="FilterType">
+                <MudSelectItem Value="@("All")">Todos</MudSelectItem>
+                <MudSelectItem Value="@("Range")">Rango de Empleado</MudSelectItem>
+                <MudSelectItem Value="@("Specific")">Empleado Específico</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+
+        @if (FilterType == "Range")
+        {
+            <MudItem xs="12" sm="3">
+                <MudNumericField @bind-Value="StartEmployeeId" Label="ID Inicial" Min="0" />
+            </MudItem>
+            <MudItem xs="12" sm="3">
+                <MudNumericField @bind-Value="EndEmployeeId" Label="ID Final" Min="0" />
+            </MudItem>
+        }
+        @if (FilterType == "Specific")
+        {
+             <MudItem xs="12" sm="6">
+                <MudAutocomplete T="EmployeeDto" 
+                                Label="Empleado"
+                                @bind-Value="SelectedEmployeeObj" 
+                                SearchFunc="@SearchEmployees"
+                                ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
+                                ResetValueOnEmptyText="true" 
+                                AdornmentColor="Color.Primary" />
+            </MudItem>
+        }
+
+        <MudItem xs="12" Class="d-flex align-center justify-end">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData" Class="mr-2">Generar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="ExportPdf" StartIcon="@Icons.Material.Filled.PictureAsPdf" Disabled="@(!GroupedData.Any())" Class="mr-2">PDF</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="Print" StartIcon="@Icons.Material.Filled.Print" Disabled="@(!GroupedData.Any())">Imprimir</MudButton>
+        </MudItem>
+    </MudGrid>
+</div>
+
+@if (GroupedData.Any())
+{
+    <div class="print-container mt-4">
+        @foreach (var group in GroupedData)
+        {
+            <div class="attendance-card page-break">
+                <div class="card-header">
+                    <div class="card-title">Carnicerias La Blanquita</div>
+                    <div class="card-subtitle">Tarjeta de asistencia</div>
+                    <div>Del @StartDate?.ToString("dd/MM/yyyy") al @EndDate?.ToString("dd/MM/yyyy")</div>
+                </div>
+
+                <div class="card-info">
+                    <div>No. @group.Key.EmployeeId</div>
+                    <div>@group.Key.EmployeeName</div>
+                </div>
+                
+                <table class="card-table">
+                    <thead>
+                        <tr>
+                            <th>Fecha</th>
+                            <th>Día</th>
+                            <th>Entrada</th>
+                            <th>Salida</th>
+                            <th>Hrs. Extra</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var day in group.Value.OrderBy(x => x.Date))
+                        {
+                            <tr>
+                                <td>@day.Date.ToString("dd/MM/yyyy")</td>
+                                <td>@day.Date.ToString("ddd")</td>
+                                <td>@(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</td>
+                                <td>@(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</td>
+                                <td>@(FormatMinuteString(day.RoundedOvertimeMinutes))</td>
+                            </tr>
+                        }
+                    </tbody>
+                    <tfoot>
+                         <tr class="total-row">
+                            <td colspan="4" style="text-align: right;">Total Horas Extra:</td>
+                            <td>@FormatMinuteString(group.Value.Sum(x => x.RoundedOvertimeMinutes))</td>
+                        </tr>
+                    </tfoot>
+                </table>
+
+                <div class="signature-section">
+                    <div class="signature-box">
+                        <div class="signature-box-line"></div>
+                        <div class="signature-label">Firma</div>
+                    </div>
+                    <div class="signature-box">
+                        <div class="signature-box-square"></div>
+                        <div class="signature-label">Huella</div>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (HasSearched)
+{
+     <div class="no-print mt-4">
+        <MudAlert Severity="Severity.Info">No se encontraron registros para los filtros seleccionados.</MudAlert>
+    </div>
+}
+
+@using AttendanceSystem.Blazor.Server.Models
+@using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
+
+@code {
+    private string DateSelectionMode = "Range"; // "Range" or "Period"
+    private int SelectedYear = DateTime.Today.Year;
+    private AttendanceSystem.Domain.Enumerations.WorkPeriodMode SelectedPeriodMode;
+    private PredefinedPeriod? SelectedPeriod;
+    private List<PredefinedPeriod> AvailablePeriods = new();
+
+    // Configuration Config
+    private DayOfWeek _configWeeklyStartDay = DayOfWeek.Monday;
+    private int _configFortnightDay1 = 1;
+    private int _configFortnightDay2 = 16;
+    private int _configMonthlyStartDay = 1;
+    private bool _configLoaded = false;
+
+    private void OnDateSelectionModeChanged(string mode)
+    {
+        DateSelectionMode = mode;
+        if (DateSelectionMode == "Period")
+        {
+            UpdateAvailablePeriods();
+        }
+    }
+
+    private void OnPeriodModeChanged(AttendanceSystem.Domain.Enumerations.WorkPeriodMode mode)
+    {
+        SelectedPeriodMode = mode;
+        UpdateAvailablePeriods();
+    }
+    
+    private void OnYearChanged(int year)
+    {
+        SelectedYear = year;
+        UpdateAvailablePeriods();
+    }
+
+    private void OnPeriodChanged(PredefinedPeriod? period)
+    {
+        SelectedPeriod = period;
+        if (SelectedPeriod != null)
+        {
+             StartDate = SelectedPeriod.Start;
+             EndDate = SelectedPeriod.End;
+        }
+        else
+        {
+             StartDate = null; 
+             EndDate = null;
+        }
+    }
+
+    private void UpdateAvailablePeriods()
+    {
+        AvailablePeriods = GeneratePeriods(SelectedPeriodMode, SelectedYear);
+        // Try to select current period
+        var today = DateTime.Today;
+        SelectedPeriod = AvailablePeriods.FirstOrDefault(p => today >= p.Start && today <= p.End) ?? AvailablePeriods.LastOrDefault();
+        
+        if (SelectedPeriod != null)
+        {
+             StartDate = SelectedPeriod.Start;
+             EndDate = SelectedPeriod.End;
+        }
+    }
+
+    private List<PredefinedPeriod> GeneratePeriods(AttendanceSystem.Domain.Enumerations.WorkPeriodMode mode, int year)
+    {
+        var periods = new List<PredefinedPeriod>();
+        var culture = new System.Globalization.CultureInfo("es-MX");
+
+        if (mode == AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Weekly)
+        {
+             // Use configured start day
+             var startDayOfWeek = _configWeeklyStartDay;
+             
+             // Find the first occurrence of this day on or before Jan 1 to start the first week?
+             // Or usually Week 1 is the first week with >= 4 days in the new year (ISO8601)?
+             // Simple fallback: Let's find the day causing the "Week 1" to contain Jan 1.
+             
+             var firstJan = new DateTime(year, 1, 1);
+             var diff = firstJan.DayOfWeek - startDayOfWeek;
+             if (diff < 0) diff += 7;
+             
+             var startOfWeek = firstJan.AddDays(-diff);
+             
+             int weekNum = 1;
+             // Generate weeks until we pass the year
+             while (startOfWeek.Year <= year)
+             {
+                 var endOfWeek = startOfWeek.AddDays(6);
+                 
+                 // If the week is mainly in this year or covers this year
+                 if (endOfWeek.Year >= year)
+                 {
+                     periods.Add(new PredefinedPeriod
+                     {
+                         Name = $"Semana {weekNum} ({startOfWeek:dd/MM} - {endOfWeek:dd/MM})",
+                         Start = startOfWeek,
+                         End = endOfWeek
+                     });
+                     weekNum++;
+                 }
+                 startOfWeek = startOfWeek.AddDays(7);
+             }
+        }
+        else if (mode == AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Fortnightly)
+        {
+             for (int month = 1; month <= 12; month++)
+            {
+                var daysInMonth = DateTime.DaysInMonth(year, month);
+                var monthName = culture.DateTimeFormat.GetMonthName(month);
+                monthName = char.ToUpper(monthName[0]) + monthName.Substring(1);
+
+                // Config-based Fortnights
+                // Q1: Day1 to Day2-1
+                // Q2: Day2 to End
+                
+                int d1 = _configFortnightDay1;
+                int d2 = _configFortnightDay2;
+
+                // Validate if days exist in this month (e.g. Feb)
+                if (d1 > daysInMonth) d1 = 1; // Fallback
+                if (d2 > daysInMonth) d2 = 16; // Fallback
+
+                // Period 1
+                // Ends at d2 - 1, but if d2 is <= d1, it's weird. Assume d1 < d2.
+                // If d2 is 16, ends 15.
+                
+                var p1Start = new DateTime(year, month, d1);
+                var p1End = new DateTime(year, month, d2).AddDays(-1);
+                
+                // If p1End < p1Start (misconfig), force p1End = p1Start
+                if (p1End < p1Start) p1End = p1Start;
+
+                periods.Add(new PredefinedPeriod 
+                { 
+                    Name = $"{monthName} - Q1 ({p1Start:dd}-{p1End:dd})", 
+                    Start = p1Start,
+                    End = p1End
+                });
+                
+                // Period 2
+                var p2Start = new DateTime(year, month, d2);
+                var p2End = new DateTime(year, month, daysInMonth); // End of month
+                
+                 periods.Add(new PredefinedPeriod 
+                { 
+                    Name = $"{monthName} - Q2 ({p2Start:dd}-{p2End:dd})", 
+                    Start = p2Start,
+                    End = p2End
+                });
+            }
+        }
+        else if (mode == AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Monthly)
+        {
+            // Monthly periods starting on _configMonthlyStartDay
+            // If Day is 1: Jan 1 - Jan 31
+            // If Day is 15: Dec 15 - Jan 14? or Jan 15 - Feb 14?
+            // Usually if I say "January Period" and it starts on 15th...
+            // Let's assume period for 'Month X' starts on 'Month X, StartDay'.
+            
+            for (int month = 1; month <= 12; month++)
+            {
+                var currentMonthStart = new DateTime(year, month, 1);
+                var daysInMonth = DateTime.DaysInMonth(year, month);
+                
+                int startDay = _configMonthlyStartDay;
+                if (startDay > daysInMonth) startDay = daysInMonth; 
+                
+                var pStart = new DateTime(year, month, startDay);
+                var pEnd = pStart.AddMonths(1).AddDays(-1);
+                
+                var monthName = culture.DateTimeFormat.GetMonthName(month);
+                monthName = char.ToUpper(monthName[0]) + monthName.Substring(1);
+
+                periods.Add(new PredefinedPeriod 
+                { 
+                    Name = $"{monthName} ({pStart:dd/MM} - {pEnd:dd/MM})", 
+                    Start = pStart,
+                    End = pEnd
+                });
+            }
+        }
+
+        return periods;
+    }
+
+    private DateTime? StartDate = DateTime.Today;
+    private DateTime? EndDate = DateTime.Today;
+    private Guid? SelectedBranchId;
+    private EmployeeDto? SelectedEmployeeObj;
+    private string FilterType = "All";
+    private int? StartEmployeeId;
+    private int? EndEmployeeId;
+    
+    // Grouped/Filtered data
+    private Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> GroupedData = new();
+    private bool HasSearched = false;
+
+    private List<EmployeeDto> _allEmployees = new();
+    private List<BranchDto> Branches = new();
+    
+    // Cache for autocomplete
+    private List<EmployeeDto> FilteredEmployees => SelectedBranchId.HasValue
+        ? _allEmployees.Where(e => e.BranchId == SelectedBranchId.Value).ToList()
+        : _allEmployees;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load System Config
+        var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
+        if (configResult.IsSuccess)
+        {
+            var config = configResult.Value;
+            SelectedPeriodMode = config.WorkPeriodMode;
+            _configWeeklyStartDay = config.WeeklyStartDay;
+            _configFortnightDay1 = config.FortnightFirstDay;
+            _configFortnightDay2 = config.FortnightSecondDay;
+            _configMonthlyStartDay = config.MonthlyStartDay;
+            _configLoaded = true;
+        }
+
+        var empResult = await Mediator.Send(new GetAllEmployeesQuery());
+        if (empResult.IsSuccess)
+        {
+            _allEmployees = empResult.Value.ToList();
+        }
+
+        var branchResult = await Mediator.Send(new GetBranchesQuery());
+        if (branchResult.IsSuccess)
+        {
+            Branches = branchResult.Value.ToList();
+        }
+        
+        // If we want to default to Period mode if config is present?
+        // Maybe keeping "Range" as default is safer, but user asked to respect config.
+        // Let's stick to user manual toggle but IF they toggle, periods are correct.
+    }
+
+
+    private void OnBranchChanged(Guid? branchId)
+    {
+        SelectedBranchId = branchId;
+        SelectedEmployeeObj = null; 
+    }
+    
+    private Task<IEnumerable<EmployeeDto>> SearchEmployees(string value, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return Task.FromResult<IEnumerable<EmployeeDto>>(FilteredEmployees);
+        }
+
+        var result = FilteredEmployees.Where(e => 
+            e.Id.Contains(value, StringComparison.InvariantCultureIgnoreCase) || 
+            e.FullName.Contains(value, StringComparison.InvariantCultureIgnoreCase)
+        );
+        
+        return Task.FromResult(result);
+    }
+
+    private async Task LoadData()
+    {
+        if (StartDate == null || EndDate == null) 
+        {
+            Snackbar.Add("Por favor seleccione un rango de fechas", Severity.Warning);
+            return;
+        }
+
+        HasSearched = true;
+        GroupedData.Clear();
+        
+        var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
+        string? employeeId = null; // We fetch all (or by branch) then filter in memory for Range
+
+        if (FilterType == "Specific")
+        {
+            if (SelectedEmployeeObj == null)
+            {
+                 Snackbar.Add("Por favor seleccione un empleado", Severity.Warning);
+                 return;
+            }
+            employeeId = SelectedEmployeeObj.Id;
+        }
+
+        try 
+        {
+            var result = await Mediator.Send(new GetAttendanceReportQuery(
+                StartDate.Value, 
+                EndDate.Value,
+                branchId,
+                employeeId
+            ));
+
+            var list = result.ToList();
+
+            // Additional Filtering for Range
+            if (FilterType == "Range")
+            {
+                if (StartEmployeeId.HasValue && EndEmployeeId.HasValue)
+                {
+                    list = list.Where(x => {
+                        if (long.TryParse(x.EmployeeId, out var id))
+                        {
+                            return id >= StartEmployeeId.Value && id <= EndEmployeeId.Value;
+                        }
+                        return false; 
+                    }).ToList();
+                }
+                else
+                {
+                     Snackbar.Add("Por favor ingrese el rango de IDs", Severity.Warning);
+                     return;
+                }
+            }
+
+            // Group by Employee
+             GroupedData = list.GroupBy(x => (x.EmployeeId, x.EmployeeName))
+                               .OrderBy(g => 
+                               {
+                                   if (long.TryParse(g.Key.EmployeeId, out var id)) return id;
+                                   return long.MaxValue;
+                               })
+                               .ThenBy(g => g.Key.EmployeeId)
+                               .ToDictionary(g => g.Key, g => g.ToList());
+
+            if (!GroupedData.Any())
+            {
+                Snackbar.Add("No se encontraron registros", Severity.Info);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar datos: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task Print()
+    {
+        await JS.InvokeVoidAsync("print");
+    }
+
+    private async Task ExportPdf()
+    {
+        if (!GroupedData.Any()) return;
+        
+        try
+        {
+            var pdfBytes = ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value);
+            var fileName = $"Tarjetas_Asistencia_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
+            
+            using var stream = new MemoryStream(pdfBytes);
+            using var streamRef = new DotNetStreamReference(stream: stream);
+
+            await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar PDF: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private string FormatMinuteString(int minutes)
+    {
+        if (minutes == 0) return "00:00";
+        var ts = TimeSpan.FromMinutes(minutes);
+        return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
+    }
+}

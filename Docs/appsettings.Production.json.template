@@ -1,0 +1,48 @@
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=SERVIDOR_POSTGRES;Port=5432;Database=AttendanceSystem;Username=USUARIO_APP;Password=PASSWORD_SEGURO;SSL Mode=Prefer;Trust Server Certificate=true;Pooling=true;Minimum Pool Size=5;Maximum Pool Size=100"
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning",
+      "Microsoft.EntityFrameworkCore": "Warning"
+    },
+    "File": {
+      "Path": "logs/app-.log",
+      "RollingInterval": "Day",
+      "RetainedFileCountLimit": 30
+    }
+  },
+  "AllowedHosts": "*",
+  "ZKTeco": {
+    "DeviceIP": "192.168.1.100",
+    "DevicePort": 4370,
+    "SyncIntervalMinutes": 30,
+    "AutoSyncEnabled": true,
+    "ConnectionTimeout": 30
+  },
+  "Application": {
+    "Name": "AttendanceSystem",
+    "Environment": "Production",
+    "BaseUrl": "http://servidor.empresa.com",
+    "EnableDetailedErrors": false,
+    "EnableSensitiveDataLogging": false
+  },
+  "Security": {
+    "RequireHttps": true,
+    "EnableCors": false,
+    "AllowedOrigins": []
+  },
+  "Session": {
+    "TimeoutMinutes": 60,
+    "CookieName": ".AttendanceSystem.Session",
+    "CookieHttpOnly": true,
+    "CookieSecure": true
+  },
+  "Performance": {
+    "EnableResponseCompression": true,
+    "EnableResponseCaching": true,
+    "CacheDurationSeconds": 300
+  }
+}

@@ -1,0 +1,221 @@
+@page "/positions"
+@using MediatR
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
+@using AttendanceSystem.Application.Features.Positions.Commands.CreatePosition
+@using AttendanceSystem.Application.Features.Positions.Commands.UpdatePosition
+@using AttendanceSystem.Application.Features.Positions.Commands.DeletePosition
+@using AttendanceSystem.Application.Abstractions
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject IJSRuntime JS
+@using Microsoft.JSInterop
+@using System.IO
+@using ClosedXML.Excel
+
+<PageTitle>Puestos</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudText Typo="Typo.h3" GutterBottom="true">Puestos</MudText>
+    <MudText Typo="Typo.subtitle1" Class="mb-4">Gestiona los puestos de trabajo.</MudText>
+
+    <MudTable Items="@_positions" Hover="true" Loading="@_loading" Filter="new Func<PositionDto,bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Lista de Puestos</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="_searchString" Placeholder="Buscar" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog" Class="ml-4">Nuevo Puesto</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportPositions" Class="ml-2">Importar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel" Class="ml-2">Exportar</MudButton>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Nombre</MudTh>
+            <MudTh>Descripción</MudTh>
+            <MudTh>Salario Base</MudTh>
+            <MudTh>Acciones</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Nombre">@context.Name</MudTd>
+            <MudTd DataLabel="Descripción">@context.Description</MudTd>
+            <MudTd DataLabel="Salario Base">@context.BaseSalary.ToString("c2")</MudTd>
+            <MudTd DataLabel="Acciones">
+                <MudTooltip Text="Editar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Eliminar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeletePosition(context))" Size="Size.Small" />
+                </MudTooltip>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+@code {
+    private IEnumerable<PositionDto> _positions = new List<PositionDto>();
+    private bool _loading = true;
+    private string _searchString = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadPositions();
+    }
+
+    private async Task LoadPositions()
+    {
+        _loading = true;
+        var result = await Sender.Send(new GetPositionsQuery());
+        if (result.IsSuccess)
+        {
+            _positions = result.Value;
+        }
+        else
+        {
+            Snackbar.Add($"Error al cargar puestos: {result.Error}", Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private bool FilterFunc(PositionDto position)
+    {
+        if (string.IsNullOrWhiteSpace(_searchString))
+            return true;
+        if (position.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (position.Description?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) == true)
+            return true;
+        return false;
+    }
+
+    private async Task OpenCreateDialog()
+    {
+        var parameters = new DialogParameters();
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<PositionDialog>("Nuevo Puesto", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is CreatePositionCommand command)
+        {
+             var createResult = await Sender.Send(command);
+             if (createResult.IsSuccess)
+             {
+                 Snackbar.Add("Puesto creado correctamente", Severity.Success);
+                 await LoadPositions();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al crear: {createResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task OpenEditDialog(PositionDto position)
+    {
+        var parameters = new DialogParameters
+        {
+            { "PositionId", position.Id },
+            { "Name", position.Name },
+            { "Description", position.Description },
+            { "BaseSalary", position.BaseSalary }
+        };
+        
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        
+        var dialog = await DialogService.ShowAsync<PositionDialog>("Editar Puesto", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled && result.Data is UpdatePositionCommand command)
+        {
+             var updateResult = await Sender.Send(command);
+             if (updateResult.IsSuccess)
+             {
+                 Snackbar.Add("Puesto actualizado correctamente", Severity.Success);
+                 await LoadPositions();
+             }
+             else
+             {
+                 Snackbar.Add($"Error al actualizar: {updateResult.Error}", Severity.Error);
+             }
+        }
+    }
+
+    private async Task ExportToExcel()
+    {
+        try
+        {
+            using var workbook = new XLWorkbook();
+            var worksheet = workbook.Worksheets.Add("Puestos");
+
+            // Headers
+            worksheet.Cell(1, 1).Value = "Nombre";
+            worksheet.Cell(1, 2).Value = "Descripción";
+            worksheet.Cell(1, 3).Value = "Salario Base";
+
+            int row = 2;
+            foreach (var item in _positions)
+            {
+                worksheet.Cell(row, 1).Value = item.Name;
+                worksheet.Cell(row, 2).Value = item.Description;
+                worksheet.Cell(row, 3).Value = item.BaseSalary;
+                row++;
+            }
+            
+            worksheet.Columns().AdjustToContents();
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            stream.Position = 0;
+
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", $"Puestos_{DateTime.Now:yyyyMMdd}.xlsx", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ImportPositions()
+    {
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<ImportPositionsDialog>("Importar Puestos", options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            await LoadPositions();
+        }
+    }
+
+    private async Task DeletePosition(PositionDto position)
+    {
+        var parameters = new DialogParameters
+        {
+            { "ContentText", $"¿Estás seguro de que quieres eliminar el puesto '{position.Name}'? Esta acción no se puede deshacer." },
+            { "ButtonText", "Eliminar" },
+            { "Color", Color.Error }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.ExtraSmall };
+        var dialog = await DialogService.ShowAsync<ConfirmDialog>("Eliminar Puesto", parameters, options);
+        var result = await dialog.Result;
+
+        if (!result.Canceled)
+        {
+            var deleteResult = await Sender.Send(new DeletePositionCommand(position.Id));
+            if (deleteResult.IsSuccess)
+            {
+                Snackbar.Add("Puesto eliminado correctamente", Severity.Success);
+                await LoadPositions();
+            }
+            else
+            {
+                Snackbar.Add($"Error al eliminar: {deleteResult.Error}", Severity.Error);
+            }
+        }
+    }
+}

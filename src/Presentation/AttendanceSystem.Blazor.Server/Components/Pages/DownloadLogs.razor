@@ -1,0 +1,181 @@
+@page "/attendance/download-logs"
+@using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate
+@using AttendanceSystem.Domain.Repositories
+@inject IDownloadLogRepository DownloadLogRepository
+@inject IDeviceRepository DeviceRepository
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudCard>
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h5">Historial de Descargas</MudText>
+            </CardHeaderContent>
+            <CardHeaderActions>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" OnClick="LoadLogs" />
+            </CardHeaderActions>
+        </MudCardHeader>
+        
+        <MudCardContent>
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker Label="Desde" @bind-Date="_fromDate" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudDatePicker Label="Hasta" @bind-Date="_toDate" />
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="FilterLogs" Class="mt-3">
+                        Filtrar
+                    </MudButton>
+                    <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ClearFilter" Class="mt-3 ml-2">
+                        Limpiar
+                    </MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_isLoading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else
+            {
+                <MudTable Items="@_logs" Hover="true" Striped="true" Dense="true">
+                    <HeaderContent>
+                        <MudTh>Fecha/Hora Inicio</MudTh>
+                        <MudTh>Dispositivo</MudTh>
+                        <MudTh>Tipo</MudTh>
+                        <MudTh>Usuario</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh>Total Descargados</MudTh>
+                        <MudTh>Nuevos Registros</MudTh>
+                        <MudTh>Duración (ms)</MudTh>
+                        <MudTh>Error</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Fecha/Hora">@context.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
+                        <MudTd DataLabel="Dispositivo">
+                            @{
+                                var deviceName = GetDeviceName(context.DeviceId.Value);
+                            }
+                            <MudText Typo="Typo.body2">@deviceName</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.DeviceId.Value</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Tipo">
+                            @if (context.DownloadType == DownloadType.Manual)
+                            {
+                                <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.Person">Manual</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Default" Size="Size.Small" Icon="@Icons.Material.Filled.Schedule">Automática</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Usuario">
+                            @if (!string.IsNullOrEmpty(context.InitiatedByUserName))
+                            {
+                                <MudText Typo="Typo.body2">@context.InitiatedByUserName</MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">Sistema</MudText>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Estado">
+                            @if (context.IsSuccessful)
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle">Exitoso</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.Error">Fallido</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Total">
+                            <MudText Typo="Typo.body2">@context.TotalRecordsDownloaded</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Nuevos">
+                            <MudText Typo="Typo.body2" Color="@(context.NewRecordsAdded > 0 ? Color.Success : Color.Default)">
+                                @context.NewRecordsAdded
+                            </MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Duración">
+                            <MudText Typo="Typo.body2">@context.DurationMs</MudText>
+                        </MudTd>
+                        <MudTd DataLabel="Error">
+                            @if (!string.IsNullOrEmpty(context.ErrorMessage))
+                            {
+                                <MudTooltip Text="@context.ErrorMessage">
+                                    <MudIcon Icon="@Icons.Material.Filled.Info" Color="Color.Error" Size="Size.Small" />
+                                </MudTooltip>
+                            }
+                        </MudTd>
+                    </RowTemplate>
+                    <PagerContent>
+                        <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                    </PagerContent>
+                </MudTable>
+            }
+        </MudCardContent>
+    </MudCard>
+</MudContainer>
+
+@code {
+    private bool _isLoading = true;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private List<DownloadLog> _logs = new();
+    private Dictionary<string, string> _deviceNames = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDeviceNames();
+        await LoadLogs();
+    }
+
+    private async Task LoadDeviceNames()
+    {
+        var devices = await DeviceRepository.GetAllDevicesAsync();
+        _deviceNames = devices.ToDictionary(d => d.Id.Value, d => d.Name);
+    }
+
+    private async Task LoadLogs()
+    {
+        _isLoading = true;
+        try
+        {
+            if (_fromDate.HasValue && _toDate.HasValue)
+            {
+                var logs = await DownloadLogRepository.GetByDateRangeAsync(
+                    _fromDate.Value, 
+                    _toDate.Value.AddDays(1).AddTicks(-1));
+                _logs = logs.ToList();
+            }
+            else
+            {
+                var logs = await DownloadLogRepository.GetRecentAsync(100);
+                _logs = logs.ToList();
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task FilterLogs()
+    {
+        await LoadLogs();
+    }
+
+    private async Task ClearFilter()
+    {
+        _fromDate = null;
+        _toDate = null;
+        await LoadLogs();
+    }
+
+    private string GetDeviceName(string deviceId)
+    {
+        return _deviceNames.TryGetValue(deviceId, out var name) ? name : deviceId;
+    }
+}

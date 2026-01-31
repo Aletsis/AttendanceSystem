@@ -1,0 +1,268 @@
+@using AttendanceSystem.Application.Features.Employees.Commands
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
+@using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
+@using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Domain.Repositories
+@using AttendanceSystem.Domain.ValueObjects
+@using ClosedXML.Excel
+@using MediatR
+@using Microsoft.AspNetCore.Components.Forms
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1" Class="mb-4">
+            Suba un archivo Excel (.xlsx) con los datos de los empleados.
+            <br />
+            <b>Columnas requeridas:</b> ID, Nombre, Apellido, Email, Sucursal(Nombre), Departamento(Nombre), Puesto(Nombre), Fecha Contratación, Genero (M/F).
+        </MudText>
+
+        <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
+            <ActivatorContent>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                    Seleccionar Archivo
+                </MudButton>
+            </ActivatorContent>
+        </MudFileUpload>
+
+        @if (_processing)
+        {
+            <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="mt-4" />
+            <MudText Class="mt-2">Procesando archivo... @(_progressText)</MudText>
+        }
+        
+        @if (_summary.Any())
+        {
+             <MudAlert Severity="Severity.Info" Class="mt-2">Resultados de la importación:</MudAlert>
+             <MudList T="string" Dense="true" ReadOnly="true">
+                 @foreach(var item in _summary)
+                 {
+                     <MudListItem Text="@item" />
+                 }
+             </MudList>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private bool _processing = false;
+    private string _progressText = "";
+    private List<string> _summary = new();
+
+    private Dictionary<string, Guid> _branches = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, Guid> _departments = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, Guid> _positions = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, Guid> _shifts = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Cargar catálogos para mapear nombres a IDs usando Queries
+        var branchesResult = await Mediator.Send(new GetBranchesQuery());
+        if (branchesResult.IsSuccess)
+        {
+            foreach (var b in branchesResult.Value) _branches[b.Name] = b.Id;
+        }
+
+        var departmentsResult = await Mediator.Send(new GetDepartmentsQuery());
+        if (departmentsResult.IsSuccess)
+        {
+            foreach (var d in departmentsResult.Value) _departments[d.Name] = d.Id;
+        }
+
+        var positionsResult = await Mediator.Send(new GetPositionsQuery());
+        if (positionsResult.IsSuccess)
+        {
+            foreach (var p in positionsResult.Value) _positions[p.Name] = p.Id;
+        }
+
+        var shiftsResult = await Mediator.Send(new GetShiftsQuery());
+        if (shiftsResult.IsSuccess)
+        {
+            foreach (var s in shiftsResult.Value) _shifts[s.Name] = s.Id;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task UploadFiles(IBrowserFile file)
+    {
+        if (file == null) return;
+
+        _processing = true;
+        _summary.Clear();
+        _progressText = "Leyendo archivo...";
+        await InvokeAsync(StateHasChanged);
+
+        long maxFileSize = 1024 * 1024 * 10; // 10MB
+
+        try
+        {
+            using var stream = new MemoryStream();
+            await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
+            stream.Position = 0;
+
+            if (file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            {
+                await ProcessExcel(stream);
+            }
+            else
+            {
+                Snackbar.Add("Formato no soportado. Use .xlsx", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al subir: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _processing = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ProcessExcel(Stream stream)
+    {
+        int successCount = 0;
+        int errorCount = 0;
+        var errorMessages = new List<string>();
+        var commands = new List<CreateEmployeeCommand>();
+
+        try
+        {
+            await Task.Run(() =>
+            {
+                using var workbook = new XLWorkbook(stream);
+                var worksheet = workbook.Worksheets.FirstOrDefault();
+                if (worksheet == null) return;
+
+                var range = worksheet.RangeUsed();
+                if (range == null) return;
+
+                var rows = range.RowsUsed().Skip(1); // Skip header
+
+                foreach (var row in rows)
+                {
+                    var id = row.Cell(1).GetValue<string>();
+                    // Just skip empty rows without error
+                    if (string.IsNullOrWhiteSpace(id)) continue; 
+
+                    try
+                    {
+                        var nombre = row.Cell(2).GetValue<string>();
+                        var apellido = row.Cell(3).GetValue<string>();
+                        var email = row.Cell(4).GetValue<string>();
+                        if (string.IsNullOrWhiteSpace(email)) email = string.Empty;
+
+                        // 5: Sucursal
+                        var branchName = row.Cell(5).GetValue<string>();
+                        // 6: Departamento
+                        var deptName = row.Cell(6).GetValue<string>();
+                        // 7: Puesto
+                        var posName = row.Cell(7).GetValue<string>();
+                        
+                        // 8: Fecha Contratación
+                        if (!row.Cell(8).TryGetValue(out DateTime hireDate)) 
+                        {
+                             // Try parsing string if direct datetime fails
+                             var hireDateStr = row.Cell(8).GetValue<string>();
+                             if (!DateTime.TryParse(hireDateStr, out hireDate))
+                                 hireDate = DateTime.Today;
+                        }
+
+                        // 9: Genero
+                        var genderStr = row.Cell(9).GetValue<string>();
+                        var gender = AttendanceSystem.Domain.Enumerations.Gender.Male;
+                        if (!string.IsNullOrWhiteSpace(genderStr) && genderStr.StartsWith("F", StringComparison.OrdinalIgnoreCase)) 
+                            gender = AttendanceSystem.Domain.Enumerations.Gender.Female;
+
+                        // Foreign Keys via Name Lookup
+                        if (!_branches.TryGetValue(branchName, out var branchId)) throw new Exception($"Sucursal '{branchName}' no encontrada para empleado {id}.");
+                        if (!_departments.TryGetValue(deptName, out var deptId)) throw new Exception($"Departamento '{deptName}' no encontrado para empleado {id}.");
+                        if (!_positions.TryGetValue(posName, out var posId)) throw new Exception($"Puesto '{posName}' no encontrado para empleado {id}.");
+
+                        // Defaults for missing columns
+                        string telefono = string.Empty;
+                        AttendanceSystem.Domain.Enumerations.ShiftType? shiftType = AttendanceSystem.Domain.Enumerations.ShiftType.Matutino; 
+                        string? scheduleId = null;
+                        int? restDay = null;
+
+                        commands.Add(new CreateEmployeeCommand(
+                            id, nombre, apellido, email, telefono, hireDate, gender,
+                            branchId.ToString(), deptId.ToString(), posId.ToString(),
+                            shiftType, scheduleId, restDay, false, AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod.NoRounding,
+                            AttendanceSystem.Domain.Enumerations.OvertimeCapType.None, null
+                        ));
+                    }
+                    catch (Exception ex)
+                    {
+                        // Add to error messages safely
+                        Interlocked.Increment(ref errorCount);
+                        lock (errorMessages)
+                        {
+                            if (errorMessages.Count < 10)
+                                errorMessages.Add($"Error en fila ID '{id}': {ex.Message}");
+                        }
+                    }
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error procesando Excel: {ex.Message}", Severity.Error);
+            return;
+        }
+
+        _progressText = $"Importando {commands.Count} empleados...";
+        await InvokeAsync(StateHasChanged);
+
+        foreach (var command in commands)
+        {
+             try 
+             {
+                 var result = await Mediator.Send(command);
+                 if (result.IsSuccess)
+                     successCount++;
+                 else
+                 {
+                     errorCount++;
+                     if(errorMessages.Count < 5) errorMessages.Add($"ID {command.Id}: {result.Error}");
+                 }
+             }
+             catch(Exception ex)
+             {
+                 errorCount++;
+                 if(errorMessages.Count < 5) errorMessages.Add($"ID {command.Id}: {ex.Message}");
+             }
+        }
+
+        _summary.Add($"Importación completada.");
+        _summary.Add($"Exitosos: {successCount}");
+        _summary.Add($"Fallidos: {errorCount}");
+        foreach (var err in errorMessages) _summary.Add(err);
+
+        if (errorCount > 0 && errorMessages.Count >= 5) _summary.Add("...");
+        
+        if (successCount > 0)
+        {
+             Snackbar.Add($"Se importaron {successCount} empleados.", Severity.Success);
+             MudDialog.Close(DialogResult.Ok(true));
+        }
+        else if (errorCount > 0)
+        {
+             Snackbar.Add("Hubo errores en la importación.", Severity.Warning);
+        }
+        else
+        {
+             Snackbar.Add("No se encontraron registros válidos para importar.", Severity.Info);
+        }
+    }
+}

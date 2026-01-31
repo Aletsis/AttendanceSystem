@@ -1,0 +1,185 @@
+@page "/attendance/download"
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices
+@using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices
+@using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
+    <MudCard>
+        <MudCardHeader>
+            <CardHeaderContent>
+                <MudText Typo="Typo.h5">Descarga de Asistencia</MudText>
+            </CardHeaderContent>
+        </MudCardHeader>
+        
+        <MudCardContent>
+            <MudGrid Class="mb-4">
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker Label="Desde (Opcional)" @bind-Date="_fromDate" HelperText="Si vacío: última descarga" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_toDate" HelperText="Si vacío: hasta hoy" />
+                </MudItem>
+            </MudGrid>
+
+            <MudButton 
+                Variant="Variant.Filled" 
+                Color="Color.Primary"
+                OnClick="DownloadFromAllDevices"
+                Disabled="@_isDownloading">
+                @if (_isDownloading)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                    <MudText Class="ml-2">Descargando...</MudText>
+                }
+                else
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.Download" />
+                    <MudText Class="ml-2">Descargar Todo</MudText>
+                }
+            </MudButton>
+
+            @if (_devices.Any())
+            {
+                <MudDivider Class="my-4" />
+                
+                <MudText Typo="Typo.h6">Descargar por Dispositivo:</MudText>
+                
+                @foreach (var device in _devices)
+                {
+                    <MudChip T="string" 
+                        Icon="@Icons.Material.Filled.DeviceHub"
+                        Color="Color.Primary"
+                        OnClick="@(() => DownloadFromDevice(device.DeviceId))"
+                        Disabled="@_isDownloading">
+                        @device.Name
+                    </MudChip>
+                }
+            }
+        </MudCardContent>
+    </MudCard>
+
+    @if (_results.Any())
+    {
+        <MudCard Class="mt-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Resultados</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            
+            <MudCardContent>
+                <MudTable Items="@_results">
+                    <HeaderContent>
+                        <MudTh>Dispositivo</MudTh>
+                        <MudTh>Registros</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh>Fecha</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd DataLabel="Dispositivo">@context.DeviceId</MudTd>
+                        <MudTd DataLabel="Registros">@context.RecordsDownloaded</MudTd>
+                        <MudTd DataLabel="Estado">
+                            @if (context.Success)
+                            {
+                                <MudChip T="string" Color="Color.Success" Size="Size.Small">Exitoso</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Color="Color.Error" Size="Size.Small">Error</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd DataLabel="Fecha">
+                            @context.DownloadedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    }
+</MudContainer>
+
+@code {
+    private bool _isDownloading;
+    private DateTime? _fromDate;
+    private DateTime? _toDate;
+    private List<DeviceDto> _devices = new();
+    private List<DownloadResultDto> _results = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var query = new GetActiveDevicesQuery();
+        var result = await Mediator.Send(query);
+        
+        if (result.IsSuccess)
+        {
+            _devices = result.Value.ToList();
+        }
+    }
+
+    private async Task DownloadFromAllDevices()
+    {
+        _isDownloading = true;
+        _results.Clear();
+
+        try
+        {
+            // Obtener usuario actual
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var userName = user.Identity?.Name;
+
+            // Ajustar ToDate para capturar todo el día (23:59:59)
+            var effectiveToDate = _toDate.HasValue 
+                ? _toDate.Value.Date.AddDays(1).AddTicks(-1) 
+                : (DateTime?)null;
+
+            var command = new DownloadFromAllDevicesCommand(_fromDate, effectiveToDate, userId, userName);
+            var result = await Mediator.Send(command);
+
+            if (result.IsSuccess)
+            {
+                _results = result.Value.ToList();
+                Snackbar.Add("Descarga completada", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Error: {result.Error}", Severity.Error);
+            }
+        }
+        finally
+        {
+            _isDownloading = false;
+        }
+    }
+
+    private async Task DownloadFromDevice(string deviceId)
+    {
+        // Obtener usuario actual
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        var userName = user.Identity?.Name;
+
+        var effectiveToDate = _toDate.HasValue 
+            ? _toDate.Value.Date.AddDays(1).AddTicks(-1) 
+            : (DateTime?)null;
+
+        var command = new DownloadFromDeviceCommand(deviceId, _fromDate, effectiveToDate, true, userId, userName);
+        var result = await Mediator.Send(command);
+
+        if (result.IsSuccess)
+        {
+            _results.Insert(0, result.Value);
+            Snackbar.Add($"Descarga de {deviceId} completada", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add($"Error: {result.Error}", Severity.Error);
+        }
+    }
+}

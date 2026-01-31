@@ -1,0 +1,223 @@
+@page "/settings"
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Administrador")]
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration
+@using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
+@using AttendanceSystem.Domain.Enumerations
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Administrador")]
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Medium" Class="mt-4">
+    <MudText Typo="Typo.h5" Class="mb-4">Configuración del Sistema</MudText>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
+    }
+    else
+    {
+        <MudCard>
+            <MudCardContent>
+                <MudForm @ref="_form" @bind-IsValid="_success">
+                    <MudText Typo="Typo.h6" Class="mb-2">General</MudText>
+                    
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField Label="Tolerancia de Retardo (Minutos)" 
+                                             @bind-Value="_lateToleranceMinutes" 
+                                             Min="0" Max="60" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField Label="Jornada Laboral Estándar (Horas)" 
+                                             @bind-Value="_standardWorkHours" 
+                                             Min="1" Max="24" />
+                        </MudItem>
+                    </MudGrid>
+                    
+                    <MudDivider Class="my-4" />
+
+                    <MudText Typo="Typo.h6" Class="mb-2">Periodos Laborales</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="WorkPeriodMode" Label="Modo de Periodo" @bind-Value="_workPeriodMode">
+                                <MudSelectItem Value="WorkPeriodMode.Weekly">Semanal</MudSelectItem>
+                                <MudSelectItem Value="WorkPeriodMode.Fortnightly">Quincenal</MudSelectItem>
+                                <MudSelectItem Value="WorkPeriodMode.Monthly">Mensual</MudSelectItem>
+                            </MudSelect>
+                        </MudItem>
+                        
+                        @if (_workPeriodMode == WorkPeriodMode.Weekly)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="DayOfWeek" Label="Día de Inicio (Semanal)" @bind-Value="_weeklyStartDay">
+                                    <MudSelectItem Value="DayOfWeek.Monday">Monday</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Tuesday">Tuesday</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Wednesday">Wednesday</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Thursday">Thursday</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Friday">Friday</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Saturday">Saturday</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Sunday">Sunday</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                        }
+                        else if (_workPeriodMode == WorkPeriodMode.Fortnightly)
+                        {
+                            <MudItem xs="12" sm="3">
+                                <MudNumericField Label="Inicio 1er Periodo (Día)" @bind-Value="_fortnightFirstDay" Min="1" Max="28" />
+                            </MudItem>
+                            <MudItem xs="12" sm="3">
+                                <MudNumericField Label="Inicio 2do Periodo (Día)" @bind-Value="_fortnightSecondDay" Min="1" Max="28" />
+                            </MudItem>
+                        }
+                        else if (_workPeriodMode == WorkPeriodMode.Monthly)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudNumericField Label="Día de Inicio del Mes" @bind-Value="_monthlyStartDay" Min="1" Max="28" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+
+                    <MudDivider Class="my-4" />
+                    
+                    <MudText Typo="Typo.h6" Class="mb-2">Automatización</MudText>
+                    
+                    <MudSwitch T="bool" @bind-Value="_autoClearAfterDownload" Color="Color.Primary" Label="Limpiar dispositivos automáticamente tras descarga exitosa" />
+
+                    <MudGrid Class="mt-2">
+                        <MudItem xs="12" sm="6">
+                            <MudSwitch T="bool" @bind-Value="_isAutoDownloadEnabled" Color="Color.Primary" Label="Descarga Automática Diaria" />
+                        </MudItem>
+                        
+                        @if (_isAutoDownloadEnabled)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudTimePicker Label="Hora de Ejecución" @bind-Time="_autoDownloadTime" AmPm="true" />
+                            </MudItem>
+                        }
+                    </MudGrid>
+
+                </MudForm>
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Disabled="@(!_success || _isSaving)">
+                    @if (_isSaving)
+                    {
+                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                        <MudText Class="ms-2">Guardando</MudText>
+                    }
+                    else
+                    {
+                        <MudText>Guardar Cambios</MudText>
+                    }
+                </MudButton>
+            </MudCardActions>
+        </MudCard>
+    }
+</MudContainer>
+
+@code {
+    private bool _isLoading = true;
+    private bool _isSaving = false;
+    private bool _success;
+    private MudForm _form = default!;
+
+    // Config Fields
+    private int _lateToleranceMinutes;
+    private int _standardWorkHours;
+    private bool _autoClearAfterDownload;
+    private bool _isAutoDownloadEnabled; 
+    private TimeSpan? _autoDownloadTime; 
+    
+    // Work Period Fields
+    private WorkPeriodMode _workPeriodMode;
+    private DayOfWeek _weeklyStartDay;
+    private int _fortnightFirstDay;
+    private int _fortnightSecondDay;
+    private int _monthlyStartDay;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadSettings();
+    }
+
+    private async Task LoadSettings()
+    {
+        _isLoading = true;
+        try
+        {
+            var result = await Mediator.Send(new GetSystemConfigurationQuery());
+            if (result.IsSuccess)
+            {
+                var config = result.Value;
+                _lateToleranceMinutes = (int)config.LateToleranceMinutes.TotalMinutes;
+                _standardWorkHours = (int)config.StandardWorkHours.TotalHours;
+                _autoClearAfterDownload = config.AutoClearDevicesAfterDownload;
+                _isAutoDownloadEnabled = config.IsAutoDownloadEnabled;
+                _autoDownloadTime = config.AutoDownloadTime;
+                
+                // Work Period
+                _workPeriodMode = config.WorkPeriodMode;
+                _weeklyStartDay = config.WeeklyStartDay;
+                _fortnightFirstDay = config.FortnightFirstDay;
+                _fortnightSecondDay = config.FortnightSecondDay;
+                _monthlyStartDay = config.MonthlyStartDay;
+            }
+            else
+            {
+                Snackbar.Add("Error cargando configuración", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task SaveSettings()
+    {
+        _isSaving = true;
+        try
+        {
+            var command = new UpdateSystemConfigurationCommand(
+                TimeSpan.FromMinutes(_lateToleranceMinutes),
+                TimeSpan.FromHours(_standardWorkHours),
+                _autoClearAfterDownload,
+                false, 
+                null, 
+                _isAutoDownloadEnabled,
+                _autoDownloadTime,
+                _workPeriodMode,
+                _weeklyStartDay,
+                _fortnightFirstDay,
+                _fortnightSecondDay,
+                _monthlyStartDay
+            );
+
+            var result = await Mediator.Send(command);
+
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Configuración guardada correctamente", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Error al guardar: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error crítico: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSaving = false;
+        }
+    }
+}

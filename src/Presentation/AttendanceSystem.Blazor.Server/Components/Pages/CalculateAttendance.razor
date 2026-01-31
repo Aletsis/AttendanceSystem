@@ -1,0 +1,319 @@
+@page "/attendance/calculation"
+@using MediatR
+@using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance
+@using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Domain.ValueObjects
+@using AttendanceSystem.Domain.Enumerations
+@using System.Globalization
+
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h5" Class="mb-4">Cálculo de Asistencia</MudText>
+
+<MudGrid>
+    <MudItem xs="12">
+        <MudCard>
+            <MudCardContent>
+                <MudText Typo="Typo.h6" Class="mb-2">Seleccione el alcance del cálculo</MudText>
+                
+                <MudRadioGroup T="string" @bind-Value="CalculationScope">
+                    <MudRadio Value="@("Day")" Color="Color.Primary">Por Día</MudRadio>
+                    <MudRadio Value="@("Range")" Color="Color.Primary">Rango de Fechas</MudRadio>
+                    <MudRadio Value="@("Period")" Color="Color.Primary">Por Periodo</MudRadio>
+                </MudRadioGroup>
+
+                <MudGrid Class="mt-4">
+                     <!-- Date Selection -->
+                    @if (CalculationScope == "Day")
+                    {
+                        <MudItem xs="12" sm="4">
+                            <MudDatePicker Label="Seleccionar Día" @bind-Date="SingleDate" />
+                        </MudItem>
+                    }
+                    else if (CalculationScope == "Range")
+                    {
+                        <MudItem xs="12" sm="3">
+                            <MudDatePicker Label="Desde" @bind-Date="StartDate" />
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            <MudDatePicker Label="Hasta" @bind-Date="EndDate" />
+                        </MudItem>
+                    }
+                    else if (CalculationScope == "Period")
+                    {
+                         <MudItem xs="12" sm="3">
+                            <MudNumericField Label="Año" @bind-Value="SelectedYear" Min="2000" Max="2100" />
+                        </MudItem>
+                        <MudItem xs="12" sm="3">
+                            @if (_config != null)
+                            {
+                                @if (_config.WorkPeriodMode == WorkPeriodMode.Weekly)
+                                {
+                                    <MudNumericField Label="Periodo (Semana 1-52)" @bind-Value="SelectedPeriodNumber" Min="1" Max="53" />
+                                }
+                                else if (_config.WorkPeriodMode == WorkPeriodMode.Fortnightly)
+                                {
+                                    <MudNumericField Label="Periodo (Quincena 1-24)" @bind-Value="SelectedPeriodNumber" Min="1" Max="24" />
+                                }
+                                else if (_config.WorkPeriodMode == WorkPeriodMode.Monthly)
+                                {
+                                    <MudNumericField Label="Periodo (Mes 1-12)" @bind-Value="SelectedPeriodNumber" Min="1" Max="12" />
+                                }
+                            }
+                        </MudItem>
+                    }
+
+                    <!-- Filters -->
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="Guid?" Label="Sucursal (Opcional)" Value="SelectedBranchId" ValueChanged="OnBranchChanged" Clearable="true">
+                            <MudSelectItem T="Guid?" Value="null">Todas</MudSelectItem>
+                            @foreach (var branch in Branches)
+                            {
+                                <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+
+                    <MudItem xs="12" sm="4">
+                        <MudAutocomplete T="EmployeeDto" 
+                                        Label="Empleado (Opcional)"
+                                        @bind-Value="SelectedEmployeeObj" 
+                                        SearchFunc="@SearchEmployees"
+                                        ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
+                                        Clearable="true"
+                                        ResetValueOnEmptyText="true" />
+                    </MudItem>
+
+                    <MudItem xs="12" Class="d-flex justify-end mt-4">
+                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Calculate" Disabled="_processing" Size="Size.Large" StartIcon="@Icons.Material.Filled.Calculate">
+                            @if (_processing) { <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/> }
+                            else { <MudText>Calcular</MudText> }
+                        </MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@if (!string.IsNullOrEmpty(ResultHeader))
+{
+    <MudAlert Severity="Severity.Info" Class="mt-4">@ResultHeader</MudAlert>
+}
+
+@code {
+    private string CalculationScope = "Range";
+    
+    private DateTime? SingleDate = DateTime.Today;
+    private DateTime? StartDate = DateTime.Today;
+    private DateTime? EndDate = DateTime.Today;
+    
+    private int SelectedYear = DateTime.Today.Year;
+    private int SelectedPeriodNumber = 1;
+    
+    private Guid? SelectedBranchId;
+    private EmployeeDto? SelectedEmployeeObj;
+    
+    private List<EmployeeDto> _allEmployees = new();
+    private List<BranchDto> Branches = new();
+    private SystemConfigurationDto? _config;
+    
+    private bool _processing = false;
+    private string ResultHeader = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        var empResult = await Mediator.Send(new GetAllEmployeesQuery());
+        if (empResult.IsSuccess)
+        {
+            _allEmployees = empResult.Value.ToList();
+        }
+
+        var branchResult = await Mediator.Send(new GetBranchesQuery());
+        if (branchResult.IsSuccess)
+        {
+            Branches = branchResult.Value.ToList();
+        }
+        
+        var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
+        if (configResult.IsSuccess)
+        {
+            _config = configResult.Value;
+            CalculateCurrentPeriod();
+        }
+    }
+
+    private void CalculateCurrentPeriod()
+    {
+        if (_config == null) return;
+
+        var now = DateTime.Today;
+        SelectedYear = now.Year;
+
+        if (_config.WorkPeriodMode == WorkPeriodMode.Weekly)
+        {
+            SelectedPeriodNumber = ISOWeek.GetWeekOfYear(now);
+        }
+        else if (_config.WorkPeriodMode == WorkPeriodMode.Monthly)
+        {
+            SelectedPeriodNumber = now.Month;
+        }
+        else // Fortnightly
+        {
+            var day = now.Day;
+            int p = (now.Month - 1) * 2;
+            if (day >= _config.FortnightSecondDay) p += 2;
+            else p += 1;
+            SelectedPeriodNumber = p;
+        }
+    }
+
+    private void OnBranchChanged(Guid? branchId)
+    {
+        SelectedBranchId = branchId;
+        SelectedEmployeeObj = null; 
+    }
+
+    private Task<IEnumerable<EmployeeDto>> SearchEmployees(string value, CancellationToken token)
+    {
+        var filtered = SelectedBranchId.HasValue 
+            ? _allEmployees.Where(e => e.BranchId == SelectedBranchId.Value) 
+            : _allEmployees;
+
+        if (string.IsNullOrEmpty(value)) return Task.FromResult<IEnumerable<EmployeeDto>>(filtered);
+
+        return Task.FromResult(filtered.Where(e => 
+            e.Id.Contains(value, StringComparison.InvariantCultureIgnoreCase) || 
+            e.FullName.Contains(value, StringComparison.InvariantCultureIgnoreCase)));
+    }
+
+    private async Task Calculate()
+    {
+        DateTime start = DateTime.Today;
+        DateTime end = DateTime.Today;
+
+        if (CalculationScope == "Day")
+        {
+            if (SingleDate == null) 
+            {
+                Snackbar.Add("Seleccione una fecha", Severity.Warning);
+                return;
+            }
+            start = SingleDate.Value;
+            end = SingleDate.Value;
+        }
+        else if (CalculationScope == "Range")
+        {
+            if (StartDate == null || EndDate == null)
+            {
+                Snackbar.Add("Seleccione un rango de fechas", Severity.Warning);
+                return;
+            }
+            start = StartDate.Value;
+            end = EndDate.Value;
+        }
+        else if (CalculationScope == "Period")
+        {
+             if (_config == null) 
+             {
+                 Snackbar.Add("No se pudo cargar la configuración", Severity.Error);
+                 return;
+             }
+
+             var dates = GetPeriodDates(SelectedYear, SelectedPeriodNumber);
+             start = dates.Start;
+             end = dates.End;
+        }
+
+        _processing = true;
+        ResultHeader = "";
+        try
+        {
+            var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
+            var employeeId = !string.IsNullOrEmpty(SelectedEmployeeObj?.Id) ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
+
+            var count = await Mediator.Send(new ProcessDailyAttendanceCommand(start, end, branchId, employeeId));
+            
+            ResultHeader = $"Cálculo completado exitosamente. Se procesaron {count} registros entre {start.ToShortDateString()} y {end.ToShortDateString()}.";
+            Snackbar.Add($"Procesados {count} registros", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+             Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _processing = false;
+        }
+    }
+
+    // Helper method for date calculation (kept local for now, could be moved to service if needed repeatedly)
+    private (DateTime Start, DateTime End) GetPeriodDates(int year, int periodNum)
+    {
+        if (_config == null) return (DateTime.Today, DateTime.Today);
+
+        if (_config.WorkPeriodMode == WorkPeriodMode.Weekly)
+        {
+            try 
+            {
+                var s = ISOWeek.ToDateTime(year, periodNum, _config.WeeklyStartDay);
+                return (s, s.AddDays(6));
+            }
+            catch
+            {
+                 var s = ISOWeek.ToDateTime(year, 1, _config.WeeklyStartDay).AddDays((periodNum - 1) * 7);
+                 return (s, s.AddDays(6));
+            }
+        }
+        else if (_config.WorkPeriodMode == WorkPeriodMode.Monthly)
+        {
+            if (periodNum < 1) periodNum = 1;
+            if (periodNum > 12) periodNum = 12;
+
+            var start = new DateTime(year, periodNum, 1);
+            int maxDay = DateTime.DaysInMonth(year, periodNum);
+            int sDay = Math.Min(_config.MonthlyStartDay, maxDay);
+            
+            var s = new DateTime(year, periodNum, sDay);
+            var e = s.AddMonths(1).AddDays(-1);
+            return (s, e);
+        }
+        else // Fortnightly
+        {
+            if (periodNum < 1) periodNum = 1;
+
+            int monthIndex = (periodNum - 1) / 2 + 1; // 1-12
+            bool isSecondHalf = (periodNum % 2 == 0);
+
+            if (monthIndex > 12) monthIndex = 12;
+
+            var d1 = _config.FortnightFirstDay;
+            var d2 = _config.FortnightSecondDay; 
+
+            if (!isSecondHalf) // First Half 
+            {
+                int maxDay = DateTime.DaysInMonth(year, monthIndex);
+                int startDay = Math.Min(d1, maxDay);
+                var s = new DateTime(year, monthIndex, startDay);
+            
+                var nextPStart = new DateTime(year, monthIndex, Math.Min(d2, maxDay));
+                return (s, nextPStart.AddDays(-1));
+            }
+            else // Second Half 
+            {
+                int maxDay = DateTime.DaysInMonth(year, monthIndex);
+                int startDay = Math.Min(d2, maxDay);
+                var s = new DateTime(year, monthIndex, startDay);
+                
+                var nextMonth = new DateTime(year, monthIndex, 1).AddMonths(1);
+                var nextStart = new DateTime(nextMonth.Year, nextMonth.Month, Math.Min(d1, DateTime.DaysInMonth(nextMonth.Year, nextMonth.Month)));
+                return (s, nextStart.AddDays(-1));
+            }
+        }
+    }
+}
