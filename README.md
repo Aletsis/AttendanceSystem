@@ -1,203 +1,104 @@
 # AttendanceSystem - Sistema de Control de Asistencia
 
-Sistema de control de asistencia con integración a dispositivos biométricos ZKTeco, desarrollado con **Clean Architecture** y **Domain-Driven Design (DDD)**.
+Sistema moderno de control de asistencia desarrollado en .NET 9 con Blazor Server, integración a dispositivos biométricos ZKTeco y base de datos PostgreSQL. Diseñado bajo los principios de **Clean Architecture** y **Domain-Driven Design (DDD)**.
+
+## 🚀 Características Principales
+
+-   **Dashboard Interactivo**: Visualización de métricas de asistencia, empleados presentes, ausencias y retardos.
+-   **Gestión de Empleados**: Altas, bajas y gestión completa de perfiles de empleados.
+-   **Integración Biométrica**: Conexión nativa con dispositivos ZKTeco (relojes checadores) para sincronización automática de registros.
+-   **Reportes Detallados**: Generación de reportes de asistencia, retardos, horas extra y más (exportables a Excel/PDF).
+-   **Turnos y Horarios**: Configuración flexible de turnos laborales.
+-   **Procesos en Segundo Plano**: Uso de Hangfire para tareas programadas (descarga automática de logs, cálculo de asistencias).
+-   **Migración Automática**: El sistema verifica y actualiza la estructura de la base de datos automáticamente al iniciar.
+
+## 🛠️ Tecnologías
+
+*   **Core**: .NET 9.0 (C#)
+*   **Frontend**: Blazor Server con [MudBlazor](https://mudblazor.com/)
+*   **Base de Datos**: PostgreSQL
+*   **ORM**: Entity Framework Core 9 (Npgsql)
+*   **Background Jobs**: Hangfire
+*   **Manejo de Logs**: Serilog (con sink a PostgreSQL y Archivos)
+*   **Integración Hardware**: ZKTeco SDK (Standalone SDK)
+*   **Arquitectura**: Clean Architecture + CQRS (MediatR)
 
 ## 🏗️ Arquitectura del Proyecto
 
-El proyecto sigue los principios de Clean Architecture con las siguientes capas:
+El proyecto sigue una estructura modular estricta:
 
-### **Core Layer**
-- **`AttendanceSystem.Domain`**: Entidades, Value Objects, Enumerations, Eventos de Dominio
-- **`AttendanceSystem.Aplication`**: Casos de uso (Comandos, Queries, Handlers con MediatR)
+*   **`Core/`**:
+    *   `AttendanceSystem.Domain`: Reglas de negocio puras, entidades y eventos.
+    *   `AttendanceSystem.Application`: Casos de uso implementados con patrón CQRS.
+*   **`Infrastructure/`**:
+    *   `AttendanceSystem.Infrastructure`: Implementación de persistencia y servicios externos.
+    *   `AttendanceSystem.ZKTeco`: Librería de integración directa con el SDK nativo.
+*   **`Presentation/`**:
+    *   `AttendanceSystem.Blazor.Server`: Aplicación web principal.
+    *   `AttendanceSystem.ZKTeco.Service`: Servicio Windows gRPC (x86) para comunicar con el hardware (necesario por dependencias de 32-bits del SDK).
 
-### **Infrastructure Layer**
-- **`AttendanceSystem.Infrastructure`**: Persistencia (EF Core), Repositorios, Servicios externos
-- **`AttendanceSystem.ZKTeco`**: ⚠️ Integración con dispositivos ZKTeco (requiere configuración)
+## 📋 Prerrequisitos
 
-### **Presentation Layer**
-- **`AttendanceSystem.Blazor.Server`**: Aplicación web Blazor Server con MudBlazor
-- **`AttendanceSystem.ZKTeco.Service`**: ⚠️ Servicio Windows gRPC (requiere configuración)
+*   [.NET 9.0 SDK](https://dotnet.microsoft.com/download/dotnet/9.0)
+*   [PostgreSQL](https://www.postgresql.org/download/) (versión 14 o superior recomendada)
+*   Sistema Operativo Windows (Requerido para el servicio ZKTeco debido a DLLs nativas)
 
-### **Shared Layer**
-- **`AttendanceSystem.Contracts`**: DTOs compartidos entre capas
+## ⚙️ Instalación y Configuración
 
-## ✅ Estado Actual
+1.  **Clonar el repositorio**
+    ```powershell
+    git clone https://github.com/Aletsis/AttendanceSystem.git
+    cd AttendanceSystem
+    ```
 
-### Completado
-- ✅ Estructura de solución y proyectos creada
-- ✅ Clases base del dominio (AggregateRoot, Entity, DomainEvent, Enumeration)
-- ✅ Value Objects (AttendanceRecordId, DeviceId, EmployeeId)
-- ✅ Enumerations (CheckType, VerifyMethod, AttendanceStatus, DeviceStatus)
-- ✅ Entidades de dominio (AttendanceRecord, Device)
-- ✅ Repositorios (IAttendanceRepository, IDeviceRepository)
-- ✅ Configuración de EF Core con conversiones de Value Objects
-- ✅ Comandos y Queries con MediatR
-- ✅ Event Handlers para eventos de dominio
-- ✅ Aplicación Blazor Server con MudBlazor configurada
-- ✅ Implementación stub del cliente gRPC
+2.  **Configurar Base de Datos**
+    *   Asegúrate de que el servicio de PostgreSQL esté corriendo.
+    *   Crea una base de datos llamada `AttendanceSystem` (o el nombre que prefieras).
 
-### ⚠️ Pendiente de Configuración
+3.  **Configurar Aplicación**
+    *   Ve a la carpeta del proyecto web:
+        ```powershell
+        cd src/Presentation/AttendanceSystem.Blazor.Server
+        ```
+    *   Crea tu archivo de configuración basado en el ejemplo:
+        ```powershell
+        copy appsettings.example.json appsettings.json
+        ```
+    *   Edita `appsettings.json` y coloca tus credenciales de PostgreSQL en `ConnectionStrings`:
+        ```json
+        "ConnectionStrings": {
+          "AttendanceDb": "Host=localhost;Port=5432;Database=AttendanceSystem;Username=postgres;Password=TU_PASSWORD;",
+          "HangfireDb": "Host=localhost;Port=5432;Database=AttendanceSystem;Username=postgres;Password=TU_PASSWORD;"
+        }
+        ```
 
-#### 1. Servicio gRPC para ZKTeco
-Los proyectos `AttendanceSystem.ZKTeco` y `AttendanceSystem.ZKTeco.Service` requieren:
+## ▶️ Ejecución
 
-1. **Crear archivo `.proto`** en `src/Infrastructure/AttendanceSystem.ZKTeco/Protos/zkteco.proto`:
-```protobuf
-syntax = "proto3";
+Para ejecutar el sistema completo necesitas correr dos componentes:
 
-option csharp_namespace = "AttendanceSystem.ZKTeco.Grpc";
-
-service ZKTecoService {
-  rpc ConnectDevice (ConnectDeviceRequest) returns (ConnectDeviceResponse);
-  rpc GetAttendanceLogs (GetAttendanceLogsRequest) returns (GetAttendanceLogsResponse);
-  rpc ClearDeviceLogs (ClearDeviceLogsRequest) returns (ClearDeviceLogsResponse);
-  rpc DisconnectDevice (DisconnectDeviceRequest) returns (DisconnectDeviceResponse);
-}
-
-message ConnectDeviceRequest {
-  string ip_address = 1;
-  int32 port = 2;
-}
-
-message ConnectDeviceResponse {
-  bool success = 1;
-  string message = 2;
-}
-
-message GetAttendanceLogsRequest {
-  string device_id = 1;
-  string from_date = 2;
-}
-
-message GetAttendanceLogsResponse {
-  repeated AttendanceRecord records = 1;
-}
-
-message AttendanceRecord {
-  string device_id = 1;
-  string user_id = 2;
-  string check_time = 3;
-  int32 verify_mode = 4;
-  int32 in_out_mode = 5;
-  int32 work_code = 6;
-}
-
-message ClearDeviceLogsRequest {
-  string device_id = 1;
-}
-
-message ClearDeviceLogsResponse {
-  bool success = 1;
-}
-
-message DisconnectDeviceRequest {
-}
-
-message DisconnectDeviceResponse {
-  bool success = 1;
-}
-```
-
-2. **Actualizar `.csproj` de ZKTeco** para incluir el archivo .proto:
-```xml
-<ItemGroup>
-  <Protobuf Include="Protos\zkteco.proto" GrpcServices="Server" />
-</ItemGroup>
-```
-
-3. **Actualizar `.csproj` de Infrastructure** para incluir el archivo .proto como cliente:
-```xml
-<ItemGroup>
-  <Protobuf Include="..\AttendanceSystem.ZKTeco\Protos\zkteco.proto" GrpcServices="Client" />
-</ItemGroup>
-```
-
-4. **Descomentar en `AttendanceSystem.sln`** las líneas de Build para los proyectos ZKTeco (líneas 48, 50, 56, 58)
-
-5. **Descomentar en `Program.cs`** la configuración del cliente gRPC (líneas 46-49)
-
-#### 2. Biblioteca zkemkeeper.dll
-El proyecto ZKTeco requiere la biblioteca nativa `zkemkeeper.dll`:
-
-1. Obtener `zkemkeeper.dll` del SDK de ZKTeco
-2. Copiarla a `src/Infrastructure/AttendanceSystem.ZKTeco/lib/zkemkeeper.dll`
-3. Asegurarse de que el proyecto esté configurado para x86 (ya configurado)
-
-#### 3. Base de Datos
-1. Actualizar la cadena de conexión en `appsettings.json`
-2. Ejecutar migraciones:
-```bash
-dotnet ef migrations add InitialCreate --project src/Infrastructure/AttendanceSystem.Infrastructure --startup-project src/Presentation/AttendanceSystem.Blazor.Server
-dotnet ef database update --project src/Infrastructure/AttendanceSystem.Infrastructure --startup-project src/Presentation/AttendanceSystem.Blazor.Server
-```
-
-#### 4. Configuración de SendGrid (Opcional)
-Actualizar en `appsettings.json`:
-```json
-"SendGrid": {
-  "ApiKey": "TU_API_KEY_DE_SENDGRID",
-  "FromEmail": "tu-email@dominio.com",
-  "AlertEmail": "alertas@dominio.com"
-}
-```
-
-## 🚀 Cómo Ejecutar
-
-### Opción 1: Solo la aplicación web (sin ZKTeco)
-```bash
+### 1. Aplicación Web (Blazor)
+Esta es la interfaz principal. Al iniciar, aplicará automáticamente las migraciones necesarias a la base de datos.
+```powershell
+# En una terminal
 cd src/Presentation/AttendanceSystem.Blazor.Server
 dotnet run
 ```
+Accede a `https://localhost:7168` (o el puerto indicado en la consola).
 
-### Opción 2: Con servicio ZKTeco (después de configurar gRPC)
-1. Ejecutar el servicio Windows:
-```bash
+### 2. Servicio ZKTeco
+Este servicio puente permite la comunicación con los relojes checadores (requiere arquitectura x86).
+```powershell
+# En otra terminal
 cd src/Presentation/AttendanceSystem.ZKTeco.Service
 dotnet run
 ```
+*Nota: Si no necesitas conectar dispositivos físicos inmediatamente, puedes usar solo la aplicación web.*
 
-2. En otra terminal, ejecutar la aplicación web:
-```bash
-cd src/Presentation/AttendanceSystem.Blazor.Server
-dotnet run
-```
+## 📄 Notas de Migración
+Si vienes de versiones anteriores que usaban SQL Server, consulta [MIGRACION_POSTGRESQL.md](MIGRACION_POSTGRESQL.md) para detalles sobre los cambios realizados.
 
-## 📦 Paquetes NuGet Utilizados
-
-- **MediatR** (12.2.0) - CQRS y Mediator pattern
-- **Entity Framework Core** (8.0.0) - ORM
-- **MudBlazor** (6.11.2) - Componentes UI para Blazor
-- **Hangfire** (1.8.9) - Tareas programadas en segundo plano
-- **SendGrid** (9.29.3) - Envío de emails
-- **Grpc.AspNetCore** (2.60.0) - Servidor gRPC
-- **Grpc.Net.Client** (2.60.0) - Cliente gRPC
-
-## 🔧 Tecnologías
-
-- .NET 8.0
-- Blazor Server
-- SQL Server
-- gRPC
-- Clean Architecture
-- Domain-Driven Design (DDD)
-- CQRS con MediatR
-
-## 📝 Notas Importantes
-
-1. Los proyectos ZKTeco están temporalmente deshabilitados en la solución hasta que se configure gRPC
-2. El cliente gRPC actual es una implementación stub que retorna valores por defecto
-3. Se requiere SQL Server para la persistencia de datos
-4. El proyecto está configurado para x86 debido a la dependencia de zkemkeeper.dll
-
-## 🤝 Contribuir
-
-Para continuar el desarrollo:
-1. Configurar los archivos .proto para gRPC
-2. Implementar el servicio Windows para comunicación con dispositivos ZKTeco
-3. Crear las migraciones de base de datos
-4. Implementar la UI de Blazor para gestión de dispositivos y empleados
-5. Agregar pruebas unitarias e integración
+## 🤝 Contribución
+Las Pull Requests son bienvenidas. Para cambios mayores, por favor abre primero un issue para discutir lo que te gustaría cambiar.
 
 ## 📄 Licencia
-
-[Especificar licencia]
+Este proyecto es privado y confidencial.
