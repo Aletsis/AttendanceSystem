@@ -47,12 +47,26 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
     // Métodos de negocio (comportamiento del agregado)
     public void MarkAsProcessed()
     {
+        // Allow idempotent calls or handle re-processing logic at handler level?
+        // Current logic: throws if already processed. 
+        // We will stick to the existing rule: explicit transition.
         if (Status == AttendanceStatus.Processed)
-            throw new DomainException("El registro ya fue procesado");
+            return; // Idempotent is safer for re-processing logic where we might re-save
 
         Status = AttendanceStatus.Processed;
         
         AddDomainEvent(new AttendanceProcessedEvent(Id, EmployeeId, CheckTime));
+    }
+
+    public void ResetStatus()
+    {
+        Status = AttendanceStatus.Pending;
+        // Optionally clear domain events or add a "Reset" event?
+    }
+
+    public void SetInferredType(CheckType type)
+    {
+        CheckType = type;
     }
 
     public void MarkAsAnomalous(string reason)

@@ -74,8 +74,8 @@ public class ReportExportService
             SetCell(worksheet, currentRow, 3, item.Date.ToString("dd/MM/yyyy"));
             SetCell(worksheet, currentRow, 4, item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--:--");
             SetCell(worksheet, currentRow, 5, item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--:--");
-            SetCell(worksheet, currentRow, 6, item.ActualCheckIn?.ToString("HH:mm") ?? "--:--");
-            SetCell(worksheet, currentRow, 7, item.ActualCheckOut?.ToString("HH:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, 6, FormatDateTime(item.ActualCheckIn, item.Date, "--:--"));
+            SetCell(worksheet, currentRow, 7, FormatDateTime(item.ActualCheckOut, item.Date, "--:--"));
             SetCell(worksheet, currentRow, 8, workedStr);
             SetCell(worksheet, currentRow, 9, overtimeStr);
             SetCell(worksheet, currentRow, 10, item.BranchName);
@@ -216,8 +216,8 @@ public class ReportExportService
                             table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.Date.ToString("dd/MM/yyyy"));
                             table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
                             table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ActualCheckIn?.ToString("HH:mm") ?? "--");
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ActualCheckOut?.ToString("HH:mm") ?? "--");
+                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckIn, item.Date, "--"));
+                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckOut, item.Date, "--"));
                             table.Cell().Element(c => BodyStyle(c, bgColor)).Text(workedStr);
                             table.Cell().Element(c => BodyStyle(c, bgColor)).Text(overtimeStr);
                             table.Cell().Element(c => BodyStyle(c, bgColor).AlignLeft()).Text(item.BranchName);
@@ -435,8 +435,14 @@ public class ReportExportService
                 {
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("dd/MM/yyyy"));
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd"));
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ActualCheckIn?.ToString("HH:mm") ?? (record.MissingCheckIn ? "--" : ""));
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ActualCheckOut?.ToString("HH:mm") ?? (record.MissingCheckOut ? "--" : ""));
+                    var inStr = FormatDateTime(record.ActualCheckIn, record.Date);
+                    if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
+
+                    var outStr = FormatDateTime(record.ActualCheckOut, record.Date);
+                    if (string.IsNullOrEmpty(outStr) && record.MissingCheckOut) outStr = "--";
+
+                    table.Cell().Border(1).AlignCenter().Padding(2).Text(inStr);
+                    table.Cell().Border(1).AlignCenter().Padding(2).Text(outStr);
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(record.RoundedOvertimeMinutes));
                 }
 
@@ -475,5 +481,14 @@ public class ReportExportService
         if (minutes == 0) return "00:00";
         var ts = TimeSpan.FromMinutes(minutes);
         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
+    }
+
+    private string FormatDateTime(DateTime? dt, DateTime referenceDate, string nullPlaceholder = "")
+    {
+        if (!dt.HasValue) return nullPlaceholder;
+        // If it's the same date, show only time. Otherwise show Date + Time
+        return (dt.Value.Date == referenceDate.Date) 
+            ? dt.Value.ToString("HH:mm") 
+            : dt.Value.ToString("dd/MM/yyyy HH:mm");
     }
 }

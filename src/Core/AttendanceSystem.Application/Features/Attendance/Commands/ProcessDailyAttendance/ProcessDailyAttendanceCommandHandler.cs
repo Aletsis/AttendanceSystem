@@ -78,6 +78,32 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 // Skip if not active? 
                 if (employee.Status != EmployeeStatus.Alta) continue; // Basic filter
 
+                // 2.1 Clean up existing processing for this day (Re-processing Logic)
+                // We must free up the AttendanceRecords so they can be re-evaluated or picked up by correct logic.
+                var existingDA = await _dailyRepo.GetByEmployeeAndDateAsync(employee.Id, date, cancellationToken);
+                if (existingDA != null)
+                {
+                    if (existingDA.CheckInRecordId != null)
+                    {
+                        var r = await _attendanceRepo.GetByIdAsync(existingDA.CheckInRecordId, cancellationToken);
+                        if (r != null)
+                        {
+                            r.ResetStatus();
+                            await _attendanceRepo.UpdateAsync(r, cancellationToken);
+                        }
+                    }
+                    if (existingDA.CheckOutRecordId != null)
+                    {
+                        var r = await _attendanceRepo.GetByIdAsync(existingDA.CheckOutRecordId, cancellationToken);
+                        if (r != null)
+                        {
+                            r.ResetStatus();
+                            await _attendanceRepo.UpdateAsync(r, cancellationToken);
+                        }
+                    }
+                    _dailyRepo.Remove(existingDA);
+                }
+
                 // 3. Determine Shift & Search Scope Logic
                 Shift? shift = null;
                 bool isRestDay = false;
@@ -111,7 +137,12 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 // 4. Fetch Records
                 var recordsEnumerable = await _attendanceRepo.GetByDateRangeAsync(searchStartDate, searchEndDate, employee.Id, cancellationToken);
                 // Important: If night shift, we might have many records. Use List to process.
-                var records = recordsEnumerable.OrderBy(r => r.CheckTime).ToList();
+                // Filter out records that are already processed (claimed by other runs/days), EXCEPT those we just reset? 
+                // Since we reset ours above, they are Pending. Records from OTHER days that overlap are Processed.
+                var records = recordsEnumerable
+                    .Where(r => r.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
+                    .OrderBy(r => r.CheckTime)
+                    .ToList();
 
                 // 5. Determine Actual In/Out
                 DateTime? checkIn = null;
@@ -220,16 +251,20 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     }
                 }
 
-                // Marcar registros como procesados
-                if (checkInRecord != null && checkInRecord.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
+                // Marcar registros como procesados y asignar tipo
+                if (checkInRecord != null) // Status check removed as we filtered or reset them
                 {
+                    // If it was already processed (rare race cond), we might overwrite or fail.
+                    // But we filtered Processed out. So it is Pending.
                     checkInRecord.MarkAsProcessed();
+                    checkInRecord.SetInferredType(AttendanceSystem.Domain.Enumerations.CheckType.CheckIn);
                     await _attendanceRepo.UpdateAsync(checkInRecord, cancellationToken);
                 }
 
-                if (checkOutRecord != null && checkOutRecord.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
+                if (checkOutRecord != null)
                 {
                     checkOutRecord.MarkAsProcessed();
+                    checkOutRecord.SetInferredType(AttendanceSystem.Domain.Enumerations.CheckType.CheckOut);
                     await _attendanceRepo.UpdateAsync(checkOutRecord, cancellationToken);
                 }
 
@@ -245,12 +280,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     checkOutRecord?.Id);
 
                 // 7. Save or Update
-                var existing = await _dailyRepo.GetByEmployeeAndDateAsync(employee.Id, date, cancellationToken);
-                if (existing != null)
-                {
-                    _dailyRepo.Remove(existing);
-                }
-                
+                // 7. Save
+                // existingDA was already removed at the start of loop if present.
                 _dailyRepo.Add(dailyAttendance);
                 processedCount++;
             }

@@ -55,7 +55,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         };
 
         // 1. Configure Shift Snapshot
-        if (shift != null && !isRestDay)
+        if (shift != null)
         {
             attendance.ShiftId = shift.Id;
             attendance.ShiftName = shift.Name;
@@ -145,11 +145,29 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                  WorkedOnRestDay = true;
             }
 
-            // Rule: On rest days, overtime counts starting from 8 hours worked (480 minutes)
+            // Rule: On rest days, overtime depends on assigned schedule if available
             if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {
                 var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
-                OvertimeMinutes = Math.Max(0, (int)totalMinutes - 480);
+
+                if (ScheduledCheckIn.HasValue && ScheduledCheckOut.HasValue)
+                {
+                     var schedIn = Date.Add(ScheduledCheckIn.Value);
+                     var schedOut = Date.Add(ScheduledCheckOut.Value);
+                     if (ScheduledCheckOut < ScheduledCheckIn)
+                     {
+                         schedOut = schedOut.AddDays(1);
+                     }
+                     var schedMinutes = (schedOut - schedIn).TotalMinutes;
+                     
+                     // Overtime = Worked - Scheduled
+                     OvertimeMinutes = Math.Max(0, (int)(totalMinutes - schedMinutes));
+                }
+                else
+                {
+                    // Fallback: Default to 8 hours (480 min) deduction if strictly no schedule found
+                    OvertimeMinutes = Math.Max(0, (int)totalMinutes - 480);
+                }
             }
             return;
         }
@@ -161,6 +179,14 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
              if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {
                 var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
+                // If no schedule is known, we can't strictly compare.
+                // Assuming default 8 hours? Or keeping existing logic?
+                // Existing logic assumed > 480 check.
+                // If we want "Worked - Scheduled" and Scheduled is unknown, this is ambiguous.
+                // I will keep the existing fallback logic of > 480 for safety, 
+                // or debatably all of it if Scheduled is considered 0? 
+                // Context: "based on assigned schedules". If no schedule assigned, this block hits.
+                // The previous code deducted 480. I'll stick to that 8h benchmark for "unknown schedule".
                 if (totalMinutes >= 480)
                 {
                     OvertimeMinutes = (int)totalMinutes - 480;
@@ -223,18 +249,16 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
 
             // OVERTIME logic
-            // Rule: Only assign overtime if 8 hours were worked.
+            // Rule: Overtime = Worked Hours - Scheduled Hours
             if (ActualCheckIn.HasValue)
             {
                 var totalWorkedMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
+                var scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
 
-                // Only calculate overtime if worked at least 8 hours (480 minutes)
-                if (totalWorkedMinutes >= 480) 
+                var overtime = totalWorkedMinutes - scheduledMinutes;
+                if (overtime > 0)
                 {
-                    if (ActualCheckOut.Value > scheduledOutDateTime)
-                    {
-                        OvertimeMinutes = (int)(ActualCheckOut.Value - scheduledOutDateTime).TotalMinutes;
-                    }
+                    OvertimeMinutes = (int)overtime;
                 }
             }
         }
