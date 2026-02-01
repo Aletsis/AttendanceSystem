@@ -29,8 +29,8 @@
                 Variant="Variant.Filled" 
                 Color="Color.Primary"
                 OnClick="DownloadFromAllDevices"
-                Disabled="@_isDownloading">
-                @if (_isDownloading)
+                Disabled="@IsBusy">
+                @if (_isDownloadingAll)
                 {
                     <MudProgressCircular Size="Size.Small" Indeterminate="true" />
                     <MudText Class="ml-2">Descargando...</MudText>
@@ -50,11 +50,16 @@
                 
                 @foreach (var device in _devices)
                 {
+                    var isDownloadingThis = _downloadingDeviceId == device.DeviceId;
                     <MudChip T="string" 
-                        Icon="@Icons.Material.Filled.DeviceHub"
+                        Icon="@(isDownloadingThis ? null : Icons.Material.Filled.DeviceHub)"
                         Color="Color.Primary"
                         OnClick="@(() => DownloadFromDevice(device.DeviceId))"
-                        Disabled="@_isDownloading">
+                        Disabled="@IsBusy">
+                        @if (isDownloadingThis)
+                        {
+                            <MudProgressCircular Class="ms-n1 mr-1" Size="Size.Small" Indeterminate="true"/>
+                        }
                         @device.Name
                     </MudChip>
                 }
@@ -103,7 +108,9 @@
 </MudContainer>
 
 @code {
-    private bool _isDownloading;
+    private bool _isDownloadingAll;
+    private string? _downloadingDeviceId;
+    private bool IsBusy => _isDownloadingAll || !string.IsNullOrEmpty(_downloadingDeviceId);
     private DateTime? _fromDate;
     private DateTime? _toDate;
     private List<DeviceDto> _devices = new();
@@ -122,7 +129,7 @@
 
     private async Task DownloadFromAllDevices()
     {
-        _isDownloading = true;
+        _isDownloadingAll = true;
         _results.Clear();
 
         try
@@ -153,12 +160,15 @@
         }
         finally
         {
-            _isDownloading = false;
+            _isDownloadingAll = false;
         }
     }
 
     private async Task DownloadFromDevice(string deviceId)
     {
+        _downloadingDeviceId = deviceId;
+        try
+        {
         // Obtener usuario actual
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         var user = authState.User;
@@ -180,6 +190,11 @@
         else
         {
             Snackbar.Add($"Error: {result.Error}", Severity.Error);
+        }
+        }
+        finally
+        {
+            _downloadingDeviceId = null;
         }
     }
 }

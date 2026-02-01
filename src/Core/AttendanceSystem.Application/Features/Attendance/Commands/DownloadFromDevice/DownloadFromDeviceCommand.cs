@@ -30,6 +30,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly AttendanceDeduplicationService _deduplicationService;
     private readonly ILogger<DownloadFromDeviceCommandHandler> _logger;
     private readonly IMediator _mediator;
+    private readonly IDeviceLockService _deviceLockService;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -39,7 +40,8 @@ public sealed class DownloadFromDeviceCommandHandler
         IUnitOfWork unitOfWork,
         AttendanceDeduplicationService deduplicationService,
         ILogger<DownloadFromDeviceCommandHandler> logger,
-        IMediator mediator)
+        IMediator mediator,
+        IDeviceLockService deviceLockService)
     {
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -49,9 +51,24 @@ public sealed class DownloadFromDeviceCommandHandler
         _deduplicationService = deduplicationService;
         _logger = logger;
         _mediator = mediator;
+        _deviceLockService = deviceLockService;
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
+        DownloadFromDeviceCommand command, 
+        CancellationToken cancellationToken)
+    {
+        Result<DownloadResultDto> result = Result<DownloadResultDto>.Failure("Error desconocido iniciando descarga");
+
+        await _deviceLockService.ExecuteWithLockAsync(command.DeviceId, async () =>
+        {
+            result = await HandleInternal(command, cancellationToken);
+        }, cancellationToken);
+
+        return result;
+    }
+
+    private async Task<Result<DownloadResultDto>> HandleInternal(
         DownloadFromDeviceCommand command, 
         CancellationToken cancellationToken)
     {
