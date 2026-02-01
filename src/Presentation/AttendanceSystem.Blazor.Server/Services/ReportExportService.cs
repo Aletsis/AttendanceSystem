@@ -535,20 +535,24 @@ public class ReportExportService
             });
             
             // Signature Section 
-            col.Item().PaddingTop(20).Row(row => 
+            col.Item().PaddingTop(15).Row(row => 
             {
+                 // Legal Text
+                row.RelativeItem(2).PaddingRight(10).Text("Previamente de asentar mi firma y mi huella digital en el presente documento, manifiesto que he revisado la relacion de entradas y salidas que el mismo contiene, por lo que acepto de conformidad dicha relacion de fechas y horas que se plasman en esta tarjeta, pues reflejan Fielmente los registros que hice de mis ingresos y egresos en el presente centro de trabajo.")
+                   .FontSize(6).Justify();
+
                  // Signature
-                row.RelativeItem().Column(c =>
+                row.RelativeItem(1).Column(c =>
                 {
-                    c.Item().AlignCenter().Container().Width(150).Height(40).BorderBottom(1).BorderColor(Colors.Black); 
-                    c.Item().AlignCenter().PaddingTop(5).Text("Firma").FontSize(9);
+                    c.Item().AlignCenter().Container().Width(120).Height(35).BorderBottom(1).BorderColor(Colors.Black); 
+                    c.Item().AlignCenter().PaddingTop(2).Text("Firma").FontSize(8);
                 });
 
                 // Fingerprint
-                row.RelativeItem().Column(c =>
+                row.RelativeItem(1).Column(c =>
                 {
-                    c.Item().AlignCenter().Container().Width(80).Height(60).Border(1).BorderColor(Colors.Black); 
-                    c.Item().AlignCenter().PaddingTop(5).Text("Huella").FontSize(9);
+                    c.Item().AlignCenter().Container().Width(55).Height(55).Border(1).BorderColor(Colors.Black); 
+                    c.Item().AlignCenter().PaddingTop(2).Text("Huella").FontSize(8);
                 });
             });
          });

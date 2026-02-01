@@ -96,34 +96,51 @@
     }
 
     .signature-section {
-        margin-top: 30px;
+        margin-top: 15px;
         display: flex;
-        justify-content: space-around;
+        justify-content: space-between;
+        align-items: center;
         page-break-inside: avoid;
+    }
+
+    .legal-text {
+        width: 50%;
+        font-size: 0.65rem;
+        text-align: justify;
+        padding-right: 15px;
+        line-height: 1.2;
+    }
+
+    .signature-wrapper {
+        display: flex;
+        width: 50%;
+        justify-content: space-around;
+        align-items: flex-end;
     }
 
     .signature-box {
         text-align: center;
-        width: 35%;
     }
 
     .signature-box-line {
         border-bottom: 1px solid #000;
         margin-bottom: 5px;
-        height: 60px; /* Space for signature */
+        height: 35px; /* Reduced from 60px */
+        width: 120px;
+        margin: 0 auto;
     }
 
     .signature-box-square {
         border: 1px solid #000;
         margin-bottom: 5px;
-        height: 80px; /* Space for fingerprint */
-        width: 100px;
+        height: 55px; /* Reduced from 80px */
+        width: 55px; /* Reduced from 100px */
         margin-left: auto;
         margin-right: auto;
     }
 
     .signature-label {
-        font-size: 0.9rem;
+        font-size: 0.8rem;
     }
 </style>
 
@@ -269,13 +286,18 @@
                 </table>
 
                 <div class="signature-section">
-                    <div class="signature-box">
-                        <div class="signature-box-line"></div>
-                        <div class="signature-label">Firma</div>
+                    <div class="legal-text">
+                        Previamente de asentar mi firma y mi huella digital en el presente documento, manifiesto que he revisado la relacion de entradas y salidas que el mismo contiene, por lo que acepto de conformidad dicha relacion de fechas y horas que se plasman en esta tarjeta, pues reflejan Fielmente los registros que hice de mis ingresos y egresos en el presente centro de trabajo.
                     </div>
-                    <div class="signature-box">
-                        <div class="signature-box-square"></div>
-                        <div class="signature-label">Huella</div>
+                    <div class="signature-wrapper">
+                        <div class="signature-box">
+                            <div class="signature-box-line"></div>
+                            <div class="signature-label">Firma</div>
+                        </div>
+                        <div class="signature-box">
+                            <div class="signature-box-square"></div>
+                            <div class="signature-label">Huella</div>
+                        </div>
                     </div>
                 </div>
             </div>
