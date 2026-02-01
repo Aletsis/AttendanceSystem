@@ -48,10 +48,25 @@
     }
 
     .card-header {
-        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         border-bottom: 2px solid #000;
         margin-bottom: 10px;
         padding-bottom: 5px;
+        position: relative;
+    }
+
+    .card-header-logo {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 60px;
+    }
+    
+    .card-header-content {
+        text-align: center;
+        width: 100%;
     }
 
     .card-title {
@@ -245,9 +260,15 @@
         {
             <div class="attendance-card page-break">
                 <div class="card-header">
-                    <div class="card-title">Carnicerias La Blanquita</div>
-                    <div class="card-subtitle">Tarjeta de asistencia</div>
-                    <div>Del @StartDate?.ToString("dd/MM/yyyy") al @EndDate?.ToString("dd/MM/yyyy")</div>
+                    @if (_config?.CompanyLogo != null && _config.CompanyLogo.Length > 0)
+                    {
+                         <img src="@($"data:image/png;base64,{Convert.ToBase64String(_config.CompanyLogo)}")" class="card-header-logo" />
+                    }
+                    <div class="card-header-content">
+                        <div class="card-title">@(_config?.CompanyName ?? "Mi Empresa")</div>
+                        <div class="card-subtitle">Tarjeta de asistencia</div>
+                        <div>Del @StartDate?.ToString("dd/MM/yyyy") al @EndDate?.ToString("dd/MM/yyyy")</div>
+                    </div>
                 </div>
 
                 <div class="card-info">
@@ -538,7 +559,7 @@ else if (HasSearched)
         
         try
         {
-            var pdfBytes = ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value);
+            var pdfBytes = ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo);
             var fileName = $"Tarjetas_Asistencia_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             
             using var stream = new MemoryStream(pdfBytes);

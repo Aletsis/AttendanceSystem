@@ -7,6 +7,7 @@
 @using AttendanceSystem.Domain.ValueObjects
 @using AttendanceSystem.Blazor.Server.Services
 @using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject ReportExportService ExportService
@@ -88,6 +89,7 @@
     private IEnumerable<AttendanceReportViewDto> _filteredVisibleItems;
     private List<EmployeeDto> _allEmployees = new();
     private List<BranchDto> Branches = new();
+    private SystemConfigurationDto _config;
     
     // Cache for autocomplete
     private List<EmployeeDto> FilteredEmployees => SelectedBranchId.HasValue
@@ -96,6 +98,12 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
+        if (configResult.IsSuccess)
+        {
+            _config = configResult.Value;
+        }
+
         var empResult = await Mediator.Send(new GetAllEmployeesQuery());
         if (empResult.IsSuccess)
         {
@@ -172,7 +180,7 @@
             .ThenBy(x => x.EmployeeId)
             .ThenBy(x => x.Date);
 
-            var bytes = ExportService.GenerateExcel(sortedData, StartDate.Value, EndDate.Value);
+            var bytes = ExportService.GenerateExcel(sortedData, StartDate.Value, EndDate.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo);
             using var stream = new MemoryStream(bytes);
             using var streamRef = new DotNetStreamReference(stream);
             await JS.InvokeVoidAsync("downloadFileFromStream", $"ReporteAsistencia_{DateTime.Now:yyyyMMdd_HHmm}.xlsx", streamRef);
@@ -205,7 +213,7 @@
             .ThenBy(x => x.EmployeeId)
             .ThenBy(x => x.Date);
 
-            var bytes = ExportService.GeneratePdf(sortedData, StartDate.Value, EndDate.Value);
+            var bytes = ExportService.GeneratePdf(sortedData, StartDate.Value, EndDate.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo);
             using var stream = new MemoryStream(bytes);
             using var streamRef = new DotNetStreamReference(stream);
             await JS.InvokeVoidAsync("downloadFileFromStream", $"ReporteAsistencia_{DateTime.Now:yyyyMMdd_HHmm}.pdf", streamRef);

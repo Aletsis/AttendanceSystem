@@ -8,6 +8,8 @@ using AttendanceSystem.Domain.Enumerations;
 namespace AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration;
 
 public sealed record UpdateSystemConfigurationCommand(
+    string CompanyName,
+    byte[]? CompanyLogo,
     TimeSpan LateTolerance,
     TimeSpan StandardWorkHours,
     bool AutoClearDevicesAfterDownload,
@@ -48,6 +50,8 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
         }
 
         config.UpdateSettings(
+            command.CompanyName,
+            command.CompanyLogo,
             command.LateTolerance,
             command.StandardWorkHours,
             command.AutoClearDevicesAfterDownload,

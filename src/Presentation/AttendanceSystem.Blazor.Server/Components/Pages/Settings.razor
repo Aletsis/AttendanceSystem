@@ -22,6 +22,31 @@
         <MudCard>
             <MudCardContent>
                 <MudForm @ref="_form" @bind-IsValid="_success">
+                    <MudText Typo="Typo.h6" Class="mb-2">Identidad Corporativa</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Label="Nombre de la Empresa" @bind-Value="_companyName" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" Class="d-flex align-center gap-4">
+                            @if (_companyLogo != null && _companyLogo.Length > 0)
+                            {
+                                <MudImage Src="@($"data:image/png;base64,{Convert.ToBase64String(_companyLogo)}")" Alt="Logo" Height="50" Class="rounded" />
+                                <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => _companyLogo = null)">Eliminar</MudButton>
+                            }
+                            <MudFileUpload T="IBrowserFile" FilesChanged="UploadLogo" Accept=".png, .jpg, .jpeg">
+                                <ActivatorContent>
+                                    <MudButton Variant="Variant.Filled"
+                                               Color="Color.Primary"
+                                               StartIcon="@Icons.Material.Filled.CloudUpload">
+                                        Subir Logo
+                                    </MudButton>
+                                </ActivatorContent>
+                            </MudFileUpload>
+                        </MudItem>
+                    </MudGrid>
+                    
+                    <MudDivider Class="my-4" />
+
                     <MudText Typo="Typo.h6" Class="mb-2">General</MudText>
                     
                     <MudGrid>
@@ -125,6 +150,8 @@
     private MudForm _form = default!;
 
     // Config Fields
+    private string _companyName = "Mi Empresa";
+    private byte[]? _companyLogo;
     private int _lateToleranceMinutes;
     private int _standardWorkHours;
     private bool _autoClearAfterDownload;
@@ -143,6 +170,27 @@
         await LoadSettings();
     }
 
+    private async Task UploadLogo(IBrowserFile file)
+    {
+        if (file.Size > 2000000) // 2MB max
+        {
+            Snackbar.Add("El archivo es demasiado grande (Max 2MB)", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            using var stream = new MemoryStream();
+            await file.OpenReadStream(2000000).CopyToAsync(stream);
+            _companyLogo = stream.ToArray();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error subiendo imagen: {ex.Message}", Severity.Error);
+        }
+    }
+
     private async Task LoadSettings()
     {
         _isLoading = true;
@@ -152,6 +200,8 @@
             if (result.IsSuccess)
             {
                 var config = result.Value;
+                _companyName = config.CompanyName;
+                _companyLogo = config.CompanyLogo;
                 _lateToleranceMinutes = (int)config.LateToleranceMinutes.TotalMinutes;
                 _standardWorkHours = (int)config.StandardWorkHours.TotalHours;
                 _autoClearAfterDownload = config.AutoClearDevicesAfterDownload;
@@ -186,6 +236,8 @@
         try
         {
             var command = new UpdateSystemConfigurationCommand(
+                _companyName,
+                _companyLogo,
                 TimeSpan.FromMinutes(_lateToleranceMinutes),
                 TimeSpan.FromHours(_standardWorkHours),
                 _autoClearAfterDownload,

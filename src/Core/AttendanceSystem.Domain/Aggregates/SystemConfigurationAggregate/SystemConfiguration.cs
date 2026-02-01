@@ -8,6 +8,9 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     // Singleton ID
     public static readonly Guid ConfigurationId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
+    public string CompanyName { get; private set; }
+    public byte[]? CompanyLogo { get; private set; }
+
     public TimeSpan LateTolerance { get; private set; }
     public TimeSpan StandardWorkHours { get; private set; }
     public bool AutoClearDevicesAfterDownload { get; private set; }
@@ -30,6 +33,8 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         return new SystemConfiguration
         {
             Id = ConfigurationId,
+            CompanyName = "Mi Empresa",
+            CompanyLogo = null,
             LateTolerance = TimeSpan.FromMinutes(15),
             StandardWorkHours = TimeSpan.FromHours(8),
             AutoClearDevicesAfterDownload = false,
@@ -44,12 +49,16 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     }
 
     public void UpdateSettings(
+        string companyName,
+        byte[]? companyLogo,
         TimeSpan lateTolerance,
         TimeSpan standardWorkHours,
         bool autoClearDevicesAfterDownload,
         bool isAutoDownloadEnabled,
         TimeSpan? autoDownloadTime)
     {
+        CompanyName = companyName;
+        CompanyLogo = companyLogo;
         LateTolerance = lateTolerance;
         StandardWorkHours = standardWorkHours;
         AutoClearDevicesAfterDownload = autoClearDevicesAfterDownload;

@@ -12,14 +12,14 @@ namespace AttendanceSystem.Blazor.Server.Services;
 
 public class ReportExportService
 {
-    public byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate)
+    public byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
     {
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add("Reporte de Asistencia");
 
         // 1. Title and Info
         var titleRange = worksheet.Range("A1:L1");
-        titleRange.Merge().Value = "Carnicerias La Blanquita";
+        titleRange.Merge().Value = companyName;
         titleRange.Style.Font.FontSize = 16;
         titleRange.Style.Font.Bold = true;
         titleRange.Style.Font.FontColor = XLColor.White;
@@ -31,6 +31,18 @@ public class ReportExportService
         var dateRangeStr = startDate.Date == endDate.Date 
             ? startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()
             : $"{startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()} - {endDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()}";
+
+        if (companyLogo != null && companyLogo.Length > 0)
+        {
+            try 
+            {
+               using var ms = new MemoryStream(companyLogo);
+               var pic = worksheet.AddPicture(ms).MoveTo(worksheet.Cell("A1"));
+               pic.Width = 60; // Adjust as needed
+               pic.Height = 60;
+            }
+            catch { /* Ignore image errors in excel */ }
+        }
 
         worksheet.Cell("A2").Value = $"INCIDENCIAS RELOJ CHECADOR: {dateRangeStr}";
         worksheet.Range("A2:L2").Merge().Style.Font.Italic = true;
@@ -122,7 +134,7 @@ public class ReportExportService
         }
     }
 
-    public byte[] GeneratePdf(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate)
+    public byte[] GeneratePdf(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
     {
          return Document.Create(container =>
         {
@@ -136,9 +148,14 @@ public class ReportExportService
                 page.Header()
                     .Row(row => 
                     {
+                        if (companyLogo != null && companyLogo.Length > 0)
+                        {
+                            row.ConstantItem(60).PaddingRight(10).Image(companyLogo).FitArea();
+                        }
+
                         row.RelativeItem().Column(col => 
                         {
-                            col.Item().AlignCenter().Text("CARNICERIAS LA BLANQUITA").SemiBold().FontSize(18).FontColor(Colors.Blue.Darken2);
+                            col.Item().AlignCenter().Text(companyName).SemiBold().FontSize(18).FontColor(Colors.Blue.Darken2);
                             
                             var culture = new CultureInfo("es-ES");
                             var dateRangeStr = startDate.Date == endDate.Date 
@@ -405,7 +422,9 @@ public class ReportExportService
     public byte[] GenerateAttendanceCardsPdf(
         Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> groupedData, 
         DateTime startDate, 
-        DateTime endDate)
+        DateTime endDate,
+        string companyName,
+        byte[]? companyLogo)
     {
         var durationDays = (endDate.Date - startDate.Date).TotalDays + 1;
         bool useHalfPage = durationDays <= 7;
@@ -432,7 +451,7 @@ public class ReportExportService
                             // Card 1
                             // Use Height to constrain it to half page (Letter height ~28cm, margin 2cm = 26cm. Half ~13cm).
                             // We use 12.5cm to be safe.
-                            col.Item().Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item1, startDate, endDate));
+                            col.Item().Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item1, startDate, endDate, companyName, companyLogo));
                             
                             if (item2.HasValue)
                             {
@@ -441,7 +460,7 @@ public class ReportExportService
                                    .BorderBottom(1).BorderColor(Colors.Grey.Medium);
                                 
                                 // Card 2
-                                col.Item().PaddingTop(0.2f, Unit.Centimetre).Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item2.Value, startDate, endDate));
+                                col.Item().PaddingTop(0.2f, Unit.Centimetre).Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item2.Value, startDate, endDate, companyName, companyLogo));
                             }
                         });
                     });
@@ -459,14 +478,14 @@ public class ReportExportService
                         page.PageColor(Colors.White);
                         page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
 
-                        page.Content().Element(c => ComposeAttendanceCard(c, group, startDate, endDate));
+                        page.Content().Element(c => ComposeAttendanceCard(c, group, startDate, endDate, companyName, companyLogo));
                     });
                 }
             }
         }).GeneratePdf();
     }
 
-    private void ComposeAttendanceCard(IContainer container, KeyValuePair<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> group, DateTime startDate, DateTime endDate)
+    private void ComposeAttendanceCard(IContainer container, KeyValuePair<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> group, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
     {
          var employeeInfo = group.Key;
          var records = group.Value.OrderBy(x => x.Date).ToList();
@@ -477,9 +496,20 @@ public class ReportExportService
             // Header
             col.Item().Column(header => 
             {
-                header.Item().AlignCenter().Text("CARNICERIAS LA BLANQUITA").Bold().FontSize(14);
-                header.Item().AlignCenter().Text("TARJETA DE ASISTENCIA").Bold().FontSize(12);
-                header.Item().AlignCenter().Text($"Del {startDate:dd/MM/yyyy} al {endDate:dd/MM/yyyy}");
+                header.Item().Row(r => 
+                {
+                    if (companyLogo != null && companyLogo.Length > 0)
+                    {
+                        r.ConstantItem(50).PaddingRight(5).Image(companyLogo).FitArea();
+                    }
+                    
+                    r.RelativeItem().Column(c => {
+                         c.Item().AlignCenter().Text(companyName).Bold().FontSize(14);
+                         c.Item().AlignCenter().Text("TARJETA DE ASISTENCIA").Bold().FontSize(12);
+                         c.Item().AlignCenter().Text($"Del {startDate:dd/MM/yyyy} al {endDate:dd/MM/yyyy}");
+                    });
+                });
+
                 header.Item().PaddingTop(10).Row(row =>
                 {
                     row.RelativeItem().Text($"No. {employeeInfo.EmployeeId}").Bold();

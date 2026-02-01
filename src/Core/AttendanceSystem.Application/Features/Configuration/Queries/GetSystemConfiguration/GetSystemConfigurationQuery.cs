@@ -28,6 +28,8 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
         }
 
         return Result<SystemConfigurationDto>.Success(new SystemConfigurationDto(
+            config.CompanyName,
+            config.CompanyLogo,
             config.LateTolerance,
             config.StandardWorkHours,
             config.AutoClearDevicesAfterDownload,

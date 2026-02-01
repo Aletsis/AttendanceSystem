@@ -137,6 +137,8 @@ public sealed record PagedResultDto<T>(
 
 // DTOs de configuración
 public sealed record SystemConfigurationDto(
+    string CompanyName,
+    byte[]? CompanyLogo,
     TimeSpan LateToleranceMinutes,
     TimeSpan StandardWorkHours,
     bool AutoClearDevicesAfterDownload,

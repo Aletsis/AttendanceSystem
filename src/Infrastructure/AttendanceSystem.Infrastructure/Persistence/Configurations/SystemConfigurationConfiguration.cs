@@ -12,6 +12,14 @@ public class SystemConfigurationConfiguration : IEntityTypeConfiguration<SystemC
 
         builder.HasKey(c => c.Id);
 
+        builder.Property(c => c.CompanyName)
+            .IsRequired()
+            .HasMaxLength(100)
+            .HasDefaultValue("Mi Empresa");
+
+        builder.Property(c => c.CompanyLogo)
+            .IsRequired(false);
+
         builder.Property(c => c.LateTolerance)
             .IsRequired();
 
