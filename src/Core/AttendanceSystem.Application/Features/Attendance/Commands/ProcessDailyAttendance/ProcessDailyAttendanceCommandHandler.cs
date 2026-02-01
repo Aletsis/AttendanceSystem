@@ -139,8 +139,11 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 // Important: If night shift, we might have many records. Use List to process.
                 // Filter out records that are already processed (claimed by other runs/days), EXCEPT those we just reset? 
                 // Since we reset ours above, they are Pending. Records from OTHER days that overlap are Processed.
+                // Filter out records that are already processed? 
+                // NO. For Night Shifts and correction scenarios, we must be able to "steal" or "re-claim" 
+                // a record that was incorrectly claimed by another day (e.g. Day 2 claiming Day 1's Exit as its Entry).
+                // We rely on the Stricter Tolerances (Asymmetric) to ensure we only claim what truly fits.
                 var records = recordsEnumerable
-                    .Where(r => r.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
                     .OrderBy(r => r.CheckTime)
                     .ToList();
 
@@ -160,15 +163,17 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         scheduledOut = scheduledOut.AddDays(1); 
                     }
 
-                    // Define a tolerance window to associate a record with a shift event (e.g. 14 hours)
-                    // This allows for significant overtime (e.g. working 15 hours on an 8 hour shift)
-                    double maxDistanceMinutes = 840; 
+                    // Define tolerance windows
+                    // Asymmetric tolerance is crucial for Night Shifts to distinguish "Late Exit from Previous Day" (matches Out) 
+                    // from "Very Early Entry for Current Day" (should NOT match In).
+                    double maxInDistance = 300;   // 5 hours max early/late for CheckIn
+                    double maxOutDistance = 960;  // 16 hours max for CheckOut (allows double shifts)
 
                     // Find best candidate for IN
-                    // We look for the record closest to scheduledIn
+                    // We look for the record closest to scheduledIn within stricter tolerance
                     var matchIn = records
                         .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
-                        .Where(x => x.Diff <= maxDistanceMinutes)
+                        .Where(x => x.Diff <= maxInDistance)
                         .OrderBy(x => x.Diff)
                         .FirstOrDefault();
 
@@ -179,19 +184,21 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     }
 
                     // Find best candidate for OUT
-                    // We look for the record closest to scheduledOut
+                    // We look for the record closest to scheduledOut with wider tolerance
                     var matchOut = records
                         .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
-                        .Where(x => x.Diff <= maxDistanceMinutes)
+                        .Where(x => x.Diff <= maxOutDistance)
                         .OrderBy(x => x.Diff)
                         .FirstOrDefault();
 
                     if (matchOut != null)
                     {
-                        // Check for overlap: If the SAME record matches both In and Out (rare but possible if short shift or single punch)
+                        // Check for overlap
                         if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
                         {
-                            // It matched both. Decide based on which is closer.
+                            // It matched both. Decide based on which is closer relative to its own tolerance/target.
+                            // However, if one is Out-of-Tolerance for In but In-Tolerance for Out, the Separate Where clauses handle it.
+                            // If it passed both, it's ambiguous (e.g. short shift).
                             if (matchOut.Diff < matchIn!.Diff)
                             {
                                 // Closer to Out -> It's an Out
