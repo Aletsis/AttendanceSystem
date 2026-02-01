@@ -1,8 +1,10 @@
 @page "/attendance/download-logs"
+@using MediatR
+@using AttendanceSystem.Application.Features.DownloadLogs.Queries.GetDownloadLogs
+@using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices
 @using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate
-@using AttendanceSystem.Domain.Repositories
-@inject IDownloadLogRepository DownloadLogRepository
-@inject IDeviceRepository DeviceRepository
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
     <MudCard>
@@ -134,8 +136,11 @@
 
     private async Task LoadDeviceNames()
     {
-        var devices = await DeviceRepository.GetAllDevicesAsync();
-        _deviceNames = devices.ToDictionary(d => d.Id.Value, d => d.Name);
+        var result = await Mediator.Send(new GetActiveDevicesQuery());
+        if (result.IsSuccess)
+        {
+            _deviceNames = result.Value.ToDictionary(d => d.DeviceId, d => d.Name);
+        }
     }
 
     private async Task LoadLogs()
@@ -143,18 +148,22 @@
         _isLoading = true;
         try
         {
-            if (_fromDate.HasValue && _toDate.HasValue)
+            DateTime? toDateAdjusted = _toDate.HasValue ? _toDate.Value.AddDays(1).AddTicks(-1) : null;
+            
+            var result = await Mediator.Send(new GetDownloadLogsQuery(_fromDate, toDateAdjusted));
+            
+            if (result.IsSuccess)
             {
-                var logs = await DownloadLogRepository.GetByDateRangeAsync(
-                    _fromDate.Value, 
-                    _toDate.Value.AddDays(1).AddTicks(-1));
-                _logs = logs.ToList();
+                _logs = result.Value.ToList();
             }
             else
             {
-                var logs = await DownloadLogRepository.GetRecentAsync(100);
-                _logs = logs.ToList();
+                Snackbar.Add($"Error al cargar logs: {result.Error}", Severity.Error);
             }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
         }
         finally
         {
