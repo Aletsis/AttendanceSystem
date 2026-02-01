@@ -3,17 +3,15 @@
 @using AttendanceSystem.Application.Features.Attendance.Queries.GetDailyAttendance
 @using AttendanceSystem.Application.Features.Reports.Queries.GetAdvancedAttendanceReport
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
-@using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate
-@using AttendanceSystem.Domain.Aggregates.EmployeeAggregate
-@using AttendanceSystem.Domain.Aggregates.BranchAggregate
-@using AttendanceSystem.Domain.Repositories
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
 @using AttendanceSystem.Domain.Enumerations
 @using AttendanceSystem.Domain.ValueObjects
 @using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Common
 @using System.Globalization
 @inject IMediator Mediator
-@inject IEmployeeRepository EmployeeRepository
-@inject IBranchRepository BranchRepository
 @inject ISnackbar Snackbar
 
 @using AttendanceSystem.Blazor.Server.Components.Pages.ViewModels
@@ -46,7 +44,7 @@
             <MudSelectItem T="Guid?" Value="null">Todas</MudSelectItem>
             @foreach (var branch in Branches)
             {
-                <MudSelectItem T="Guid?" Value="@branch.Id.Value">@branch.Name</MudSelectItem>
+                <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
             }
         </MudSelect>
     </MudItem>
@@ -85,11 +83,11 @@
     }
 
     <MudItem xs="12" sm="6">
-        <MudAutocomplete T="Employee" 
+        <MudAutocomplete T="EmployeeDto" 
                         Label="Empleado (Opcional)"
                         @bind-Value="SelectedEmployeeObj" 
                         SearchFunc="@SearchEmployees"
-                        ToStringFunc="@(e => e == null ? null : $"{e.Id.Value} - {e.GetFullName()}")"
+                        ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
                         Clearable="true"
                         AdornmentColor="Color.Primary"
                         ResetValueOnEmptyText="true" />
@@ -130,11 +128,10 @@
     private DateTime? StartDate = DateTime.Today; 
     private DateTime? EndDate = DateTime.Today;
     private Guid? SelectedBranchId;
-    private Employee? SelectedEmployeeObj;
+    private EmployeeDto? SelectedEmployeeObj;
     
-    // Kept for Dropdowns - ideally replace with Query
-    private List<Employee> _allEmployees = new();
-    private List<Branch> Branches = new();
+    private List<EmployeeDto> _allEmployees = new();
+    private List<BranchDto> Branches = new();
     
     private List<AdvancedReportSummaryDto> DisplayedSummaries = new();
     private SystemConfigurationDto _config;
@@ -149,7 +146,7 @@
             if (_config == null) return string.Empty;
             try
             {
-                var dates = GetPeriodDates(SelectedYear, SelectedPeriodNumber);
+                var dates = _config.GetPeriodDates(SelectedYear, SelectedPeriodNumber);
                 return $"{dates.Start:dd/MM/yyyy} - {dates.End:dd/MM/yyyy}";
             }
             catch
@@ -161,8 +158,13 @@
 
     protected override async Task OnInitializedAsync()
     {
-        _allEmployees = (await EmployeeRepository.GetAllAsync()).ToList();
-        Branches = (await BranchRepository.GetAllAsync()).ToList();
+        var empResult = await Mediator.Send(new GetAllEmployeesQuery());
+        if (empResult.IsSuccess)
+            _allEmployees = empResult.Value.ToList();
+
+        var branchResult = await Mediator.Send(new GetBranchesQuery());
+        if (branchResult.IsSuccess)
+            Branches = branchResult.Value.ToList();
 
         var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
         if (configResult.IsSuccess)
@@ -195,87 +197,23 @@
         }
     }
 
-    private (DateTime Start, DateTime End) GetPeriodDates(int year, int periodNum)
-    {
-        if (_config.WorkPeriodMode == WorkPeriodMode.Weekly)
-        {
-            try 
-            {
-                var s = ISOWeek.ToDateTime(year, periodNum, _config.WeeklyStartDay);
-                return (s, s.AddDays(6));
-            }
-            catch
-            {
-                 var s = ISOWeek.ToDateTime(year, 1, _config.WeeklyStartDay).AddDays((periodNum - 1) * 7);
-                 return (s, s.AddDays(6));
-            }
-        }
-        else if (_config.WorkPeriodMode == WorkPeriodMode.Monthly)
-        {
-            if (periodNum < 1) periodNum = 1;
-            if (periodNum > 12) periodNum = 12;
-
-            var start = new DateTime(year, periodNum, 1);
-            int maxDay = DateTime.DaysInMonth(year, periodNum);
-            int sDay = Math.Min(_config.MonthlyStartDay, maxDay);
-            
-            var s = new DateTime(year, periodNum, sDay);
-            var e = s.AddMonths(1).AddDays(-1);
-            return (s, e);
-        }
-        else // Fortnightly
-        {
-            if (periodNum < 1) periodNum = 1;
-
-            int monthIndex = (periodNum - 1) / 2 + 1; // 1-12
-            bool isSecondHalf = (periodNum % 2 == 0);
-
-            if (monthIndex > 12) monthIndex = 12;
-
-            var d1 = _config.FortnightFirstDay;
-            var d2 = _config.FortnightSecondDay; 
-
-            if (!isSecondHalf) // First Half 
-            {
-                int maxDay = DateTime.DaysInMonth(year, monthIndex);
-                int startDay = Math.Min(d1, maxDay);
-                var s = new DateTime(year, monthIndex, startDay);
-            
-                var nextPStart = new DateTime(year, monthIndex, Math.Min(d2, maxDay));
-                
-                return (s, nextPStart.AddDays(-1));
-            }
-            else // Second Half 
-            {
-                int maxDay = DateTime.DaysInMonth(year, monthIndex);
-                int startDay = Math.Min(d2, maxDay);
-                var s = new DateTime(year, monthIndex, startDay);
-                
-                var nextMonth = new DateTime(year, monthIndex, 1).AddMonths(1);
-                var nextStart = new DateTime(nextMonth.Year, nextMonth.Month, Math.Min(d1, DateTime.DaysInMonth(nextMonth.Year, nextMonth.Month)));
-                
-                return (s, nextStart.AddDays(-1));
-            }
-        }
-    }
-
     private void OnBranchChanged(Guid? branchId)
     {
         SelectedBranchId = branchId;
         SelectedEmployeeObj = null; 
     }
 
-    private Task<IEnumerable<Employee>> SearchEmployees(string value, CancellationToken token)
+    private Task<IEnumerable<EmployeeDto>> SearchEmployees(string value, CancellationToken token)
     {
         var filtered = SelectedBranchId.HasValue 
-            ? _allEmployees.Where(e => e.BranchId.Value == SelectedBranchId.Value) 
+            ? _allEmployees.Where(e => e.BranchId == SelectedBranchId.Value) 
             : _allEmployees;
 
         if (string.IsNullOrEmpty(value)) return Task.FromResult(filtered);
 
         return Task.FromResult(filtered.Where(e => 
-            e.Id.Value.Contains(value, StringComparison.InvariantCultureIgnoreCase) || 
-            e.GetFullName().Contains(value, StringComparison.InvariantCultureIgnoreCase)));
+            e.Id.Contains(value, StringComparison.InvariantCultureIgnoreCase) || 
+            e.FullName.Contains(value, StringComparison.InvariantCultureIgnoreCase)));
     }
 
     private async Task LoadReport()
@@ -289,15 +227,14 @@
         }
         else
         {
-            var dates = GetPeriodDates(SelectedYear, SelectedPeriodNumber);
+            var dates = _config.GetPeriodDates(SelectedYear, SelectedPeriodNumber);
             start = dates.Start;
             end = dates.End;
         }
 
         var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
-        var employeeId = SelectedEmployeeObj?.Id;
+        var employeeId = SelectedEmployeeObj != null ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
 
-        // Use Application Query
         var result = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId));
         DisplayedSummaries = result.ToList();
     }
@@ -312,3 +249,4 @@
         DialogService.Show<ReportDetailsDialog>($"Detalles - {item.EmployeeName}", parameters, options);
     }
 }
+
