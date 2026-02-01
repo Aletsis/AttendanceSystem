@@ -68,5 +68,70 @@ public static class WorkPeriodHelper
                 return (s, nextStart.AddDays(-1));
             }
         }
+        }
+    
+    public static List<WorkPeriodDto> GetAvailablePeriods(this SystemConfigurationDto config, int year)
+    {
+        var periods = new List<WorkPeriodDto>();
+        var culture = new CultureInfo("es-MX");
+
+        if (config.WorkPeriodMode == WorkPeriodMode.Weekly)
+        {
+             var startDayOfWeek = config.WeeklyStartDay;
+             
+             var firstJan = new DateTime(year, 1, 1);
+             var diff = firstJan.DayOfWeek - startDayOfWeek;
+             if (diff < 0) diff += 7;
+             
+             var startOfWeek = firstJan.AddDays(-diff);
+             
+             int weekNum = 1;
+             while (startOfWeek.Year <= year)
+             {
+                 var endOfWeek = startOfWeek.AddDays(6);
+                 
+                 if (endOfWeek.Year >= year)
+                 {
+                     periods.Add(new WorkPeriodDto(
+                         $"Semana {weekNum} ({startOfWeek:dd/MM} - {endOfWeek:dd/MM})",
+                         startOfWeek,
+                         endOfWeek
+                     ));
+                     weekNum++;
+                 }
+                 startOfWeek = startOfWeek.AddDays(7);
+             }
+        }
+        else if (config.WorkPeriodMode == WorkPeriodMode.Fortnightly)
+        {
+             for (int month = 1; month <= 12; month++)
+            {
+                var monthName = culture.DateTimeFormat.GetMonthName(month);
+                monthName = char.ToUpper(monthName[0]) + monthName.Substring(1);
+
+                // Q1: Period (Month-1)*2 + 1
+                int p1Num = (month - 1) * 2 + 1;
+                var p1Dates = config.GetPeriodDates(year, p1Num);
+                periods.Add(new WorkPeriodDto($"{monthName} - Q1 ({p1Dates.Start:dd}-{p1Dates.End:dd})", p1Dates.Start, p1Dates.End));
+
+                // Q2: Period (Month-1)*2 + 2
+                int p2Num = p1Num + 1;
+                 var p2Dates = config.GetPeriodDates(year, p2Num);
+                periods.Add(new WorkPeriodDto($"{monthName} - Q2 ({p2Dates.Start:dd}-{p2Dates.End:dd})", p2Dates.Start, p2Dates.End));
+            }
+        }
+        else if (config.WorkPeriodMode == WorkPeriodMode.Monthly)
+        {
+            for (int month = 1; month <= 12; month++)
+            {
+                var monthName = culture.DateTimeFormat.GetMonthName(month);
+                monthName = char.ToUpper(monthName[0]) + monthName.Substring(1);
+                
+                var pDates = config.GetPeriodDates(year, month);
+                periods.Add(new WorkPeriodDto($"{monthName} ({pDates.Start:dd/MM} - {pDates.End:dd/MM})", pDates.Start, pDates.End));
+            }
+        }
+
+        return periods;
     }
 }

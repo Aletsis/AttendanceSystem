@@ -6,7 +6,9 @@
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Domain.ValueObjects
+@using AttendanceSystem.Application.Common
 @using AttendanceSystem.Blazor.Server.Services
+@using AttendanceSystem.Domain.Enumerations
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -156,14 +158,14 @@
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" sm="3">
-                 <MudSelect T="AttendanceSystem.Domain.Enumerations.WorkPeriodMode" Label="Tipo de Periodo" Value="SelectedPeriodMode" ValueChanged="OnPeriodModeChanged">
-                    <MudSelectItem Value="AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Weekly">Semanal</MudSelectItem>
-                    <MudSelectItem Value="AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Fortnightly">Quincenal</MudSelectItem>
-                    <MudSelectItem Value="AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Monthly">Mensual</MudSelectItem>
+                 <MudSelect T="WorkPeriodMode" Label="Tipo de Periodo" Value="SelectedPeriodMode" ValueChanged="OnPeriodModeChanged">
+                    <MudSelectItem Value="WorkPeriodMode.Weekly">Semanal</MudSelectItem>
+                    <MudSelectItem Value="WorkPeriodMode.Fortnightly">Quincenal</MudSelectItem>
+                    <MudSelectItem Value="WorkPeriodMode.Monthly">Mensual</MudSelectItem>
                 </MudSelect>
             </MudItem>
             <MudItem xs="12" sm="4">
-                <MudSelect T="PredefinedPeriod" Label="Periodo" Value="SelectedPeriod" ValueChanged="OnPeriodChanged" ToStringFunc="@(p => p?.Name)">
+                <MudSelect T="WorkPeriodDto" Label="Periodo" Value="SelectedPeriod" ValueChanged="OnPeriodChanged" ToStringFunc="@(p => p?.Name)">
                     @foreach (var period in AvailablePeriods)
                     {
                         <MudSelectItem Value="@period">@period.Name</MudSelectItem>
@@ -287,194 +289,16 @@ else if (HasSearched)
     </div>
 }
 
-@using AttendanceSystem.Blazor.Server.Models
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 
 @code {
     private string DateSelectionMode = "Range"; // "Range" or "Period"
     private int SelectedYear = DateTime.Today.Year;
-    private AttendanceSystem.Domain.Enumerations.WorkPeriodMode SelectedPeriodMode;
-    private PredefinedPeriod? SelectedPeriod;
-    private List<PredefinedPeriod> AvailablePeriods = new();
+    private WorkPeriodMode SelectedPeriodMode;
+    private WorkPeriodDto? SelectedPeriod;
+    private List<WorkPeriodDto> AvailablePeriods = new();
 
-    // Configuration Config
-    private DayOfWeek _configWeeklyStartDay = DayOfWeek.Monday;
-    private int _configFortnightDay1 = 1;
-    private int _configFortnightDay2 = 16;
-    private int _configMonthlyStartDay = 1;
-    private bool _configLoaded = false;
-
-    private void OnDateSelectionModeChanged(string mode)
-    {
-        DateSelectionMode = mode;
-        if (DateSelectionMode == "Period")
-        {
-            UpdateAvailablePeriods();
-        }
-    }
-
-    private void OnPeriodModeChanged(AttendanceSystem.Domain.Enumerations.WorkPeriodMode mode)
-    {
-        SelectedPeriodMode = mode;
-        UpdateAvailablePeriods();
-    }
-    
-    private void OnYearChanged(int year)
-    {
-        SelectedYear = year;
-        UpdateAvailablePeriods();
-    }
-
-    private void OnPeriodChanged(PredefinedPeriod? period)
-    {
-        SelectedPeriod = period;
-        if (SelectedPeriod != null)
-        {
-             StartDate = SelectedPeriod.Start;
-             EndDate = SelectedPeriod.End;
-        }
-        else
-        {
-             StartDate = null; 
-             EndDate = null;
-        }
-    }
-
-    private void UpdateAvailablePeriods()
-    {
-        AvailablePeriods = GeneratePeriods(SelectedPeriodMode, SelectedYear);
-        // Try to select current period
-        var today = DateTime.Today;
-        SelectedPeriod = AvailablePeriods.FirstOrDefault(p => today >= p.Start && today <= p.End) ?? AvailablePeriods.LastOrDefault();
-        
-        if (SelectedPeriod != null)
-        {
-             StartDate = SelectedPeriod.Start;
-             EndDate = SelectedPeriod.End;
-        }
-    }
-
-    private List<PredefinedPeriod> GeneratePeriods(AttendanceSystem.Domain.Enumerations.WorkPeriodMode mode, int year)
-    {
-        var periods = new List<PredefinedPeriod>();
-        var culture = new System.Globalization.CultureInfo("es-MX");
-
-        if (mode == AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Weekly)
-        {
-             // Use configured start day
-             var startDayOfWeek = _configWeeklyStartDay;
-             
-             // Find the first occurrence of this day on or before Jan 1 to start the first week?
-             // Or usually Week 1 is the first week with >= 4 days in the new year (ISO8601)?
-             // Simple fallback: Let's find the day causing the "Week 1" to contain Jan 1.
-             
-             var firstJan = new DateTime(year, 1, 1);
-             var diff = firstJan.DayOfWeek - startDayOfWeek;
-             if (diff < 0) diff += 7;
-             
-             var startOfWeek = firstJan.AddDays(-diff);
-             
-             int weekNum = 1;
-             // Generate weeks until we pass the year
-             while (startOfWeek.Year <= year)
-             {
-                 var endOfWeek = startOfWeek.AddDays(6);
-                 
-                 // If the week is mainly in this year or covers this year
-                 if (endOfWeek.Year >= year)
-                 {
-                     periods.Add(new PredefinedPeriod
-                     {
-                         Name = $"Semana {weekNum} ({startOfWeek:dd/MM} - {endOfWeek:dd/MM})",
-                         Start = startOfWeek,
-                         End = endOfWeek
-                     });
-                     weekNum++;
-                 }
-                 startOfWeek = startOfWeek.AddDays(7);
-             }
-        }
-        else if (mode == AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Fortnightly)
-        {
-             for (int month = 1; month <= 12; month++)
-            {
-                var daysInMonth = DateTime.DaysInMonth(year, month);
-                var monthName = culture.DateTimeFormat.GetMonthName(month);
-                monthName = char.ToUpper(monthName[0]) + monthName.Substring(1);
-
-                // Config-based Fortnights
-                // Q1: Day1 to Day2-1
-                // Q2: Day2 to End
-                
-                int d1 = _configFortnightDay1;
-                int d2 = _configFortnightDay2;
-
-                // Validate if days exist in this month (e.g. Feb)
-                if (d1 > daysInMonth) d1 = 1; // Fallback
-                if (d2 > daysInMonth) d2 = 16; // Fallback
-
-                // Period 1
-                // Ends at d2 - 1, but if d2 is <= d1, it's weird. Assume d1 < d2.
-                // If d2 is 16, ends 15.
-                
-                var p1Start = new DateTime(year, month, d1);
-                var p1End = new DateTime(year, month, d2).AddDays(-1);
-                
-                // If p1End < p1Start (misconfig), force p1End = p1Start
-                if (p1End < p1Start) p1End = p1Start;
-
-                periods.Add(new PredefinedPeriod 
-                { 
-                    Name = $"{monthName} - Q1 ({p1Start:dd}-{p1End:dd})", 
-                    Start = p1Start,
-                    End = p1End
-                });
-                
-                // Period 2
-                var p2Start = new DateTime(year, month, d2);
-                var p2End = new DateTime(year, month, daysInMonth); // End of month
-                
-                 periods.Add(new PredefinedPeriod 
-                { 
-                    Name = $"{monthName} - Q2 ({p2Start:dd}-{p2End:dd})", 
-                    Start = p2Start,
-                    End = p2End
-                });
-            }
-        }
-        else if (mode == AttendanceSystem.Domain.Enumerations.WorkPeriodMode.Monthly)
-        {
-            // Monthly periods starting on _configMonthlyStartDay
-            // If Day is 1: Jan 1 - Jan 31
-            // If Day is 15: Dec 15 - Jan 14? or Jan 15 - Feb 14?
-            // Usually if I say "January Period" and it starts on 15th...
-            // Let's assume period for 'Month X' starts on 'Month X, StartDay'.
-            
-            for (int month = 1; month <= 12; month++)
-            {
-                var currentMonthStart = new DateTime(year, month, 1);
-                var daysInMonth = DateTime.DaysInMonth(year, month);
-                
-                int startDay = _configMonthlyStartDay;
-                if (startDay > daysInMonth) startDay = daysInMonth; 
-                
-                var pStart = new DateTime(year, month, startDay);
-                var pEnd = pStart.AddMonths(1).AddDays(-1);
-                
-                var monthName = culture.DateTimeFormat.GetMonthName(month);
-                monthName = char.ToUpper(monthName[0]) + monthName.Substring(1);
-
-                periods.Add(new PredefinedPeriod 
-                { 
-                    Name = $"{monthName} ({pStart:dd/MM} - {pEnd:dd/MM})", 
-                    Start = pStart,
-                    End = pEnd
-                });
-            }
-        }
-
-        return periods;
-    }
+    private SystemConfigurationDto? _config;
 
     private DateTime? StartDate = DateTime.Today;
     private DateTime? EndDate = DateTime.Today;
@@ -502,13 +326,8 @@ else if (HasSearched)
         var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
         if (configResult.IsSuccess)
         {
-            var config = configResult.Value;
-            SelectedPeriodMode = config.WorkPeriodMode;
-            _configWeeklyStartDay = config.WeeklyStartDay;
-            _configFortnightDay1 = config.FortnightFirstDay;
-            _configFortnightDay2 = config.FortnightSecondDay;
-            _configMonthlyStartDay = config.MonthlyStartDay;
-            _configLoaded = true;
+            _config = configResult.Value;
+            SelectedPeriodMode = _config.WorkPeriodMode;
         }
 
         var empResult = await Mediator.Send(new GetAllEmployeesQuery());
@@ -522,12 +341,72 @@ else if (HasSearched)
         {
             Branches = branchResult.Value.ToList();
         }
-        
-        // If we want to default to Period mode if config is present?
-        // Maybe keeping "Range" as default is safer, but user asked to respect config.
-        // Let's stick to user manual toggle but IF they toggle, periods are correct.
     }
 
+
+    private void OnDateSelectionModeChanged(string mode)
+    {
+        DateSelectionMode = mode;
+        if (DateSelectionMode == "Period")
+        {
+            UpdateAvailablePeriods();
+        }
+    }
+
+    private void OnPeriodModeChanged(WorkPeriodMode mode)
+    {
+        SelectedPeriodMode = mode;
+        // In clean architecture, we should update config or just use the UI mode.
+        // Assuming we just want to change the view for generating periods.
+        // If we need to PERSIST it, we'd send a command, but here it just seems to trigger generation.
+        // However, GetAvailablePeriods uses _config. 
+        // We might need to clone _config and change mode if we want to preview other modes?
+        // Or simply update _config locally.
+        
+        if (_config != null)
+        {
+            _config = _config with { WorkPeriodMode = mode };
+        }
+        UpdateAvailablePeriods();
+    }
+    
+    private void OnYearChanged(int year)
+    {
+        SelectedYear = year;
+        UpdateAvailablePeriods();
+    }
+
+    private void OnPeriodChanged(WorkPeriodDto? period)
+    {
+        SelectedPeriod = period;
+        if (SelectedPeriod != null)
+        {
+             StartDate = SelectedPeriod.Start;
+             EndDate = SelectedPeriod.End;
+        }
+        else
+        {
+             StartDate = null; 
+             EndDate = null;
+        }
+    }
+
+    private void UpdateAvailablePeriods()
+    {
+        if (_config == null) return;
+
+        AvailablePeriods = _config.GetAvailablePeriods(SelectedYear);
+        
+        // Try to select current period
+        var today = DateTime.Today;
+        SelectedPeriod = AvailablePeriods.FirstOrDefault(p => today >= p.Start && today <= p.End) ?? AvailablePeriods.LastOrDefault();
+        
+        if (SelectedPeriod != null)
+        {
+             StartDate = SelectedPeriod.Start;
+             EndDate = SelectedPeriod.End;
+        }
+    }
 
     private void OnBranchChanged(Guid? branchId)
     {
@@ -658,3 +537,4 @@ else if (HasSearched)
         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
     }
 }
+
