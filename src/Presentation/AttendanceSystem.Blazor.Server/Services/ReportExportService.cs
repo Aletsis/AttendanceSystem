@@ -1,4 +1,5 @@
 using AttendanceSystem.Application.DTOs;
+using AttendanceSystem.Application.Features.Employees;
 using AttendanceSystem.Domain.Enumerations;
 using ClosedXML.Excel;
 using QuestPDF.Fluent;
@@ -322,6 +323,85 @@ public class ReportExportService
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
+
+    public byte[] GenerateEmployeesExcel(IEnumerable<EmployeeDto> employees)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Empleados");
+
+        // Headers
+        worksheet.Cell(1, 1).Value = "ID";
+        worksheet.Cell(1, 2).Value = "Nombre";
+        worksheet.Cell(1, 3).Value = "Apellido";
+        worksheet.Cell(1, 4).Value = "Email";
+        worksheet.Cell(1, 5).Value = "Telefono";
+        worksheet.Cell(1, 6).Value = "Fecha Contratación";
+        worksheet.Cell(1, 7).Value = "Genero";
+        worksheet.Cell(1, 8).Value = "Sucursal";
+        worksheet.Cell(1, 9).Value = "Departamento";
+        worksheet.Cell(1, 10).Value = "Puesto";
+        worksheet.Cell(1, 11).Value = "Horario";
+        worksheet.Cell(1, 12).Value = "Dia Descanso";
+
+        var header = worksheet.Range("A1:L1");
+        header.Style.Font.Bold = true;
+        header.Style.Fill.BackgroundColor = XLColor.LightGray;
+
+        int row = 2;
+        foreach (var emp in employees)
+        {
+            worksheet.Cell(row, 1).Value = emp.Id;
+            worksheet.Cell(row, 2).Value = emp.FirstName;
+            worksheet.Cell(row, 3).Value = emp.LastName;
+            worksheet.Cell(row, 4).Value = emp.Email;
+            worksheet.Cell(row, 5).Value = emp.PhoneNumber;
+            worksheet.Cell(row, 6).Value = emp.HireDate.ToString("dd/MM/yyyy");
+            worksheet.Cell(row, 7).Value = emp.Gender.ToString();
+            worksheet.Cell(row, 8).Value = emp.BranchName;
+            worksheet.Cell(row, 9).Value = emp.DepartmentName;
+            worksheet.Cell(row, 10).Value = emp.PositionName;
+            worksheet.Cell(row, 11).Value = emp.ScheduleName;
+            worksheet.Cell(row, 12).Value = emp.RestDayName;
+            row++;
+        }
+        
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] GeneratePositionsExcel(IEnumerable<PositionDto> positions)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Puestos");
+
+        // Headers
+        worksheet.Cell(1, 1).Value = "Nombre";
+        worksheet.Cell(1, 2).Value = "Descripción";
+        worksheet.Cell(1, 3).Value = "Salario Base";
+
+        var header = worksheet.Range("A1:C1");
+        header.Style.Font.Bold = true;
+        header.Style.Fill.BackgroundColor = XLColor.LightGray;
+
+        int row = 2;
+        foreach (var item in positions)
+        {
+            worksheet.Cell(row, 1).Value = item.Name;
+            worksheet.Cell(row, 2).Value = item.Description;
+            worksheet.Cell(row, 3).Value = item.BaseSalary;
+            row++;
+        }
+        
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
     public byte[] GenerateAttendanceCardsPdf(
         Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> groupedData, 
         DateTime startDate, 

@@ -5,11 +5,12 @@
 @using AttendanceSystem.Application.Features.Employees
 @using AttendanceSystem.Application.Features.Employees.Queries
 @using AttendanceSystem.Application.DTOs
-@using ClosedXML.Excel
+@using AttendanceSystem.Blazor.Server.Services
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
+@inject AttendanceLogImportService ImportService
 
 <MudText Typo="Typo.h5" Class="mb-4">Registro Manual de Logs</MudText>
 
@@ -235,17 +236,56 @@
             await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
             stream.Position = 0;
 
-            if (file.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+            var importResult = await ImportService.ProcessFileAsync(stream, file.Name);
+
+            if (importResult.Errors.Any())
             {
-                await ProcessExcel(stream);
+                 // Show critical errors or parse errors
+                 foreach(var err in importResult.Errors.Take(5))
+                     Snackbar.Add(err, Severity.Warning);
+                 
+                 if (!importResult.ValidEntries.Any())
+                 {
+                     _processingImport = false;
+                     return;
+                 }
             }
-            else if (file.Name.EndsWith(".csv", StringComparison.OrdinalIgnoreCase))
+
+            int successCount = 0;
+            int errorCount = 0;
+            DateTime? minDate = null;
+            DateTime? maxDate = null;
+
+            foreach (var entry in importResult.ValidEntries)
             {
-                await ProcessCsv(stream);
+                 var result = await Mediator.Send(new RegisterManualAttendanceCommand(entry.EmployeeId, entry.DateTime, entry.Type));
+                 if (result.IsSuccess)
+                 {
+                     successCount++;
+                     if (minDate == null || entry.DateTime.Date < minDate) minDate = entry.DateTime.Date;
+                     if (maxDate == null || entry.DateTime.Date > maxDate) maxDate = entry.DateTime.Date;
+                 }
+                 else
+                 {
+                     errorCount++;
+                     Snackbar.Add($"Error insertando {entry.EmployeeId}: {result.Error}", Severity.Error);
+                 }
             }
-            else
+
+            if (successCount > 0)
             {
-                Snackbar.Add("Por favor suba un archivo .xlsx o .csv", Severity.Warning);
+                Snackbar.Add($"Importación completada: {successCount} registros creados.", Severity.Success);
+                if (minDate.HasValue && maxDate.HasValue)
+                {
+                    Snackbar.Add("Calculando asistencia...", Severity.Info);
+                    await Mediator.Send(new ProcessDailyAttendanceCommand(minDate.Value, maxDate.Value));
+                    Snackbar.Add("Asistencia calculada.", Severity.Success);
+                }
+            }
+            
+            if (errorCount > 0)
+            {
+                 Snackbar.Add($"Hubo {errorCount} errores al guardar en base de datos.", Severity.Warning);
             }
         }
         catch (Exception ex)
@@ -255,198 +295,6 @@
         finally
         {
             _processingImport = false;
-        }
-    }
-
-    private async Task ProcessExcel(Stream stream)
-    {
-        int successCount = 0;
-        int errorCount = 0;
-        var errorMessages = new List<string>();
-        
-        DateTime? minDate = null;
-        DateTime? maxDate = null;
-
-        try
-        {
-            using var workbook = new XLWorkbook(stream);
-            var worksheet = workbook.Worksheets.FirstOrDefault();
-            if (worksheet == null)
-            {
-                Snackbar.Add("El archivo Excel está vacío o no tiene hojas.", Severity.Error);
-                return;
-            }
-
-            // Assume Header Row 1
-            // Columns: EmployeeId, Date, Time, Type
-            // iterate rows
-            var rows = worksheet.RangeUsed().RowsUsed().Skip(1); // Skip header
-
-            foreach (var row in rows)
-            {
-                try
-                {
-                    var empId = row.Cell(1).GetValue<string>();
-                    // Date can be DateTime or string
-                    // Attempt to get DateTime
-                    DateTime date;
-                    if (!row.Cell(2).TryGetValue(out date))
-                    {
-                         // Try string parse if needed, usually Parse works if typed correctly in Excel
-                         // Or try text
-                         var dateStr = row.Cell(2).GetValue<string>();
-                         if (!DateTime.TryParse(dateStr, out date))
-                         {
-                             errorCount++; 
-                             continue;
-                         }
-                    }
-
-                    // Time
-                    TimeSpan time;
-                    if (row.Cell(3).DataType == XLDataType.TimeSpan)
-                    {
-                        time = row.Cell(3).GetValue<TimeSpan>();
-                    }
-                    else if (row.Cell(3).DataType == XLDataType.DateTime)
-                    {
-                        time = row.Cell(3).GetValue<DateTime>().TimeOfDay;
-                    }
-                    else
-                    {
-                         var timeStr = row.Cell(3).GetValue<string>();
-                         if (!TimeSpan.TryParse(timeStr, out time))
-                         {
-                             // Maybe it's "08:00"
-                             if (!TimeSpan.TryParse(timeStr, out time))
-                             {
-                                  errorCount++;
-                                  continue;
-                             }
-                         }
-                    }
-
-                    var type = row.Cell(4).GetValue<string>(); // Entrada/Salida
-                    var dateTime = date.Date + time;
-
-                    if (string.IsNullOrWhiteSpace(empId)) continue;
-                    
-                    var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, type));
-                    if (result.IsSuccess)
-                    {
-                        successCount++;
-                        if (minDate == null || date.Date < minDate) minDate = date.Date;
-                        if (maxDate == null || date.Date > maxDate) maxDate = date.Date;
-                    }
-                    else
-                    {
-                        errorCount++;
-                        if (!errorMessages.Contains($"Fila {row.RowNumber()}: {result.Error}"))
-                            errorMessages.Add($"Fila {row.RowNumber()}: {result.Error}");
-                    }
-                }
-                catch (Exception)
-                {
-                    errorCount++;
-                }
-            }
-            
-            if (errorCount == 0)
-                Snackbar.Add($"Importación completada: {successCount} registros creados.", Severity.Success);
-            else
-            {
-                Snackbar.Add($"Importación parcial: {successCount} creados, {errorCount} fallidos.", Severity.Warning);
-                // Show first few errors
-                foreach(var err in errorMessages.Take(5))
-                    Snackbar.Add(err, Severity.Error);
-            }
-
-            if (successCount > 0 && minDate.HasValue && maxDate.HasValue)
-            {
-                Snackbar.Add("Calculando asistencia para los registros importados...", Severity.Info);
-                await Mediator.Send(new ProcessDailyAttendanceCommand(minDate.Value, maxDate.Value));
-                Snackbar.Add("Asistencia calculada correctamente.", Severity.Success);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error procesando Excel: {ex.Message}", Severity.Error);
-        }
-    }
-
-    private async Task ProcessCsv(Stream stream)
-    {
-        int successCount = 0;
-        int errorCount = 0;
-        var errorMessages = new List<string>();
-        
-        DateTime? minDate = null;
-        DateTime? maxDate = null;
-
-        try
-        {
-            using var reader = new StreamReader(stream);
-            string? line;
-            int lineNumber = 0;
-            
-            while ((line = await reader.ReadLineAsync()) != null)
-            {
-                lineNumber++;
-                if (lineNumber == 1) continue; // Skip header
-
-                var parts = line.Split(',');
-                if (parts.Length < 4) continue;
-
-                try
-                {
-                    var empId = parts[0].Trim();
-                    if (!DateTime.TryParse(parts[1].Trim(), out var date)) continue;
-                    if (!TimeSpan.TryParse(parts[2].Trim(), out var time)) continue;
-                    var type = parts[3].Trim();
-
-                    var dateTime = date.Date + time;
-
-                    if (string.IsNullOrWhiteSpace(empId)) continue;
-                    
-                    var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, type));
-                    if (result.IsSuccess)
-                    {
-                        successCount++;
-                        if (minDate == null || date.Date < minDate) minDate = date.Date;
-                        if (maxDate == null || date.Date > maxDate) maxDate = date.Date;
-                    }
-                    else
-                    {
-                        errorCount++;
-                        if (!errorMessages.Contains($"Fila {lineNumber}: {result.Error}"))
-                            errorMessages.Add($"Fila {lineNumber}: {result.Error}");
-                    }
-                }
-                catch
-                {
-                    errorCount++;
-                }
-            }
-            
-            if (errorCount == 0)
-                Snackbar.Add($"Importación completada: {successCount} registros creados.", Severity.Success);
-            else
-            {
-                Snackbar.Add($"Importación parcial: {successCount} creados, {errorCount} fallidos.", Severity.Warning);
-                foreach(var err in errorMessages.Take(5))
-                    Snackbar.Add(err, Severity.Error);
-            }
-
-            if (successCount > 0 && minDate.HasValue && maxDate.HasValue)
-            {
-                Snackbar.Add("Calculando asistencia para los registros importados...", Severity.Info);
-                await Mediator.Send(new ProcessDailyAttendanceCommand(minDate.Value, maxDate.Value));
-                Snackbar.Add("Asistencia calculada correctamente.", Severity.Success);
-            }
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Error procesando CSV: {ex.Message}", Severity.Error);
         }
     }
 }

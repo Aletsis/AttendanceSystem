@@ -68,6 +68,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddMudServices();
 builder.Services.AddControllersWithViews(); // Enable Controllers with Views for Antiforgery support
 builder.Services.AddScoped<ReportExportService>();
+builder.Services.AddScoped<AttendanceLogImportService>();
 
 // ===== DOMAIN LAYER =====
 // Servicios de dominio
