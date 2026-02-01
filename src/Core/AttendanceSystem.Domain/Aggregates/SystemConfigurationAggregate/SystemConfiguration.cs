@@ -40,6 +40,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
             AutoClearDevicesAfterDownload = false,
             IsAutoDownloadEnabled = false,
             AutoDownloadTime = null,
+            AutoDownloadOnlyToday = false,
             WorkPeriodMode = WorkPeriodMode.Weekly,
             WeeklyStartDay = DayOfWeek.Monday,
             FortnightFirstDay = 1,
@@ -55,7 +56,8 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         TimeSpan standardWorkHours,
         bool autoClearDevicesAfterDownload,
         bool isAutoDownloadEnabled,
-        TimeSpan? autoDownloadTime)
+        TimeSpan? autoDownloadTime,
+        bool autoDownloadOnlyToday)
     {
         CompanyName = companyName;
         CompanyLogo = companyLogo;
@@ -64,7 +66,10 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         AutoClearDevicesAfterDownload = autoClearDevicesAfterDownload;
         IsAutoDownloadEnabled = isAutoDownloadEnabled;
         AutoDownloadTime = autoDownloadTime;
+        AutoDownloadOnlyToday = autoDownloadOnlyToday;
     }
+
+    public bool AutoDownloadOnlyToday { get; private set; }
 
     public void UpdateWorkPeriodSettings(
         WorkPeriodMode mode,

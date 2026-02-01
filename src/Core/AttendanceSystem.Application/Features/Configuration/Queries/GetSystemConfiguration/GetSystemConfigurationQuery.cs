@@ -37,6 +37,7 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             null, // AlertEmailRecipient
             config.IsAutoDownloadEnabled,
             config.AutoDownloadTime,
+            config.AutoDownloadOnlyToday,
             config.WorkPeriodMode,
             config.WeeklyStartDay,
             config.FortnightFirstDay,

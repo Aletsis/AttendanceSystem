@@ -2,6 +2,7 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices;
 using Hangfire;
 using MediatR;
+using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration;
 
 namespace AttendanceSystem.Infrastructure.Services;
 
@@ -50,9 +51,16 @@ public class AttendanceJobs
     [JobDisplayName("Download Logs from All Devices")]
     public async Task DownloadFromAllDevices()
     {
-        // Execute download for "yesterday" until "today" or just general sync?
-        // Usually null means "smart sync" (last download to now).
-        // Let's rely on the command's default behavior.
-        await _mediator.Send(new DownloadFromAllDevicesCommand(null, null));
+        var configResult = await _mediator.Send(new GetSystemConfigurationQuery());
+        DateTime? fromDate = null;
+        DateTime? toDate = null;
+
+        if (configResult.IsSuccess && configResult.Value.AutoDownloadOnlyToday)
+        {
+             fromDate = DateTime.Today;
+             toDate = DateTime.Today.AddDays(1).AddTicks(-1);
+        }
+
+        await _mediator.Send(new DownloadFromAllDevicesCommand(fromDate, toDate));
     }
 }

@@ -114,6 +114,7 @@
                     <MudGrid Class="mt-2">
                         <MudItem xs="12" sm="6">
                             <MudSwitch T="bool" @bind-Value="_isAutoDownloadEnabled" Color="Color.Primary" Label="Descarga Automática Diaria" />
+                            <MudSwitch T="bool" @bind-Value="_autoDownloadOnlyToday" Color="Color.Primary" Label="Solo procesar día actual" Class="ml-4" Disabled="@(!_isAutoDownloadEnabled)" />
                         </MudItem>
                         
                         @if (_isAutoDownloadEnabled)
@@ -157,6 +158,7 @@
     private bool _autoClearAfterDownload;
     private bool _isAutoDownloadEnabled; 
     private TimeSpan? _autoDownloadTime; 
+    private bool _autoDownloadOnlyToday; 
     
     // Work Period Fields
     private WorkPeriodMode _workPeriodMode;
@@ -207,6 +209,7 @@
                 _autoClearAfterDownload = config.AutoClearDevicesAfterDownload;
                 _isAutoDownloadEnabled = config.IsAutoDownloadEnabled;
                 _autoDownloadTime = config.AutoDownloadTime;
+                _autoDownloadOnlyToday = config.AutoDownloadOnlyToday;
                 
                 // Work Period
                 _workPeriodMode = config.WorkPeriodMode;
@@ -245,6 +248,7 @@
                 null, 
                 _isAutoDownloadEnabled,
                 _autoDownloadTime,
+                _autoDownloadOnlyToday,
                 _workPeriodMode,
                 _weeklyStartDay,
                 _fortnightFirstDay,

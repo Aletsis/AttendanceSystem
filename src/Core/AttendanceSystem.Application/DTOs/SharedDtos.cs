@@ -146,6 +146,7 @@ public sealed record SystemConfigurationDto(
     string? AlertEmailRecipient,
     bool IsAutoDownloadEnabled,
     TimeSpan? AutoDownloadTime,
+    bool AutoDownloadOnlyToday,
     WorkPeriodMode WorkPeriodMode = WorkPeriodMode.Weekly,
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,

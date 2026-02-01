@@ -16,7 +16,9 @@ public sealed record UpdateSystemConfigurationCommand(
     bool SendEmailAlerts,
     string? AlertEmailRecipient,
     bool IsAutoDownloadEnabled,
+
     TimeSpan? AutoDownloadTime,
+    bool AutoDownloadOnlyToday,
     WorkPeriodMode WorkPeriodMode = WorkPeriodMode.Weekly,
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,
@@ -56,7 +58,9 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.StandardWorkHours,
             command.AutoClearDevicesAfterDownload,
             command.IsAutoDownloadEnabled,
-            command.AutoDownloadTime);
+
+            command.AutoDownloadTime,
+            command.AutoDownloadOnlyToday);
 
         config.UpdateWorkPeriodSettings(
             command.WorkPeriodMode,
