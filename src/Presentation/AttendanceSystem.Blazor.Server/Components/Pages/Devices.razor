@@ -178,7 +178,8 @@
             { "Port", device.Port },
             { "Location", device.Location },
             { "ShouldClearAfterDownload", device.ShouldClearAfterDownload },
-            { "DownloadMethod", device.DownloadMethod }
+            { "DownloadMethod", device.DownloadMethod },
+            { "SerialNumber", device.SerialNumber } // IMPORTANT: Pass SerialNumber
         };
         
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };

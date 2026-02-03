@@ -138,6 +138,7 @@ builder.Services.AddScoped<IShiftQueries, ShiftQueries>();
 builder.Services.AddScoped<IBranchQueries, BranchQueries>();
 builder.Services.AddScoped<IDepartmentQueries, DepartmentQueries>();
 builder.Services.AddScoped<IPositionQueries, PositionQueries>();
+builder.Services.AddSingleton<IAdmsCommandService, AdmsCommandService>();
 
 // Repositorios
 builder.Services.AddScoped<IShiftRepository, ShiftRepository>();

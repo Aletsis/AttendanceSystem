@@ -13,7 +13,8 @@ public sealed record CreateDeviceCommand(
     int Port,
     string? Location,
     bool ShouldClearAfterDownload,
-    DeviceDownloadMethod DownloadMethod) : IRequest<Result<Guid>>;
+    DeviceDownloadMethod DownloadMethod,
+    string? SerialNumber = null) : IRequest<Result<Guid>>;
 
 public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCommand, Result<Guid>>
 {
@@ -43,7 +44,8 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
             request.Port,
             request.Location,
             request.ShouldClearAfterDownload,
-            request.DownloadMethod);
+            request.DownloadMethod,
+            request.SerialNumber);
 
         // Intentar conectar y obtener información del dispositivo solo si es SDK
         if (request.DownloadMethod == DeviceDownloadMethod.Sdk)

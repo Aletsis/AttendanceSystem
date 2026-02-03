@@ -9,6 +9,10 @@ public interface IDeviceRepository
 
     Task<IReadOnlyList<Device>> GetAllDevicesAsync(
         CancellationToken cancellationToken = default);
+
+    Task<Device?> GetBySerialNumberAsync(
+        string serialNumber,
+        CancellationToken cancellationToken = default);
     
     Task AddAsync(
         Device device, 

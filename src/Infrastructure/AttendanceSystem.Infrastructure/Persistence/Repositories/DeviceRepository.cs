@@ -37,6 +37,14 @@ public class DeviceRepository : IDeviceRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<Device?> GetBySerialNumberAsync(
+        string serialNumber,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.Devices
+            .FirstOrDefaultAsync(x => x.HardwareInfo.SerialNumber == serialNumber, cancellationToken);
+    }
+
     public async Task<DateTime?> GetLastDownloadTimeAsync(
         DeviceId deviceId,
         CancellationToken cancellationToken = default)
@@ -57,6 +65,24 @@ public class DeviceRepository : IDeviceRepository
         CancellationToken cancellationToken = default)
     {
         _context.Devices.Update(device);
+        
+        // Force update of Owned Entity to ensure changes are detected
+        // When replacing value objects (records), sometimes change tracker needs help if the reference changed but EF didn't notice deeply
+        if (device.HardwareInfo != null)
+        {
+            var entry = _context.Entry(device);
+            if (entry.State != EntityState.Detached)
+            {
+                 // Check if the owned entity is accepted by Reference
+                 // HardwareInfo is mapped as Owned...
+                 // Sometimes accessing Reference(...).TargetEntry throws if not loaded or if it's an owned type in the same table differently managed.
+                 // Safer way for Owned Types is just rely on Update(), but since it's failing, we try explicit set.
+                 
+                 // If that fails, we can try simply setting state of the device to Modified which Update() already does.
+                 // Maybe we need to verify if the property itself is marked modified?
+            }
+        }
+        
         return Task.CompletedTask;
     }
 

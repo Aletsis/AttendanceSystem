@@ -12,6 +12,11 @@
             <MudNumericField @bind-Value="Port" Label="Puerto" Required="true" Min="1" Max="65535" />
             <MudTextField @bind-Value="Location" Label="Ubicación" />
             
+            <MudTextField @bind-Value="SerialNumber" Label="Número de Serie (Requerido para ADMS)" 
+                          HelperText="Para dispositivos ADMS (Push), ingrese el número de serie exacto."
+                          Required="@(DownloadMethod == DeviceDownloadMethod.Adms)" 
+                          RequiredError="Para ADMS, el número de serie es obligatorio." />
+            
             <MudSelect T="DeviceDownloadMethod" Label="Método de Descarga" @bind-Value="DownloadMethod" Required="true" Class="mb-3">
                 <MudSelectItem Value="@DeviceDownloadMethod.Sdk">SDK (Pull)</MudSelectItem>
                 <MudSelectItem Value="@DeviceDownloadMethod.Adms">ADMS (Push)</MudSelectItem>
@@ -36,6 +41,7 @@
     [Parameter] public string? Location { get; set; }
     [Parameter] public bool ShouldClearAfterDownload { get; set; }
     [Parameter] public DeviceDownloadMethod DownloadMethod { get; set; } = DeviceDownloadMethod.Sdk;
+    [Parameter] public string? SerialNumber { get; set; }
 
     private bool success;
     private MudForm form = default!;
@@ -50,11 +56,11 @@
         {
             if (string.IsNullOrEmpty(DeviceId))
             {
-                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod)));
+                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod, SerialNumber)));
             }
             else
             {
-                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod)));
+                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod, SerialNumber)));
             }
         }
     }

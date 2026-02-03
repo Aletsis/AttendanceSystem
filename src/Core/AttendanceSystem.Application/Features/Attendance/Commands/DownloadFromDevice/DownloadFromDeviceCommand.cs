@@ -31,6 +31,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly ILogger<DownloadFromDeviceCommandHandler> _logger;
     private readonly IMediator _mediator;
     private readonly IDeviceLockService _deviceLockService;
+    private readonly IAdmsCommandService _admsCommandService;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -41,7 +42,8 @@ public sealed class DownloadFromDeviceCommandHandler
         AttendanceDeduplicationService deduplicationService,
         ILogger<DownloadFromDeviceCommandHandler> logger,
         IMediator mediator,
-        IDeviceLockService deviceLockService)
+        IDeviceLockService deviceLockService,
+        IAdmsCommandService admsCommandService)
     {
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -52,6 +54,7 @@ public sealed class DownloadFromDeviceCommandHandler
         _logger = logger;
         _mediator = mediator;
         _deviceLockService = deviceLockService;
+        _admsCommandService = admsCommandService;
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
@@ -99,6 +102,59 @@ public sealed class DownloadFromDeviceCommandHandler
 
         await _downloadLogRepository.AddAsync(downloadLog, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken); // GUARDAR ESTADO INICIAL
+
+        // == CHECK FOR ADMS ==
+        if (device.DownloadMethod == Domain.Enumerations.DeviceDownloadMethod.Adms)
+        {
+             try
+             {
+                 var sn = device.HardwareInfo?.SerialNumber;
+                 _logger.LogInformation("Verificando dispositivo ADMS {Id}. SN actual: '{SerialNumber}'", deviceId, sn);
+
+                 if (string.IsNullOrEmpty(sn))
+                 {
+                     // Attempt reload in case of caching issues
+                     await _deviceRepository.ReloadAsync(device, cancellationToken);
+                     sn = device.HardwareInfo?.SerialNumber;
+                     _logger.LogInformation("Recargado dispositivo ADMS {Id}. SN tras recarga: '{SerialNumber}'", deviceId, sn);
+                 }
+
+                 if (string.IsNullOrEmpty(sn))
+                 {
+                     return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene número de serie registrado.");
+                 }
+
+                 // Encolar comando DATA QUERY ATTLOG (Descargar todos los logs o filtrados?)
+                 // ADMS command: DATA QUERY ATTLOG StartTime=... EndTime=...
+                 // Si command.FromDate es null, quizás no deberíamos restringir?
+                 // Generalmente 'DATA QUERY ATTLOG' descarga todo lo que tenga.
+                 // Vamos a enviar un comando simple por ahora.
+                 string admsCmd = "DATA QUERY ATTLOG";
+                 
+                 // Si quisieramos filtrar:
+                 // if (command.FromDate.HasValue) 
+                 //    admsCmd += $" StartTime={command.FromDate.Value:yyyy-MM-dd HH:mm:ss}";
+                 
+                 // PASAMOS el LogId para rastrear cuando termine
+                 _admsCommandService.EnqueueCommand(device.HardwareInfo.SerialNumber, admsCmd, downloadLogId.Value);
+                 
+                 // NO marcamos el log como exitoso aquí. Lo hará AdmsController cuando reciba DeviceCmd.
+                 // Retornamos éxito indicando que se programó.
+                 // Nota: El frontend verá "0 registros" pero el log quedará sin fecha de fin.
+                 // Dependiendo del frontend, podría mostrarse un spinner o simplemente "Iniciado".
+                 
+                 return Result<DownloadResultDto>.Success(new DownloadResultDto(
+                     deviceId.Value,
+                     0,
+                     DateTime.UtcNow,
+                     null,
+                     null));
+             }
+             catch (Exception ex)
+             {
+                 return Result<DownloadResultDto>.Failure($"Error encolando comando ADMS: {ex.Message}");
+             }
+        }
 
         // Capturar datos necesarios antes de limpiar el tracker
         var deviceIp = device.IpAddress;

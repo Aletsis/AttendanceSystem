@@ -25,7 +25,8 @@ public class Device : AggregateRoot<DeviceId>
         int port,
         string? location = null,
         bool shouldClearAfterDownload = false,
-        DeviceDownloadMethod downloadMethod = DeviceDownloadMethod.Sdk)
+        DeviceDownloadMethod downloadMethod = DeviceDownloadMethod.Sdk,
+        string? serialNumber = null)
     {
         // Validaciones
         if (string.IsNullOrWhiteSpace(name))
@@ -36,6 +37,10 @@ public class Device : AggregateRoot<DeviceId>
         // Asumiremos que se mantiene la validación de IP por ahora para mantener consistencia 
         // o si el usuario quiere que ADMS no requiera IP, debería especificarlo.
         // El código original valida IP.
+
+        // CORRECTION: ADMS might not have a static IP or we might not know it initially if dynamic.
+        // However, for now we keep validating IP but maybe we loosen check if ADMS?
+        // Let's keep it as is for now.
 
         if (string.IsNullOrWhiteSpace(ipAddress))
             throw new DomainException("La dirección IP es requerida");
@@ -62,6 +67,11 @@ public class Device : AggregateRoot<DeviceId>
             HardwareInfo = DeviceHardwareInfo.Empty
         };
 
+        if (!string.IsNullOrWhiteSpace(serialNumber))
+        {
+            device.HardwareInfo = device.HardwareInfo with { SerialNumber = serialNumber };
+        }
+
         device.AddDomainEvent(new DeviceRegisteredEvent(
             device.Id,
             device.Name,
@@ -76,7 +86,8 @@ public class Device : AggregateRoot<DeviceId>
         int port,
         string? location,
         bool shouldClearAfterDownload,
-        DeviceDownloadMethod downloadMethod)
+        DeviceDownloadMethod downloadMethod,
+        string? serialNumber = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del dispositivo es requerido");
@@ -93,6 +104,11 @@ public class Device : AggregateRoot<DeviceId>
         Location = location;
         ShouldClearAfterDownload = shouldClearAfterDownload;
         DownloadMethod = downloadMethod;
+
+        if (!string.IsNullOrWhiteSpace(serialNumber))
+        {
+             HardwareInfo = HardwareInfo with { SerialNumber = serialNumber };
+        }
 
         AddDomainEvent(new DeviceConfigurationUpdatedEvent(Id));
     }
