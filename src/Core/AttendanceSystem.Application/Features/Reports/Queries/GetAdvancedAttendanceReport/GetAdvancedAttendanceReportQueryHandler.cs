@@ -268,8 +268,16 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             var scheduledDuration = (scheduledOut - scheduledIn).TotalMinutes;
             var workedDuration = (att.ActualCheckOut.Value - att.ActualCheckIn.Value).TotalMinutes;
 
-            calculatedOvertime = workedDuration - scheduledDuration;
-            if (calculatedOvertime < 0) calculatedOvertime = 0;
+            // Only calculate overtime if employee worked at least the scheduled hours
+            if (workedDuration >= scheduledDuration)
+            {
+                // Calculate time from scheduled check-in to actual check-out
+                var timeFromScheduledStart = (att.ActualCheckOut.Value - scheduledIn).TotalMinutes;
+                
+                // Overtime = Time from scheduled start to actual checkout - Scheduled duration
+                calculatedOvertime = timeFromScheduledStart - scheduledDuration;
+                if (calculatedOvertime < 0) calculatedOvertime = 0;
+            }
         }
         else
         {

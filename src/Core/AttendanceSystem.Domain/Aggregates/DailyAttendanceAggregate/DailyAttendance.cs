@@ -249,16 +249,28 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
 
             // OVERTIME logic
-            // Rule: Overtime = Worked Hours - Scheduled Hours
+            // Rule: Overtime = Time from Scheduled CheckIn to Actual CheckOut - Scheduled Hours
+            // Only count overtime if the employee worked the full scheduled hours
             if (ActualCheckIn.HasValue)
             {
+                // Calculate actual worked minutes (from actual check-in to actual check-out)
                 var totalWorkedMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
+                
+                // Calculate scheduled work duration
                 var scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
 
-                var overtime = totalWorkedMinutes - scheduledMinutes;
-                if (overtime > 0)
+                // Only calculate overtime if employee worked at least the scheduled hours
+                if (totalWorkedMinutes >= scheduledMinutes)
                 {
-                    OvertimeMinutes = (int)overtime;
+                    // Calculate time from scheduled check-in to actual check-out
+                    var timeFromScheduledStart = (ActualCheckOut.Value - scheduledInDateTime).TotalMinutes;
+                    
+                    // Overtime = Time from scheduled start to actual checkout - Scheduled duration
+                    var overtime = timeFromScheduledStart - scheduledMinutes;
+                    if (overtime > 0)
+                    {
+                        OvertimeMinutes = (int)overtime;
+                    }
                 }
             }
         }
