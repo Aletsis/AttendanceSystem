@@ -164,14 +164,46 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     }
 
                     // Define tolerance windows
-                    // Asymmetric tolerance is crucial for Night Shifts to distinguish "Late Exit from Previous Day" (matches Out) 
-                    // from "Very Early Entry for Current Day" (should NOT match In).
                     double maxInDistance = 300;   // 5 hours max early/late for CheckIn
                     double maxOutDistance = 960;  // 16 hours max for CheckOut (allows double shifts)
 
+                    // For Night Shifts, use TIME WINDOWS to prevent mismatching
+                    // Entry should be in the evening/night, Exit should be in the early morning
+                    IEnumerable<AttendanceRecord> entryRecords = records;
+                    IEnumerable<AttendanceRecord> exitRecords = records;
+
+                    if (isNightShift)
+                    {
+                        // Entry Window: From noon of current day to end of day (12:00 - 23:59)
+                        // This prevents early morning records (like 6:20 AM) from being matched as entries
+                        var entryWindowStart = date.Date.AddHours(12);
+                        var entryWindowEnd = date.Date.AddDays(1).AddSeconds(-1);
+                        
+                        entryRecords = records.Where(r => 
+                            r.CheckTime >= entryWindowStart && 
+                            r.CheckTime <= entryWindowEnd &&
+                            r.Status == AttendanceStatus.Pending); // Only use unprocessed records for entry
+
+                        // Exit Window: From start of next day to noon (00:00 - 12:00)
+                        // This ensures we only look for exits in the morning period
+                        var exitWindowStart = date.Date.AddDays(1);
+                        var exitWindowEnd = date.Date.AddDays(1).AddHours(12);
+                        
+                        exitRecords = records.Where(r => 
+                            r.CheckTime >= exitWindowStart && 
+                            r.CheckTime <= exitWindowEnd);
+                        // Note: We allow already processed records for exit ONLY if we're reprocessing
+                        // This handles the case where we need to reclaim an exit that was wrongly assigned
+                    }
+                    else
+                    {
+                        // For regular shifts, only use pending records to avoid stealing from other days
+                        entryRecords = records.Where(r => r.Status == AttendanceStatus.Pending);
+                        exitRecords = records.Where(r => r.Status == AttendanceStatus.Pending);
+                    }
+
                     // Find best candidate for IN
-                    // We look for the record closest to scheduledIn within stricter tolerance
-                    var matchIn = records
+                    var matchIn = entryRecords
                         .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
                         .Where(x => x.Diff <= maxInDistance)
                         .OrderBy(x => x.Diff)
@@ -184,8 +216,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     }
 
                     // Find best candidate for OUT
-                    // We look for the record closest to scheduledOut with wider tolerance
-                    var matchOut = records
+                    var matchOut = exitRecords
                         .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
                         .Where(x => x.Diff <= maxOutDistance)
                         .OrderBy(x => x.Diff)
@@ -193,12 +224,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
                     if (matchOut != null)
                     {
-                        // Check for overlap
+                        // Check for overlap (same record matched as both IN and OUT)
                         if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
                         {
-                            // It matched both. Decide based on which is closer relative to its own tolerance/target.
-                            // However, if one is Out-of-Tolerance for In but In-Tolerance for Out, the Separate Where clauses handle it.
-                            // If it passed both, it's ambiguous (e.g. short shift).
+                            // Decide based on which is closer
                             if (matchOut.Diff < matchIn!.Diff)
                             {
                                 // Closer to Out -> It's an Out
@@ -219,9 +248,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     // Logic Check: Ensure Out is after In
                     if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
                     {
-                         // If Out is <= In, keep the one with smaller Diff, discard the other to avoid logical error
-                         // Or just discard Out as invalid? 
-                         // Let's discard the one that has the larger deviation from its target.
+                         // Discard the one that has the larger deviation from its target
                          double diffIn = Math.Abs((checkIn.Value - scheduledIn).TotalMinutes);
                          double diffOut = Math.Abs((checkOut.Value - scheduledOut).TotalMinutes);
 
