@@ -19,6 +19,9 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public bool IsAutoDownloadEnabled { get; private set; }
     public TimeSpan? AutoDownloadTime { get; private set; } // Time from midnight
 
+    // ADMS Settings
+    public int AdmsPort { get; private set; }
+
     // Work Period Settings
     public WorkPeriodMode WorkPeriodMode { get; private set; }
     public DayOfWeek WeeklyStartDay { get; private set; }
@@ -41,6 +44,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
             IsAutoDownloadEnabled = false,
             AutoDownloadTime = null,
             AutoDownloadOnlyToday = false,
+            AdmsPort = 16373, // Puerto dedicado para ADMS
             WorkPeriodMode = WorkPeriodMode.Weekly,
             WeeklyStartDay = DayOfWeek.Monday,
             FortnightFirstDay = 1,
@@ -57,7 +61,8 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         bool autoClearDevicesAfterDownload,
         bool isAutoDownloadEnabled,
         TimeSpan? autoDownloadTime,
-        bool autoDownloadOnlyToday)
+        bool autoDownloadOnlyToday,
+        int admsPort)
     {
         CompanyName = companyName;
         CompanyLogo = companyLogo;
@@ -67,6 +72,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         IsAutoDownloadEnabled = isAutoDownloadEnabled;
         AutoDownloadTime = autoDownloadTime;
         AutoDownloadOnlyToday = autoDownloadOnlyToday;
+        AdmsPort = admsPort;
     }
 
     public bool AutoDownloadOnlyToday { get; private set; }

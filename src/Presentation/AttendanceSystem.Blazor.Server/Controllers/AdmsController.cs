@@ -48,8 +48,11 @@ public class AdmsController : ControllerBase
     [HttpPost("cdata")]
     public async Task<IActionResult> ReceiveData([FromQuery] string SN, [FromQuery] string table)
     {
+        _logger.LogInformation("📥 ADMS: Recibiendo datos de SN: {SerialNumber}, Tabla: {Table}", SN, table);
+        
         if (string.IsNullOrWhiteSpace(table) || !table.Equals("ATTLOG", StringComparison.OrdinalIgnoreCase))
         {
+            _logger.LogInformation("⏭️ ADMS: Ignorando tabla {Table} de {SerialNumber}", table, SN);
             return Ok("OK");
         }
 
@@ -58,12 +61,16 @@ public class AdmsController : ControllerBase
             var device = await _deviceRepository.GetBySerialNumberAsync(SN);
             if (device == null)
             {
-                _logger.LogWarning("Received ADMS data from unknown device SN: {SerialNumber}", SN);
+                _logger.LogWarning("❌ ADMS: Datos recibidos de dispositivo desconocido SN: {SerialNumber}", SN);
                 return Ok("OK");
             }
+            
+            _logger.LogInformation("✅ ADMS: Dispositivo encontrado - ID: {DeviceId}, Nombre: {DeviceName}", device.Id, device.Name);
 
             using var reader = new StreamReader(Request.Body);
             var content = await reader.ReadToEndAsync();
+            
+            _logger.LogInformation("📄 ADMS: Contenido recibido de {SerialNumber} - {ContentLength} caracteres", SN, content?.Length ?? 0);
             
             if (!string.IsNullOrWhiteSpace(content))
             {
@@ -118,6 +125,12 @@ public class AdmsController : ControllerBase
                     device.RecordSuccessfulDownload(processedCount);
                     await _deviceRepository.UpdateAsync(device);
                     await _unitOfWork.SaveChangesAsync();
+                    
+                    _logger.LogInformation("✅ ADMS: Procesados {ProcessedCount} registros de {SerialNumber}", processedCount, SN);
+                }
+                else
+                {
+                    _logger.LogWarning("⚠️ ADMS: No se procesaron registros de {SerialNumber}. Contenido recibido pero sin datos válidos.", SN);
                 }
             }
         }
@@ -132,6 +145,14 @@ public class AdmsController : ControllerBase
     [HttpGet("getrequest")]
     public IActionResult GetRequest([FromQuery] string SN)
     {
+        _logger.LogInformation("📞 ADMS: Dispositivo {SerialNumber} solicita comandos", SN);
+        
+        if (string.IsNullOrWhiteSpace(SN))
+        {
+            _logger.LogWarning("⚠️ ADMS: Solicitud sin número de serie");
+            return Ok("OK");
+        }
+        
         if (_admsCommandService.HasPendingCommands(SN))
         {
             var (command, logId) = _admsCommandService.GetNextCommand(SN);
@@ -143,19 +164,37 @@ public class AdmsController : ControllerBase
                 if (logId.HasValue)
                 {
                     _admsCommandService.RegisterPendingExecution(SN, cmdId, logId.Value);
+                    _logger.LogInformation("🔗 ADMS: Comando asociado con DownloadLogId: {LogId}", logId.Value);
                 }
 
                 // Return format C:ID:COMMAND
+                _logger.LogInformation("📤 ADMS: Enviando comando a {SerialNumber}: {Command} (ID: {CommandId})", SN, command, cmdId);
                 return Content($"C:{cmdId}:{command}", "text/plain");
             }
         }
-
+        
+        _logger.LogInformation("⏸️ ADMS: No hay comandos pendientes para {SerialNumber}", SN);
         return Ok("OK");
+    }
+
+    // Diagnostic endpoint to check pending commands
+    [HttpGet("debug/pending-commands")]
+    public IActionResult GetPendingCommandsDebug([FromQuery] string? SN = null)
+    {
+        if (!string.IsNullOrWhiteSpace(SN))
+        {
+            var hasPending = _admsCommandService.HasPendingCommands(SN);
+            return Ok(new { SerialNumber = SN, HasPendingCommands = hasPending });
+        }
+        
+        return Ok(new { Message = "Provide SN parameter to check specific device" });
     }
 
     [HttpPost("devicecmd")]
     public async Task<IActionResult> DeviceCmd([FromQuery] string SN, [FromQuery] string ID, [FromQuery] string Return)
     {
+        _logger.LogInformation("✔️ ADMS: Confirmación de comando de {SerialNumber}, ID: {CommandId}, Return: {ReturnCode}", SN, ID, Return);
+        
         try
         {
             if (!string.IsNullOrEmpty(ID))
@@ -181,6 +220,8 @@ public class AdmsController : ControllerBase
                         log.MarkAsSuccessful(0, 0); 
                         await _downloadLogRepository.UpdateAsync(log);
                         await _unitOfWork.SaveChangesAsync();
+                        
+                        _logger.LogInformation("✅ ADMS: DownloadLog {LogId} marcado como exitoso para {SerialNumber}", logId.Value, SN);
                     }
                 }
             }

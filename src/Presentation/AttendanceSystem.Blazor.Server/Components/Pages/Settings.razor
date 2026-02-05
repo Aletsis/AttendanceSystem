@@ -64,6 +64,30 @@
                     
                     <MudDivider Class="my-4" />
 
+                    <MudText Typo="Typo.h6" Class="mb-2">Configuración ADMS</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-3" Color="Color.Secondary">
+                        Configure el puerto dedicado para la comunicación con dispositivos ADMS. 
+                        Los dispositivos deben configurarse con: <code>http://[IP_SERVIDOR]:[PUERTO]/iclock/</code>
+                    </MudText>
+                    
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField Label="Puerto ADMS" 
+                                             @bind-Value="_admsPort" 
+                                             Min="1024" Max="65535"
+                                             HelperText="Puerto dedicado para dispositivos ADMS (1024-65535)" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6" Class="d-flex align-center">
+                            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
+                                <MudText Typo="Typo.body2">
+                                    <strong>Nota:</strong> Cambiar el puerto requiere reiniciar la aplicación y reconfigurar los dispositivos ADMS.
+                                </MudText>
+                            </MudAlert>
+                        </MudItem>
+                    </MudGrid>
+                    
+                    <MudDivider Class="my-4" />
+
                     <MudText Typo="Typo.h6" Class="mb-2">Periodos Laborales</MudText>
                     <MudGrid>
                         <MudItem xs="12" sm="6">
@@ -159,6 +183,7 @@
     private bool _isAutoDownloadEnabled; 
     private TimeSpan? _autoDownloadTime; 
     private bool _autoDownloadOnlyToday; 
+    private int _admsPort = 16373;
     
     // Work Period Fields
     private WorkPeriodMode _workPeriodMode;
@@ -210,6 +235,7 @@
                 _isAutoDownloadEnabled = config.IsAutoDownloadEnabled;
                 _autoDownloadTime = config.AutoDownloadTime;
                 _autoDownloadOnlyToday = config.AutoDownloadOnlyToday;
+                _admsPort = config.AdmsPort;
                 
                 // Work Period
                 _workPeriodMode = config.WorkPeriodMode;
@@ -249,6 +275,7 @@
                 _isAutoDownloadEnabled,
                 _autoDownloadTime,
                 _autoDownloadOnlyToday,
+                _admsPort,
                 _workPeriodMode,
                 _weeklyStartDay,
                 _fortnightFirstDay,

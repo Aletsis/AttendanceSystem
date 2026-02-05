@@ -19,6 +19,7 @@ public sealed record UpdateSystemConfigurationCommand(
 
     TimeSpan? AutoDownloadTime,
     bool AutoDownloadOnlyToday,
+    int AdmsPort = 16373,
     WorkPeriodMode WorkPeriodMode = WorkPeriodMode.Weekly,
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,
@@ -60,7 +61,8 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.IsAutoDownloadEnabled,
 
             command.AutoDownloadTime,
-            command.AutoDownloadOnlyToday);
+            command.AutoDownloadOnlyToday,
+            command.AdmsPort);
 
         config.UpdateWorkPeriodSettings(
             command.WorkPeriodMode,

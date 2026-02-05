@@ -147,6 +147,7 @@ public sealed record SystemConfigurationDto(
     bool IsAutoDownloadEnabled,
     TimeSpan? AutoDownloadTime,
     bool AutoDownloadOnlyToday,
+    int AdmsPort = 16373,
     WorkPeriodMode WorkPeriodMode = WorkPeriodMode.Weekly,
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,

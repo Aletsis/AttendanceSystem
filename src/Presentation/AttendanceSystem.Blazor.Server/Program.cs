@@ -51,6 +51,14 @@ AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", false);
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ===== CONFIGURACIÓN DE GRACEFUL SHUTDOWN =====
+// Configurar el timeout de apagado (por defecto 30 segundos)
+var shutdownTimeoutSeconds = builder.Configuration.GetValue<int>("ShutdownTimeoutSeconds", 30);
+builder.Host.ConfigureHostOptions(options =>
+{
+    options.ShutdownTimeout = TimeSpan.FromSeconds(shutdownTimeoutSeconds);
+});
+
 // ===== LOGGING CON SERILOG =====
 builder.Host.UseSerilog((context, services, configuration) => configuration
     .ReadFrom.Configuration(context.Configuration)
@@ -69,6 +77,9 @@ builder.Services.AddMudServices();
 builder.Services.AddControllersWithViews(); // Enable Controllers with Views for Antiforgery support
 builder.Services.AddScoped<ReportExportService>();
 builder.Services.AddScoped<AttendanceLogImportService>();
+
+// ===== GRACEFUL SHUTDOWN SERVICE =====
+builder.Services.AddHostedService<GracefulShutdownService>();
 
 // ===== DOMAIN LAYER =====
 // Servicios de dominio
@@ -276,7 +287,92 @@ app.UseAntiforgery();
 app.MapRazorComponents<AttendanceSystem.Blazor.Server.Components.App>()
     .AddInteractiveServerRenderMode();
 
+
 app.MapControllers(); // Map Controllers
+
+// ===== MOSTRAR INFORMACIÓN DE PUERTOS Y CONFIGURACIÓN =====
+using (var scope = app.Services.CreateScope())
+{
+    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+    var logger = loggerFactory.CreateLogger("ServerStartup");
+    var configRepo = scope.ServiceProvider.GetRequiredService<ISystemConfigurationRepository>();
+    
+    try
+    {
+        // Obtener configuración del sistema
+        var systemConfig = await configRepo.GetConfigurationAsync();
+        var admsPort = systemConfig?.AdmsPort ?? 16373;
+        
+        // Obtener las URLs en las que está escuchando el servidor
+        var addresses = app.Urls;
+        
+        logger.LogInformation("========================================");
+        logger.LogInformation("🚀 SERVIDOR INICIADO CORRECTAMENTE");
+        logger.LogInformation("========================================");
+        logger.LogInformation("");
+        
+        // Mostrar URLs de escucha
+        logger.LogInformation("📡 Servidor escuchando en:");
+        foreach (var address in addresses)
+        {
+            var uri = new Uri(address);
+            var protocol = uri.Scheme.ToUpper();
+            var port = uri.Port;
+            
+            if (protocol == "HTTPS")
+            {
+                logger.LogInformation("   🔒 {Protocol}: {Address} (UI - Seguro)", protocol, address);
+            }
+            else if (port == admsPort)
+            {
+                logger.LogInformation("   📱 {Protocol}: {Address} (ADMS - Dispositivos)", protocol, address);
+            }
+            else
+            {
+                logger.LogInformation("   🌐 {Protocol}: {Address} (UI - Web)", protocol, address);
+            }
+        }
+        
+        logger.LogInformation("");
+        logger.LogInformation("⚙️  Configuración ADMS:");
+        logger.LogInformation("   Puerto configurado: {AdmsPort}", admsPort);
+        logger.LogInformation("   URL para dispositivos: http://[IP_SERVIDOR]:{AdmsPort}/iclock/", admsPort);
+        logger.LogInformation("");
+        
+        // Obtener IP local
+        var hostName = System.Net.Dns.GetHostName();
+        var localIPs = System.Net.Dns.GetHostEntry(hostName).AddressList
+            .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            .Select(ip => ip.ToString())
+            .ToList();
+        
+        if (localIPs.Any())
+        {
+            logger.LogInformation("🌍 IPs locales detectadas:");
+            foreach (var ip in localIPs)
+            {
+                logger.LogInformation("   • {IP}", ip);
+                logger.LogInformation("     - UI Web: http://{IP}:16372", ip);
+                logger.LogInformation("     - ADMS: http://{IP}:{AdmsPort}/iclock/", ip, admsPort);
+            }
+            logger.LogInformation("");
+        }
+        
+        logger.LogInformation("📊 Servicios disponibles:");
+        logger.LogInformation("   • Interfaz Web: {Url}", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
+        logger.LogInformation("   • Hangfire Dashboard: {Url}/hangfire", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
+        logger.LogInformation("   • API ADMS: {Url}/iclock/", addresses.FirstOrDefault(a => a.Contains(admsPort.ToString())) ?? $"http://localhost:{admsPort}");
+        logger.LogInformation("");
+        
+        logger.LogInformation("========================================");
+        logger.LogInformation("✅ Sistema listo para recibir conexiones");
+        logger.LogInformation("========================================");
+    }
+    catch (Exception ex)
+    {
+        logger.LogError(ex, "Error al mostrar información de puertos");
+    }
+}
 
     app.Run();
 }
