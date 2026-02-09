@@ -88,6 +88,37 @@
                     
                     <MudDivider Class="my-4" />
 
+                    <MudText Typo="Typo.h6" Class="mb-2">Configuración de Respaldos</MudText>
+                    <MudText Typo="Typo.body2" Class="mb-3" Color="Color.Secondary">
+                        Configure el directorio donde se almacenarán los respaldos del sistema.
+                    </MudText>
+                    
+                    <MudGrid>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField Label="Directorio de Respaldos" 
+                                         @bind-Value="_backupDirectory" 
+                                         Variant="Variant.Outlined"
+                                         HelperText="Ruta absoluta o relativa donde se guardarán los archivos de respaldo" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudNumericField Label="Timeout de Respaldo (Minutos)" 
+                                            @bind-Value="_backupTimeoutMinutes" 
+                                            Min="1" Max="60"
+                                            HelperText="Tiempo máximo de espera para pg_dump (1-60 minutos)" />
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                <MudText Typo="Typo.body2">
+                                    <strong>Ejemplos:</strong><br/>
+                                    • Ruta relativa: <code>Backups</code> (se creará en el directorio de la aplicación)<br/>
+                                    • Ruta absoluta: <code>C:\Respaldos\AttendanceSystem</code>
+                                </MudText>
+                            </MudAlert>
+                        </MudItem>
+                    </MudGrid>
+                    
+                    <MudDivider Class="my-4" />
+
                     <MudText Typo="Typo.h6" Class="mb-2">Periodos Laborales</MudText>
                     <MudGrid>
                         <MudItem xs="12" sm="6">
@@ -184,6 +215,8 @@
     private TimeSpan? _autoDownloadTime; 
     private bool _autoDownloadOnlyToday; 
     private int _admsPort = 16373;
+    private string _backupDirectory = "Backups";
+    private int _backupTimeoutMinutes = 10;
     
     // Work Period Fields
     private WorkPeriodMode _workPeriodMode;
@@ -236,6 +269,8 @@
                 _autoDownloadTime = config.AutoDownloadTime;
                 _autoDownloadOnlyToday = config.AutoDownloadOnlyToday;
                 _admsPort = config.AdmsPort;
+                _backupDirectory = config.BackupDirectory;
+                _backupTimeoutMinutes = config.BackupTimeoutMinutes;
                 
                 // Work Period
                 _workPeriodMode = config.WorkPeriodMode;
@@ -276,6 +311,8 @@
                 _autoDownloadTime,
                 _autoDownloadOnlyToday,
                 _admsPort,
+                _backupDirectory,
+                _backupTimeoutMinutes,
                 _workPeriodMode,
                 _weeklyStartDay,
                 _fortnightFirstDay,

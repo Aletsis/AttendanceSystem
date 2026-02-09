@@ -18,8 +18,10 @@ public sealed record UpdateSystemConfigurationCommand(
     bool IsAutoDownloadEnabled,
 
     TimeSpan? AutoDownloadTime,
-    bool AutoDownloadOnlyToday,
+    bool AutoDownloadOnlyToday = false,
     int AdmsPort = 16373,
+    string BackupDirectory = "Backups",
+    int BackupTimeoutMinutes = 10,
     WorkPeriodMode WorkPeriodMode = WorkPeriodMode.Weekly,
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,
@@ -62,7 +64,9 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
 
             command.AutoDownloadTime,
             command.AutoDownloadOnlyToday,
-            command.AdmsPort);
+            command.AdmsPort,
+            command.BackupDirectory,
+            command.BackupTimeoutMinutes);
 
         config.UpdateWorkPeriodSettings(
             command.WorkPeriodMode,

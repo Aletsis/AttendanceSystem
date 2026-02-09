@@ -39,6 +39,8 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             config.AutoDownloadTime,
             config.AutoDownloadOnlyToday,
             config.AdmsPort,
+            config.BackupDirectory,
+            config.BackupTimeoutMinutes,
             config.WorkPeriodMode,
             config.WeeklyStartDay,
             config.FortnightFirstDay,

@@ -142,6 +142,7 @@ builder.Services.AddScoped<IZKTecoDeviceClient, GrpcZKTecoDeviceClient>();
 builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
+builder.Services.AddScoped<IBackupService, BackupService>();
 
 // Servicios de Query (CQRS - Lectura)
 builder.Services.AddScoped<IDeviceQueries, DeviceQueries>();

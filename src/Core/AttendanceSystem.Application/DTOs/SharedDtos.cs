@@ -148,6 +148,8 @@ public sealed record SystemConfigurationDto(
     TimeSpan? AutoDownloadTime,
     bool AutoDownloadOnlyToday,
     int AdmsPort = 16373,
+    string BackupDirectory = "Backups",
+    int BackupTimeoutMinutes = 10,
     WorkPeriodMode WorkPeriodMode = WorkPeriodMode.Weekly,
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,

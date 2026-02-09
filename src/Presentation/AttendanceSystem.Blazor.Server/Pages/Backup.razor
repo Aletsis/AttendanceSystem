@@ -1,0 +1,409 @@
+@page "/backup"
+@using AttendanceSystem.Application.Features.Backup.Commands
+@using AttendanceSystem.Application.Features.Backup.Queries
+@using AttendanceSystem.Application.DTOs
+@using MediatR
+@using MudBlazor
+@using AttendanceSystem.Blazor.Server.Components
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Respaldo y Restauración</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" Class="mb-4">
+        <MudIcon Icon="@Icons.Material.Filled.Backup" Class="mr-2" />
+        Respaldo y Restauración
+    </MudText>
+
+    <MudGrid>
+        <!-- Panel de Acciones -->
+        <MudItem xs="12" md="4">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Crear Respaldo</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudStack Spacing="3">
+                        <MudTextField @bind-Value="_backupDescription"
+                                      Label="Descripción (opcional)"
+                                      Variant="Variant.Outlined"
+                                      Lines="3" />
+
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.CloudDownload"
+                                   FullWidth="true"
+                                   OnClick="CreateFullBackup"
+                                   Disabled="_isCreatingBackup">
+                            @if (_isCreatingBackup)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Creando respaldo completo...</span>
+                            }
+                            else
+                            {
+                                <span>Respaldo Completo</span>
+                            }
+                        </MudButton>
+
+                        <MudButton Variant="Variant.Outlined"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Storage"
+                                   FullWidth="true"
+                                   OnClick="CreateDatabaseBackup"
+                                   Disabled="_isCreatingBackup">
+                            Solo Base de Datos
+                        </MudButton>
+
+                        <MudDivider />
+
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            <strong>Respaldo Completo:</strong> Incluye base de datos y configuración.<br />
+                            <strong>Solo BD:</strong> Solo respaldo de base de datos.
+                        </MudAlert>
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+
+            <!-- Información del Sistema -->
+            <MudCard Elevation="2" Class="mt-4">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Información</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudStack Spacing="2">
+                        <MudText Typo="Typo.body2">
+                            <strong>Total de respaldos:</strong> @_backups.Count()
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            <strong>Espacio usado:</strong> @FormatBytes(_backups.Sum(b => b.SizeInBytes))
+                        </MudText>
+                        <MudText Typo="Typo.body2">
+                            <strong>Último respaldo:</strong> @(_backups.Any() ? _backups.First().CreatedAt.ToString("dd/MM/yyyy HH:mm") : "N/A")
+                        </MudText>
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <!-- Lista de Respaldos -->
+        <MudItem xs="12" md="8">
+            <MudCard Elevation="2">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Respaldos Disponibles</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                       Color="Color.Primary"
+                                       OnClick="LoadBackups"
+                                       Disabled="_isLoading" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                    @if (_isLoading)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                    }
+                    else if (!_backups.Any())
+                    {
+                        <MudAlert Severity="Severity.Info">
+                            No hay respaldos disponibles. Cree su primer respaldo usando el panel de la izquierda.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudTable Items="_backups"
+                                  Hover="true"
+                                  Breakpoint="Breakpoint.Sm"
+                                  Dense="true">
+                            <HeaderContent>
+                                <MudTh>Archivo</MudTh>
+                                <MudTh>Tipo</MudTh>
+                                <MudTh>Tamaño</MudTh>
+                                <MudTh>Fecha</MudTh>
+                                <MudTh>Acciones</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Archivo">
+                                    <MudStack Spacing="0">
+                                        <MudText Typo="Typo.body2">@context.FileName</MudText>
+                                        @if (!string.IsNullOrEmpty(context.Description))
+                                        {
+                                            <MudText Typo="Typo.caption" Color="Color.Secondary">@context.Description</MudText>
+                                        }
+                                    </MudStack>
+                                </MudTd>
+                                <MudTd DataLabel="Tipo">
+                                    <MudBadge Color="@(context.BackupType == "Full" ? Color.Primary : Color.Secondary)" 
+                                              Variant="Variant.Filled">
+                                        @context.BackupType
+                                    </MudBadge>
+                                </MudTd>
+                                <MudTd DataLabel="Tamaño">
+                                    @FormatBytes(context.SizeInBytes)
+                                </MudTd>
+                                <MudTd DataLabel="Fecha">
+                                    @context.CreatedAt.ToString("dd/MM/yyyy HH:mm")
+                                </MudTd>
+                                <MudTd DataLabel="Acciones">
+                                    <MudButtonGroup Variant="Variant.Outlined" Size="Size.Small">
+                                        <MudIconButton Icon="@(_isRestoring ? Icons.Material.Filled.HourglassEmpty : Icons.Material.Filled.RestorePage)"
+                                                       Color="Color.Success"
+                                                       Size="Size.Small"
+                                                       Disabled="@_isRestoring"
+                                                       OnClick="@(() => RestoreBackup(context))"
+                                                       Title="@(_isRestoring ? "Restaurando..." : "Restaurar")" />
+                                        <MudIconButton Icon="@Icons.Material.Filled.Delete"
+                                                       Color="Color.Error"
+                                                       Size="Size.Small"
+                                                       OnClick="@(() => DeleteBackup(context))"
+                                                       Title="Eliminar" />
+                                    </MudButtonGroup>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudCardContent>
+            </MudCard>
+
+            <!-- Advertencias -->
+            <MudCard Elevation="2" Class="mt-4">
+                <MudCardContent>
+                    <MudAlert Severity="Severity.Warning" Dense="true">
+                        <strong>⚠️ Importante:</strong>
+                        <ul class="my-2">
+                            <li>La restauración sobrescribirá todos los datos actuales</li>
+                            <li>Se recomienda crear un respaldo antes de restaurar</li>
+                            <li>La aplicación debe reiniciarse después de una restauración</li>
+                            <li>Asegúrese de que no haya usuarios conectados durante la restauración</li>
+                        </ul>
+                    </MudAlert>
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private IEnumerable<BackupDto> _backups = Enumerable.Empty<BackupDto>();
+    private bool _isLoading = false;
+    private bool _isCreatingBackup = false;
+    private bool _isRestoring = false;
+    private string _backupDescription = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBackups();
+    }
+
+    private async Task LoadBackups()
+    {
+        _isLoading = true;
+        try
+        {
+            var query = new GetBackupsQuery();
+            _backups = await Mediator.Send(query);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar respaldos: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task CreateFullBackup()
+    {
+        _isCreatingBackup = true;
+        try
+        {
+            var command = new CreateBackupCommand("Full", _backupDescription);
+            var result = await Mediator.Send(command);
+
+            if (result.Success)
+            {
+                Snackbar.Add($"Respaldo creado exitosamente: {Path.GetFileName(result.BackupFilePath ?? "")}", Severity.Success);
+                _backupDescription = string.Empty;
+                await LoadBackups();
+            }
+            else
+            {
+                Snackbar.Add($"Error al crear respaldo: {result.Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error inesperado: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isCreatingBackup = false;
+        }
+    }
+
+    private async Task CreateDatabaseBackup()
+    {
+        _isCreatingBackup = true;
+        try
+        {
+            var command = new CreateBackupCommand("DatabaseOnly", _backupDescription);
+            var result = await Mediator.Send(command);
+
+            if (result.Success)
+            {
+                Snackbar.Add($"Respaldo de BD creado exitosamente", Severity.Success);
+                _backupDescription = string.Empty;
+                await LoadBackups();
+            }
+            else
+            {
+                Snackbar.Add($"Error al crear respaldo: {result.Message}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error inesperado: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isCreatingBackup = false;
+        }
+    }
+
+    private async Task RestoreBackup(BackupDto backup)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"¿Está seguro de que desea restaurar el respaldo '{backup.FileName}'? Esta acción sobrescribirá todos los datos actuales y la aplicación deberá reiniciarse.",
+            ["ButtonText"] = "Restaurar",
+            ["Color"] = Color.Error
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmationDialog>("Confirmar Restauración", parameters);
+        var dialogResult = await dialog.Result;
+
+        if (!dialogResult.Canceled)
+        {
+            _isRestoring = true;
+            try
+            {
+                Snackbar.Add("Iniciando restauración... Por favor espere.", Severity.Info);
+                
+                var command = new RestoreBackupCommand(backup.FilePath);
+                var result = await Mediator.Send(command);
+
+                if (result.Success)
+                {
+                    Snackbar.Add("✓ Restauración completada exitosamente", Severity.Success);
+                    
+                    // Mostrar diálogo informando que debe reiniciar
+                    var restartParams = new DialogParameters
+                    {
+                        ["ContentText"] = $"La restauración se completó exitosamente.\n\n" +
+                                        $"Detalles:\n" +
+                                        $"• Archivo: {backup.FileName}\n" +
+                                        $"• Fecha del respaldo: {backup.CreatedAt:dd/MM/yyyy HH:mm}\n\n" +
+                                        $"IMPORTANTE: Debe reiniciar la aplicación para que los cambios surtan efecto.",
+                        ["ButtonText"] = "Entendido",
+                        ["Color"] = Color.Success
+                    };
+                    await DialogService.ShowAsync<ConfirmationDialog>("✓ Restauración Exitosa", restartParams);
+                    
+                    await LoadBackups(); // Recargar lista
+                }
+                else
+                {
+                    Snackbar.Add($"✗ Error al restaurar: {result.Message}", Severity.Error);
+                    
+                    // Mostrar diálogo con detalles del error
+                    var errorParams = new DialogParameters
+                    {
+                        ["ContentText"] = $"No se pudo completar la restauración.\n\n" +
+                                        $"Error: {result.Message}\n\n" +
+                                        $"Por favor, revise los logs de la aplicación para más detalles.",
+                        ["ButtonText"] = "Cerrar",
+                        ["Color"] = Color.Error
+                    };
+                    await DialogService.ShowAsync<ConfirmationDialog>("✗ Error en Restauración", errorParams);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"✗ Error inesperado: {ex.Message}", Severity.Error);
+                
+                // Mostrar diálogo con error inesperado
+                var errorParams = new DialogParameters
+                {
+                    ["ContentText"] = $"Ocurrió un error inesperado durante la restauración.\n\n" +
+                                    $"Error: {ex.Message}\n\n" +
+                                    $"Por favor, contacte al administrador del sistema.",
+                    ["ButtonText"] = "Cerrar",
+                    ["Color"] = Color.Error
+                };
+                await DialogService.ShowAsync<ConfirmationDialog>("✗ Error Crítico", errorParams);
+            }
+            finally
+            {
+                _isRestoring = false;
+            }
+        }
+    }
+
+    private async Task DeleteBackup(BackupDto backup)
+    {
+        var parameters = new DialogParameters
+        {
+            ["ContentText"] = $"¿Está seguro de que desea eliminar el respaldo '{backup.FileName}'? Esta acción no se puede deshacer.",
+            ["ButtonText"] = "Eliminar",
+            ["Color"] = Color.Error
+        };
+
+        var dialog = await DialogService.ShowAsync<ConfirmationDialog>("Confirmar Eliminación", parameters);
+        var dialogResult = await dialog.Result;
+
+        if (!dialogResult.Canceled)
+        {
+            try
+            {
+                var command = new DeleteBackupCommand(backup.FilePath);
+                var result = await Mediator.Send(command);
+
+                if (result)
+                {
+                    Snackbar.Add("Respaldo eliminado exitosamente", Severity.Success);
+                    await LoadBackups();
+                }
+                else
+                {
+                    Snackbar.Add("Error al eliminar respaldo", Severity.Error);
+                }
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Error inesperado: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private string FormatBytes(long bytes)
+    {
+        string[] sizes = { "B", "KB", "MB", "GB", "TB" };
+        double len = bytes;
+        int order = 0;
+        while (len >= 1024 && order < sizes.Length - 1)
+        {
+            order++;
+            len = len / 1024;
+        }
+        return $"{len:0.##} {sizes[order]}";
+    }
+}

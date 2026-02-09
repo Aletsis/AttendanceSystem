@@ -22,6 +22,10 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     // ADMS Settings
     public int AdmsPort { get; private set; }
 
+    // Backup Settings
+    public string BackupDirectory { get; private set; }
+    public int BackupTimeoutMinutes { get; private set; } // Timeout para pg_dump
+
     // Work Period Settings
     public WorkPeriodMode WorkPeriodMode { get; private set; }
     public DayOfWeek WeeklyStartDay { get; private set; }
@@ -45,6 +49,8 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
             AutoDownloadTime = null,
             AutoDownloadOnlyToday = false,
             AdmsPort = 16373, // Puerto dedicado para ADMS
+            BackupDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups"),
+            BackupTimeoutMinutes = 10, // Timeout por defecto: 10 minutos
             WorkPeriodMode = WorkPeriodMode.Weekly,
             WeeklyStartDay = DayOfWeek.Monday,
             FortnightFirstDay = 1,
@@ -62,7 +68,9 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         bool isAutoDownloadEnabled,
         TimeSpan? autoDownloadTime,
         bool autoDownloadOnlyToday,
-        int admsPort)
+        int admsPort,
+        string backupDirectory,
+        int backupTimeoutMinutes)
     {
         CompanyName = companyName;
         CompanyLogo = companyLogo;
@@ -73,6 +81,8 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         AutoDownloadTime = autoDownloadTime;
         AutoDownloadOnlyToday = autoDownloadOnlyToday;
         AdmsPort = admsPort;
+        BackupDirectory = backupDirectory;
+        BackupTimeoutMinutes = backupTimeoutMinutes;
     }
 
     public bool AutoDownloadOnlyToday { get; private set; }
