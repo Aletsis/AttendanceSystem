@@ -41,7 +41,9 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
             cancellationToken);
 
         // 2. Fetch Metadata
-        var employees = await _employeeRepository.GetAllAsync(cancellationToken);
+        // 2. Fetch Metadata
+        var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
+        var employees = allEmployees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
         
         var empDict = employees.ToDictionary(e => e.Id, e => e);
@@ -56,7 +58,9 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
         foreach (var group in attByEmployee)
         {
             var emp = empDict.TryGetValue(group.Key, out var e) ? e : null;
-            string empName = emp?.GetFullName() ?? group.Key.Value;
+            if (emp == null) continue;
+
+            string empName = emp.GetFullName();
 
             string branchName = "N/A";
             if (emp != null && emp.BranchId != null && branchDict.TryGetValue(emp.BranchId, out var bName))

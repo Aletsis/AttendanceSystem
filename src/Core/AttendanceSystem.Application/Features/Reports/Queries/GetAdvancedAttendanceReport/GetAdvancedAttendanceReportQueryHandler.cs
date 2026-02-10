@@ -53,6 +53,10 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             employees = await _employeeRepository.GetAllAsync(cancellationToken);
         }
 
+        // Filter only active employees
+        employees = employees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
+
+
         // 3. Fetch Departments for lookup
         var departments = await _departmentRepository.GetAllAsync(cancellationToken);
         var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);

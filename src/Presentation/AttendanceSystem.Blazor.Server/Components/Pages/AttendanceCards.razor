@@ -376,7 +376,7 @@ else if (HasSearched)
         var empResult = await Mediator.Send(new GetAllEmployeesQuery());
         if (empResult.IsSuccess)
         {
-            _allEmployees = empResult.Value.ToList();
+            _allEmployees = empResult.Value.Where(e => e.Status == EmployeeStatus.Alta).ToList();
         }
 
         var branchResult = await Mediator.Send(new GetBranchesQuery());
