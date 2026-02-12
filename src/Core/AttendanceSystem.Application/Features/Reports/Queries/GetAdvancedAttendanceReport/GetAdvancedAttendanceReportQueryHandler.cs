@@ -162,7 +162,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                  }
 
                  summary.TotalMetric = totalOvertime;
-                 summary.FormattedTotal = $"{summary.TotalMetric} min";
+                 summary.FormattedTotal = $"{(int)TimeSpan.FromMinutes(summary.TotalMetric).TotalHours:00}:{TimeSpan.FromMinutes(summary.TotalMetric).Minutes:00}";
             }
             else if (request.ReportType == "HorasLaboradas")
             {
@@ -291,8 +291,25 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
         if (emp.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Daily && emp.OvertimeCapMinutes.HasValue)
         {
-            return Math.Min(calculatedOvertime, emp.OvertimeCapMinutes.Value);
+            calculatedOvertime = Math.Min(calculatedOvertime, emp.OvertimeCapMinutes.Value);
         }
+
+        // Apply Rounding
+        calculatedOvertime = ApplyOvertimeRounding(calculatedOvertime, emp.OvertimeCalculationMethod);
+
         return calculatedOvertime;
+    }
+
+    private double ApplyOvertimeRounding(double minutes, Domain.Enumerations.OvertimeCalculationMethod method)
+    {
+        switch (method)
+        {
+            case Domain.Enumerations.OvertimeCalculationMethod.RoundByHalfHour:
+                return Math.Floor(minutes / 30.0) * 30.0;
+            case Domain.Enumerations.OvertimeCalculationMethod.RoundByHour:
+                return Math.Floor(minutes / 60.0) * 60.0;
+            default:
+                return minutes;
+        }
     }
 }

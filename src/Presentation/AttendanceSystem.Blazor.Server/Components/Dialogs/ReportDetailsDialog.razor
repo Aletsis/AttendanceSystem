@@ -13,7 +13,7 @@
                 <MudTh>Salida</MudTh>
                 
                 @if (ReportType == "Retardos") { <MudTh>Retardo (min)</MudTh> }
-                @if (ReportType == "HorasExtra") { <MudTh>Extra (min)</MudTh> }
+                @if (ReportType == "HorasExtra") { <MudTh>Extra</MudTh> }
                 @if (ReportType == "DescansoTrabajado") { <MudTh>Tipo</MudTh> }
                 @if (ReportType == "HorasLaboradas") { <MudTh>Horas</MudTh> }
                 @if (ReportType == "DescansoErroneo") { <MudTh>Acciones</MudTh> }
@@ -25,7 +25,12 @@
                 <MudTd>@context.CheckOut</MudTd>
 
                 @if (ReportType == "Retardos") { <MudTd Style="color:red">@context.LateMinutes</MudTd> }
-                @if (ReportType == "HorasExtra") { <MudTd Style="color:green">@context.OvertimeMinutes</MudTd> }
+                @if (ReportType == "HorasExtra") 
+                { 
+                    <MudTd Style="color:green">
+                        @($"{(int)TimeSpan.FromMinutes(context.OvertimeMinutes).TotalHours:00}:{TimeSpan.FromMinutes(context.OvertimeMinutes).Minutes:00}")
+                    </MudTd> 
+                }
                 @if (ReportType == "DescansoTrabajado") { <MudTd>Descanso Trabajado</MudTd> }
                 @if (ReportType == "HorasLaboradas") { <MudTd>@context.WorkedHours</MudTd> }
                 @if (ReportType == "DescansoErroneo") 

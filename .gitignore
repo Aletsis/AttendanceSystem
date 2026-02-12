@@ -93,3 +93,6 @@ _Pvt_Extensions
 **/appsettings.Development.json
 **/appsettings.Production.json
 !**/appsettings.example.json
+Deploy/*.*
+Output/*.*
+Prepare-Release.ps1
