@@ -10,93 +10,72 @@
 @using AttendanceSystem.Domain.ValueObjects
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Common
+@using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
 @using System.Globalization
+@using AttendanceSystem.Blazor.Server.Services
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
-
-@using AttendanceSystem.Blazor.Server.Components.Pages.ViewModels
+@inject IJSRuntime JS
+@inject ReportExportService ExportService
 @inject IDialogService DialogService
 
 <MudText Typo="Typo.h5" Class="mb-4">Reportes Avanzados</MudText>
 
-<MudGrid>
-    <MudItem xs="12" sm="4">
-        <MudSelect T="string" Label="Tipo de Reporte" @bind-Value="SelectedReportType" AdornmentColor="Color.Primary">
-            <MudSelectItem Value="@("Faltas")">Faltas</MudSelectItem>
-            <MudSelectItem Value="@("DescansoTrabajado")">Descanso Trabajado</MudSelectItem>
-            <MudSelectItem Value="@("Retardos")">Retardos</MudSelectItem>
-            <MudSelectItem Value="@("HorasExtra")">Horas Extra</MudSelectItem>
-            <MudSelectItem Value="@("HorarioErroneo")">Horario Erróneo</MudSelectItem>
-            <MudSelectItem Value="@("HorasLaboradas")">Horas Laboradas</MudSelectItem>
-            <MudSelectItem Value="@("DescansoErroneo")">Descanso Erróneo (Solo por Periodo)</MudSelectItem>
-        </MudSelect>
-    </MudItem>
+@* Removed previous filter section *@
 
-    <MudItem xs="12" sm="4">
-        <MudSelect T="string" Label="Modo de Fecha" @bind-Value="DateMode" AdornmentColor="Color.Secondary">
-            <MudSelectItem Value="@("Range")">Rango de Fechas</MudSelectItem>
-            <MudSelectItem Value="@("Period")">Por Periodo Laboral</MudSelectItem>
-        </MudSelect>
-    </MudItem>
-
-    <MudItem xs="12" sm="4">
-        <MudSelect T="Guid?" Label="Sucursal" Value="SelectedBranchId" ValueChanged="OnBranchChanged" Clearable="true" AdornmentColor="Color.Primary">
-            <MudSelectItem T="Guid?" Value="null">Todas</MudSelectItem>
-            @foreach (var branch in Branches)
-            {
-                <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
-            }
-        </MudSelect>
-    </MudItem>
-
-    @if (DateMode == "Range")
-    {
-        <MudItem xs="12" sm="3">
-            <MudDatePicker Label="Desde" @bind-Date="StartDate" />
-        </MudItem>
-        <MudItem xs="12" sm="3">
-            <MudDatePicker Label="Hasta" @bind-Date="EndDate" />
-        </MudItem>
-    }
-    else
-    {
-        <MudItem xs="12" sm="3">
-            <MudNumericField Label="Año" @bind-Value="SelectedYear" Min="2000" Max="2100" Immediate="true" />
-        </MudItem>
-        <MudItem xs="12" sm="3">
-            @if (_config != null)
-            {
-                @if (_config.WorkPeriodMode == WorkPeriodMode.Weekly)
-                {
-                    <MudNumericField Label="Periodo (Semana 1-52)" @bind-Value="SelectedPeriodNumber" Min="1" Max="53" Immediate="true" HelperText="@PeriodRangeText" />
-                }
-                else if (_config.WorkPeriodMode == WorkPeriodMode.Fortnightly)
-                {
-                    <MudNumericField Label="Periodo (Quincena 1-24)" @bind-Value="SelectedPeriodNumber" Min="1" Max="24" Immediate="true" HelperText="@PeriodRangeText" />
-                }
-                else if (_config.WorkPeriodMode == WorkPeriodMode.Monthly)
-                {
-                    <MudNumericField Label="Periodo (Mes 1-12)" @bind-Value="SelectedPeriodNumber" Min="1" Max="12" Immediate="true" HelperText="@PeriodRangeText" />
-                }
-            }
-        </MudItem>
-    }
-
-    <MudItem xs="12" sm="6">
-        <MudAutocomplete T="EmployeeDto" 
-                        Label="Empleado (Opcional)"
-                        @bind-Value="SelectedEmployeeObj" 
-                        SearchFunc="@SearchEmployees"
-                        ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
-                        Clearable="true"
-                        AdornmentColor="Color.Primary"
-                        ResetValueOnEmptyText="true" />
-    </MudItem>
-
-    <MudItem xs="12" Class="d-flex justify-end">
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadReport">Generar Reporte</MudButton>
-    </MudItem>
-</MudGrid>
+<MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" ActivePanelIndexChanged="OnTabChanged" Class="mt-4" Color="Color.Primary">
+    <MudTabPanel Text="Faltas">
+        <MudGrid Class="pa-4">
+            @FilterDateSection(allowSpecific: true)
+            @FilterBranchSection()
+            @FilterDepartmentSection()
+            @if(DateMode == "Range" || DateMode == "Period") { @FilterEmployeeSection() }
+            @GenerateButtonSection()
+        </MudGrid>
+    </MudTabPanel>
+    <MudTabPanel Text="Descanso Trabajado">
+        <MudGrid Class="pa-4">
+            @FilterDateSection(allowSpecific: true)
+            @FilterBranchSection()
+            @FilterDepartmentSection()
+            @GenerateButtonSection()
+        </MudGrid>
+    </MudTabPanel>
+    <MudTabPanel Text="Retardos">
+        <MudGrid Class="pa-4">
+            @FilterDateSection(allowSpecific: true)
+            @FilterBranchSection()
+            @FilterDepartmentSection()
+            @if(DateMode == "Range" || DateMode == "Period") { @FilterEmployeeSection() }
+            @GenerateButtonSection()
+        </MudGrid>
+    </MudTabPanel>
+    <MudTabPanel Text="Horas Extra">
+        <MudGrid Class="pa-4">
+            @FilterDateSection(allowSpecific: true)
+            @FilterBranchSection()
+            @FilterDepartmentSection()
+            @FilterEmployeeSection()
+            @GenerateButtonSection()
+        </MudGrid>
+    </MudTabPanel>
+    <MudTabPanel Text="Horario Erróneo">
+         <MudGrid Class="pa-4">
+            @FilterDateSection(allowSpecific: true)
+            @FilterBranchSection()
+            @FilterDepartmentSection()
+            @GenerateButtonSection()
+        </MudGrid>
+    </MudTabPanel>
+    <MudTabPanel Text="Descanso Erróneo" ToolTip="Solo válido por Periodo Laboral">
+         <MudGrid Class="pa-4">
+            @FilterDateSection(forcePeriod: true)
+            @FilterBranchSection()
+            @FilterDepartmentSection()
+            @GenerateButtonSection()
+        </MudGrid>
+    </MudTabPanel>
+</MudTabs>
 
 <MudTable Items="@DisplayedSummaries" Hover="true" Striped="true" Class="mt-4">
     <HeaderContent>
@@ -123,15 +102,19 @@
 </MudTable>
 
 @code {
+    // Shared State
     private string SelectedReportType = "Faltas";
-    private string DateMode = "Range";
+    private string DateMode = "Range"; 
     private DateTime? StartDate = DateTime.Today; 
     private DateTime? EndDate = DateTime.Today;
+    private DateTime? SpecificDate = DateTime.Today;
     private Guid? SelectedBranchId;
+    private Guid? SelectedDepartmentId;
     private EmployeeDto? SelectedEmployeeObj;
     
     private List<EmployeeDto> _allEmployees = new();
     private List<BranchDto> Branches = new();
+    private List<DepartmentDto> Departments = new();
     
     private List<AdvancedReportSummaryDto> DisplayedSummaries = new();
     private SystemConfigurationDto _config;
@@ -165,6 +148,10 @@
         var branchResult = await Mediator.Send(new GetBranchesQuery());
         if (branchResult.IsSuccess)
             Branches = branchResult.Value.ToList();
+
+        var deptResult = await Mediator.Send(new GetDepartmentsQuery());
+        if (deptResult.IsSuccess)
+            Departments = deptResult.Value.ToList();
 
         var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
         if (configResult.IsSuccess)
@@ -205,9 +192,13 @@
 
     private Task<IEnumerable<EmployeeDto>> SearchEmployees(string value, CancellationToken token)
     {
-        var filtered = SelectedBranchId.HasValue 
-            ? _allEmployees.Where(e => e.BranchId == SelectedBranchId.Value) 
-            : _allEmployees;
+        var filtered = _allEmployees.AsEnumerable();
+
+        if (SelectedBranchId.HasValue)
+            filtered = filtered.Where(e => e.BranchId == SelectedBranchId.Value);
+
+        if (SelectedDepartmentId.HasValue)
+             filtered = filtered.Where(e => e.DepartmentId == SelectedDepartmentId.Value);
 
         if (string.IsNullOrEmpty(value)) return Task.FromResult(filtered);
 
@@ -219,7 +210,13 @@
     private async Task LoadReport()
     {
         DateTime start, end;
-        if (DateMode == "Range")
+        if (DateMode == "Specific")
+        {
+             if (SpecificDate == null) return;
+             start = SpecificDate.Value;
+             end = SpecificDate.Value;
+        }
+        else if (DateMode == "Range")
         {
             if (StartDate == null || EndDate == null) return;
             start = StartDate.Value;
@@ -234,9 +231,290 @@
 
         var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
         var employeeId = SelectedEmployeeObj != null ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
+        var deptId = SelectedDepartmentId.HasValue ? DepartmentId.From(SelectedDepartmentId.Value) : null;
 
-        var result = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId));
+        var result = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId, deptId));
         DisplayedSummaries = result.ToList();
+    }
+
+    private async Task DownloadAbsenceReport()
+    {
+        DateTime start, end;
+        if (DateMode == "Specific")
+        {
+             if (SpecificDate == null) 
+             {
+                 Snackbar.Add("Seleccione una fecha.", Severity.Warning);
+                 return;
+             }
+             start = SpecificDate.Value;
+             end = SpecificDate.Value;
+        }
+        else if (DateMode == "Range")
+        {
+            if (StartDate == null || EndDate == null) 
+            {
+                Snackbar.Add("Seleccione un rango de fechas.", Severity.Warning);
+                return;
+            }
+            start = StartDate.Value;
+            end = EndDate.Value;
+        }
+        else
+        {
+            var dates = _config.GetPeriodDates(SelectedYear, SelectedPeriodNumber);
+            start = dates.Start;
+            end = dates.End;
+        }
+
+        bool isDetailed = false;
+        bool isSpecific = DateMode == "Specific";
+
+        if (!isSpecific)
+        {
+             var result = await DialogService.ShowMessageBox(
+                "Exportar Faltas", 
+                "Seleccione el formato del reporte:", 
+                yesText: "Detallado (Diario)", 
+                noText: "Resumido (Totales)", 
+                cancelText: "Cancelar");
+             
+             if (result == null) return; // Cancelled
+             isDetailed = result.Value; 
+        }
+
+        // Fetch data
+        var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
+        var employeeId = SelectedEmployeeObj != null ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
+        var deptId = SelectedDepartmentId.HasValue ? DepartmentId.From(SelectedDepartmentId.Value) : null;
+
+        var data = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId, deptId));
+        
+        // Generate Excel
+        var excelBytes = ExportService.GenerateAdvancedAbsenceExcel(data, start, end, isDetailed, isSpecific, Branches.Count > 1);
+        
+        // Download
+        using var stream = new MemoryStream(excelBytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        var fileName = $"Faltas_{start:yyyyMMdd}_{end:yyyyMMdd}.xlsx";
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+    }
+
+    private async Task DownloadWorkedRestDayReport()
+    {
+        DateTime start, end;
+        if (DateMode == "Specific")
+        {
+             if (SpecificDate == null) 
+             {
+                 Snackbar.Add("Seleccione una fecha.", Severity.Warning);
+                 return;
+             }
+             start = SpecificDate.Value;
+             end = SpecificDate.Value;
+        }
+        else if (DateMode == "Range")
+        {
+            if (StartDate == null || EndDate == null) 
+            {
+                Snackbar.Add("Seleccione un rango de fechas.", Severity.Warning);
+                return;
+            }
+            start = StartDate.Value;
+            end = EndDate.Value;
+        }
+        else
+        {
+            var dates = _config.GetPeriodDates(SelectedYear, SelectedPeriodNumber);
+            start = dates.Start;
+            end = dates.End;
+        }
+
+        bool isDetailed = false;
+        bool isSpecific = DateMode == "Specific";
+
+        // For Specific Date, we always do the "Summary" (Flat) format effectively in Excel, 
+        // but let's follow the standard pattern.
+        // User asked: "si es resumido... si es detallado...". This implies choice for Range/Period.
+
+        if (!isSpecific)
+        {
+             var result = await DialogService.ShowMessageBox(
+                "Exportar Descanso Trabajado", 
+                "Seleccione el formato del reporte:", 
+                yesText: "Detallado (Diario)", 
+                noText: "Resumido (Reporte)", 
+                cancelText: "Cancelar");
+             
+             if (result == null) return; // Cancelled
+             isDetailed = result.Value; 
+        }
+
+        // Fetch data
+        var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
+        var employeeId = SelectedEmployeeObj != null ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
+        var deptId = SelectedDepartmentId.HasValue ? DepartmentId.From(SelectedDepartmentId.Value) : null;
+
+        var data = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId, deptId));
+        
+        // Generate Excel
+        var excelBytes = ExportService.GenerateWorkedRestDayExcel(data, start, end, isDetailed, Branches.Count > 1);
+        
+        // Download
+        using var stream = new MemoryStream(excelBytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        var fileName = $"DescansoTrabajado_{start:yyyyMMdd}_{end:yyyyMMdd}.xlsx";
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+    }
+
+    private async Task DownloadLateArrivalReport()
+    {
+        DateTime start, end;
+        if (DateMode == "Specific")
+        {
+             if (SpecificDate == null) 
+             {
+                 Snackbar.Add("Seleccione una fecha.", Severity.Warning);
+                 return;
+             }
+             start = SpecificDate.Value;
+             end = SpecificDate.Value;
+        }
+        else if (DateMode == "Range")
+        {
+            if (StartDate == null || EndDate == null) 
+            {
+                Snackbar.Add("Seleccione un rango de fechas.", Severity.Warning);
+                return;
+            }
+            start = StartDate.Value;
+            end = EndDate.Value;
+        }
+        else
+        {
+            var dates = _config.GetPeriodDates(SelectedYear, SelectedPeriodNumber);
+            start = dates.Start;
+            end = dates.End;
+        }
+
+        bool isDetailed = false;
+        bool isSpecific = DateMode == "Specific";
+
+        if (!isSpecific)
+        {
+             var result = await DialogService.ShowMessageBox(
+                "Exportar Retardos", 
+                "Seleccione el formato del reporte:", 
+                yesText: "Detallado (Diario)", 
+                noText: "Resumido (Totales)", 
+                cancelText: "Cancelar");
+             
+             if (result == null) return; // Cancelled
+             isDetailed = result.Value; 
+        }
+
+        // Fetch data
+        var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
+        var employeeId = SelectedEmployeeObj != null ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
+        var deptId = SelectedDepartmentId.HasValue ? DepartmentId.From(SelectedDepartmentId.Value) : null;
+
+        var data = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId, deptId));
+        
+        // Generate Excel
+        var excelBytes = ExportService.GenerateLateArrivalExcel(data, start, end, isDetailed, isSpecific, Branches.Count > 1);
+        
+        // Download
+        using var stream = new MemoryStream(excelBytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        var fileName = $"Retardos_{start:yyyyMMdd}_{end:yyyyMMdd}.xlsx";
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+    }
+
+    private async Task DownloadOvertimeReport()
+    {
+         DateTime start, end;
+        if (DateMode == "Specific")
+        {
+             if (SpecificDate == null) 
+             {
+                 Snackbar.Add("Seleccione una fecha.", Severity.Warning);
+                 return;
+             }
+             start = SpecificDate.Value;
+             end = SpecificDate.Value;
+        }
+        else if (DateMode == "Range")
+        {
+            if (StartDate == null || EndDate == null) 
+            {
+                Snackbar.Add("Seleccione un rango de fechas.", Severity.Warning);
+                return;
+            }
+            start = StartDate.Value;
+            end = EndDate.Value;
+        }
+        else
+        {
+            var dates = _config.GetPeriodDates(SelectedYear, SelectedPeriodNumber);
+            start = dates.Start;
+            end = dates.End;
+        }
+
+        bool isDetailed = false;
+        bool isSpecific = DateMode == "Specific";
+
+        if (!isSpecific)
+        {
+             var result = await DialogService.ShowMessageBox(
+                "Exportar Horas Extra", 
+                "Seleccione el formato del reporte:", 
+                yesText: "Detallado (Diario)", 
+                noText: "Resumido (Totales)", 
+                cancelText: "Cancelar");
+             
+             if (result == null) return; // Cancelled
+             isDetailed = result.Value; 
+        }
+
+        // Fetch data
+        var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
+        var employeeId = SelectedEmployeeObj != null ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
+        var deptId = SelectedDepartmentId.HasValue ? DepartmentId.From(SelectedDepartmentId.Value) : null;
+
+        var data = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId, deptId));
+        
+        // Generate Excel
+        var excelBytes = ExportService.GenerateOvertimeExcel(data, start, end, isDetailed, isSpecific, Branches.Count > 1);
+        
+        // Download
+        using var stream = new MemoryStream(excelBytes);
+        using var streamRef = new DotNetStreamReference(stream);
+        var fileName = $"HorasExtra_{start:yyyyMMdd}_{end:yyyyMMdd}.xlsx";
+        await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+    }
+
+    private async Task OnTabChanged(int index)
+    {
+        SelectedReportType = index switch
+        {
+            0 => "Faltas",
+            1 => "DescansoTrabajado",
+            2 => "Retardos",
+            3 => "HorasExtra",
+            4 => "HorarioErroneo",
+            5 => "DescansoErroneo",
+            _ => "Faltas"
+        };
+        
+        // Reset or adjust default date mode if needed per type
+        if (SelectedReportType == "DescansoErroneo")
+        {
+            DateMode = "Period";
+        }
+
+        // We do typically NOT reload report automatically when switching tabs if filters change
+        // But user asked for filters inside tab. It's safer to clear results or wait for user to click Generate.
+        DisplayedSummaries.Clear();
     }
 
     private void OpenDetails(AdvancedReportSummaryDto item)
@@ -248,5 +526,134 @@
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
         DialogService.Show<ReportDetailsDialog>($"Detalles - {item.EmployeeName}", parameters, options);
     }
+    
+    // UI FRAGMENT HELPERS
+    
+    private RenderFragment FilterDateSection(bool allowRange = true, bool allowPeriod = true, bool allowSpecific = false, bool forcePeriod = false) => __builder =>
+    {
+        if (forcePeriod)
+        {
+             // Force period mode UI
+             DateMode = "Period"; 
+             <MudItem xs="12" sm="3">
+                 <MudText>Modo: Por Periodo (Requerido)</MudText>
+            </MudItem>
+        }
+        else
+        {
+            <MudItem xs="12" sm="4">
+                <MudSelect T="string" Label="Modo de Fecha" @bind-Value="DateMode" AdornmentColor="Color.Secondary">
+                    @if(allowRange) { <MudSelectItem Value="@("Range")">Rango de Fechas</MudSelectItem> }
+                    @if(allowPeriod) {  <MudSelectItem Value="@("Period")">Por Periodo Laboral</MudSelectItem> }
+                    @if(allowSpecific) { <MudSelectItem Value="@("Specific")">Fecha Específica</MudSelectItem> }
+                </MudSelect>
+            </MudItem>
+        }
+
+        if (DateMode == "Range")
+        {
+            <MudItem xs="12" sm="4">
+                <MudDatePicker Label="Desde" @bind-Date="StartDate" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudDatePicker Label="Hasta" @bind-Date="EndDate" />
+            </MudItem>
+        }
+        else if (DateMode == "Specific")
+        {
+             <MudItem xs="12" sm="4">
+                <MudDatePicker Label="Fecha" @bind-Date="SpecificDate" />
+            </MudItem>
+        }
+        else
+        {
+            <MudItem xs="12" sm="4">
+                <MudNumericField Label="Año" @bind-Value="SelectedYear" Min="2000" Max="2100" Immediate="true" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                @if (_config != null)
+                {
+                    @if (_config.WorkPeriodMode == WorkPeriodMode.Weekly)
+                    {
+                        <MudNumericField Label="Periodo (Semana 1-52)" @bind-Value="SelectedPeriodNumber" Min="1" Max="53" Immediate="true" HelperText="@PeriodRangeText" />
+                    }
+                    else if (_config.WorkPeriodMode == WorkPeriodMode.Fortnightly)
+                    {
+                        <MudNumericField Label="Periodo (Quincena 1-24)" @bind-Value="SelectedPeriodNumber" Min="1" Max="24" Immediate="true" HelperText="@PeriodRangeText" />
+                    }
+                    else if (_config.WorkPeriodMode == WorkPeriodMode.Monthly)
+                    {
+                        <MudNumericField Label="Periodo (Mes 1-12)" @bind-Value="SelectedPeriodNumber" Min="1" Max="12" Immediate="true" HelperText="@PeriodRangeText" />
+                    }
+                }
+            </MudItem>
+        }
+    };
+
+    private RenderFragment FilterBranchSection() => __builder =>
+    {
+        if (Branches != null && Branches.Count > 1) 
+        {
+            <MudItem xs="12" sm="4">
+                <MudSelect T="Guid?" Label="Sucursal" Value="SelectedBranchId" ValueChanged="OnBranchChanged" Clearable="true" AdornmentColor="Color.Primary">
+                    <MudSelectItem T="Guid?" Value="null">Todas</MudSelectItem>
+                    @foreach (var branch in Branches)
+                    {
+                        <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        }
+    };
+
+    private RenderFragment FilterDepartmentSection() => __builder =>
+    {
+         <MudItem xs="12" sm="4">
+            <MudSelect T="Guid?" Label="Departamento" @bind-Value="SelectedDepartmentId" Clearable="true" AdornmentColor="Color.Primary">
+                <MudSelectItem T="Guid?" Value="null">Todos</MudSelectItem>
+                @foreach (var dept in Departments)
+                {
+                    <MudSelectItem T="Guid?" Value="@dept.Id">@dept.Name</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+    };
+
+    private RenderFragment FilterEmployeeSection() => __builder =>
+    {
+        <MudItem xs="12" sm="6">
+            <MudAutocomplete T="EmployeeDto" 
+                            Label="Empleado (Opcional)"
+                            @bind-Value="SelectedEmployeeObj" 
+                            SearchFunc="@SearchEmployees"
+                            ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
+                            Clearable="true"
+                            AdornmentColor="Color.Primary"
+                            ResetValueOnEmptyText="true" />
+        </MudItem>
+    };
+
+    private RenderFragment GenerateButtonSection() => __builder =>
+    {
+        <MudItem xs="12" Class="d-flex justify-end gap-2 mt-4">
+            @if (SelectedReportType == "Faltas")
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="DownloadAbsenceReport" StartIcon="@Icons.Material.Filled.FileDownload">Exportar Excel</MudButton>
+            }
+            @if (SelectedReportType == "DescansoTrabajado")
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="DownloadWorkedRestDayReport" StartIcon="@Icons.Material.Filled.FileDownload">Exportar Excel</MudButton>
+            }
+            @if (SelectedReportType == "Retardos")
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="DownloadLateArrivalReport" StartIcon="@Icons.Material.Filled.FileDownload">Exportar Excel</MudButton>
+            }
+            @if (SelectedReportType == "HorasExtra")
+            {
+                <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="DownloadOvertimeReport" StartIcon="@Icons.Material.Filled.FileDownload">Exportar Excel</MudButton>
+            }
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadReport">Generar Reporte</MudButton>
+        </MudItem>
+    };
 }
 

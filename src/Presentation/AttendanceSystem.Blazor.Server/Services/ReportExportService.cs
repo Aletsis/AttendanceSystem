@@ -605,4 +605,631 @@ public class ReportExportService
             ? dt.Value.ToString("HH:mm") 
             : dt.Value.ToString("dd/MM/yyyy HH:mm");
     }
+
+    public byte[] GenerateAdvancedAbsenceExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Faltas");
+
+        // Styling
+        var headerStyle = workbook.Style;
+        headerStyle.Font.Bold = true;
+        headerStyle.Fill.BackgroundColor = XLColor.LightGray;
+        headerStyle.Alignment.Horizontal = XLAlignmentHorizontalValues.Center; // Default for header
+
+        int currentRow = 1;
+
+        if (specificDate)
+        {
+            // --- Specific Date Format ---
+            // Columns: Fecha | ID | Nombre | Dept | Puesto | [Sucursal] | Falta
+            int col = 1;
+            worksheet.Cell(currentRow, col++).Value = "Fecha";
+            worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+            worksheet.Cell(currentRow, col++).Value = "Nombre";
+            worksheet.Cell(currentRow, col++).Value = "Departamento";
+            worksheet.Cell(currentRow, col++).Value = "Puesto";
+            if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+            worksheet.Cell(currentRow, col++).Value = "Falta";
+            
+            // Apply header style explicitly to the range
+            var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
+            range.Style.Font.Bold = true;
+            range.Style.Fill.BackgroundColor = XLColor.LightGray;
+            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            currentRow++;
+
+            foreach (var summary in data)
+            {
+                foreach (var detail in summary.Details)
+                {
+                    if (detail.IsAbsent)
+                    {
+                        col = 1;
+                        worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                        worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                        worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                        if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+                        worksheet.Cell(currentRow, col++).Value = "1FINJ";
+                        currentRow++;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // --- Range / Period Format ---
+            if (!detailed)
+            {
+                // --- Summary View ---
+                // Columns: ID de empleado | Nombre | Total de faltas
+                worksheet.Cell(currentRow, 1).Value = "ID de Empleado";
+                worksheet.Cell(currentRow, 2).Value = "Nombre";
+                worksheet.Cell(currentRow, 3).Value = "Total de Faltas";
+
+                var range = worksheet.Range(currentRow, 1, currentRow, 3);
+                range.Style.Font.Bold = true;
+                range.Style.Fill.BackgroundColor = XLColor.LightGray;
+                range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                currentRow++;
+
+                foreach (var summary in data)
+                {
+                    if (summary.Count > 0)
+                    {
+                        worksheet.Cell(currentRow, 1).Value = summary.EmployeeId;
+                        worksheet.Cell(currentRow, 2).Value = summary.EmployeeName;
+                        worksheet.Cell(currentRow, 3).Value = summary.Count;
+                        currentRow++;
+                    }
+                }
+            }
+            else
+            {
+                // --- Detailed View (Pivot) ---
+                // Columns: ID | Nombre | Dept | Puesto | [Sucursal] | [Date 1] | [Date 2] ... | Total
+                int col = 1;
+                worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+                worksheet.Cell(currentRow, col++).Value = "Nombre";
+                worksheet.Cell(currentRow, col++).Value = "Departamento";
+                worksheet.Cell(currentRow, col++).Value = "Puesto";
+                if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+                
+                // Save start column for dates
+                int dateColStart = col;
+
+                // Using start/end from arguments to build columns
+                var dates = new List<DateTime>();
+                var currentDt = start.Date;
+                var endDt = end.Date;
+
+                while (currentDt <= endDt)
+                {
+                    dates.Add(currentDt);
+                    worksheet.Cell(currentRow, col).Value = currentDt.ToString("dd/MM");
+                    col++;
+                    currentDt = currentDt.AddDays(1);
+                }
+                
+                int totalColIndex = col;
+                worksheet.Cell(currentRow, totalColIndex).Value = "Total";
+
+                var range = worksheet.Range(currentRow, 1, currentRow, totalColIndex);
+                range.Style.Font.Bold = true;
+                range.Style.Fill.BackgroundColor = XLColor.LightGray;
+                range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                currentRow++;
+
+                foreach (var summary in data)
+                {
+                    if (summary.Count == 0) continue;
+
+                    col = 1;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                    worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                    worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                    if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+
+                    var absenceDates = summary.Details
+                        .Where(d => d.IsAbsent)
+                        .Select(d => d.Date.Date)
+                        .ToHashSet();
+
+                    int dateCol = dateColStart;
+                    foreach (var dt in dates)
+                    {
+                        if (absenceDates.Contains(dt))
+                        {
+                            worksheet.Cell(currentRow, dateCol).Value = "1FINJ";
+                            worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Red;
+                            worksheet.Cell(currentRow, dateCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                        }
+                        dateCol++;
+                    }
+
+                    worksheet.Cell(currentRow, totalColIndex).Value = summary.Count;
+                    currentRow++;
+                }
+            }
+        }
+        
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] GenerateWorkedRestDayExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool showBranch)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Descanso Trabajado");
+
+        // Styling
+        var headerStyle = workbook.Style;
+        headerStyle.Font.Bold = true;
+        headerStyle.Fill.BackgroundColor = XLColor.LightGray;
+        headerStyle.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        int currentRow = 1;
+
+        if (detailed)
+        {
+            // --- Detailed View (Pivot/Expanded) ---
+            // Requested: ID | Nombre | Dept | Puesto | Sucursal (Optional) | [Date 1] | [Date 2] ... | Total
+            // Note: User asked for "Detailed" to have Date Columns with 1DFT.
+            
+            int col = 1;
+            worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+            worksheet.Cell(currentRow, col++).Value = "Nombre";
+            worksheet.Cell(currentRow, col++).Value = "Departamento";
+            worksheet.Cell(currentRow, col++).Value = "Puesto";
+            if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+            
+            int dateColStart = col;
+
+            var dates = new List<DateTime>();
+            var currentDt = start.Date;
+            var endDt = end.Date;
+
+            while (currentDt <= endDt)
+            {
+                dates.Add(currentDt);
+                worksheet.Cell(currentRow, col).Value = currentDt.ToString("dd/MM");
+                col++;
+                currentDt = currentDt.AddDays(1);
+            }
+            
+            int totalColIndex = col;
+            worksheet.Cell(currentRow, totalColIndex).Value = "Total";
+
+            var range = worksheet.Range(currentRow, 1, currentRow, totalColIndex);
+            range.Style.Font.Bold = true;
+            range.Style.Fill.BackgroundColor = XLColor.LightGray;
+            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            currentRow++;
+
+            foreach (var summary in data)
+            {
+                // Filter records
+                var workedRestDays = summary.Details
+                        .Where(d => d.WorkedOnRestDay)
+                        .Select(d => d.Date.Date)
+                        .ToHashSet();
+
+                if (workedRestDays.Count == 0) continue;
+
+                col = 1;
+                worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+
+                int dateCol = dateColStart;
+                int count = 0;
+                foreach (var dt in dates)
+                {
+                    if (workedRestDays.Contains(dt))
+                    {
+                        worksheet.Cell(currentRow, dateCol).Value = "1DFT";
+                        worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Green; 
+                        worksheet.Cell(currentRow, dateCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                        count++;
+                    }
+                    dateCol++;
+                }
+
+                worksheet.Cell(currentRow, totalColIndex).Value = count;
+                currentRow++;
+            }
+        }
+        else
+        {
+            // --- Summary View (Actually Flat List as per User Request) ---
+            // Requested: Fecha | ID | Nombre | Descanso (1DFT)
+            int col = 1;
+            worksheet.Cell(currentRow, col++).Value = "Fecha";
+            worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+            worksheet.Cell(currentRow, col++).Value = "Nombre";
+            worksheet.Cell(currentRow, col++).Value = "Descanso"; // Always 1DFT
+
+            var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
+            range.Style.Font.Bold = true;
+            range.Style.Fill.BackgroundColor = XLColor.LightGray;
+            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            currentRow++;
+
+            foreach (var summary in data)
+            {
+                foreach (var detail in summary.Details)
+                {
+                    if (detail.WorkedOnRestDay)
+                    {
+                        col = 1;
+                        worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                        worksheet.Cell(currentRow, col++).Value = "1DFT";
+                        currentRow++;
+                    }
+                }
+            }
+        }
+
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] GenerateLateArrivalExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Retardos");
+
+        // Styling
+        var headerStyle = workbook.Style;
+        headerStyle.Font.Bold = true;
+        headerStyle.Fill.BackgroundColor = XLColor.LightGray;
+        headerStyle.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        int currentRow = 1;
+
+        if (specificDate)
+        {
+            // --- Specific Date Format ---
+            // Columns: Fecha | ID | Nombre | Dept | Puesto | [Sucursal] | Retardo
+            int col = 1;
+            worksheet.Cell(currentRow, col++).Value = "Fecha";
+            worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+            worksheet.Cell(currentRow, col++).Value = "Nombre";
+            worksheet.Cell(currentRow, col++).Value = "Departamento";
+            worksheet.Cell(currentRow, col++).Value = "Puesto";
+            if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+            worksheet.Cell(currentRow, col++).Value = "Retardo";
+            
+            var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
+            range.Style.Font.Bold = true;
+            range.Style.Fill.BackgroundColor = XLColor.LightGray;
+            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            currentRow++;
+
+            foreach (var summary in data)
+            {
+                foreach (var detail in summary.Details)
+                {
+                    if (detail.LateMinutes > 0)
+                    {
+                        col = 1;
+                        worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                        worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                        worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                        if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+                        worksheet.Cell(currentRow, col++).Value = "1RET";
+                        currentRow++;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // --- Range / Period Format ---
+            if (!detailed)
+            {
+                // --- Summary View ---
+                // Columns: ID de empleado | Nombre | Total de retardos
+                worksheet.Cell(currentRow, 1).Value = "ID de Empleado";
+                worksheet.Cell(currentRow, 2).Value = "Nombre";
+                worksheet.Cell(currentRow, 3).Value = "Total de Retardos";
+
+                var range = worksheet.Range(currentRow, 1, currentRow, 3);
+                range.Style.Font.Bold = true;
+                range.Style.Fill.BackgroundColor = XLColor.LightGray;
+                range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                currentRow++;
+
+                foreach (var summary in data)
+                {
+                    if (summary.Count > 0)
+                    {
+                        worksheet.Cell(currentRow, 1).Value = summary.EmployeeId;
+                        worksheet.Cell(currentRow, 2).Value = summary.EmployeeName;
+                        worksheet.Cell(currentRow, 3).Value = summary.Count;
+                        currentRow++;
+                    }
+                }
+            }
+            else
+            {
+                // --- Detailed View (Pivot) ---
+                // Columns: ID | Nombre | Dept | Puesto | Sucursal (Optional) | [Date 1] | [Date 2] ... | Total
+                int col = 1;
+                worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+                worksheet.Cell(currentRow, col++).Value = "Nombre";
+                worksheet.Cell(currentRow, col++).Value = "Departamento";
+                worksheet.Cell(currentRow, col++).Value = "Puesto";
+                if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+                
+                int dateColStart = col;
+
+                var dates = new List<DateTime>();
+                var currentDt = start.Date;
+                var endDt = end.Date;
+
+                while (currentDt <= endDt)
+                {
+                    dates.Add(currentDt);
+                    worksheet.Cell(currentRow, col).Value = currentDt.ToString("dd/MM");
+                    col++;
+                    currentDt = currentDt.AddDays(1);
+                }
+                
+                int totalColIndex = col;
+                worksheet.Cell(currentRow, totalColIndex).Value = "Total";
+
+                var range = worksheet.Range(currentRow, 1, currentRow, totalColIndex);
+                range.Style.Font.Bold = true;
+                range.Style.Fill.BackgroundColor = XLColor.LightGray;
+                range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                currentRow++;
+
+                foreach (var summary in data)
+                {
+                    if (summary.Count == 0) continue;
+
+                    col = 1;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                    worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                    worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                    if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+
+                    var lateDates = summary.Details
+                        .Where(d => d.LateMinutes > 0)
+                        .Select(d => d.Date.Date)
+                        .ToHashSet();
+
+                    int dateCol = dateColStart;
+                    foreach (var dt in dates)
+                    {
+                        if (lateDates.Contains(dt))
+                        {
+                            worksheet.Cell(currentRow, dateCol).Value = "1RET";
+                            worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Red; 
+                            worksheet.Cell(currentRow, dateCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                        }
+                        dateCol++;
+                    }
+
+                    worksheet.Cell(currentRow, totalColIndex).Value = summary.Count;
+                    currentRow++;
+                }
+            }
+        }
+        
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    public byte[] GenerateOvertimeExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Horas Extra");
+
+        // Styling
+        var headerStyle = workbook.Style;
+        headerStyle.Font.Bold = true;
+        headerStyle.Fill.BackgroundColor = XLColor.LightGray;
+        headerStyle.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+        int currentRow = 1;
+
+        if (specificDate)
+        {
+            // --- Specific Date Format ---
+            // Columns: Fecha | ID de empleado | Nombre | Horas laboradas | HE
+            int col = 1;
+            worksheet.Cell(currentRow, col++).Value = "Fecha";
+            worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+            worksheet.Cell(currentRow, col++).Value = "Nombre";
+            worksheet.Cell(currentRow, col++).Value = "Horas Laboradas";
+            worksheet.Cell(currentRow, col++).Value = "HE";
+            
+            var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
+            range.Style.Font.Bold = true;
+            range.Style.Fill.BackgroundColor = XLColor.LightGray;
+            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            currentRow++;
+
+            foreach (var summary in data)
+            {
+                foreach (var detail in summary.Details)
+                {
+                    var overtimeSpan = TimeSpan.FromMinutes(detail.OvertimeMinutes);
+                    TimeSpan.TryParse(detail.WorkedHours, out var workedSpan);
+
+                    // Show if time worked or overtime exists
+                    if (workedSpan > TimeSpan.Zero || overtimeSpan > TimeSpan.Zero)
+                    {
+                        col = 1;
+                        worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                        worksheet.Cell(currentRow, col++).Value = detail.WorkedHours;
+                        worksheet.Cell(currentRow, col++).Value = $"{(int)overtimeSpan.TotalHours}:{overtimeSpan.Minutes:00}";
+                        currentRow++;
+                    }
+                }
+            }
+        }
+        else
+        {
+            // --- Range / Period Format ---
+            if (!detailed)
+            {
+                // --- Summary View ---
+                // Columns: ID de empleado | Nombre | Total horas laboradas | Total Horas extra
+                worksheet.Cell(currentRow, 1).Value = "ID de Empleado";
+                worksheet.Cell(currentRow, 2).Value = "Nombre";
+                worksheet.Cell(currentRow, 3).Value = "Total Horas Laboradas";
+                worksheet.Cell(currentRow, 4).Value = "Total Horas Extra";
+
+                var range = worksheet.Range(currentRow, 1, currentRow, 4);
+                range.Style.Font.Bold = true;
+                range.Style.Fill.BackgroundColor = XLColor.LightGray;
+                range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                currentRow++;
+
+                foreach (var summary in data)
+                {
+                    // Calculate totals from details
+                    var totalOvertime = TimeSpan.FromMinutes(summary.Details.Sum(d => d.OvertimeMinutes));
+                    var totalWorkedTicks = summary.Details.Sum(d => TimeSpan.TryParse(d.WorkedHours, out var t) ? t.Ticks : 0);
+                    var totalWorked = TimeSpan.FromTicks(totalWorkedTicks);
+
+                    if (totalWorked > TimeSpan.Zero || totalOvertime > TimeSpan.Zero)
+                    {
+                        worksheet.Cell(currentRow, 1).Value = summary.EmployeeId;
+                        worksheet.Cell(currentRow, 2).Value = summary.EmployeeName;
+                        
+                        // Format specifically as [h]:mm for totals that might exceed 24h
+                        worksheet.Cell(currentRow, 3).Value = $"{(int)totalWorked.TotalHours}:{totalWorked.Minutes:00}"; 
+                        worksheet.Cell(currentRow, 4).Value = $"{(int)totalOvertime.TotalHours}:{totalOvertime.Minutes:00}";
+                        currentRow++;
+                    }
+                }
+            }
+            else
+            {
+                // --- Detailed View (Pivot) ---
+                // Columns: ID | Nombre | Dept | Puesto | Sucursal (Optional) | [Date 1 HL] | [Date 1 HE] | ... | Total HL | Total HE
+                int col = 1;
+                worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+                worksheet.Cell(currentRow, col++).Value = "Nombre";
+                worksheet.Cell(currentRow, col++).Value = "Departamento";
+                worksheet.Cell(currentRow, col++).Value = "Puesto";
+                if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+                
+                int dateColStart = col;
+
+                var dates = new List<DateTime>();
+                var currentDt = start.Date;
+                var endDt = end.Date;
+
+                while (currentDt <= endDt)
+                {
+                    dates.Add(currentDt);
+                    // Two columns per date
+                    worksheet.Cell(currentRow, col).Value = $"{currentDt:dd/MM} HL";
+                    worksheet.Cell(currentRow, col + 1).Value = $"{currentDt:dd/MM} HE";
+                    col += 2;
+                    currentDt = currentDt.AddDays(1);
+                }
+                
+                int totalColIndex = col;
+                worksheet.Cell(currentRow, totalColIndex).Value = "Total HL";
+                worksheet.Cell(currentRow, totalColIndex + 1).Value = "Total HE";
+
+                var range = worksheet.Range(currentRow, 1, currentRow, totalColIndex + 1);
+                range.Style.Font.Bold = true;
+                range.Style.Fill.BackgroundColor = XLColor.LightGray;
+                range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+                currentRow++;
+
+                foreach (var summary in data)
+                {
+                    // Calculate totals
+                    var totalOvertime = TimeSpan.FromMinutes(summary.Details.Sum(d => d.OvertimeMinutes));
+                    var totalWorkedTicks = summary.Details.Sum(d => TimeSpan.TryParse(d.WorkedHours, out var t) ? t.Ticks : 0);
+                    var totalWorked = TimeSpan.FromTicks(totalWorkedTicks);
+                    
+                    if (totalWorked == TimeSpan.Zero && totalOvertime == TimeSpan.Zero) continue;
+
+                    col = 1;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                    worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                    worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                    if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+
+                    var dateMap = summary.Details.ToDictionary(d => d.Date.Date, d => d);
+
+                    int dateCol = dateColStart;
+                    foreach (var dt in dates)
+                    {
+                        if (dateMap.TryGetValue(dt, out var detail))
+                        {
+                             var overtimeSpan = TimeSpan.FromMinutes(detail.OvertimeMinutes);
+                             TimeSpan.TryParse(detail.WorkedHours, out var workedSpan);
+
+                             // HL
+                             if (workedSpan > TimeSpan.Zero)
+                                worksheet.Cell(currentRow, dateCol).Value = detail.WorkedHours;
+                             
+                             // HE
+                             if (overtimeSpan > TimeSpan.Zero)
+                             {
+                                worksheet.Cell(currentRow, dateCol + 1).Value = $"{(int)overtimeSpan.TotalHours}:{overtimeSpan.Minutes:00}";
+                                worksheet.Cell(currentRow, dateCol + 1).Style.Font.FontColor = XLColor.Blue; // Highlight Overtime
+                             }
+                        }
+                        dateCol += 2;
+                    }
+
+                    // Totals
+                    worksheet.Cell(currentRow, totalColIndex).Value = $"{(int)totalWorked.TotalHours}:{totalWorked.Minutes:00}";
+                    worksheet.Cell(currentRow, totalColIndex + 1).Value = $"{(int)totalOvertime.TotalHours}:{totalOvertime.Minutes:00}";
+                    
+                    currentRow++;
+                }
+            }
+        }
+        
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
 }
