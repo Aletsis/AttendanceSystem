@@ -8,6 +8,8 @@ public sealed record AdvancedReportSummaryDto
     public string EmployeeId { get; init; } = string.Empty;
     public string EmployeeName { get; init; } = string.Empty;
     public string DepartmentName { get; init; } = string.Empty;
+    public string PositionName { get; init; } = string.Empty;
+    public string BranchName { get; init; } = string.Empty;
     public int Count { get; set; }
     public double TotalMetric { get; set; }
     public string FormattedTotal { get; set; } = string.Empty;

@@ -16,15 +16,21 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
     private readonly IDailyAttendanceRepository _dailyAttendanceRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IDepartmentRepository _departmentRepository;
+    private readonly IPositionRepository _positionRepository;
+    private readonly IBranchRepository _branchRepository;
 
     public GetAdvancedAttendanceReportQueryHandler(
         IDailyAttendanceRepository dailyAttendanceRepository,
         IEmployeeRepository employeeRepository,
-        IDepartmentRepository departmentRepository)
+        IDepartmentRepository departmentRepository,
+        IPositionRepository positionRepository, 
+        IBranchRepository branchRepository)
     {
         _dailyAttendanceRepository = dailyAttendanceRepository;
         _employeeRepository = employeeRepository;
         _departmentRepository = departmentRepository;
+        _positionRepository = positionRepository;
+        _branchRepository = branchRepository;
     }
 
     public async Task<IEnumerable<AdvancedReportSummaryDto>> Handle(GetAdvancedAttendanceReportQuery request, CancellationToken cancellationToken)
@@ -53,13 +59,24 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             employees = await _employeeRepository.GetAllAsync(cancellationToken);
         }
 
+        if (request.DepartmentId != null)
+        {
+            employees = employees.Where(e => e.DepartmentId == request.DepartmentId).ToList();
+        }
+
         // Filter only active employees
         employees = employees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
 
 
-        // 3. Fetch Departments for lookup
+        // 3. Fetch Departments, Positions, Branches for lookup
         var departments = await _departmentRepository.GetAllAsync(cancellationToken);
         var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
+
+        var positions = await _positionRepository.GetAllAsync(cancellationToken);
+        var posDict = positions.ToDictionary(p => p.Id, p => p.Name);
+
+        var branches = await _branchRepository.GetAllAsync(cancellationToken);
+        var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
 
         var processed = new List<(Employee Emp, DailyAttendance Att)>();
 
@@ -82,7 +99,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                     include = item.LateMinutes > 0;
                     break;
                 case "HorasExtra":
-                    include = item.OvertimeMinutes > 0;
+                    include = item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue;
                     break;
                 case "HorarioErroneo":
                     if (item.ScheduledCheckIn.HasValue && item.ActualCheckIn.HasValue)
@@ -96,9 +113,6 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                     {
                         include = true;
                     }
-                    break;
-                case "HorasLaboradas":
-                    include = item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue;
                     break;
                 case "DescansoErroneo":
                     include = true;
@@ -134,12 +148,16 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
             
             var deptName = (empRef.DepartmentId != null && deptDict.TryGetValue(empRef.DepartmentId, out var dName)) ? dName : "";
+            var posName = (empRef.PositionId != null && posDict.TryGetValue(empRef.PositionId, out var pName)) ? pName : "";
+            var branchName = (empRef.BranchId != null && branchDict.TryGetValue(empRef.BranchId, out var bName)) ? bName : "";
 
             var summary = new AdvancedReportSummaryDto
             {
                 EmployeeId = empRef.Id.Value,
                 EmployeeName = empRef.GetFullName(),
                 DepartmentName = deptName,
+                PositionName = posName,
+                BranchName = branchName,
                 Count = details.Count,
                 Details = details.Select(d => MapToDetail(d, empRef)).ToList()
             };
@@ -155,6 +173,16 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                  // Calculate daily effective overtime first (handles Daily Cap)
                  double totalOvertime = details.Sum(d => GetEffectiveOvertime(d, empRef));
 
+                 // Calculate total worked hours
+                 double totalWorkedHours = 0;
+                 foreach(var d in details)
+                 {
+                    if (d.ActualCheckIn.HasValue && d.ActualCheckOut.HasValue)
+                    {
+                        totalWorkedHours += (d.ActualCheckOut.Value - d.ActualCheckIn.Value).TotalHours;
+                    }
+                 }
+
                  // Handle Period Cap
                  if (empRef.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
                  {
@@ -162,20 +190,8 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                  }
 
                  summary.TotalMetric = totalOvertime;
-                 summary.FormattedTotal = $"{(int)TimeSpan.FromMinutes(summary.TotalMetric).TotalHours:00}:{TimeSpan.FromMinutes(summary.TotalMetric).Minutes:00}";
-            }
-            else if (request.ReportType == "HorasLaboradas")
-            {
-                double totalHours = 0;
-                foreach(var d in details)
-                {
-                    if (d.ActualCheckIn.HasValue && d.ActualCheckOut.HasValue)
-                    {
-                        totalHours += (d.ActualCheckOut.Value - d.ActualCheckIn.Value).TotalHours;
-                    }
-                }
-                summary.TotalMetric = totalHours;
-                summary.FormattedTotal = $"{totalHours:F2} Horas";
+                 var otSpan = TimeSpan.FromMinutes(totalOvertime);
+                 summary.FormattedTotal = $"Lab: {totalWorkedHours:F1}h | Ext: {(int)otSpan.TotalHours:00}:{otSpan.Minutes:00}";
             }
             else if (request.ReportType == "DescansoErroneo")
             {

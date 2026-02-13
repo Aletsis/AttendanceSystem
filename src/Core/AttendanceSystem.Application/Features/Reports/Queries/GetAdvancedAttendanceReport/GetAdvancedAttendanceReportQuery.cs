@@ -11,4 +11,5 @@ public record GetAdvancedAttendanceReportQuery(
     DateTime EndDate, 
     string ReportType, 
     BranchId? BranchId = null, 
-    EmployeeId? EmployeeId = null) : IRequest<IEnumerable<AdvancedReportSummaryDto>>;
+    EmployeeId? EmployeeId = null,
+    DepartmentId? DepartmentId = null) : IRequest<IEnumerable<AdvancedReportSummaryDto>>;
