@@ -4,7 +4,6 @@
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
 @using AttendanceSystem.Application.Features.Branches.Commands.CreateBranch
 @using AttendanceSystem.Application.Features.Branches.Commands.UpdateBranch
-@using AttendanceSystem.Blazor.Server.Services
 @using Microsoft.JSInterop
 @using System.IO
 
@@ -12,7 +11,7 @@
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
-@inject ReportExportService ExportService
+@inject IReportExportService ExportService
 
 <PageTitle>Sucursales</PageTitle>
 

@@ -12,11 +12,10 @@
 @using AttendanceSystem.Application.Common
 @using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
 @using System.Globalization
-@using AttendanceSystem.Blazor.Server.Services
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
-@inject ReportExportService ExportService
+@inject IReportExportService ExportService
 @inject IDialogService DialogService
 
 <MudText Typo="Typo.h5" Class="mb-4">Reportes Avanzados</MudText>

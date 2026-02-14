@@ -1,3 +1,4 @@
+using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Application.Features.Employees;
 using AttendanceSystem.Domain.Enumerations;
@@ -8,9 +9,9 @@ using QuestPDF.Infrastructure;
 using System.Globalization;
 using Colors = QuestPDF.Helpers.Colors;
 
-namespace AttendanceSystem.Blazor.Server.Services;
+namespace AttendanceSystem.Infrastructure.Services;
 
-public class ReportExportService
+public class ReportExportService : IReportExportService
 {
     public byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
     {
@@ -805,7 +806,7 @@ public class ReportExportService
                 col++;
                 currentDt = currentDt.AddDays(1);
             }
-            
+
             int totalColIndex = col;
             worksheet.Cell(currentRow, totalColIndex).Value = "Total";
 
@@ -818,13 +819,7 @@ public class ReportExportService
 
             foreach (var summary in data)
             {
-                // Filter records
-                var workedRestDays = summary.Details
-                        .Where(d => d.WorkedOnRestDay)
-                        .Select(d => d.Date.Date)
-                        .ToHashSet();
-
-                if (workedRestDays.Count == 0) continue;
+                if (summary.Count == 0) continue;
 
                 col = 1;
                 worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
@@ -833,33 +828,38 @@ public class ReportExportService
                 worksheet.Cell(currentRow, col++).Value = summary.PositionName;
                 if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
 
+                var workedRestDays = summary.Details
+                    .Where(d => d.WorkedOnRestDay)
+                    .Select(d => d.Date.Date)
+                    .ToHashSet();
+
                 int dateCol = dateColStart;
-                int count = 0;
                 foreach (var dt in dates)
                 {
                     if (workedRestDays.Contains(dt))
                     {
                         worksheet.Cell(currentRow, dateCol).Value = "1DFT";
-                        worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Green; 
+                        worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Green;
                         worksheet.Cell(currentRow, dateCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                        count++;
                     }
                     dateCol++;
                 }
 
-                worksheet.Cell(currentRow, totalColIndex).Value = count;
+                worksheet.Cell(currentRow, totalColIndex).Value = summary.Count;
                 currentRow++;
             }
         }
         else
         {
-            // --- Summary View (Actually Flat List as per User Request) ---
-            // Requested: Fecha | ID | Nombre | Descanso (1DFT)
+            // --- Summary View ---
+            // ID | Nombre | Dept | Puesto | Sucursal (Optional) | Total
             int col = 1;
-            worksheet.Cell(currentRow, col++).Value = "Fecha";
             worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
             worksheet.Cell(currentRow, col++).Value = "Nombre";
-            worksheet.Cell(currentRow, col++).Value = "Descanso"; // Always 1DFT
+            worksheet.Cell(currentRow, col++).Value = "Departamento";
+            worksheet.Cell(currentRow, col++).Value = "Puesto";
+            if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+            worksheet.Cell(currentRow, col++).Value = "Total Descansos Trabajados";
 
             var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
             range.Style.Font.Bold = true;
@@ -870,28 +870,26 @@ public class ReportExportService
 
             foreach (var summary in data)
             {
-                foreach (var detail in summary.Details)
+                if (summary.Count > 0)
                 {
-                    if (detail.WorkedOnRestDay)
-                    {
-                        col = 1;
-                        worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
-                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
-                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
-                        worksheet.Cell(currentRow, col++).Value = "1DFT";
-                        currentRow++;
-                    }
+                    col = 1;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
+                    worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                    worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                    if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+                    worksheet.Cell(currentRow, col++).Value = summary.Count;
+                    currentRow++;
                 }
             }
         }
-
+        
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
-
     public byte[] GenerateLateArrivalExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch)
     {
         using var workbook = new XLWorkbook();
@@ -908,7 +906,6 @@ public class ReportExportService
         if (specificDate)
         {
             // --- Specific Date Format ---
-            // Columns: Fecha | ID | Nombre | Dept | Puesto | [Sucursal] | Retardo
             int col = 1;
             worksheet.Cell(currentRow, col++).Value = "Fecha";
             worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
@@ -939,6 +936,7 @@ public class ReportExportService
                         worksheet.Cell(currentRow, col++).Value = summary.PositionName;
                         if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
                         worksheet.Cell(currentRow, col++).Value = "1RET";
+                        worksheet.Cell(currentRow, col-1).Style.Font.FontColor = XLColor.Orange;
                         currentRow++;
                     }
                 }
@@ -946,14 +944,12 @@ public class ReportExportService
         }
         else
         {
-            // --- Range / Period Format ---
             if (!detailed)
             {
                 // --- Summary View ---
-                // Columns: ID de empleado | Nombre | Total de retardos
                 worksheet.Cell(currentRow, 1).Value = "ID de Empleado";
                 worksheet.Cell(currentRow, 2).Value = "Nombre";
-                worksheet.Cell(currentRow, 3).Value = "Total de Retardos";
+                worksheet.Cell(currentRow, 3).Value = "Total Retardos";
 
                 var range = worksheet.Range(currentRow, 1, currentRow, 3);
                 range.Style.Font.Bold = true;
@@ -976,7 +972,6 @@ public class ReportExportService
             else
             {
                 // --- Detailed View (Pivot) ---
-                // Columns: ID | Nombre | Dept | Puesto | Sucursal (Optional) | [Date 1] | [Date 2] ... | Total
                 int col = 1;
                 worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
                 worksheet.Cell(currentRow, col++).Value = "Nombre";
@@ -1030,7 +1025,7 @@ public class ReportExportService
                         if (lateDates.Contains(dt))
                         {
                             worksheet.Cell(currentRow, dateCol).Value = "1RET";
-                            worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Red; 
+                            worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Orange;
                             worksheet.Cell(currentRow, dateCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                         }
                         dateCol++;
@@ -1049,6 +1044,13 @@ public class ReportExportService
         return stream.ToArray();
     }
 
+    private string FormatMinuteString(double minutes)
+    {
+        if (minutes == 0) return "--:--";
+        var ts = TimeSpan.FromMinutes(minutes);
+        return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
+    }
+
     public byte[] GenerateOvertimeExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch)
     {
         using var workbook = new XLWorkbook();
@@ -1065,14 +1067,15 @@ public class ReportExportService
         if (specificDate)
         {
             // --- Specific Date Format ---
-            // Columns: Fecha | ID de empleado | Nombre | Horas laboradas | HE
             int col = 1;
             worksheet.Cell(currentRow, col++).Value = "Fecha";
             worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
             worksheet.Cell(currentRow, col++).Value = "Nombre";
-            worksheet.Cell(currentRow, col++).Value = "Horas Laboradas";
-            worksheet.Cell(currentRow, col++).Value = "HE";
-            
+            worksheet.Cell(currentRow, col++).Value = "Departamento";
+            worksheet.Cell(currentRow, col++).Value = "Puesto";
+            if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
+            worksheet.Cell(currentRow, col++).Value = "Horas Extra";
+
             var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
             range.Style.Font.Bold = true;
             range.Style.Fill.BackgroundColor = XLColor.LightGray;
@@ -1084,18 +1087,20 @@ public class ReportExportService
             {
                 foreach (var detail in summary.Details)
                 {
-                    var overtimeSpan = TimeSpan.FromMinutes(detail.OvertimeMinutes);
-                    TimeSpan.TryParse(detail.WorkedHours, out var workedSpan);
-
-                    // Show if time worked or overtime exists
-                    if (workedSpan > TimeSpan.Zero || overtimeSpan > TimeSpan.Zero)
+                    if (detail.OvertimeMinutes > 0)
                     {
                         col = 1;
                         worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
-                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
+                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
                         worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
-                        worksheet.Cell(currentRow, col++).Value = detail.WorkedHours;
-                        worksheet.Cell(currentRow, col++).Value = $"{(int)overtimeSpan.TotalHours}:{overtimeSpan.Minutes:00}";
+                        worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
+                        worksheet.Cell(currentRow, col++).Value = summary.PositionName;
+                        if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
+                        
+                        var otStr = FormatMinuteString(detail.OvertimeMinutes);
+                        worksheet.Cell(currentRow, col++).Value = otStr;
+                        worksheet.Cell(currentRow, col-1).Style.Font.FontColor = XLColor.Blue;
+                        
                         currentRow++;
                     }
                 }
@@ -1103,17 +1108,14 @@ public class ReportExportService
         }
         else
         {
-            // --- Range / Period Format ---
             if (!detailed)
             {
                 // --- Summary View ---
-                // Columns: ID de empleado | Nombre | Total horas laboradas | Total Horas extra
                 worksheet.Cell(currentRow, 1).Value = "ID de Empleado";
                 worksheet.Cell(currentRow, 2).Value = "Nombre";
-                worksheet.Cell(currentRow, 3).Value = "Total Horas Laboradas";
-                worksheet.Cell(currentRow, 4).Value = "Total Horas Extra";
+                worksheet.Cell(currentRow, 3).Value = "Total Horas Extra";
 
-                var range = worksheet.Range(currentRow, 1, currentRow, 4);
+                var range = worksheet.Range(currentRow, 1, currentRow, 3);
                 range.Style.Font.Bold = true;
                 range.Style.Fill.BackgroundColor = XLColor.LightGray;
                 range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -1122,19 +1124,12 @@ public class ReportExportService
 
                 foreach (var summary in data)
                 {
-                    // Calculate totals from details
-                    var totalOvertime = TimeSpan.FromMinutes(summary.Details.Sum(d => d.OvertimeMinutes));
-                    var totalWorkedTicks = summary.Details.Sum(d => TimeSpan.TryParse(d.WorkedHours, out var t) ? t.Ticks : 0);
-                    var totalWorked = TimeSpan.FromTicks(totalWorkedTicks);
-
-                    if (totalWorked > TimeSpan.Zero || totalOvertime > TimeSpan.Zero)
+                    var totalMins = summary.Details.Sum(d => d.OvertimeMinutes);
+                    if (totalMins > 0)
                     {
                         worksheet.Cell(currentRow, 1).Value = summary.EmployeeId;
                         worksheet.Cell(currentRow, 2).Value = summary.EmployeeName;
-                        
-                        // Format specifically as [h]:mm for totals that might exceed 24h
-                        worksheet.Cell(currentRow, 3).Value = $"{(int)totalWorked.TotalHours}:{totalWorked.Minutes:00}"; 
-                        worksheet.Cell(currentRow, 4).Value = $"{(int)totalOvertime.TotalHours}:{totalOvertime.Minutes:00}";
+                        worksheet.Cell(currentRow, 3).Value = FormatMinuteString(totalMins);
                         currentRow++;
                     }
                 }
@@ -1142,7 +1137,6 @@ public class ReportExportService
             else
             {
                 // --- Detailed View (Pivot) ---
-                // Columns: ID | Nombre | Dept | Puesto | Sucursal (Optional) | [Date 1 HL] | [Date 1 HE] | ... | Total HL | Total HE
                 int col = 1;
                 worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
                 worksheet.Cell(currentRow, col++).Value = "Nombre";
@@ -1159,18 +1153,15 @@ public class ReportExportService
                 while (currentDt <= endDt)
                 {
                     dates.Add(currentDt);
-                    // Two columns per date
-                    worksheet.Cell(currentRow, col).Value = $"{currentDt:dd/MM} HL";
-                    worksheet.Cell(currentRow, col + 1).Value = $"{currentDt:dd/MM} HE";
-                    col += 2;
+                    worksheet.Cell(currentRow, col).Value = currentDt.ToString("dd/MM");
+                    col++;
                     currentDt = currentDt.AddDays(1);
                 }
                 
                 int totalColIndex = col;
-                worksheet.Cell(currentRow, totalColIndex).Value = "Total HL";
-                worksheet.Cell(currentRow, totalColIndex + 1).Value = "Total HE";
+                worksheet.Cell(currentRow, totalColIndex).Value = "Total";
 
-                var range = worksheet.Range(currentRow, 1, currentRow, totalColIndex + 1);
+                var range = worksheet.Range(currentRow, 1, currentRow, totalColIndex);
                 range.Style.Font.Bold = true;
                 range.Style.Fill.BackgroundColor = XLColor.LightGray;
                 range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -1179,12 +1170,7 @@ public class ReportExportService
 
                 foreach (var summary in data)
                 {
-                    // Calculate totals
-                    var totalOvertime = TimeSpan.FromMinutes(summary.Details.Sum(d => d.OvertimeMinutes));
-                    var totalWorkedTicks = summary.Details.Sum(d => TimeSpan.TryParse(d.WorkedHours, out var t) ? t.Ticks : 0);
-                    var totalWorked = TimeSpan.FromTicks(totalWorkedTicks);
-                    
-                    if (totalWorked == TimeSpan.Zero && totalOvertime == TimeSpan.Zero) continue;
+                    if (summary.Details.Sum(d => d.OvertimeMinutes) == 0) continue;
 
                     col = 1;
                     worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
@@ -1193,34 +1179,25 @@ public class ReportExportService
                     worksheet.Cell(currentRow, col++).Value = summary.PositionName;
                     if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
 
-                    var dateMap = summary.Details.ToDictionary(d => d.Date.Date, d => d);
+                    var otDict = summary.Details
+                        .Where(d => d.OvertimeMinutes > 0)
+                        .ToDictionary(d => d.Date.Date, d => d.OvertimeMinutes);
 
                     int dateCol = dateColStart;
                     foreach (var dt in dates)
                     {
-                        if (dateMap.TryGetValue(dt, out var detail))
+                        if (otDict.ContainsKey(dt))
                         {
-                             var overtimeSpan = TimeSpan.FromMinutes(detail.OvertimeMinutes);
-                             TimeSpan.TryParse(detail.WorkedHours, out var workedSpan);
-
-                             // HL
-                             if (workedSpan > TimeSpan.Zero)
-                                worksheet.Cell(currentRow, dateCol).Value = detail.WorkedHours;
-                             
-                             // HE
-                             if (overtimeSpan > TimeSpan.Zero)
-                             {
-                                worksheet.Cell(currentRow, dateCol + 1).Value = $"{(int)overtimeSpan.TotalHours}:{overtimeSpan.Minutes:00}";
-                                worksheet.Cell(currentRow, dateCol + 1).Style.Font.FontColor = XLColor.Blue; // Highlight Overtime
-                             }
+                            var mins = otDict[dt];
+                            worksheet.Cell(currentRow, dateCol).Value = FormatMinuteString(mins);
+                            worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Blue;
+                            worksheet.Cell(currentRow, dateCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                         }
-                        dateCol += 2;
+                        dateCol++;
                     }
 
-                    // Totals
-                    worksheet.Cell(currentRow, totalColIndex).Value = $"{(int)totalWorked.TotalHours}:{totalWorked.Minutes:00}";
-                    worksheet.Cell(currentRow, totalColIndex + 1).Value = $"{(int)totalOvertime.TotalHours}:{totalOvertime.Minutes:00}";
-                    
+                    var totalMins = summary.Details.Sum(d => d.OvertimeMinutes);
+                    worksheet.Cell(currentRow, totalColIndex).Value = FormatMinuteString(totalMins);
                     currentRow++;
                 }
             }

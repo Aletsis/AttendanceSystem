@@ -7,12 +7,11 @@
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Domain.ValueObjects
 @using AttendanceSystem.Application.Common
-@using AttendanceSystem.Blazor.Server.Services
 @using AttendanceSystem.Domain.Enumerations
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
-@inject ReportExportService ReportService
+@inject IReportExportService ReportService
 
 <style>
     @@media print {

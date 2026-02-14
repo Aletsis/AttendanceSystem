@@ -14,10 +14,10 @@ using AttendanceSystem.Domain.Entities;
 using AttendanceSystem.Infrastructure.Persistence.Repositories;
 using AttendanceSystem.Infrastructure.Adapters;
 using AttendanceSystem.Infrastructure.Services;
+using AttendanceSystem.Blazor.Server.Services;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
 using AttendanceSystem.ZKTeco.Grpc;
 using QuestPDF.Infrastructure;
-using AttendanceSystem.Blazor.Server.Services;
 using AttendanceSystem.Application.Features.Devices.Queries;
 using AttendanceSystem.Infrastructure.Persistence.Queries;
 using AttendanceSystem.Application.Features.Shifts.Queries;
@@ -75,7 +75,7 @@ builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 builder.Services.AddMudServices();
 builder.Services.AddControllersWithViews(); // Enable Controllers with Views for Antiforgery support
-builder.Services.AddScoped<ReportExportService>();
+builder.Services.AddScoped<IReportExportService, ReportExportService>();
 builder.Services.AddScoped<AttendanceLogImportService>();
 
 // ===== GRACEFUL SHUTDOWN SERVICE =====

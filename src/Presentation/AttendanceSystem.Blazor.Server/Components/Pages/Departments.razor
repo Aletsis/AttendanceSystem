@@ -5,12 +5,11 @@
 @using AttendanceSystem.Application.Features.Departments.Commands.CreateDepartment
 @using AttendanceSystem.Application.Features.Departments.Commands.UpdateDepartment
 @using AttendanceSystem.Application.Features.Departments.Commands.DeleteDepartment
-@using AttendanceSystem.Blazor.Server.Services
 @inject ISender Sender
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
-@inject ReportExportService ExportService
+@inject IReportExportService ExportService
 @using Microsoft.JSInterop
 @using System.IO
 

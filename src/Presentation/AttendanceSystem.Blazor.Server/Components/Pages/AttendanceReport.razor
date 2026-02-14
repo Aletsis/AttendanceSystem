@@ -5,12 +5,11 @@
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Domain.ValueObjects
-@using AttendanceSystem.Blazor.Server.Services
 @using AttendanceSystem.Application.Features.Employees
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
-@inject ReportExportService ExportService
+@inject IReportExportService ExportService
 @inject IJSRuntime JS
 
 <MudText Typo="Typo.h5" Class="mb-4">Reporte de Asistencia</MudText>
