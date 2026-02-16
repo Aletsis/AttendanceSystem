@@ -2,7 +2,7 @@ namespace AttendanceSystem.Domain.Aggregates.PositionAggregate;
 
 public sealed class Position : AggregateRoot<PositionId>
 {
-    public string Name { get; private set; }
+    public string Name { get; private set; } = null!;
     public string? Description { get; private set; }
     
     // Often Puestos have a default salary range or level, but we stick to basic info.

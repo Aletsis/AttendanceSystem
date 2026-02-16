@@ -2,7 +2,7 @@ namespace AttendanceSystem.Domain.Aggregates.BranchAggregate;
 
 public sealed class Branch : AggregateRoot<BranchId>
 {
-    public string Name { get; private set; }
+    public string Name { get; private set; } = null!;
     public string? Description { get; private set; }
     public string? Address { get; private set; }
 

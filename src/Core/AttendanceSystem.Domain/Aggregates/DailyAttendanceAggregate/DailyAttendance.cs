@@ -6,7 +6,7 @@ namespace AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
 public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 {
-    public EmployeeId EmployeeId { get; private set; }
+    public EmployeeId EmployeeId { get; private set; } = null!;
     public DateTime Date { get; private set; }
     
     // Shift Snapshot

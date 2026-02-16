@@ -4,7 +4,7 @@ namespace AttendanceSystem.Domain.Aggregates.DepartmentAggregate;
 
 public sealed class Department : AggregateRoot<DepartmentId>
 {
-    public string Name { get; private set; }
+    public string Name { get; private set; } = null!;
     public string? Description { get; private set; }
 
     public ICollection<Position> Positions { get; private set; } = new List<Position>();

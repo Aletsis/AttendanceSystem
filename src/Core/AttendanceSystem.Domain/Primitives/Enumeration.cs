@@ -3,7 +3,7 @@ namespace AttendanceSystem.Domain.Primitives;
 public abstract class Enumeration : IComparable
 {
     public int Id { get; protected set; }
-    public string Name { get; protected set; }
+    public string Name { get; protected set; } = null!;
 
     protected Enumeration() { }
 

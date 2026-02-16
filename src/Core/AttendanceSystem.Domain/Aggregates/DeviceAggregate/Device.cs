@@ -2,8 +2,8 @@ namespace AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 
 public class Device : AggregateRoot<DeviceId>
 {
-    public string Name { get; private set; }
-    public string IpAddress { get; private set; }
+    public string Name { get; private set; } = null!;
+    public string IpAddress { get; private set; } = null!;
     public int Port { get; private set; }
     public string? Location { get; private set; }
     public bool IsActive { get; private set; }
@@ -11,9 +11,9 @@ public class Device : AggregateRoot<DeviceId>
     public DateTime CreatedAt { get; private set; }
     public DateTime? LastDownloadAt { get; private set; }
     public int TotalDownloadCount { get; private set; }
-    public DeviceStatus Status { get; private set; }
+    public DeviceStatus Status { get; private set; } = null!;
     public DeviceDownloadMethod DownloadMethod { get; private set; }
-    public DeviceHardwareInfo HardwareInfo { get; private set; }
+    public DeviceHardwareInfo HardwareInfo { get; private set; } = null!;
 
 
     private Device() { } // Para EF Core

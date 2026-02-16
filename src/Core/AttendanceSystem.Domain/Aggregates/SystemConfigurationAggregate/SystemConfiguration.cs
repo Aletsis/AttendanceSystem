@@ -8,7 +8,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     // Singleton ID
     public static readonly Guid ConfigurationId = Guid.Parse("11111111-1111-1111-1111-111111111111");
 
-    public string CompanyName { get; private set; }
+    public string CompanyName { get; private set; } = null!;
     public byte[]? CompanyLogo { get; private set; }
 
     public TimeSpan LateTolerance { get; private set; }
@@ -23,7 +23,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public int AdmsPort { get; private set; }
 
     // Backup Settings
-    public string BackupDirectory { get; private set; }
+    public string BackupDirectory { get; private set; } = null!;
     public int BackupTimeoutMinutes { get; private set; } // Timeout para pg_dump
 
     // Work Period Settings

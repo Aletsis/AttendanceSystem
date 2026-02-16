@@ -5,7 +5,6 @@
 @using AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 @using AttendanceSystem.Domain.Enumerations
-@using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Roles = "Administrador")]
 @inject IMediator Mediator
 @inject ISnackbar Snackbar

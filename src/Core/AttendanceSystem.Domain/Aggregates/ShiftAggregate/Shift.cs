@@ -5,7 +5,7 @@ namespace AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 
 public class Shift : AggregateRoot<ShiftId>
 {
-    public string Name { get; private set; }
+    public string Name { get; private set; } = null!;
     public TimeSpan StartTime { get; private set; }
     public TimeSpan EndTime { get; private set; } // Calculated or explicit? Usually Start + WorkHours.
     public int ToleranceMinutes { get; private set; }

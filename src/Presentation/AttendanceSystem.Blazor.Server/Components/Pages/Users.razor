@@ -74,10 +74,10 @@
     private async Task OpenCreateDialog()
     {
         var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
-        var dialog = DialogService.Show<UserDialog>("Nuevo Usuario", options);
+        var dialog = await DialogService.ShowAsync<UserDialog>("Nuevo Usuario", options);
         var result = await dialog.Result;
 
-        if (!result.Canceled)
+        if (result != null && !result.Canceled)
         {
             await LoadUsers();
         }
@@ -87,10 +87,10 @@
     {
         var parameters = new DialogParameters { ["User"] = user };
         var options = new DialogOptions { CloseOnEscapeKey = true, MaxWidth = MaxWidth.Small, FullWidth = true };
-        var dialog = DialogService.Show<UserDialog>("Editar Usuario", parameters, options);
+        var dialog = await DialogService.ShowAsync<UserDialog>("Editar Usuario", parameters, options);
         var result = await dialog.Result;
 
-        if (!result.Canceled)
+        if (result != null && !result.Canceled)
         {
             await LoadUsers();
         }
