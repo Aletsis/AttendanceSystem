@@ -768,8 +768,7 @@ public class BackupService : IBackupService
 
             return true;
 
-            _logger.LogInformation("Base de datos restaurada exitosamente");
-            return true;
+
         }
         catch (Exception ex)
         {

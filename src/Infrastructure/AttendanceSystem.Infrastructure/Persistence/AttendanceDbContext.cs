@@ -64,8 +64,8 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
         // Publicar eventos de dominio antes de guardar
         var domainEntities = ChangeTracker.Entries()
             .Where(e => e.Entity.GetType().BaseType != null && 
-                       e.Entity.GetType().BaseType.IsGenericType &&
-                       e.Entity.GetType().BaseType.GetGenericTypeDefinition() == typeof(AggregateRoot<>))
+                       e.Entity.GetType().BaseType!.IsGenericType &&
+                       e.Entity.GetType().BaseType!.GetGenericTypeDefinition() == typeof(AggregateRoot<>))
             .Select(e => e.Entity)
             .ToList();
 

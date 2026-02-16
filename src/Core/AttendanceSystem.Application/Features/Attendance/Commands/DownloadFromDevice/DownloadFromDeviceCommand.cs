@@ -136,12 +136,12 @@ public sealed class DownloadFromDeviceCommandHandler
                  //    admsCmd += $" StartTime={command.FromDate.Value:yyyy-MM-dd HH:mm:ss}";
                  
                  // PASAMOS el LogId para rastrear cuando termine
-                 _admsCommandService.EnqueueCommand(device.HardwareInfo.SerialNumber, admsCmd, downloadLogId.Value);
+                 _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
                  
                  _logger.LogInformation("✅ ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}", 
-                     admsCmd, device.HardwareInfo.SerialNumber, downloadLogId.Value);
+                     admsCmd, sn!, downloadLogId.Value);
                  _logger.LogInformation("⏳ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vía GET /iclock/getrequest", 
-                     device.HardwareInfo.SerialNumber);
+                     sn!);
                  _logger.LogInformation("📋 ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
                  
                  // NO marcamos el log como exitoso aquí. Lo hará AdmsController cuando reciba DeviceCmd.

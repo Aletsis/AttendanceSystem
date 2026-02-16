@@ -11,7 +11,7 @@ public sealed record UpdateDepartmentCommand(
     Guid Id,
     string Name,
     string? Description,
-    List<Guid> PositionIds = null) : IRequest<Result<Unit>>;
+    List<Guid>? PositionIds = null) : IRequest<Result<Unit>>;
 
 public sealed class UpdateDepartmentCommandHandler : IRequestHandler<UpdateDepartmentCommand, Result<Unit>>
 {

@@ -9,7 +9,7 @@ namespace AttendanceSystem.Application.Features.Departments.Commands.CreateDepar
 public sealed record CreateDepartmentCommand(
     string Name,
     string? Description,
-    List<Guid> PositionIds = null) : IRequest<Result<Guid>>;
+    List<Guid>? PositionIds = null) : IRequest<Result<Guid>>;
 
 public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepartmentCommand, Result<Guid>>
 {

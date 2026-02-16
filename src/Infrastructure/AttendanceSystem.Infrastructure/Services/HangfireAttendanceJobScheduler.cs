@@ -26,11 +26,16 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         // Hangfire by default uses UTC, so we need to specify the local timezone
         var timeZone = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
         
+        var options = new RecurringJobOptions
+        {
+            TimeZone = timeZone
+        };
+
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             JobId, 
             jobs => jobs.DownloadFromAllDevices(), 
             cron,
-            timeZone);
+            options);
     }
 
     public void DisableAutoDownload()

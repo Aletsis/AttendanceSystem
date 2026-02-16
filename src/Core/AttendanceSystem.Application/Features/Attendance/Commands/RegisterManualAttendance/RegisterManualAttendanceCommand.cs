@@ -20,7 +20,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IDeviceRepository _deviceRepo; // To find a "Virtual" device or similar if needed. We'll use a dummy ID or find first. 
+ 
 
     public RegisterManualAttendanceCommandHandler(
         IAttendanceRepository attendanceRepo,
