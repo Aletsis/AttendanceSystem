@@ -1,10 +1,12 @@
 @using AttendanceSystem.Application.Features.Branches.Commands.CreateBranch
 @using AttendanceSystem.Application.Features.Branches.Commands
-@using ClosedXML.Excel
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Application.DTOs.Import
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
+@inject IImportService ImportService
 
 <MudDialog>
     <DialogContent>
@@ -96,48 +98,18 @@
         int errorCount = 0;
         var errorMessages = new List<string>();
 
-        var commands = new List<CreateBranchCommand>();
-
-        // 1. CPU Bound: Parse Excel
-        try 
+        // 1. Parse Excel via Service
+        var result = await ImportService.ParseBranchesAsync(stream);
+        
+        if (result.Errors.Any())
         {
-            await Task.Run(() =>
-            {
-                using var workbook = new XLWorkbook(stream);
-                var worksheet = workbook.Worksheets.FirstOrDefault();
-                if (worksheet == null) return;
-
-                var range = worksheet.RangeUsed();
-                if (range == null) return;
-
-                var rows = range.RowsUsed().Skip(1); 
-                foreach (var row in rows)
-                {
-                    try
-                    {
-                        var nombre = row.Cell(1).GetValue<string>();
-                        var descripcion = row.Cell(2).GetValue<string>();
-                        var direccion = row.Cell(3).GetValue<string>();
-
-                        if (!string.IsNullOrWhiteSpace(nombre))
-                        {
-                            commands.Add(new CreateBranchCommand(nombre, descripcion, direccion));
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore parse errors for now or log
-                    }
-                }
-            });
-        }
-        catch (Exception ex)
-        {
-             _summary.Add($"Error leyendo Excel: {ex.Message}");
-             return;
+             foreach (var err in result.Errors) _summary.Add(err);
+             if (result.ValidEntries.Count == 0) return;
         }
 
-        // 2. I/O Bound: Send Commands
+        var commands = result.ValidEntries.Select(dto => new CreateBranchCommand(dto.Name, dto.Description, dto.Address)).ToList();
+
+        // 2. Send Commands
         _progressText = $"Importando {commands.Count} registros...";
         await InvokeAsync(StateHasChanged);
 
@@ -145,13 +117,13 @@
         {
              try 
              {
-                 var result = await Mediator.Send(command);
-                 if (result.IsSuccess)
+                 var cmdResult = await Mediator.Send(command);
+                 if (cmdResult.IsSuccess)
                      successCount++;
                  else
                  {
                      errorCount++;
-                     if(errorMessages.Count < 5) errorMessages.Add($"Error: {result.Error}");
+                     if(errorMessages.Count < 5) errorMessages.Add($"Error: {cmdResult.Error}");
                  }
              }
              catch(Exception ex)

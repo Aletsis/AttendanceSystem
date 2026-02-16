@@ -4,13 +4,15 @@
 @using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
 @using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
 @using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.DTOs.Import
+@using AttendanceSystem.Application.Abstractions
 @using AttendanceSystem.Domain.Repositories
 @using AttendanceSystem.Domain.ValueObjects
-@using ClosedXML.Excel
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
+@inject IImportService ImportService
 
 <MudDialog>
     <DialogContent>
@@ -136,105 +138,64 @@
         var errorMessages = new List<string>();
         var commands = new List<CreateEmployeeCommand>();
 
-        try
+        // 1. Parse via Service
+        var result = await ImportService.ParseEmployeesAsync(stream);
+        if (result.Errors.Any())
         {
-            await Task.Run(() =>
-            {
-                using var workbook = new XLWorkbook(stream);
-                var worksheet = workbook.Worksheets.FirstOrDefault();
-                if (worksheet == null) return;
-
-                var range = worksheet.RangeUsed();
-                if (range == null) return;
-
-                var rows = range.RowsUsed().Skip(1); // Skip header
-
-                foreach (var row in rows)
-                {
-                    var id = row.Cell(1).GetValue<string>();
-                    // Just skip empty rows without error
-                    if (string.IsNullOrWhiteSpace(id)) continue; 
-
-                    try
-                    {
-                        var nombre = row.Cell(2).GetValue<string>();
-                        var apellido = row.Cell(3).GetValue<string>();
-                        var email = row.Cell(4).GetValue<string>();
-                        if (string.IsNullOrWhiteSpace(email)) email = string.Empty;
-
-                        // 5: Sucursal
-                        var branchName = row.Cell(5).GetValue<string>();
-                        // 6: Departamento
-                        var deptName = row.Cell(6).GetValue<string>();
-                        // 7: Puesto
-                        var posName = row.Cell(7).GetValue<string>();
-                        
-                        // 8: Fecha Contratación
-                        if (!row.Cell(8).TryGetValue(out DateTime hireDate)) 
-                        {
-                             // Try parsing string if direct datetime fails
-                             var hireDateStr = row.Cell(8).GetValue<string>();
-                             if (!DateTime.TryParse(hireDateStr, out hireDate))
-                                 hireDate = DateTime.Today;
-                        }
-
-                        // 9: Genero
-                        var genderStr = row.Cell(9).GetValue<string>();
-                        var gender = AttendanceSystem.Domain.Enumerations.Gender.Male;
-                        if (!string.IsNullOrWhiteSpace(genderStr) && genderStr.StartsWith("F", StringComparison.OrdinalIgnoreCase)) 
-                            gender = AttendanceSystem.Domain.Enumerations.Gender.Female;
-
-                        // Foreign Keys via Name Lookup
-                        if (!_branches.TryGetValue(branchName, out var branchId)) throw new Exception($"Sucursal '{branchName}' no encontrada para empleado {id}.");
-                        if (!_departments.TryGetValue(deptName, out var deptId)) throw new Exception($"Departamento '{deptName}' no encontrado para empleado {id}.");
-                        if (!_positions.TryGetValue(posName, out var posId)) throw new Exception($"Puesto '{posName}' no encontrado para empleado {id}.");
-
-                        // Defaults for missing columns
-                        string telefono = string.Empty;
-                        AttendanceSystem.Domain.Enumerations.ShiftType? shiftType = AttendanceSystem.Domain.Enumerations.ShiftType.Matutino; 
-                        string? scheduleId = null;
-                        int? restDay = null;
-
-                        commands.Add(new CreateEmployeeCommand(
-                            id, nombre, apellido, email, telefono, hireDate, gender,
-                            branchId.ToString(), deptId.ToString(), posId.ToString(),
-                            shiftType, scheduleId, restDay, false, AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod.NoRounding,
-                            AttendanceSystem.Domain.Enumerations.OvertimeCapType.None, null
-                        ));
-                    }
-                    catch (Exception ex)
-                    {
-                        // Add to error messages safely
-                        Interlocked.Increment(ref errorCount);
-                        lock (errorMessages)
-                        {
-                            if (errorMessages.Count < 10)
-                                errorMessages.Add($"Error en fila ID '{id}': {ex.Message}");
-                        }
-                    }
-                }
-            });
+             foreach(var err in result.Errors) _summary.Add(err);
+             if (!result.ValidEntries.Any()) return;
         }
-        catch (Exception ex)
+
+        // 2. Map to Commands (with validation/lookup)
+        foreach (var dto in result.ValidEntries)
         {
-            Snackbar.Add($"Error procesando Excel: {ex.Message}", Severity.Error);
-            return;
+             try
+             {
+                 // Gender Mapping
+                 var gender = AttendanceSystem.Domain.Enumerations.Gender.Male;
+                 if (!string.IsNullOrWhiteSpace(dto.Gender) && dto.Gender.StartsWith("F", StringComparison.OrdinalIgnoreCase)) 
+                      gender = AttendanceSystem.Domain.Enumerations.Gender.Female;
+
+                 // Foreign Keys via Name Lookup
+                 if (!_branches.TryGetValue(dto.BranchName, out var branchId)) throw new Exception($"Sucursal '{dto.BranchName}' no encontrada.");
+                 if (!_departments.TryGetValue(dto.DepartmentName, out var deptId)) throw new Exception($"Departamento '{dto.DepartmentName}' no encontrado.");
+                 if (!_positions.TryGetValue(dto.PositionName, out var posId)) throw new Exception($"Puesto '{dto.PositionName}' no encontrado.");
+
+                 // Defaults
+                 string telefono = string.Empty;
+                 AttendanceSystem.Domain.Enumerations.ShiftType? shiftType = AttendanceSystem.Domain.Enumerations.ShiftType.Matutino; 
+                 string? scheduleId = null;
+                 int? restDay = null;
+
+                 commands.Add(new CreateEmployeeCommand(
+                     dto.EmployeeId, dto.FirstName, dto.LastName, dto.Email, telefono, dto.HireDate, gender,
+                     branchId.ToString(), deptId.ToString(), posId.ToString(),
+                     shiftType, scheduleId, restDay, false, AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod.NoRounding,
+                     AttendanceSystem.Domain.Enumerations.OvertimeCapType.None, null
+                 ));
+             }
+             catch (Exception ex)
+             {
+                 errorCount++;
+                 if(errorMessages.Count < 10) errorMessages.Add($"Error ID '{dto.EmployeeId}': {ex.Message}");
+             }
         }
 
         _progressText = $"Importando {commands.Count} empleados...";
         await InvokeAsync(StateHasChanged);
 
+        // 3. Send Commands
         foreach (var command in commands)
         {
              try 
              {
-                 var result = await Mediator.Send(command);
-                 if (result.IsSuccess)
+                 var cmdResult = await Mediator.Send(command);
+                 if (cmdResult.IsSuccess)
                      successCount++;
                  else
                  {
                      errorCount++;
-                     if(errorMessages.Count < 5) errorMessages.Add($"ID {command.Id}: {result.Error}");
+                     if(errorMessages.Count < 5) errorMessages.Add($"ID {command.Id}: {cmdResult.Error}");
                  }
              }
              catch(Exception ex)

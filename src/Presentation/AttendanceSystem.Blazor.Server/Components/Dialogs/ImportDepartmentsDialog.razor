@@ -1,9 +1,11 @@
 @using AttendanceSystem.Application.Features.Departments.Commands.CreateDepartment
-@using ClosedXML.Excel
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Application.DTOs.Import
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
+@inject IImportService ImportService
 
 <MudDialog>
     <DialogContent>
@@ -94,44 +96,18 @@
         int successCount = 0;
         int errorCount = 0;
         var errorMessages = new List<string>();
-        var commands = new List<CreateDepartmentCommand>();
 
-        try 
+        // 1. Parse via Service
+        var result = await ImportService.ParseDepartmentsAsync(stream);
+        
+        if (result.Errors.Any())
         {
-            await Task.Run(() =>
-            {
-                using var workbook = new XLWorkbook(stream);
-                var worksheet = workbook.Worksheets.FirstOrDefault();
-                if (worksheet == null) return;
-
-                var range = worksheet.RangeUsed();
-                if (range == null) return;
-
-                var rows = range.RowsUsed().Skip(1); 
-                foreach (var row in rows)
-                {
-                    try
-                    {
-                        var nombre = row.Cell(1).GetValue<string>();
-                        var descripcion = row.Cell(2).GetValue<string>();
-
-                        if (!string.IsNullOrWhiteSpace(nombre))
-                        {
-                            commands.Add(new CreateDepartmentCommand(nombre, descripcion, new List<Guid>()));
-                        }
-                    }
-                    catch
-                    {
-                        // Ignore
-                    }
-                }
-            });
+             foreach (var err in result.Errors) _summary.Add(err);
+             if (result.ValidEntries.Count == 0) return;
         }
-        catch (Exception ex)
-        {
-            _summary.Add($"Error leyendo Excel: {ex.Message}");
-            return;
-        }
+
+        // 2. Map to Commands
+        var commands = result.ValidEntries.Select(dto => new CreateDepartmentCommand(dto.Name, dto.Description, new List<Guid>())).ToList();
 
         _progressText = $"Importando {commands.Count} registros...";
         await InvokeAsync(StateHasChanged);
@@ -140,13 +116,13 @@
         {
              try 
              {
-                 var result = await Mediator.Send(command);
-                 if (result.IsSuccess)
+                 var cmdResult = await Mediator.Send(command);
+                 if (cmdResult.IsSuccess)
                      successCount++;
                  else
                  {
                      errorCount++;
-                     if(errorMessages.Count < 5) errorMessages.Add($"Error: {result.Error}");
+                     if(errorMessages.Count < 5) errorMessages.Add($"Error: {cmdResult.Error}");
                  }
              }
              catch(Exception ex)

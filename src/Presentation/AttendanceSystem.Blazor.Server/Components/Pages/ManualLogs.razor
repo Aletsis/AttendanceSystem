@@ -5,12 +5,14 @@
 @using AttendanceSystem.Application.Features.Employees
 @using AttendanceSystem.Application.Features.Employees.Queries
 @using AttendanceSystem.Application.DTOs
-@using AttendanceSystem.Blazor.Server.Services
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Application.DTOs.Import
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
-@inject AttendanceLogImportService ImportService
+@inject IImportService ImportService
+
 
 <MudText Typo="Typo.h5" Class="mb-4">Registro Manual de Logs</MudText>
 
@@ -236,7 +238,7 @@
             await file.OpenReadStream(maxFileSize).CopyToAsync(stream);
             stream.Position = 0;
 
-            var importResult = await ImportService.ProcessFileAsync(stream, file.Name);
+            var importResult = await ImportService.ParseAttendanceLogsAsync(stream, file.Name);
 
             if (importResult.Errors.Any())
             {

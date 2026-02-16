@@ -1,9 +1,11 @@
 @using AttendanceSystem.Application.Features.Positions.Commands.CreatePosition
-@using ClosedXML.Excel
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Application.DTOs.Import
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
+@inject IImportService ImportService
 
 <MudDialog>
     <DialogContent>
@@ -95,47 +97,40 @@
         int errorCount = 0;
         var errorMessages = new List<string>();
 
-        await Task.Run(async () =>
+        // 1. Parse via Service
+        var result = await ImportService.ParsePositionsAsync(stream);
+        
+        if (result.Errors.Any())
         {
-            using var workbook = new XLWorkbook(stream);
-            var worksheet = workbook.Worksheets.FirstOrDefault();
-            if (worksheet == null) return;
+             foreach (var err in result.Errors) _summary.Add(err);
+             if (result.ValidEntries.Count == 0) return;
+        }
 
-            var rows = worksheet.RangeUsed().RowsUsed().Skip(1); 
+        // 2. Map to Commands
+        var commands = result.ValidEntries.Select(dto => new CreatePositionCommand(dto.Name, dto.Description, dto.BaseSalary)).ToList();
 
-            foreach (var row in rows)
-            {
-                try
-                {
-                    // 1:Nombre, 2:Descripcion, 3:SalarioBase
-                    var nombre = row.Cell(1).GetValue<string>();
-                    var descripcion = row.Cell(2).GetValue<string>();
-                    
-                    decimal salarioBase = 0;
-                    if (!row.Cell(3).TryGetValue<decimal>(out salarioBase))
-                        salarioBase = 0; 
-                    
-                    if (string.IsNullOrWhiteSpace(nombre)) continue;
-                    
-                    // CreatePositionCommand(string Name, string Description, decimal BaseSalary)
-                    var command = new CreatePositionCommand(nombre, descripcion, salarioBase);
+        _progressText = $"Importando {commands.Count} registros...";
+        await InvokeAsync(StateHasChanged);
 
-                    var result = await Mediator.Send(command);
-                    if (result.IsSuccess)
-                        successCount++;
-                    else
-                    {
-                        errorCount++;
-                         if(errorMessages.Count < 5) errorMessages.Add($"Fila {row.RowNumber()}: {result.Error}");
-                    }
-                }
-                catch (Exception ex)
-                {
-                    errorCount++;
-                     if(errorMessages.Count < 5) errorMessages.Add($"Fila {row.RowNumber()}: {ex.Message}");
-                }
-            }
-        });
+        foreach (var command in commands)
+        {
+             try 
+             {
+                 var cmdResult = await Mediator.Send(command);
+                 if (cmdResult.IsSuccess)
+                     successCount++;
+                 else
+                 {
+                     errorCount++;
+                     if(errorMessages.Count < 5) errorMessages.Add($"Error: {cmdResult.Error}");
+                 }
+             }
+             catch(Exception ex)
+             {
+                 errorCount++;
+                 if(errorMessages.Count < 5) errorMessages.Add($"Excepción: {ex.Message}");
+             }
+        }
 
         _summary.Add($"Importación completada.");
         _summary.Add($"Exitosos: {successCount}");
@@ -149,9 +144,13 @@
              Snackbar.Add($"Se importaron {successCount} puestos.", Severity.Success);
              MudDialog.Close(DialogResult.Ok(true));
         }
+        else if (errorCount > 0)
+        {
+             Snackbar.Add("Hubo errores en la importación.", Severity.Warning);
+        }
         else
         {
-             Snackbar.Add("No se pudo importar ningún puesto.", Severity.Warning);
+             Snackbar.Add("No se encontraron registros válidos para importar.", Severity.Info);
         }
     }
 }

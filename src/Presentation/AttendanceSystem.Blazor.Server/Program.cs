@@ -76,7 +76,7 @@ builder.Services.AddRazorComponents()
 builder.Services.AddMudServices();
 builder.Services.AddControllersWithViews(); // Enable Controllers with Views for Antiforgery support
 builder.Services.AddScoped<IReportExportService, ReportExportService>();
-builder.Services.AddScoped<AttendanceLogImportService>();
+builder.Services.AddScoped<IImportService, ImportService>();
 
 // ===== GRACEFUL SHUTDOWN SERVICE =====
 builder.Services.AddHostedService<GracefulShutdownService>();
