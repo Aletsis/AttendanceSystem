@@ -337,7 +337,7 @@ using (var scope = app.Services.CreateScope())
         logger.LogInformation("");
         logger.LogInformation("⚙️  Configuración ADMS:");
         logger.LogInformation("   Puerto configurado: {AdmsPort}", admsPort);
-        logger.LogInformation("   URL para dispositivos: http://[IP_SERVIDOR]:{AdmsPort}/iclock/", admsPort);
+        logger.LogInformation("   URL para dispositivos: http://[IP_SERVIDOR]:{AdmsPort}", admsPort);
         logger.LogInformation("");
         
         // Obtener IP local
@@ -354,7 +354,7 @@ using (var scope = app.Services.CreateScope())
             {
                 logger.LogInformation("   • {IP}", ip);
                 logger.LogInformation("     - UI Web: http://{IP}:16372", ip);
-                logger.LogInformation("     - ADMS: http://{IP}:{AdmsPort}/iclock/", ip, admsPort);
+                logger.LogInformation("     - ADMS: http://{IP}:{AdmsPort}", ip, admsPort);
             }
             logger.LogInformation("");
         }
@@ -362,7 +362,7 @@ using (var scope = app.Services.CreateScope())
         logger.LogInformation("📊 Servicios disponibles:");
         logger.LogInformation("   • Interfaz Web: {Url}", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
         logger.LogInformation("   • Hangfire Dashboard: {Url}/hangfire", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
-        logger.LogInformation("   • API ADMS: {Url}/iclock/", addresses.FirstOrDefault(a => a.Contains(admsPort.ToString())) ?? $"http://localhost:{admsPort}");
+        logger.LogInformation("   • API ADMS: {Url}", addresses.FirstOrDefault(a => a.Contains(admsPort.ToString())) ?? $"http://localhost:{admsPort}");
         logger.LogInformation("");
         
         logger.LogInformation("========================================");

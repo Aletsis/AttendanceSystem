@@ -140,7 +140,7 @@ public sealed class DownloadFromDeviceCommandHandler
                  
                  _logger.LogInformation("✅ ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}", 
                      admsCmd, sn!, downloadLogId.Value);
-                 _logger.LogInformation("⏳ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vía GET /iclock/getrequest", 
+                 _logger.LogInformation("⏳ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vía GET /getrequest", 
                      sn!);
                  _logger.LogInformation("📋 ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
                  

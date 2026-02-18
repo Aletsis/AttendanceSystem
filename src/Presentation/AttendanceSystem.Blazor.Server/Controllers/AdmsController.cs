@@ -10,6 +10,7 @@ using System.Globalization;
 namespace AttendanceSystem.Blazor.Server.Controllers;
 
 [Route("iclock")]
+[Route("")]
 [ApiController]
 public class AdmsController : ControllerBase
 {
