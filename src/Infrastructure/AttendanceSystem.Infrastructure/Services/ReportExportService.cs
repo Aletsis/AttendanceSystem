@@ -13,18 +13,279 @@ namespace AttendanceSystem.Infrastructure.Services;
 
 public class ReportExportService : IReportExportService
 {
-    public byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
+    public byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo, bool detailed = false)
+    {
+        if (startDate.Date == endDate.Date)
+        {
+            return GenerateSingleDayExcel(attendanceData, startDate, companyName, companyLogo);
+        }
+
+        if (detailed)
+        {
+            return GenerateDetailedExcel(attendanceData, startDate, endDate, companyName, companyLogo);
+        }
+        return GenerateSummaryExcel(attendanceData, startDate, endDate, companyName, companyLogo);
+    }
+
+    private byte[] GenerateSingleDayExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime date, string companyName, byte[]? companyLogo)
     {
         using var workbook = new XLWorkbook();
-        var worksheet = workbook.Worksheets.Add("Reporte de Asistencia");
+        var worksheet = workbook.Worksheets.Add("Reporte Diario");
 
         // 1. Title and Info
-        var titleRange = worksheet.Range("A1:L1");
+        SetupHeader(worksheet, companyName, date, date, companyLogo, "REPORTE DE ASISTENCIA DIARIO");
+
+        // 2. Headers
+        int headerRow = 4;
+        string[] headers = {
+            "Id", "Nombre", "Horario Entrada", "Horario Salida", "Entrada", "Salida", 
+            "Tiempo trabajado", "Tiempo Extra", "Sucursal", 
+            "Falta injustificada", "Descanso trabajado", "Retardo"
+        };
+
+        for (int i = 0; i < headers.Length; i++)
+        {
+            var cell = worksheet.Cell(headerRow, i + 1);
+            cell.Value = headers[i];
+            StyleHeaderCell(cell);
+        }
+
+        // 3. Data
+        int currentRow = headerRow + 1;
+        // Sort by ID is usually good
+        var sortedData = attendanceData.OrderBy(x => 
+        {
+             if (long.TryParse(x.EmployeeId, out var id)) return id;
+             return long.MaxValue;
+        }).ThenBy(x => x.EmployeeId);
+
+        foreach (var item in sortedData)
+        {
+            TimeSpan worked = TimeSpan.Zero;
+            if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
+            {
+                worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
+            }
+
+            int col = 1;
+            SetCell(worksheet, currentRow, col++, item.EmployeeId);
+            SetCell(worksheet, currentRow, col++, item.EmployeeName);
+            SetCell(worksheet, currentRow, col++, item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, col++, item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckIn, date, "--"));
+            SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckOut, date, "--"));
+            SetCell(worksheet, currentRow, col++, FormatTimespan(worked));
+            SetCell(worksheet, currentRow, col++, FormatMinutes(item.RoundedOvertimeMinutes));
+            SetCell(worksheet, currentRow, col++, item.BranchName);
+            
+            // Indicators
+            SetCell(worksheet, currentRow, col++, item.IsAbsent ? "1FINJ" : "0", true);
+            SetCell(worksheet, currentRow, col++, item.WorkedOnRestDay ? "1DFT" : "0", true);
+            SetCell(worksheet, currentRow, col++, item.LateMinutes > 0 ? "1RET" : "0", true);
+
+            currentRow++;
+        }
+
+        worksheet.Columns().AdjustToContents();
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private byte[] GenerateSummaryExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Resumido");
+
+        // 1. Title and Info
+        SetupHeader(worksheet, companyName, startDate, endDate, companyLogo, "REPORTE RESUMIDO DE ASISTENCIA");
+        
+        // 2. Headers
+        int headerRow = 4;
+        string[] headers = {
+            "ID", "Nombre", "Horario Entrada", "Horario Salida", 
+            "Tiempo Trabajado", "Tiempo Extra", "Falta", "Descanso", "Retardo", "Prima Dominical"
+        };
+
+        for (int i = 0; i < headers.Length; i++)
+        {
+            var cell = worksheet.Cell(headerRow, i + 1);
+            cell.Value = headers[i];
+            StyleHeaderCell(cell);
+        }
+
+        // 3. Data
+        var grouped = attendanceData.GroupBy(x => x.EmployeeId);
+        int currentRow = headerRow + 1;
+
+        foreach (var group in grouped)
+        {
+            var emp = group.First();
+            var totalWorkedTicks = group.Sum(x => (x.ActualCheckOut - x.ActualCheckIn)?.Ticks ?? 0);
+            var totalWorked = TimeSpan.FromTicks(totalWorkedTicks);
+            var totalOvertimeMinutes = group.Sum(x => x.RoundedOvertimeMinutes);
+            var totalAbsences = group.Count(x => x.IsAbsent);
+            var totalRestWorked = group.Any(x => x.WorkedOnRestDay) ? "1DFT" : ""; 
+            var totalLates = group.Count(x => x.LateMinutes > 0);
+            var sundayPremium = group.Count(x => x.Date.DayOfWeek == DayOfWeek.Sunday && x.ActualCheckIn.HasValue && x.ActualCheckOut.HasValue);
+
+            var schedIn = group.FirstOrDefault(x => x.ScheduledCheckIn.HasValue)?.ScheduledCheckIn;
+            var schedOut = group.FirstOrDefault(x => x.ScheduledCheckOut.HasValue)?.ScheduledCheckOut;
+
+            SetCell(worksheet, currentRow, 1, emp.EmployeeId);
+            SetCell(worksheet, currentRow, 2, emp.EmployeeName);
+            SetCell(worksheet, currentRow, 3, schedIn?.ToString(@"hh\:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, 4, schedOut?.ToString(@"hh\:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, 5, FormatTimespan(totalWorked));
+            SetCell(worksheet, currentRow, 6, FormatMinutes(totalOvertimeMinutes));
+            SetCell(worksheet, currentRow, 7, totalAbsences);
+            SetCell(worksheet, currentRow, 8, totalRestWorked, true);
+            SetCell(worksheet, currentRow, 9, totalLates);
+            SetCell(worksheet, currentRow, 10, sundayPremium);
+
+            currentRow++;
+        }
+
+        worksheet.Columns().AdjustToContents();
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private byte[] GenerateDetailedExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Detallado");
+
+        SetupHeader(worksheet, companyName, startDate, endDate, companyLogo, "REPORTE DETALLADO DE ASISTENCIA");
+        
+        int headerRow = 4;
+        int col = 1;
+
+        // Fixed Columns
+        string[] fixedHeaders = { "ID", "Nombre", "Puesto", "Departamento", "Sucursal", "Horario Entrada", "Horario Salida" };
+        foreach(var h in fixedHeaders) 
+        {
+            var cell = worksheet.Cell(headerRow, col++);
+            cell.Value = h;
+            StyleHeaderCell(cell);
+        }
+
+        // Date Columns
+        var dates = Enumerable.Range(0, 1 + endDate.Subtract(startDate).Days)
+                              .Select(offset => startDate.AddDays(offset))
+                              .ToList();
+        
+        // Sub-headers for each date
+        string[] dateSubHeaders = { "Entrada", "Salida", "T. Trab", "T. Extra", "Falta", "Descanso", "Retardo" };
+
+        foreach(var date in dates)
+        {
+             // Merge header for Date
+             var dateRange = worksheet.Range(headerRow - 1, col, headerRow - 1, col + dateSubHeaders.Length - 1);
+             dateRange.Merge().Value = date.ToString("dd/MM/yyyy");
+             dateRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+             dateRange.Style.Font.Bold = true;
+             dateRange.Style.Fill.BackgroundColor = XLColor.LightGray;
+             dateRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+
+             foreach(var h in dateSubHeaders)
+             {
+                 var cell = worksheet.Cell(headerRow, col++);
+                 cell.Value = h;
+                 StyleHeaderCell(cell);
+             }
+        }
+
+        // Summary Columns
+        string[] summaryHeaders = { "T. Trab. Total", "T. Extra Total", "Total Faltas", "Total Retardos" };
+        foreach(var h in summaryHeaders)
+        {
+             var cell = worksheet.Cell(headerRow, col++);
+             cell.Value = h;
+             StyleHeaderCell(cell);
+        }
+
+        // Data
+        var grouped = attendanceData.GroupBy(x => x.EmployeeId);
+        int currentRow = headerRow + 1;
+
+        foreach (var group in grouped)
+        {
+            var emp = group.First();
+            var dict = group.ToDictionary(x => x.Date.Date);
+
+            // Fixed Data
+            var schedIn = group.FirstOrDefault(x => x.ScheduledCheckIn.HasValue)?.ScheduledCheckIn;
+            var schedOut = group.FirstOrDefault(x => x.ScheduledCheckOut.HasValue)?.ScheduledCheckOut;
+
+            col = 1;
+            SetCell(worksheet, currentRow, col++, emp.EmployeeId);
+            SetCell(worksheet, currentRow, col++, emp.EmployeeName);
+            SetCell(worksheet, currentRow, col++, emp.PositionName);
+            SetCell(worksheet, currentRow, col++, emp.DepartmentName);
+            SetCell(worksheet, currentRow, col++, emp.BranchName);
+            SetCell(worksheet, currentRow, col++, schedIn?.ToString(@"hh\:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, col++, schedOut?.ToString(@"hh\:mm") ?? "--:--");
+
+            // Date Data
+            foreach(var date in dates)
+            {
+                if (dict.TryGetValue(date.Date, out var item))
+                {
+                    var worked = (item.ActualCheckOut - item.ActualCheckIn) ?? TimeSpan.Zero;
+                    
+                    SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckIn, date, "--"));
+                    SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckOut, date, "--"));
+                    SetCell(worksheet, currentRow, col++, FormatTimespan(worked));
+                    SetCell(worksheet, currentRow, col++, FormatMinutes(item.RoundedOvertimeMinutes));
+                    SetCell(worksheet, currentRow, col++, item.IsAbsent ? "1FINJ" : "", true);
+                    SetCell(worksheet, currentRow, col++, item.WorkedOnRestDay ? "1DFT" : "", true);
+                    SetCell(worksheet, currentRow, col++, item.LateMinutes > 0 ? "1RET" : "", true);
+                }
+                else
+                {
+                    // No record for this date (should rely on query returning all dates, but if not found, fill empty)
+                    for(int k=0; k<7; k++) SetCell(worksheet, currentRow, col++, "");
+                }
+            }
+
+            // Summary Data
+            var totalWorkedTicks = group.Sum(x => (x.ActualCheckOut - x.ActualCheckIn)?.Ticks ?? 0);
+            var totalOvertime = group.Sum(x => x.RoundedOvertimeMinutes);
+            var totalAbsences = group.Count(x => x.IsAbsent);
+            var totalLates = group.Sum(x => x.LateMinutes); // "La suma de todos los retardos" - Prompt said "Total Retardos (La suma de todos los retardos)". Could be minutes or count. Previously "numero de retardos". I'll format as minutes if it's "suma", or count.
+            // "Retardo (pondremos el numero de retardos acumulados)" in Summary.
+            // "Total Retardos (La suma de todos los retardos que tuvo el empleado)" in Detailed.
+            // Usually "suma de retardos" implies minutes. "Account of retardos" implies count.
+            // "1RET" implies a boolean flag per day.
+            // I'll assume Count for consistency with "1RET", but "Suma" suggests minutes.
+            // Let's output minutes for "Total Retardos" in detailed to be precise, as "suma de retardos" is often time.
+            
+            SetCell(worksheet, currentRow, col++, FormatTimespan(TimeSpan.FromTicks(totalWorkedTicks)));
+            SetCell(worksheet, currentRow, col++, FormatMinutes(totalOvertime));
+            SetCell(worksheet, currentRow, col++, totalAbsences);
+            SetCell(worksheet, currentRow, col++, totalLates); // Displaying minutes sum
+
+            currentRow++;
+        }
+
+        worksheet.Columns().AdjustToContents();
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
+
+    private void SetupHeader(IXLWorksheet worksheet, string companyName, DateTime startDate, DateTime endDate, byte[]? companyLogo, string reportTitle)
+    {
+        var titleRange = worksheet.Range("A1:L1"); // Range might need to be wider for Detailed, but Merge handles it?
+        // Actually for Detailed, columns are many. A1:Z1?
+        // Safe to merge first few columns.
         titleRange.Merge().Value = companyName;
         titleRange.Style.Font.FontSize = 16;
         titleRange.Style.Font.Bold = true;
         titleRange.Style.Font.FontColor = XLColor.White;
-        titleRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#1976D2"); // Primary Blue
+        titleRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#1976D2"); 
         titleRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         titleRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
         
@@ -39,80 +300,39 @@ public class ReportExportService : IReportExportService
             {
                using var ms = new MemoryStream(companyLogo);
                var pic = worksheet.AddPicture(ms).MoveTo(worksheet.Cell("A1"));
-               pic.Width = 60; // Adjust as needed
+               pic.Width = 60; 
                pic.Height = 60;
             }
-            catch { /* Ignore image errors in excel */ }
+            catch { }
         }
 
-        worksheet.Cell("A2").Value = $"INCIDENCIAS RELOJ CHECADOR: {dateRangeStr}";
-        worksheet.Range("A2:L2").Merge().Style.Font.Italic = true;
-        worksheet.Range("A2:L2").Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        worksheet.Cell("A2").Value = $"{reportTitle}: {dateRangeStr}";
+        worksheet.Range("A2:L2").Merge().Style.Font.Italic = true; // For detailed, merge more?
+        // If detailed, merge across all columns? I don't know the count yet.
+        // A2:L2 is fine for now.
+    }
 
-        // 2. Headers
-        int headerRow = 4;
-        string[] headers = {
-            "ID", "Nombre Completo", "Fecha", "Horario Entrada", "Horario Salida",
-            "Entrada Real", "Salida Real", "Tiempo Trabajado", "Tiempo Extra",
-            "Sucursal", "Falta", "Descanso", "Retardo"
-        };
+    private void StyleHeaderCell(IXLCell cell)
+    {
+        cell.Style.Font.Bold = true;
+        cell.Style.Font.FontColor = XLColor.White;
+        cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#424242");
+        cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+        cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+        cell.Style.Border.OutsideBorderColor = XLColor.White;
+    }
 
-        for (int i = 0; i < headers.Length; i++)
-        {
-            var cell = worksheet.Cell(headerRow, i + 1);
-            cell.Value = headers[i];
-            cell.Style.Font.Bold = true;
-            cell.Style.Font.FontColor = XLColor.White;
-            cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#424242"); // Dark Grey
-            cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-            cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-            cell.Style.Border.OutsideBorderColor = XLColor.White;
-        }
-
-        // 3. Data
-        var currentRow = headerRow + 1;
-        foreach (var item in attendanceData)
-        {
-            // Calculate values
-            TimeSpan worked = TimeSpan.Zero;
-            if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
-            {
-                worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
-            }
-            var workedStr = worked == TimeSpan.Zero ? "" : $"{(int)worked.TotalHours:00}:{worked.Minutes:00}";
-            var overtimeStr = CalculateOvertimeString(item);
-
-            // Fill Cells
-            SetCell(worksheet, currentRow, 1, item.EmployeeId);
-            SetCell(worksheet, currentRow, 2, item.EmployeeName);
-            SetCell(worksheet, currentRow, 3, item.Date.ToString("dd/MM/yyyy"));
-            SetCell(worksheet, currentRow, 4, item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--:--");
-            SetCell(worksheet, currentRow, 5, item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--:--");
-            SetCell(worksheet, currentRow, 6, FormatDateTime(item.ActualCheckIn, item.Date, "--:--"));
-            SetCell(worksheet, currentRow, 7, FormatDateTime(item.ActualCheckOut, item.Date, "--:--"));
-            SetCell(worksheet, currentRow, 8, workedStr);
-            SetCell(worksheet, currentRow, 9, overtimeStr);
-            SetCell(worksheet, currentRow, 10, item.BranchName);
-            SetCell(worksheet, currentRow, 11, item.IsAbsent ? "1FINJ" : "0", true);
-            SetCell(worksheet, currentRow, 12, item.WorkedOnRestDay ? "1DFT" : "0", true);
-            SetCell(worksheet, currentRow, 13, item.LateMinutes > 0 ? "1RET" : "0", true);
-
-            // Row Styling
-            worksheet.Cell(currentRow, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center; // ID
-            for (int k = 3; k <= 9; k++) worksheet.Cell(currentRow, k).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center; // Date & Times
-            for (int k = 11; k <= 13; k++) worksheet.Cell(currentRow, k).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center; // Flags
-
-            currentRow++;
-        }
-
-        // Adjust column widths
-        worksheet.Columns().AdjustToContents();
-        // Set specific width for Name
-        worksheet.Column(2).Width = 30;
-
-        using var stream = new MemoryStream();
-        workbook.SaveAs(stream);
-        return stream.ToArray();
+    private string FormatTimespan(TimeSpan ts)
+    {
+         if (ts == TimeSpan.Zero) return "00:00";
+         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
+    }
+    
+    private string FormatMinutes(int minutes)
+    {
+         if (minutes == 0) return "00:00";
+         var ts = TimeSpan.FromMinutes(minutes);
+         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
     }
 
     private void SetCell(IXLWorksheet ws, int row, int col, object value, bool isIndicator = false)

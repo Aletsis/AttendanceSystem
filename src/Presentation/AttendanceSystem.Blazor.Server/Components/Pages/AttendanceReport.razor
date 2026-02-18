@@ -43,7 +43,17 @@
     
     <MudItem xs="12" Class="d-flex align-center justify-end">
         <MudButton Variant="Variant.Filled" Color="Color.Surface" OnClick="ExportPdf" Class="mr-2" StartIcon="@Icons.Material.Filled.PictureAsPdf">PDF</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="ExportExcel" Class="mr-2" StartIcon="@Icons.Material.Filled.TableView">Excel</MudButton>
+        @if (StartDate.HasValue && EndDate.HasValue && StartDate.Value.Date == EndDate.Value.Date)
+        {
+             <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="@(() => ExportExcel(false))" Class="mr-2" StartIcon="@Icons.Material.Filled.TableView">Excel</MudButton>
+        }
+        else
+        {
+            <MudMenu Label="Excel" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.TableView" Class="mr-2" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
+                <MudMenuItem OnClick="@(() => ExportExcel(false))">Resumido</MudMenuItem>
+                <MudMenuItem OnClick="@(() => ExportExcel(true))">Detallado</MudMenuItem>
+            </MudMenu>
+        }
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData" Class="mr-2">Ver Reporte</MudButton>
     </MudItem>
 </MudGrid>
@@ -157,7 +167,7 @@
         AttendanceList = result.ToList();
     }
 
-    private async Task ExportExcel()
+    private async Task ExportExcel(bool detailed)
     {
         if (!AttendanceList.Any())
         {
@@ -179,10 +189,11 @@
             .ThenBy(x => x.EmployeeId)
             .ThenBy(x => x.Date);
 
-            var bytes = ExportService.GenerateExcel(sortedData, StartDate.Value, EndDate.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo);
+            var bytes = ExportService.GenerateExcel(sortedData, StartDate.Value, EndDate.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo, detailed);
             using var stream = new MemoryStream(bytes);
             using var streamRef = new DotNetStreamReference(stream);
-            await JS.InvokeVoidAsync("downloadFileFromStream", $"ReporteAsistencia_{DateTime.Now:yyyyMMdd_HHmm}.xlsx", streamRef);
+            var typeStr = detailed ? "Detallado" : "Resumido";
+            await JS.InvokeVoidAsync("downloadFileFromStream", $"ReporteAsistencia_{typeStr}_{DateTime.Now:yyyyMMdd_HHmm}.xlsx", streamRef);
         }
         catch (Exception ex)
         {

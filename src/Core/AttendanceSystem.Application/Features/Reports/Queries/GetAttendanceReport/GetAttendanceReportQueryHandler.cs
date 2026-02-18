@@ -17,15 +17,21 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
     private readonly IDailyAttendanceRepository _dailyAttendanceRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IBranchRepository _branchRepository;
+    private readonly IDepartmentRepository _departmentRepository;
+    private readonly IPositionRepository _positionRepository;
 
     public GetAttendanceReportQueryHandler(
         IDailyAttendanceRepository dailyAttendanceRepository,
         IEmployeeRepository employeeRepository,
-        IBranchRepository branchRepository)
+        IBranchRepository branchRepository,
+        IDepartmentRepository departmentRepository,
+        IPositionRepository positionRepository)
     {
         _dailyAttendanceRepository = dailyAttendanceRepository;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
+        _departmentRepository = departmentRepository;
+        _positionRepository = positionRepository;
     }
 
     public async Task<IEnumerable<AttendanceReportViewDto>> Handle(GetAttendanceReportQuery request, CancellationToken cancellationToken)
@@ -45,9 +51,13 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
         var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
         var employees = allEmployees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
+        var departments = await _departmentRepository.GetAllAsync(cancellationToken);
+        var positions = await _positionRepository.GetAllAsync(cancellationToken);
         
         var empDict = employees.ToDictionary(e => e.Id, e => e);
         var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
+        var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
+        var posDict = positions.ToDictionary(p => p.Id, p => p.Name);
 
         // 3. Map to DTO
         var dtos = new List<AttendanceReportViewDto>();
@@ -105,6 +115,8 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     Date = att.Date,
                     ShiftName = att.ShiftName ?? "",
                     BranchName = branchName,
+                    DepartmentName = (emp != null && emp.DepartmentId != null && deptDict.TryGetValue(emp.DepartmentId, out var dName)) ? dName : "N/A",
+                    PositionName = (emp != null && emp.PositionId != null && posDict.TryGetValue(emp.PositionId, out var pName)) ? pName : "N/A",
                     ScheduledCheckIn = att.ScheduledCheckIn,
                     ScheduledCheckOut = att.ScheduledCheckOut,
                     ActualCheckIn = att.ActualCheckIn,

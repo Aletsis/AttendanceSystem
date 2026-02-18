@@ -9,6 +9,8 @@ public sealed record AttendanceReportViewDto
     public DateTime Date { get; init; }
     public string ShiftName { get; init; } = string.Empty;
     public string BranchName { get; init; } = string.Empty;
+    public string DepartmentName { get; init; } = string.Empty;
+    public string PositionName { get; init; } = string.Empty;
     public TimeSpan? ScheduledCheckIn { get; init; }
     public TimeSpan? ScheduledCheckOut { get; init; }
     public DateTime? ActualCheckIn { get; init; }

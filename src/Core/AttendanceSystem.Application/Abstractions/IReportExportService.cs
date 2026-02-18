@@ -10,7 +10,7 @@ namespace AttendanceSystem.Application.Abstractions;
 
 public interface IReportExportService
 {
-    byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo);
+    byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo, bool detailed = false);
     byte[] GeneratePdf(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo);
     byte[] GenerateAttendanceCardsPdf(Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> groupedData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo);
     
