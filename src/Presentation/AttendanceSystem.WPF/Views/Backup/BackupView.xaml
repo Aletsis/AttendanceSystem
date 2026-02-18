@@ -1,0 +1,98 @@
+<UserControl x:Class="AttendanceSystem.WPF.Views.Backup.BackupView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+      xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+      Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
+    <Grid Margin="20">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,20">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <Button Grid.Column="0" Command="{Binding BackToDashboardCommand}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="40" Height="40" Margin="0,0,15,0">
+                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20"/>
+            </Button>
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="Respaldo y Restauración" FontSize="28" FontWeight="Bold"/>
+                <TextBlock Text="Gestione los respaldos de la base de datos" FontSize="14" Foreground="{DynamicResource MahApps.Brushes.Gray}"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Command="{Binding RefreshCommand}" Style="{DynamicResource MahApps.Styles.Button.Square}" Width="40" Height="40" Margin="0,0,10,0">
+                    <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20"/>
+                </Button>
+                <Button Command="{Binding CreateBackupCommand}" Style="{DynamicResource MahApps.Styles.Button.Square.Accent}" Height="40" Padding="20,0">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconMaterial Kind="DatabasePlus" Width="20" Height="20" Margin="0,0,8,0"/>
+                        <TextBlock Text="Crear Respaldo" VerticalAlignment="Center" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+        </Grid>
+        
+        <!-- Warning Banner -->
+        <Border Grid.Row="1" Background="#FFF3CD" BorderBrush="#FFE69C" BorderThickness="1" CornerRadius="5" Padding="15" Margin="0,0,0,15">
+            <StackPanel Orientation="Horizontal">
+                <iconPacks:PackIconMaterial Kind="AlertCircle" Width="24" Height="24" Foreground="#856404" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                <TextBlock TextWrapping="Wrap" Foreground="#856404">
+                    <Run FontWeight="SemiBold">Advertencia:</Run>
+                    <Run>La restauración de un respaldo sobrescribirá completamente la base de datos actual. Asegúrese de crear un respaldo antes de restaurar.</Run>
+                </TextBlock>
+            </StackPanel>
+        </Border>
+        
+        <!-- Backup List -->
+        <Grid Grid.Row="2">
+            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+            
+            <DataGrid Grid.Row="0" ItemsSource="{Binding BackupFiles}" SelectedItem="{Binding SelectedBackup}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" AlternatingRowBackground="{DynamicResource MahApps.Brushes.Gray10}">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="Nombre del Archivo" Binding="{Binding FileName}" Width="*"/>
+                    <DataGridTextColumn Header="Tamaño" Binding="{Binding FileSizeFormatted}" Width="120"/>
+                    <DataGridTextColumn Header="Fecha de Creación" Binding="{Binding CreatedDate, StringFormat='dd/MM/yyyy HH:mm'}" Width="160"/>
+                    <DataGridTemplateColumn Header="Acciones" Width="180">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                    <Button Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2" ToolTip="Restaurar">
+                                        <iconPacks:PackIconMaterial Kind="DatabaseRefresh" Width="14" Height="14"/>
+                                    </Button>
+                                    <Button Command="{Binding DataContext.DownloadBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2" ToolTip="Descargar">
+                                        <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14"/>
+                                    </Button>
+                                    <Button Command="{Binding DataContext.DeleteBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2" ToolTip="Eliminar">
+                                        <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14"/>
+                                    </Button>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+            
+            <!-- Instructions -->
+            <Border Grid.Row="1" Background="{DynamicResource MahApps.Brushes.Tile}" CornerRadius="5" Padding="20" Margin="0,15,0,0">
+                <StackPanel>
+                    <TextBlock Text="Instrucciones" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource MahApps.Brushes.Gray}">
+                        • <Run FontWeight="SemiBold">Crear Respaldo:</Run> Crea un respaldo completo de la base de datos actual.
+                        <LineBreak/>
+                        • <Run FontWeight="SemiBold">Restaurar:</Run> Restaura la base de datos desde el respaldo seleccionado. La aplicación debe reiniciarse después.
+                        <LineBreak/>
+                       • <Run FontWeight="SemiBold">Descargar:</Run> Descarga el archivo del respaldo a su equipo.
+                        <LineBreak/>
+                        • <Run FontWeight="SemiBold">Eliminar:</Run> Elimina permanentemente el respaldo seleccionado.
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+        </Grid>
+        
+        <!-- Loading Overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="#80000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="White" FontSize="16" Margin="0,15,0,0" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

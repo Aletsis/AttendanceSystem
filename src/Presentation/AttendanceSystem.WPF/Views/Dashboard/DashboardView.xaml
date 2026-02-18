@@ -1,0 +1,337 @@
+<UserControl x:Class="AttendanceSystem.WPF.Views.Dashboard.DashboardView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+      xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+      Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="20">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                <TextBlock Text="Panel de Control" 
+                          FontSize="28" 
+                          FontWeight="Bold"
+                          Margin="0,0,0,5"/>
+                <TextBlock Text="{Binding WelcomeMessage}" 
+                          FontSize="16"
+                          Foreground="{DynamicResource MahApps.Brushes.Gray}"/>
+            </StackPanel>
+
+            <!-- Statistics Cards -->
+            <UniformGrid Grid.Row="1" Columns="4" Margin="0,0,0,30">
+                <!-- Total Employees -->
+                <Border Background="{DynamicResource MahApps.Brushes.Accent}" 
+                       CornerRadius="8" 
+                       Margin="5" 
+                       Padding="20">
+                    <StackPanel>
+                        <iconPacks:PackIconMaterial Kind="AccountGroup" 
+                                                  Width="40" 
+                                                  Height="40"
+                                                  Foreground="White"
+                                                  Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding TotalEmployees}" 
+                                  FontSize="32" 
+                                  FontWeight="Bold"
+                                  Foreground="White"/>
+                        <TextBlock Text="Total Empleados" 
+                                  FontSize="14"
+                                  Foreground="White"
+                                  Opacity="0.9"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Present Today -->
+                <Border Background="#4CAF50" 
+                       CornerRadius="8" 
+                       Margin="5" 
+                       Padding="20">
+                    <StackPanel>
+                        <iconPacks:PackIconMaterial Kind="CheckCircle" 
+                                                  Width="40" 
+                                                  Height="40"
+                                                  Foreground="White"
+                                                  Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding PresentToday}" 
+                                  FontSize="32" 
+                                  FontWeight="Bold"
+                                  Foreground="White"/>
+                        <TextBlock Text="Presentes Hoy" 
+                                  FontSize="14"
+                                  Foreground="White"
+                                  Opacity="0.9"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Absent Today -->
+                <Border Background="#F44336" 
+                       CornerRadius="8" 
+                       Margin="5" 
+                       Padding="20">
+                    <StackPanel>
+                        <iconPacks:PackIconMaterial Kind="CloseCircle" 
+                                                  Width="40" 
+                                                  Height="40"
+                                                  Foreground="White"
+                                                  Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding AbsentToday}" 
+                                  FontSize="32" 
+                                  FontWeight="Bold"
+                                  Foreground="White"/>
+                        <TextBlock Text="Ausentes Hoy" 
+                                  FontSize="14"
+                                  Foreground="White"
+                                  Opacity="0.9"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- Late Today -->
+                <Border Background="#FF9800" 
+                       CornerRadius="8" 
+                       Margin="5" 
+                       Padding="20">
+                    <StackPanel>
+                        <iconPacks:PackIconMaterial Kind="ClockAlert" 
+                                                  Width="40" 
+                                                  Height="40"
+                                                  Foreground="White"
+                                                  Margin="0,0,0,10"/>
+                        <TextBlock Text="{Binding LateToday}" 
+                                  FontSize="32" 
+                                  FontWeight="Bold"
+                                  Foreground="White"/>
+                        <TextBlock Text="Tarde Hoy" 
+                                  FontSize="14"
+                                  Foreground="White"
+                                  Opacity="0.9"/>
+                    </StackPanel>
+                </Border>
+            </UniformGrid>
+
+            <!-- Quick Actions -->
+            <StackPanel Grid.Row="2">
+                <TextBlock Text="Acciones Rápidas" 
+                          FontSize="20" 
+                          FontWeight="SemiBold"
+                          Margin="0,0,0,15"/>
+                
+                <UniformGrid Columns="4">
+                    <!-- Employees -->
+                    <Button Command="{Binding NavigateToEmployeesCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="AccountGroup" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Empleados" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Attendance -->
+                    <Button Command="{Binding NavigateToAttendanceCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="ClipboardCheck" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Asistencia" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Departments -->
+                    <Button Command="{Binding NavigateToDepartmentsCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="OfficeBuildingMarker" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Departamentos" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Positions -->
+                    <Button Command="{Binding NavigateToPositionsCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="BadgeAccount" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Posiciones" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Branches -->
+                    <Button Command="{Binding NavigateToBranchesCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="OfficeBuilding" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Sucursales" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Shifts -->
+                    <Button Command="{Binding NavigateToShiftsCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="ClockOutline" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Turnos" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Devices -->
+                    <Button Command="{Binding NavigateToDevicesCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="Cellphone" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Dispositivos" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Reports -->
+                    <Button Command="{Binding NavigateToReportsCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="FileChart" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Reportes" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Settings -->
+                    <Button Command="{Binding NavigateToSettingsCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="Cog" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Configuración" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Backup -->
+                    <Button Command="{Binding NavigateToBackupCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="DatabaseExport" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Respaldo" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+
+                    <!-- Logout -->
+                    <Button Command="{Binding LogoutCommand}"
+                           Style="{DynamicResource MahApps.Styles.Button.Square}"
+                           Margin="5"
+                           Padding="20"
+                           Height="150">
+                        <StackPanel>
+                            <iconPacks:PackIconMaterial Kind="Logout" 
+                                                      Width="50" 
+                                                      Height="50"
+                                                      Margin="0,0,0,10"/>
+                            <TextBlock Text="Cerrar Sesión" 
+                                      FontSize="16"
+                                      FontWeight="SemiBold"
+                                      TextWrapping="Wrap"
+                                      TextAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </UniformGrid>
+            </StackPanel>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

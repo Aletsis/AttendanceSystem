@@ -1,0 +1,113 @@
+<UserControl x:Class="AttendanceSystem.WPF.Views.Settings.SettingsView"
+      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+      xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+      xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+      Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="20">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Grid Grid.Row="0" Margin="0,0,0,30">
+                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                <Button Grid.Column="0" Command="{Binding BackToDashboardCommand}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="40" Height="40" Margin="0,0,15,0">
+                    <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20"/>
+                </Button>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                    <TextBlock Text="Configuración del Sistema" FontSize="28" FontWeight="Bold"/>
+                    <TextBlock Text="Configure los parámetros generales del sistema" FontSize="14" Foreground="{DynamicResource MahApps.Brushes.Gray}"/>
+                </StackPanel>
+            </Grid>
+            
+            <StackPanel Grid.Row="1">
+                <!-- General Settings -->
+                <Border Background="{DynamicResource MahApps.Brushes.Tile}" CornerRadius="10" Padding="25" Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Configuración General" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,20"/>
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="Nombre de la Empresa" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding CompanyName}" Padding="10"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="Tolerancia (minutos)" Margin="0,0,0,8"/>
+                                <mah:NumericUpDown Value="{Binding ToleranceMinutes}" Minimum="0" Maximum="60" Padding="10"/>
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Margin="0,15,0,0">
+                            <TextBlock Text="Máximo Horas Extra por Día" Margin="0,0,0,8"/>
+                            <mah:NumericUpDown Value="{Binding MaxOvertimeHours}" Minimum="0" Maximum="12" Padding="10"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Email Settings -->
+                <Border Background="{DynamicResource MahApps.Brushes.Tile}" CornerRadius="10" Padding="25" Margin="0,0,0,20">
+                    <StackPanel>
+                        <Grid Margin="0,0,0,20">
+                            <TextBlock Text="Configuración de Correo" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                            <Button HorizontalAlignment="Right" Command="{Binding TestEmailCommand}" Style="{DynamicResource MahApps.Styles.Button.Square}" Height="35" Padding="15,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconMaterial Kind="Email" Width="16" Height="16" Margin="0,0,5,0"/>
+                                    <TextBlock Text="Probar Correo"/>
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <Grid>
+                            <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="15"/><RowDefinition/></Grid.RowDefinitions>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="20"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                            <StackPanel Grid.Row="0" Grid.Column="0">
+                                <TextBlock Text="Servidor SMTP" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding EmailServer}" Padding="10"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="2">
+                                <TextBlock Text="Puerto" Margin="0,0,0,8"/>
+                                <mah:NumericUpDown Value="{Binding EmailPort}" Minimum="1" Maximum="65535" Padding="10"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="0">
+                                <TextBlock Text="Usuario" Margin="0,0,0,8"/>
+                                <TextBox Text="{Binding EmailUsername}" Padding="10"/>
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="2">
+                                <TextBlock Text="Contraseña" Margin="0,0,0,8"/>
+                                <PasswordBox mah:TextBoxHelper.Watermark="••••••••" Padding="10"/>
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Margin="0,15,0,0">
+                            <CheckBox IsChecked="{Binding EmailUseSsl}" Content="Usar SSL/TLS" FontSize="14"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                
+                <!-- ADMS Settings -->
+                <Border Background="{DynamicResource MahApps.Brushes.Tile}" CornerRadius="10" Padding="25" Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="Configuración ADMS" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,20"/>
+                        <StackPanel>
+                            <TextBlock Text="Puerto ADMS" Margin="0,0,0,8"/>
+                            <mah:NumericUpDown Value="{Binding AdmsPort}" Minimum="1000" Maximum="65535" Padding="10"/>
+                        </StackPanel>
+                        <StackPanel Margin="0,15,0,0">
+                            <CheckBox IsChecked="{Binding AdmsAutoStart}" Content="Iniciar servicio ADMS automáticamente" FontSize="14"/>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+                
+                <!-- Save Button -->
+                <Button Command="{Binding SaveSettingsCommand}" Style="{DynamicResource MahApps.Styles.Button.Square.Accent}" Height="50" HorizontalAlignment="Right" Padding="40,0">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconMaterial Kind="ContentSave" Width="22" Height="22" Margin="0,0,8,0"/>
+                        <TextBlock Text="Guardar Configuración" VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold"/>
+                    </StackPanel>
+                </Button>
+            </StackPanel>
+            
+            <Border Grid.Row="0" Grid.RowSpan="2" Background="#80000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White"/>
+                    <TextBlock Text="{Binding BusyMessage}" Foreground="White" FontSize="16" Margin="0,15,0,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</UserControl>
