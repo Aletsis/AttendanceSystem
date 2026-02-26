@@ -289,6 +289,31 @@ app.MapRazorComponents<AttendanceSystem.Blazor.Server.Components.App>()
     .AddInteractiveServerRenderMode();
 
 
+// ===== TEMPORARY REQUEST LOGGING MIDDLEWARE =====
+app.Use(async (context, next) =>
+{
+    var logger = context.RequestServices
+        .GetRequiredService<ILogger<Program>>();
+    
+    logger.LogInformation(
+        "🌐 REQUEST: {Method} {Path}{Query} | Host: {Host} | Body pendiente",
+        context.Request.Method,
+        context.Request.Path,
+        context.Request.QueryString,
+        context.Request.Host);
+
+    // Leer body para loggearlo
+    context.Request.EnableBuffering();
+    using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
+    var body = await reader.ReadToEndAsync();
+    context.Request.Body.Position = 0;
+    
+    if (!string.IsNullOrWhiteSpace(body))
+        logger.LogInformation("📨 BODY: {Body}", body);
+
+    await next();
+});
+
 app.MapControllers(); // Map Controllers
 
 // ===== MOSTRAR INFORMACIÓN DE PUERTOS Y CONFIGURACIÓN =====

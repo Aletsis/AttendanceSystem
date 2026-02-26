@@ -124,25 +124,81 @@ public sealed class DownloadFromDeviceCommandHandler
                      return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene número de serie registrado.");
                  }
 
-                 // Encolar comando DATA QUERY ATTLOG (Descargar todos los logs o filtrados?)
-                 // ADMS command: DATA QUERY ATTLOG StartTime=... EndTime=...
-                 // Si command.FromDate es null, quizás no deberíamos restringir?
-                 // Generalmente 'DATA QUERY ATTLOG' descarga todo lo que tenga.
-                 // Vamos a enviar un comando simple por ahora.
-                 string admsCmd = "DATA QUERY ATTLOG";
+                 string admsCmd = "";
                  
-                 // Si quisieramos filtrar:
-                 // if (command.FromDate.HasValue) 
-                 //    admsCmd += $" StartTime={command.FromDate.Value:yyyy-MM-dd HH:mm:ss}";
+                 bool isAccessMode = device.DeviceType == "acc";
+
+                 if (!command.FromDate.HasValue)
+                 {
+                     // Descarga general / Forzar todo
+                     if (isAccessMode)
+                     {
+                         // 1. Resetear el stamp en BD a null/0
+                         //    Así el PRÓXIMO /push que haga el reloj recibirá stamp=0 y enviará todo su historial
+                         await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
+                         await _unitOfWork.SaveChangesAsync(cancellationToken);
+                         
+                         // En lugar de forzar punteros en RAM, utilizamos el comando puro de extracción soportado
+                         // nativamente por los equipos ADMS. (Como se ve en el repo ZKTecoADMS de referencia).
+                         // Esto obliga al dispositivo a devolver el historial entero explícitamente y lo vuelca en cdata o POST.
+                         admsCmd = "DATA QUERY ATTLOG StartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
+                         
+                         _logger.LogInformation("ADMS: Descarga completa en modo acceso — stamp reseteado a 0 y comando DATA QUERY ATTLOG encolado para {SN}", sn);
+                     }
+                     else
+                     {
+                         admsCmd = "DATA UPDATE ATTLOG";
+                         _logger.LogInformation("ADMS: Solicitada descarga completa, enviando DATA UPDATE ATTLOG");
+                     }
+                 }
+                 else
+                 {
+                     if (isAccessMode)
+                     {
+                         // Filtro manual estricto soportado por SDK ZKTeco:
+                         var startTimeStr = command.FromDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
+                         var endTimeStr = (command.ToDate ?? DateTime.Now.AddDays(1)).ToString("yyyy-MM-ddTHH:mm:ss");
+                         
+                         admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
+                         
+                         _logger.LogInformation("ADMS: Solicitada descarga parcial (desde {Date}), enviando DATA QUERY ATTLOG", command.FromDate.Value);
+                     }
+                     else
+                     {
+                         // Modo asistencia: tabla ATTLOG, soporta filtro de fechas
+                         var fromStr = command.FromDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                         if (command.ToDate.HasValue)
+                         {
+                             var toStr = command.ToDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                             admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
+                             _logger.LogInformation("ADMS: Solicitada descarga parcial (desde {From} hasta {To}), enviando comando con rango", command.FromDate, command.ToDate);
+                         }
+                         else
+                         {
+                             admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>\"{fromStr}\"";
+                             _logger.LogInformation("ADMS: Solicitada descarga parcial (desde {Date}), enviando comando desde fecha", command.FromDate);
+                         }
+                     }
+                 }
                  
-                 // PASAMOS el LogId para rastrear cuando termine
-                 _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
-                 
-                 _logger.LogInformation("✅ ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}", 
-                     admsCmd, sn!, downloadLogId.Value);
-                 _logger.LogInformation("⏳ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vía GET /getrequest", 
-                     sn!);
-                 _logger.LogInformation("📋 ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
+                 if (!string.IsNullOrEmpty(admsCmd))
+                 {
+                     // PASAMOS el LogId para rastrear cuando termine
+                     _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
+                     
+                     _logger.LogInformation("✅ ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}", 
+                         admsCmd, sn!, downloadLogId.Value);
+                     _logger.LogInformation("⏳ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vía GET /getrequest", 
+                         sn!);
+                     _logger.LogInformation("📋 ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
+                 }
+                 else
+                 {
+                     // Si no se encoló comando (ej. ForceFullSync actuará vía push), damos por exitoso el log de tracking de inmediato
+                     // para que la UI no se quede esperando un POST /devicecmd
+                     downloadLog.MarkAsSuccessful(0, 0);
+                     await _unitOfWork.SaveChangesAsync(cancellationToken);
+                 }
                  
                  // NO marcamos el log como exitoso aquí. Lo hará AdmsController cuando reciba DeviceCmd.
                  // Retornamos éxito indicando que se programó.

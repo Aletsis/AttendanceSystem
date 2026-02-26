@@ -47,6 +47,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private OvertimeCalculationMethod _overtimeCalculationMethod = OvertimeCalculationMethod.NoRounding;
         private OvertimeCapType _overtimeCapType = OvertimeCapType.None;
         private double? _overtimeCapMinutes;
+        private bool _calculateOvertimeBeforeEntry = false;
 
         // Validation
         private string _title = "Nuevo Empleado";
@@ -123,6 +124,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public OvertimeCalculationMethod SelectedOvertimeCalculationMethod { get => _overtimeCalculationMethod; set => SetProperty(ref _overtimeCalculationMethod, value); }
         public OvertimeCapType SelectedOvertimeCapType { get => _overtimeCapType; set => SetProperty(ref _overtimeCapType, value); }
         public double? OvertimeCapMinutes { get => _overtimeCapMinutes; set => SetProperty(ref _overtimeCapMinutes, value); }
+        public bool CalculateOvertimeBeforeEntry { get => _calculateOvertimeBeforeEntry; set => SetProperty(ref _calculateOvertimeBeforeEntry, value); }
 
 
         public ICommand SaveCommand { get; }
@@ -284,6 +286,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     SelectedOvertimeCalculationMethod = emp.OvertimeCalculationMethod;
                     SelectedOvertimeCapType = emp.OvertimeCapType;
                     OvertimeCapMinutes = emp.OvertimeCapMinutes;
+                    CalculateOvertimeBeforeEntry = emp.CalculateOvertimeBeforeEntry;
                 }
                 else
                 {
@@ -328,7 +331,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         OvertimeAuthorized,
                         SelectedOvertimeCalculationMethod,
                         SelectedOvertimeCapType,
-                        OvertimeCapMinutes
+                        OvertimeCapMinutes,
+                        CalculateOvertimeBeforeEntry
                     );
 
                     var result = await _mediator.Send(command);
@@ -354,7 +358,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         OvertimeAuthorized,
                         SelectedOvertimeCalculationMethod,
                         SelectedOvertimeCapType,
-                        OvertimeCapMinutes
+                        OvertimeCapMinutes,
+                        CalculateOvertimeBeforeEntry
                     );
 
                     var result = await _mediator.Send(command);
@@ -410,6 +415,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             SelectedShiftId = null;
             SelectedRestDay = null;
             OvertimeAuthorized = false;
+            CalculateOvertimeBeforeEntry = false;
         }
     }
 }

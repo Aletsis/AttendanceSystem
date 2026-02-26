@@ -87,7 +87,8 @@ public sealed class GetEmployeeByIdQueryHandler : IRequestHandler<GetEmployeeByI
                 FingerprintCount = employee.Fingerprints?.Count ?? 0,
                 HasFace = !string.IsNullOrEmpty(employee.FaceTemplate),
                 OvertimeCapType = employee.OvertimeCapType,
-                OvertimeCapMinutes = employee.OvertimeCapMinutes
+                OvertimeCapMinutes = employee.OvertimeCapMinutes,
+                CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry
             };
 
             return Result<EmployeeDto>.Success(dto);

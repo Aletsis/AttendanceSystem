@@ -17,6 +17,7 @@ public class ShiftRepository : IShiftRepository
     public async Task<Shift?> GetByIdAsync(ShiftId id, CancellationToken cancellationToken = default)
     {
         return await _dbContext.Set<Shift>()
+            .Include(s => s.Days)
             .FirstOrDefaultAsync(s => s.Id == id, cancellationToken);
     }
 
@@ -37,6 +38,8 @@ public class ShiftRepository : IShiftRepository
 
     public async Task<IEnumerable<Shift>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-         return await _dbContext.Set<Shift>().ToListAsync(cancellationToken);
+         return await _dbContext.Set<Shift>()
+             .Include(s => s.Days)
+             .ToListAsync(cancellationToken);
     }
 }

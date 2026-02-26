@@ -94,7 +94,8 @@ public sealed class GetEmployeesWithPaginationQueryHandler : IRequestHandler<Get
                 FingerprintCount = e.Fingerprints?.Count ?? 0,
                 HasFace = !string.IsNullOrEmpty(e.FaceTemplate),
                 OvertimeCapType = e.OvertimeCapType,
-                OvertimeCapMinutes = e.OvertimeCapMinutes
+                OvertimeCapMinutes = e.OvertimeCapMinutes,
+                CalculateOvertimeBeforeEntry = e.CalculateOvertimeBeforeEntry
             }).AsQueryable();
 
             // 1. Filtrado Global

@@ -12,6 +12,9 @@ public class Shift : AggregateRoot<ShiftId>
     public TimeSpan WorkHours { get; private set; }
     public ShiftType ShiftType { get; private set; }
 
+    private readonly List<ShiftDay> _days = new();
+    public IReadOnlyCollection<ShiftDay> Days => _days.AsReadOnly();
+
     private Shift() { }
 
     public static Shift Create(
@@ -19,7 +22,8 @@ public class Shift : AggregateRoot<ShiftId>
         TimeSpan startTime,
         int toleranceMinutes,
         TimeSpan workHours,
-        ShiftType shiftType)
+        ShiftType shiftType,
+        IEnumerable<ShiftDay>? days = null)
     {
         var shift = new Shift
         {
@@ -32,6 +36,11 @@ public class Shift : AggregateRoot<ShiftId>
             // Calculate EndTime logic: normalize to 24h day
             EndTime = NormalizeTime(startTime.Add(workHours))
         };
+
+        if (days != null && days.Any())
+        {
+            shift._days.AddRange(days);
+        }
 
         // validations?
         if (string.IsNullOrWhiteSpace(name))
@@ -47,7 +56,8 @@ public class Shift : AggregateRoot<ShiftId>
         TimeSpan startTime,
         int toleranceMinutes,
         TimeSpan workHours,
-        ShiftType shiftType)
+        ShiftType shiftType,
+        IEnumerable<ShiftDay>? days = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del turno es requerido.");
@@ -60,6 +70,12 @@ public class Shift : AggregateRoot<ShiftId>
         WorkHours = workHours;
         ShiftType = shiftType;
         EndTime = NormalizeTime(startTime.Add(workHours));
+
+        _days.Clear();
+        if (days != null && days.Any())
+        {
+            _days.AddRange(days);
+        }
     }
 
     private static TimeSpan NormalizeTime(TimeSpan time)

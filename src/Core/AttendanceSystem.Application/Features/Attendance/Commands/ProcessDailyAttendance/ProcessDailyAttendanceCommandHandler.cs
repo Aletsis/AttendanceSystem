@@ -110,17 +110,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 var searchStartDate = DateOnly.FromDateTime(date);
                 var searchEndDate = searchStartDate; // Default to single day
 
-                if (employee.RestDay.HasValue)
-                {
-                    // Map DayOfWeek
-                    var dayOfWeek = (AttendanceSystem.Domain.Enumerations.WeekDay)(int)date.DayOfWeek; 
-                    if (employee.RestDay == dayOfWeek)
-                    {
-                        isRestDay = true;
-                    }
-                }
-
-                if (!isRestDay && employee.ScheduleId != null)
+                if (employee.ScheduleId != null)
                 {
                     shift = await _shiftRepo.GetByIdAsync(employee.ScheduleId, cancellationToken);
                 }
@@ -128,10 +118,29 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 // Check for Night Shift (e.g., 22:00 - 06:00)
                 // If it's a night shift, we extend search to the next day to catch the exit
                 bool isNightShift = false;
-                if (shift != null && shift.EndTime < shift.StartTime)
+                TimeSpan dayStartTime = TimeSpan.Zero;
+                TimeSpan dayEndTime = TimeSpan.Zero;
+
+                if (shift != null)
                 {
-                    isNightShift = true;
-                    searchEndDate = searchStartDate.AddDays(1);
+                    dayStartTime = shift.StartTime;
+                    dayEndTime = shift.EndTime;
+
+                    if (shift.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto)
+                    {
+                        var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
+                        if (dayConfig != null)
+                        {
+                            dayStartTime = dayConfig.StartTime;
+                            dayEndTime = dayConfig.EndTime;
+                        }
+                    }
+
+                    if (dayEndTime < dayStartTime)
+                    {
+                        isNightShift = true;
+                        searchEndDate = searchStartDate.AddDays(1);
+                    }
                 }
 
                 // 4. Fetch Records
@@ -153,11 +162,11 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 AttendanceRecord? checkInRecord = null;
                 AttendanceRecord? checkOutRecord = null;
 
-                if (shift != null && !isRestDay && records.Any())
+                if (shift != null && records.Any())
                 {
                     // "Best Fit" Logic using Scheduled Times
-                    var scheduledIn = date.Add(shift.StartTime);
-                    var scheduledOut = date.Add(shift.EndTime);
+                    var scheduledIn = date.Add(dayStartTime);
+                    var scheduledOut = date.Add(dayEndTime);
                     if (isNightShift) 
                     { 
                         scheduledOut = scheduledOut.AddDays(1); 
@@ -302,6 +311,16 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     await _attendanceRepo.UpdateAsync(checkOutRecord, cancellationToken);
                 }
 
+                if (employee.RestDay.HasValue)
+                {
+                    // Map DayOfWeek
+                    var dayOfWeek = (AttendanceSystem.Domain.Enumerations.WeekDay)(int)date.DayOfWeek; 
+                    if (employee.RestDay == dayOfWeek)
+                    {
+                        isRestDay = true;
+                    }
+                }
+
                 // 6. Create DailyAttendance
                 var dailyAttendance = DailyAttendance.Create(
                     employee.Id,
@@ -311,7 +330,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     checkOut,
                     isRestDay,
                     checkInRecord?.Id,
-                    checkOutRecord?.Id);
+                    checkOutRecord?.Id,
+                    employee.CalculateOvertimeBeforeEntry);
 
                 // 7. Save or Update
                 // 7. Save

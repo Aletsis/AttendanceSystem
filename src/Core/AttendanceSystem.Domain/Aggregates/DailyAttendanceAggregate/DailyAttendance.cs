@@ -33,6 +33,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public bool MissingCheckOut { get; private set; } // Omitio salida
     public bool IsRestDay { get; private set; }
     public bool WorkedOnRestDay { get; private set; }
+    public bool CalculateOvertimeBeforeEntry { get; private set; }
 
     private DailyAttendance() { }
 
@@ -44,14 +45,16 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         DateTime? checkOut,
         bool isRestDay = false,
         AttendanceRecordId? checkInRecordId = null,
-        AttendanceRecordId? checkOutRecordId = null)
+        AttendanceRecordId? checkOutRecordId = null,
+        bool calculateOvertimeBeforeEntry = false)
     {
         var attendance = new DailyAttendance
         {
             Id = DailyAttendanceId.CreateUnique(),
             EmployeeId = employeeId,
             Date = date.Date,
-            IsRestDay = isRestDay
+            IsRestDay = isRestDay,
+            CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry
         };
 
         // 1. Configure Shift Snapshot
@@ -249,8 +252,6 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
 
             // OVERTIME logic
-            // Rule: Overtime = Time from Scheduled CheckIn to Actual CheckOut - Scheduled Hours
-            // Only count overtime if the employee worked the full scheduled hours
             if (ActualCheckIn.HasValue)
             {
                 // Calculate actual worked minutes (from actual check-in to actual check-out)
@@ -262,11 +263,21 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 // Only calculate overtime if employee worked at least the scheduled hours
                 if (totalWorkedMinutes >= scheduledMinutes)
                 {
-                    // Calculate time from scheduled check-in to actual check-out
-                    var timeFromScheduledStart = (ActualCheckOut.Value - scheduledInDateTime).TotalMinutes;
-                    
-                    // Overtime = Time from scheduled start to actual checkout - Scheduled duration
-                    var overtime = timeFromScheduledStart - scheduledMinutes;
+                    double overtime = 0;
+                    if (CalculateOvertimeBeforeEntry)
+                    {
+                        // Calculate overtime based on total hours worked
+                        // This includes time worked before scheduled entry and after scheduled exit
+                        overtime = totalWorkedMinutes - scheduledMinutes;
+                    }
+                    else
+                    {
+                        // Calculate time from scheduled check-in to actual check-out
+                        // This ignores time worked before scheduled check-in
+                        var timeFromScheduledStart = (ActualCheckOut.Value - scheduledInDateTime).TotalMinutes;
+                        overtime = timeFromScheduledStart - scheduledMinutes;
+                    }
+
                     if (overtime > 0)
                     {
                         OvertimeMinutes = (int)overtime;

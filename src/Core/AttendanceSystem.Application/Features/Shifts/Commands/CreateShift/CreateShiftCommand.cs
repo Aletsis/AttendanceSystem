@@ -13,7 +13,8 @@ public sealed record CreateShiftCommand(
     TimeSpan StartTime,
     int ToleranceMinutes,
     TimeSpan WorkHours,
-    ShiftType ShiftType) : IRequest<Result<Guid>>;
+    ShiftType ShiftType,
+    IEnumerable<AttendanceSystem.Application.DTOs.ShiftDayDto>? Days = null) : IRequest<Result<Guid>>;
 
 public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftCommand, Result<Guid>>
 {
@@ -30,12 +31,19 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
     {
         try 
         {
+            var days = request.Days?.Select(d => new ShiftDay(
+                d.DayOfWeek,
+                d.StartTime,
+                d.WorkHours
+            )).ToList();
+
             var shift = Shift.Create(
                 request.Name,
                 request.StartTime,
                 request.ToleranceMinutes,
                 request.WorkHours,
-                request.ShiftType);
+                request.ShiftType,
+                days);
 
             await _shiftRepository.AddAsync(shift, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

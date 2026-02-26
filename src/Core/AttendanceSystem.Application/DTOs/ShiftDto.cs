@@ -9,5 +9,6 @@ public record ShiftDto(
     TimeSpan EndTime,
     int ToleranceMinutes,
     TimeSpan WorkHours,
-    ShiftType ShiftType
+    ShiftType ShiftType,
+    IEnumerable<ShiftDayDto> Days
 );

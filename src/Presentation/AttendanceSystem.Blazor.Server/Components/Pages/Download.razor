@@ -1,162 +1,252 @@
 @page "/attendance/download"
+@page "/attendance/download-logs"
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices
 @using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices
 @using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice
+@using AttendanceSystem.Application.Features.DownloadLogs.Queries.GetDownloadLogs
+@using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthenticationStateProvider
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudCard>
-        <MudCardHeader>
-            <CardHeaderContent>
-                <MudText Typo="Typo.h5">Descarga de Asistencia</MudText>
-            </CardHeaderContent>
-        </MudCardHeader>
-        
-        <MudCardContent>
-            <MudGrid Class="mb-4">
-                <MudItem xs="12" sm="6">
-                    <MudDatePicker Label="Desde (Opcional)" @bind-Date="_fromDate" HelperText="Si vacío: última descarga" />
-                </MudItem>
-                <MudItem xs="12" sm="6">
-                    <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_toDate" HelperText="Si vacío: hasta hoy" />
-                </MudItem>
-            </MudGrid>
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudText Typo="Typo.h4" GutterBottom="true">Gestión de Descargas</MudText>
+    
+    <MudGrid>
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5">Nueva Descarga</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudGrid Class="mb-4">
+                        <MudItem xs="12" sm="6">
+                            <MudDatePicker Label="Desde (Opcional)" @bind-Date="_downloadFromDate" HelperText="Si vacío: última descarga" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_downloadToDate" HelperText="Si vacío: hasta hoy" />
+                        </MudItem>
+                    </MudGrid>
 
-            <MudButton 
-                Variant="Variant.Filled" 
-                Color="Color.Primary"
-                OnClick="DownloadFromAllDevices"
-                Disabled="@IsBusy">
-                @if (_isDownloadingAll)
-                {
-                    <MudProgressCircular Size="Size.Small" Indeterminate="true" />
-                    <MudText Class="ml-2">Descargando...</MudText>
-                }
-                else
-                {
-                    <MudIcon Icon="@Icons.Material.Filled.Download" />
-                    <MudText Class="ml-2">Descargar Todo</MudText>
-                }
-            </MudButton>
-
-            @if (_devices.Any())
-            {
-                <MudDivider Class="my-4" />
-                
-                <MudText Typo="Typo.h6">Descargar por Dispositivo:</MudText>
-                
-                @foreach (var device in _devices)
-                {
-                    var isDownloadingThis = _downloadingDeviceId == device.DeviceId;
-                    <MudChip T="string" 
-                        Icon="@(isDownloadingThis ? null : Icons.Material.Filled.DeviceHub)"
-                        Color="Color.Primary"
-                        OnClick="@(() => DownloadFromDevice(device.DeviceId))"
-                        Disabled="@IsBusy">
-                        @if (isDownloadingThis)
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="DownloadFromAllDevices" Disabled="@IsBusy">
+                        @if (_isDownloadingAll)
                         {
-                            <MudProgressCircular Class="ms-n1 mr-1" Size="Size.Small" Indeterminate="true"/>
+                            <MudProgressCircular Size="Size.Small" Indeterminate="true" />
+                            <MudText Class="ml-2">Descargando...</MudText>
                         }
-                        @device.Name
-                    </MudChip>
-                }
-            }
-        </MudCardContent>
-    </MudCard>
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Download" />
+                            <MudText Class="ml-2">Descargar Todo</MudText>
+                        }
+                    </MudButton>
 
-    @if (_results.Any())
-    {
-        <MudCard Class="mt-4">
-            <MudCardHeader>
-                <CardHeaderContent>
-                    <MudText Typo="Typo.h6">Resultados</MudText>
-                </CardHeaderContent>
-            </MudCardHeader>
-            
-            <MudCardContent>
-                <MudTable Items="@_results">
-                    <HeaderContent>
-                        <MudTh>Dispositivo</MudTh>
-                        <MudTh>Registros</MudTh>
-                        <MudTh>Estado</MudTh>
-                        <MudTh>Fecha</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd DataLabel="Dispositivo">@context.DeviceId</MudTd>
-                        <MudTd DataLabel="Registros">@context.RecordsDownloaded</MudTd>
-                        <MudTd DataLabel="Estado">
-                            @if (context.Success)
+                    @if (_devices.Any())
+                    {
+                        <MudDivider Class="my-4" />
+                        <MudText Typo="Typo.h6">Descargar por Dispositivo:</MudText>
+                        <MudGrid Class="mt-2">
+                             @foreach (var device in _devices)
                             {
-                                <MudChip T="string" Color="Color.Success" Size="Size.Small">Exitoso</MudChip>
+                                var isDownloadingThis = _downloadingDeviceId == device.DeviceId;
+                                <MudItem>
+                                    <MudChip T="string"
+                                        Icon="@(isDownloadingThis ? null : Icons.Material.Filled.DeviceHub)"
+                                        Color="Color.Primary"
+                                        OnClick="@(() => DownloadFromDevice(device.DeviceId))"
+                                        Disabled="@IsBusy">
+                                        @if (isDownloadingThis)
+                                        {
+                                            <MudProgressCircular Class="ms-n1 mr-1" Size="Size.Small" Indeterminate="true"/>
+                                        }
+                                        @device.Name
+                                    </MudChip>
+                                </MudItem>
                             }
-                            else
-                            {
-                                <MudChip T="string" Color="Color.Error" Size="Size.Small">Error</MudChip>
-                            }
-                        </MudTd>
-                        <MudTd DataLabel="Fecha">
-                            @context.DownloadedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudCardContent>
-        </MudCard>
-    }
+                        </MudGrid>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+
+        <MudItem xs="12">
+            <MudCard>
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h5">Historial de Descargas</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Color="Color.Primary" OnClick="LoadLogs" />
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent>
+                     <MudGrid Class="mb-4">
+                        <MudItem xs="12" sm="4">
+                            <MudDatePicker Label="Desde" @bind-Date="_logsFromDate" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudDatePicker Label="Hasta" @bind-Date="_logsToDate" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="FilterLogs" Class="mt-3">
+                                Filtrar
+                            </MudButton>
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="ClearFilter" Class="mt-3 ml-2">
+                                Limpiar
+                            </MudButton>
+                        </MudItem>
+                    </MudGrid>
+
+                    @if (_isLoadingLogs)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                    }
+                    else
+                    {
+                        <MudTable Items="@_logs" Hover="true" Striped="true" Dense="true" RowsPerPage="10">
+                            <HeaderContent>
+                                <MudTh>Fecha/Hora Inicio</MudTh>
+                                <MudTh>Dispositivo</MudTh>
+                                <MudTh>Tipo</MudTh>
+                                <MudTh>Usuario</MudTh>
+                                <MudTh>Estado</MudTh>
+                                <MudTh>Total</MudTh>
+                                <MudTh>Nuevos</MudTh>
+                                <MudTh>Duración (ms)</MudTh>
+                                <MudTh>Error</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Fecha/Hora">@context.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
+                                <MudTd DataLabel="Dispositivo">
+                                    @{
+                                        var deviceName = GetDeviceName(context.DeviceId.Value);
+                                    }
+                                    <MudText Typo="Typo.body2">@deviceName</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">@context.DeviceId.Value</MudText>
+                                </MudTd>
+                                <MudTd DataLabel="Tipo">
+                                    @if (context.DownloadType == DownloadType.Manual)
+                                    {
+                                        <MudChip T="string" Color="Color.Info" Size="Size.Small" Icon="@Icons.Material.Filled.Person">Manual</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Color="Color.Default" Size="Size.Small" Icon="@Icons.Material.Filled.Schedule">Automática</MudChip>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="Usuario">
+                                    @if (!string.IsNullOrEmpty(context.InitiatedByUserName))
+                                    {
+                                        <MudText Typo="Typo.body2">@context.InitiatedByUserName</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.body2" Color="Color.Secondary">Sistema</MudText>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="Estado">
+                                     @if (!context.CompletedAt.HasValue)
+                                    {
+                                        <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.Loop">En curso</MudChip>
+                                    }
+                                    else if (context.IsSuccessful)
+                                    {
+                                        <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle">Exitoso</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.Error">Fallido</MudChip>
+                                    }
+                                </MudTd>
+                                <MudTd DataLabel="Total">@context.TotalRecordsDownloaded</MudTd>
+                                <MudTd DataLabel="Nuevos">
+                                    <MudText Typo="Typo.body2" Color="@(context.NewRecordsAdded > 0 ? Color.Success : Color.Default)">
+                                        @context.NewRecordsAdded
+                                    </MudText>
+                                </MudTd>
+                                <MudTd DataLabel="Duración">@context.DurationMs</MudTd>
+                                <MudTd DataLabel="Error">
+                                    @if (!string.IsNullOrEmpty(context.ErrorMessage))
+                                    {
+                                        <MudTooltip Text="@context.ErrorMessage">
+                                            <MudIcon Icon="@Icons.Material.Filled.Info" Color="Color.Error" Size="Size.Small" />
+                                        </MudTooltip>
+                                    }
+                                </MudTd>
+                            </RowTemplate>
+                             <PagerContent>
+                                <MudTablePager PageSizeOptions="new int[] { 10, 25, 50, 100 }" />
+                            </PagerContent>
+                        </MudTable>
+                    }
+                </MudCardContent>
+            </MudCard>
+        </MudItem>
+    </MudGrid>
 </MudContainer>
 
 @code {
+    // Download logic variables
     private bool _isDownloadingAll;
     private string? _downloadingDeviceId;
     private bool IsBusy => _isDownloadingAll || !string.IsNullOrEmpty(_downloadingDeviceId);
-    private DateTime? _fromDate;
-    private DateTime? _toDate;
+    private DateTime? _downloadFromDate;
+    private DateTime? _downloadToDate;
     private List<DeviceDto> _devices = new();
-    private List<DownloadResultDto> _results = new();
+
+    // Logs logic variables
+    private bool _isLoadingLogs = true;
+    private DateTime? _logsFromDate;
+    private DateTime? _logsToDate;
+    private List<DownloadLog> _logs = new();
+    private Dictionary<string, string> _deviceNames = new();
 
     protected override async Task OnInitializedAsync()
     {
-        var query = new GetActiveDevicesQuery();
-        var result = await Mediator.Send(query);
-        
-        if (result.IsSuccess)
-        {
-            _devices = result.Value.ToList();
-        }
+        await LoadDeviceNames();
+        await LoadLogs();
+    }
+
+    private async Task LoadDeviceNames()
+    {
+         var query = new GetActiveDevicesQuery();
+         var result = await Mediator.Send(query);
+         if (result.IsSuccess)
+         {
+             _devices = result.Value.ToList();
+             _deviceNames = result.Value.ToDictionary(d => d.DeviceId, d => d.Name);
+         }
     }
 
     private async Task DownloadFromAllDevices()
     {
         _isDownloadingAll = true;
-        _results.Clear();
-
         try
         {
-            // Obtener usuario actual
             var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
             var user = authState.User;
             var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
             var userName = user.Identity?.Name;
 
-            // Ajustar ToDate para capturar todo el día (23:59:59)
-            var effectiveToDate = _toDate.HasValue 
-                ? _toDate.Value.Date.AddDays(1).AddTicks(-1) 
+            var effectiveToDate = _downloadToDate.HasValue 
+                ? _downloadToDate.Value.Date.AddDays(1).AddTicks(-1) 
                 : (DateTime?)null;
 
-            var command = new DownloadFromAllDevicesCommand(_fromDate, effectiveToDate, userId, userName);
-            var result = await Mediator.Send(command);
+            var command = new DownloadFromAllDevicesCommand(_downloadFromDate, effectiveToDate, userId, userName);
+             var result = await Mediator.Send(command);
 
-            if (result.IsSuccess)
-            {
-                _results = result.Value.ToList();
-                Snackbar.Add("Descarga completada", Severity.Success);
-            }
-            else
-            {
-                Snackbar.Add($"Error: {result.Error}", Severity.Error);
-            }
+             if (result.IsSuccess)
+             {
+                 Snackbar.Add("Descarga completada", Severity.Success);
+                 await LoadLogs(); // Refresh logs
+             }
+             else
+             {
+                 Snackbar.Add($"Error: {result.Error}", Severity.Error);
+             }
         }
         finally
         {
@@ -169,32 +259,71 @@
         _downloadingDeviceId = deviceId;
         try
         {
-        // Obtener usuario actual
-        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var user = authState.User;
-        var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        var userName = user.Identity?.Name;
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            var userId = user.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+            var userName = user.Identity?.Name;
 
-        var effectiveToDate = _toDate.HasValue 
-            ? _toDate.Value.Date.AddDays(1).AddTicks(-1) 
-            : (DateTime?)null;
+            var effectiveToDate = _downloadToDate.HasValue 
+                ? _downloadToDate.Value.Date.AddDays(1).AddTicks(-1) 
+                : (DateTime?)null;
 
-        var command = new DownloadFromDeviceCommand(deviceId, _fromDate, effectiveToDate, true, userId, userName);
-        var result = await Mediator.Send(command);
+            var command = new DownloadFromDeviceCommand(deviceId, _downloadFromDate, effectiveToDate, true, userId, userName);
+            var result = await Mediator.Send(command);
 
-        if (result.IsSuccess)
-        {
-            _results.Insert(0, result.Value);
-            Snackbar.Add($"Descarga de {deviceId} completada", Severity.Success);
-        }
-        else
-        {
-            Snackbar.Add($"Error: {result.Error}", Severity.Error);
-        }
+            if (result.IsSuccess)
+            {
+                 Snackbar.Add($"Descarga de {deviceId} solicitada/completada", Severity.Success);
+                 await LoadLogs(); // Refresh logs
+            }
+            else
+            {
+                Snackbar.Add($"Error: {result.Error}", Severity.Error);
+            }
         }
         finally
         {
             _downloadingDeviceId = null;
         }
+    }
+
+    private async Task LoadLogs()
+    {
+        _isLoadingLogs = true;
+        try
+        {
+            DateTime? toDateAdjusted = _logsToDate.HasValue ? _logsToDate.Value.AddDays(1).AddTicks(-1) : null;
+            var result = await Mediator.Send(new GetDownloadLogsQuery(_logsFromDate, toDateAdjusted));
+            if (result.IsSuccess)
+            {
+                _logs = result.Value.ToList();
+            }
+            else
+            {
+                 Snackbar.Add($"Error al cargar logs: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+             Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoadingLogs = false;
+        }
+    }
+
+    private async Task FilterLogs() => await LoadLogs();
+
+    private async Task ClearFilter()
+    {
+        _logsFromDate = null;
+        _logsToDate = null;
+        await LoadLogs();
+    }
+
+    private string GetDeviceName(string deviceId)
+    {
+        return _deviceNames.TryGetValue(deviceId, out var name) ? name : deviceId;
     }
 }

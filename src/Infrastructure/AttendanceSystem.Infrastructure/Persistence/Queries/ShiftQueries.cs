@@ -17,6 +17,7 @@ public class ShiftQueries : IShiftQueries
     public async Task<IEnumerable<ShiftDto>> GetAllShiftsAsync(CancellationToken cancellationToken = default)
     {
         var shifts = await _dbContext.Set<Shift>()
+            .Include(s => s.Days)
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
@@ -27,6 +28,7 @@ public class ShiftQueries : IShiftQueries
                 s.EndTime,
                 s.ToleranceMinutes,
                 s.WorkHours,
-                s.ShiftType));
+                s.ShiftType,
+                s.Days.Select(d => new ShiftDayDto(d.DayOfWeek, d.StartTime, d.EndTime, d.WorkHours)).ToList()));
     }
 }

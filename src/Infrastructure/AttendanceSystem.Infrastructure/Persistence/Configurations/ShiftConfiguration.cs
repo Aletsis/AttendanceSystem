@@ -37,5 +37,20 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             
         builder.Property(s => s.EndTime)
             .IsRequired();
+
+        builder.OwnsMany(s => s.Days, d =>
+        {
+            d.ToTable("ShiftDays");
+            d.WithOwner().HasForeignKey("ShiftId");
+            d.HasKey("ShiftId", "DayOfWeek");
+            
+            d.Property(x => x.DayOfWeek)
+                .IsRequired()
+                .HasConversion<int>();
+
+            d.Property(x => x.StartTime).IsRequired();
+            d.Property(x => x.EndTime).IsRequired();
+            d.Property(x => x.WorkHours).IsRequired();
+        });
     }
 }

@@ -13,6 +13,19 @@ public interface IDeviceRepository
     Task<Device?> GetBySerialNumberAsync(
         string serialNumber,
         CancellationToken cancellationToken = default);
+
+    Task<DateTime?> GetLastAttLogTimestampAsync(
+        string serialNumber,
+        CancellationToken cancellationToken = default);
+        
+    Task ResetAttLogTimestampAsync(
+        string serialNumber,
+        CancellationToken cancellationToken = default);
+
+    Task UpdateLastAttLogTimestampAsync(
+        string serialNumber,
+        DateTime lastLogTime,
+        CancellationToken cancellationToken = default);
     
     Task AddAsync(
         Device device, 

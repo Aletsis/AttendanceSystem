@@ -78,7 +78,8 @@ public sealed class GetAllEmployeesQueryHandler : IRequestHandler<GetAllEmployee
                 FingerprintCount = e.Fingerprints?.Count ?? 0,
                 HasFace = !string.IsNullOrEmpty(e.FaceTemplate),
                 OvertimeCapType = e.OvertimeCapType,
-                OvertimeCapMinutes = e.OvertimeCapMinutes
+                OvertimeCapMinutes = e.OvertimeCapMinutes,
+                CalculateOvertimeBeforeEntry = e.CalculateOvertimeBeforeEntry
             })
             .OrderBy(e => e.Id.Length).ThenBy(e => e.Id)
             .ToList();

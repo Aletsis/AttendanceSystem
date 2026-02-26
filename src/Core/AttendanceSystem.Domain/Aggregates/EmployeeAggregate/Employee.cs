@@ -25,6 +25,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; private set; } // Nuevo campo
     public OvertimeCapType OvertimeCapType { get; private set; }
     public double? OvertimeCapMinutes { get; private set; }
+    public bool CalculateOvertimeBeforeEntry { get; private set; } // Nuevo campo
 
     // Datos biométricos y de acceso
     public string? CardNumber { get; private set; }
@@ -53,6 +54,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         OvertimeCalculationMethod overtimeCalculationMethod = OvertimeCalculationMethod.NoRounding,
         OvertimeCapType overtimeCapType = OvertimeCapType.None,
         double? overtimeCapMinutes = null,
+        bool calculateOvertimeBeforeEntry = false,
         string? cardNumber = null,
         string? devicePassword = null)
     {
@@ -80,6 +82,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             OvertimeCalculationMethod = overtimeCalculationMethod,
             OvertimeCapType = overtimeCapType,
             OvertimeCapMinutes = overtimeCapMinutes,
+            CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
             CardNumber = cardNumber,
             DevicePassword = devicePassword
         };
@@ -112,7 +115,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         bool overtimeAuthorized = false,
         OvertimeCalculationMethod overtimeCalculationMethod = OvertimeCalculationMethod.NoRounding,
         OvertimeCapType overtimeCapType = OvertimeCapType.None,
-        double? overtimeCapMinutes = null)
+        double? overtimeCapMinutes = null,
+        bool calculateOvertimeBeforeEntry = false)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -135,6 +139,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         OvertimeCalculationMethod = overtimeCalculationMethod;
         OvertimeCapType = overtimeCapType;
         OvertimeCapMinutes = overtimeCapMinutes;
+        CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry;
     }
 
     public void Deactivate()

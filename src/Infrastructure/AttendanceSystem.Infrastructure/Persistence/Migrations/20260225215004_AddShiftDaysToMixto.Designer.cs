@@ -3,17 +3,20 @@ using System;
 using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace AttendanceSystem.Infrastructure.Migrations
+namespace AttendanceSystem.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AttendanceDbContext))]
-    partial class AttendanceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260225215004_AddShiftDaysToMixto")]
+    partial class AddShiftDaysToMixto
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -94,9 +97,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.Property<DateTime?>("ActualCheckOut")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("CalculateOvertimeBeforeEntry")
-                        .HasColumnType("boolean");
 
                     b.Property<Guid?>("CheckInRecordId")
                         .HasColumnType("uuid");
@@ -307,9 +307,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.Property<Guid>("BranchId")
                         .HasColumnType("uuid");
-
-                    b.Property<bool>("CalculateOvertimeBeforeEntry")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("CardNumber")
                         .HasMaxLength(50)

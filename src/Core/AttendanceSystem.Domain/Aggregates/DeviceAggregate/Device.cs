@@ -14,6 +14,12 @@ public class Device : AggregateRoot<DeviceId>
     public DeviceStatus Status { get; private set; } = null!;
     public DeviceDownloadMethod DownloadMethod { get; private set; }
     public DeviceHardwareInfo HardwareInfo { get; private set; } = null!;
+    public string? DeviceType { get; private set; }
+
+    public void SetDeviceType(string deviceType)
+    {
+        DeviceType = deviceType;
+    }
 
 
     private Device() { } // Para EF Core
@@ -157,6 +163,16 @@ public class Device : AggregateRoot<DeviceId>
             Id,
             errorMessage,
             DateTime.UtcNow));
+    }
+
+    public void ResetLastDownloadAt()
+    {
+        LastDownloadAt = null;
+    }
+
+    public void UpdateLastDownloadAt(DateTime timestamp)
+    {
+        LastDownloadAt = timestamp;
     }
 
     public void MarkAsOnline()

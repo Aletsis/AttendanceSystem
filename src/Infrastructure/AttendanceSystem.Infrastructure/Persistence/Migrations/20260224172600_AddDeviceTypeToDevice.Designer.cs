@@ -3,17 +3,20 @@ using System;
 using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace AttendanceSystem.Infrastructure.Migrations
+namespace AttendanceSystem.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AttendanceDbContext))]
-    partial class AttendanceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260224172600_AddDeviceTypeToDevice")]
+    partial class AddDeviceTypeToDevice
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -94,9 +97,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.Property<DateTime?>("ActualCheckOut")
                         .HasColumnType("timestamp with time zone");
-
-                    b.Property<bool>("CalculateOvertimeBeforeEntry")
-                        .HasColumnType("boolean");
 
                     b.Property<Guid?>("CheckInRecordId")
                         .HasColumnType("uuid");
@@ -307,9 +307,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.Property<Guid>("BranchId")
                         .HasColumnType("uuid");
-
-                    b.Property<bool>("CalculateOvertimeBeforeEntry")
-                        .HasColumnType("boolean");
 
                     b.Property<string>("CardNumber")
                         .HasMaxLength(50)
@@ -839,36 +836,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         });
 
                     b.Navigation("Fingerprints");
-                });
-
-            modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.ShiftAggregate.Shift", b =>
-                {
-                    b.OwnsMany("AttendanceSystem.Domain.Aggregates.ShiftAggregate.ShiftDay", "Days", b1 =>
-                        {
-                            b1.Property<Guid>("ShiftId")
-                                .HasColumnType("uuid");
-
-                            b1.Property<int>("DayOfWeek")
-                                .HasColumnType("integer");
-
-                            b1.Property<TimeSpan>("EndTime")
-                                .HasColumnType("interval");
-
-                            b1.Property<TimeSpan>("StartTime")
-                                .HasColumnType("interval");
-
-                            b1.Property<TimeSpan>("WorkHours")
-                                .HasColumnType("interval");
-
-                            b1.HasKey("ShiftId", "DayOfWeek");
-
-                            b1.ToTable("ShiftDays", (string)null);
-
-                            b1.WithOwner()
-                                .HasForeignKey("ShiftId");
-                        });
-
-                    b.Navigation("Days");
                 });
 
             modelBuilder.Entity("DepartmentPositions", b =>

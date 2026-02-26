@@ -13,7 +13,8 @@ public sealed record UpdateShiftCommand(
     TimeSpan StartTime,
     int ToleranceMinutes,
     TimeSpan WorkHours,
-    ShiftType ShiftType) : IRequest<Result>;
+    ShiftType ShiftType,
+    IEnumerable<AttendanceSystem.Application.DTOs.ShiftDayDto>? Days = null) : IRequest<Result>;
 
 public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftCommand, Result>
 {
@@ -38,12 +39,19 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
 
         try
         {
+            var days = request.Days?.Select(d => new AttendanceSystem.Domain.Aggregates.ShiftAggregate.ShiftDay(
+                d.DayOfWeek,
+                d.StartTime,
+                d.WorkHours // Or derive it if DTO changed
+            )).ToList();
+
             shift.Update(
                 request.Name,
                 request.StartTime,
                 request.ToleranceMinutes,
                 request.WorkHours,
-                request.ShiftType);
+                request.ShiftType,
+                days);
 
             _shiftRepository.Update(shift);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

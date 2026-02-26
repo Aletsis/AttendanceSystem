@@ -1,19 +1,46 @@
 @using AttendanceSystem.Domain.Enumerations
+@using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Shifts.Commands.CreateShift
 @using AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift
 
 <MudDialog>
     <DialogContent>
         <MudTextField @bind-Value="_name" Label="Nombre del Turno" Required="true" />
-        <MudTimePicker @bind-Time="_startTime" Label="Hora de Inicio" Required="true" Editable="true" />
-        <MudTimePicker @bind-Time="_endTime" Label="Hora de Fin" Required="true" Editable="true" />
-        <MudNumericField @bind-Value="_toleranceMinutes" Label="Tolerancia (minutos)" Min="0" />
-        <MudSelect @bind-Value="_shiftType" Label="Tipo de Turno">
+        
+        <MudSelect @bind-Value="_shiftType" Label="Tipo de Turno" Class="mt-4 mb-4">
             @foreach (ShiftType type in Enum.GetValues(typeof(ShiftType)))
             {
                 <MudSelectItem Value="@type">@type</MudSelectItem>
             }
         </MudSelect>
+
+        <MudNumericField @bind-Value="_toleranceMinutes" Label="Tolerancia (minutos)" Min="0" Class="mb-4" />
+
+        @if (_shiftType == ShiftType.Mixto)
+        {
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Configuración por Día</MudText>
+            <MudTable Items="_days" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
+                <HeaderContent>
+                    <MudTh>Día</MudTh>
+                    <MudTh>Hora Inicio</MudTh>
+                    <MudTh>Hora Fin</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Día">@context.DayName</MudTd>
+                    <MudTd DataLabel="Hora Inicio">
+                        <MudTimePicker @bind-Time="context.StartTime" Required="true" Editable="true" />
+                    </MudTd>
+                    <MudTd DataLabel="Hora Fin">
+                        <MudTimePicker @bind-Time="context.EndTime" Required="true" Editable="true" />
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+        else
+        {
+            <MudTimePicker @bind-Time="_startTime" Label="Hora de Inicio" Required="true" Editable="true" />
+            <MudTimePicker @bind-Time="_endTime" Label="Hora de Fin" Required="true" Editable="true" />
+        }
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancelar</MudButton>
@@ -30,12 +57,23 @@
     [Parameter] public TimeSpan? WorkHours { get; set; }
     [Parameter] public int ToleranceMinutes { get; set; }
     [Parameter] public ShiftType ShiftType { get; set; }
+    [Parameter] public IEnumerable<ShiftDayDto>? Days { get; set; }
 
     private string _name = "";
     private TimeSpan? _startTime;
     private TimeSpan? _endTime;
     private int _toleranceMinutes;
     private ShiftType _shiftType;
+    
+    private List<DayConfig> _days = new();
+
+    public class DayConfig
+    {
+        public DayOfWeek DayOfWeek { get; set; }
+        public string DayName { get; set; } = "";
+        public TimeSpan? StartTime { get; set; }
+        public TimeSpan? EndTime { get; set; }
+    }
 
     protected override void OnInitialized()
     {
@@ -52,39 +90,95 @@
         {
              _endTime = _startTime.Value.Add(TimeSpan.FromHours(9)); // Default 9 hours
         }
+
+        InitDays();
+    }
+
+    private void InitDays()
+    {
+        var spanishDays = new Dictionary<DayOfWeek, string>
+        {
+            { DayOfWeek.Monday, "Lunes" },
+            { DayOfWeek.Tuesday, "Martes" },
+            { DayOfWeek.Wednesday, "Miércoles" },
+            { DayOfWeek.Thursday, "Jueves" },
+            { DayOfWeek.Friday, "Viernes" },
+            { DayOfWeek.Saturday, "Sábado" },
+            { DayOfWeek.Sunday, "Domingo" }
+        };
+
+        foreach (var kvp in spanishDays)
+        {
+            var existing = Days?.FirstOrDefault(d => d.DayOfWeek == kvp.Key);
+            if (existing != null)
+            {
+                var end = existing.StartTime.Add(existing.WorkHours);
+                if (end.TotalDays >= 1) end = end.Subtract(TimeSpan.FromDays(1));
+
+                _days.Add(new DayConfig
+                {
+                    DayOfWeek = kvp.Key,
+                    DayName = kvp.Value,
+                    StartTime = existing.StartTime,
+                    EndTime = end
+                });
+            }
+            else
+            {
+                _days.Add(new DayConfig
+                {
+                    DayOfWeek = kvp.Key,
+                    DayName = kvp.Value,
+                    StartTime = new TimeSpan(9, 0, 0),
+                    EndTime = new TimeSpan(18, 0, 0)
+                });
+            }
+        }
     }
 
     private void Cancel() => MudDialog.Cancel();
 
     private void Submit()
     {
-        if (string.IsNullOrWhiteSpace(_name) || _startTime == null || _endTime == null)
-        {
-            // Simple validation, MudBlazor handles required fields usually if Form is used, here manual check mainly
-             return;
-        }
+        if (string.IsNullOrWhiteSpace(_name))
+            return;
 
-        var start = _startTime.Value;
-        var end = _endTime.Value;
+        if (_shiftType != ShiftType.Mixto && (_startTime == null || _endTime == null))
+            return;
+
+        var start = _startTime ?? new TimeSpan(9, 0, 0);
+        var end = _endTime ?? new TimeSpan(18, 0, 0);
         
-        // Handle midnight crossing logic for duration calculation
-        // If end is smaller than start, assume next day
         var durationEnd = end;
         if (durationEnd <= start)
-        {
             durationEnd = durationEnd.Add(TimeSpan.FromHours(24));
-        }
         
         var workHours = durationEnd - start;
 
+        var dtos = new List<ShiftDayDto>();
+        if (_shiftType == ShiftType.Mixto)
+        {
+            foreach (var d in _days)
+            {
+                if (d.StartTime.HasValue && d.EndTime.HasValue)
+                {
+                    var dStart = d.StartTime.Value;
+                    var dEnd = d.EndTime.Value;
+                    var dDur = dEnd <= dStart ? dEnd.Add(TimeSpan.FromHours(24)) : dEnd;
+                    
+                    dtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart));
+                }
+            }
+        }
+
         if (ShiftId.HasValue)
         {
-            var command = new UpdateShiftCommand(ShiftId.Value, _name, start, _toleranceMinutes, workHours, _shiftType);
+            var command = new UpdateShiftCommand(ShiftId.Value, _name, start, _toleranceMinutes, workHours, _shiftType, dtos);
             MudDialog.Close(DialogResult.Ok(command));
         }
         else
         {
-            var command = new CreateShiftCommand(_name, start, _toleranceMinutes, workHours, _shiftType);
+            var command = new CreateShiftCommand(_name, start, _toleranceMinutes, workHours, _shiftType, dtos);
             MudDialog.Close(DialogResult.Ok(command));
         }
     }

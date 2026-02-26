@@ -45,6 +45,39 @@ public class DeviceRepository : IDeviceRepository
             .FirstOrDefaultAsync(x => x.HardwareInfo.SerialNumber == serialNumber, cancellationToken);
     }
 
+    public async Task<DateTime?> GetLastAttLogTimestampAsync(
+        string serialNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await GetBySerialNumberAsync(serialNumber, cancellationToken);
+        return device?.LastDownloadAt;
+    }
+
+    public async Task ResetAttLogTimestampAsync(
+        string serialNumber,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await GetBySerialNumberAsync(serialNumber, cancellationToken);
+        if (device != null)
+        {
+            device.ResetLastDownloadAt();
+            await UpdateAsync(device, cancellationToken);
+        }
+    }
+
+    public async Task UpdateLastAttLogTimestampAsync(
+        string serialNumber,
+        DateTime lastLogTime,
+        CancellationToken cancellationToken = default)
+    {
+        var device = await GetBySerialNumberAsync(serialNumber, cancellationToken);
+        if (device != null)
+        {
+            device.UpdateLastDownloadAt(lastLogTime);
+            await UpdateAsync(device, cancellationToken);
+        }
+    }
+
     public async Task<DateTime?> GetLastDownloadTimeAsync(
         DeviceId deviceId,
         CancellationToken cancellationToken = default)
