@@ -101,17 +101,16 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 case "HorasExtra":
                     include = item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue;
                     break;
+                case "HorasExtraPorDepartamento":
+                    include = item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue;
+                    break;
                 case "HorarioErroneo":
-                    if (item.ScheduledCheckIn.HasValue && item.ActualCheckIn.HasValue)
+                    if (item.ScheduledCheckIn.HasValue && item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
                     {
                         var scheduled = item.Date.Add(item.ScheduledCheckIn.Value);
                         var actual = item.ActualCheckIn.Value;
                         var diff = (actual - scheduled).TotalMinutes;
                         if (diff <= -25 || diff >= 16) include = true;
-                    }
-                    else if (item.ScheduledCheckIn.HasValue && !item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
-                    {
-                        include = true;
                     }
                     break;
                 case "DescansoErroneo":
@@ -168,7 +167,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 summary.TotalMetric = details.Sum(d => d.LateMinutes);
                 summary.FormattedTotal = $"{summary.Count} Retardos ({summary.TotalMetric} min)";
             }
-            else if (request.ReportType == "HorasExtra")
+            else if (request.ReportType == "HorasExtra" || request.ReportType == "HorasExtraPorDepartamento")
             {
                  // Calculate daily effective overtime first (handles Daily Cap)
                  double totalOvertime = details.Sum(d => GetEffectiveOvertime(d, empRef));
@@ -204,6 +203,11 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
             
             summaries.Add(summary);
+        }
+
+        if (request.ReportType == "HorasExtraPorDepartamento")
+        {
+            return summaries.OrderBy(s => s.DepartmentName).ThenBy(s => s.EmployeeId);
         }
 
         return summaries.OrderBy(s => s.EmployeeName);

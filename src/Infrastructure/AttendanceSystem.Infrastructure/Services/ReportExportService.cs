@@ -1271,7 +1271,7 @@ public class ReportExportService : IReportExportService
         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
     }
 
-    public byte[] GenerateOvertimeExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch)
+    public byte[] GenerateOvertimeExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch, bool groupByDepartment = false)
     {
         using var workbook = new XLWorkbook();
         var worksheet = workbook.Worksheets.Add("Horas Extra");
@@ -1284,7 +1284,61 @@ public class ReportExportService : IReportExportService
 
         int currentRow = 1;
 
-        if (specificDate)
+        if (groupByDepartment)
+        {
+            // --- Group By Department Format ---
+            int col = 1;
+            worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
+            worksheet.Cell(currentRow, col++).Value = "Nombre";
+            worksheet.Cell(currentRow, col++).Value = "Total Horas Extra";
+            worksheet.Cell(currentRow, col++).Value = "Departamento";
+            worksheet.Cell(currentRow, col++).Value = "Puesto";
+            worksheet.Cell(currentRow, col++).Value = "Total Horas Extra por Depto";
+            worksheet.Cell(currentRow, col++).Value = "Observaciones";
+
+            var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
+            range.Style.Font.Bold = true;
+            range.Style.Fill.BackgroundColor = XLColor.LightGray;
+            range.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+
+            currentRow++;
+
+            var groupedData = data.GroupBy(s => s.DepartmentName).OrderBy(g => string.IsNullOrEmpty(g.Key) ? "ZZZ" : g.Key);
+
+            foreach (var group in groupedData)
+            {
+                var employees = group.ToList();
+                var validEmployees = employees.Where(s => s.TotalMetric > 0).ToList();
+
+                if (!validEmployees.Any()) continue;
+                
+                int startRow = currentRow;
+                var totalDeptMins = validEmployees.Sum(e => e.TotalMetric);
+
+                foreach (var emp in validEmployees)
+                {
+                    col = 1;
+                    worksheet.Cell(currentRow, col++).Value = emp.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = emp.EmployeeName;
+                    worksheet.Cell(currentRow, col++).Value = FormatMinuteString(emp.TotalMetric);
+                    worksheet.Cell(currentRow, col++).Value = string.IsNullOrEmpty(group.Key) ? "Sin Departamento" : group.Key;
+                    worksheet.Cell(currentRow, col++).Value = emp.PositionName;
+                    worksheet.Cell(currentRow, col++).Value = FormatMinuteString(totalDeptMins);
+                    worksheet.Cell(currentRow, col++).Value = ""; // Observaciones
+                    
+                    currentRow++;
+                }
+
+                if (currentRow > startRow + 1)
+                {
+                    var mergeRange = worksheet.Range(startRow, 6, currentRow - 1, 6);
+                    mergeRange.Merge();
+                    mergeRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    mergeRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                }
+            }
+        }
+        else if (specificDate)
         {
             // --- Specific Date Format ---
             int col = 1;

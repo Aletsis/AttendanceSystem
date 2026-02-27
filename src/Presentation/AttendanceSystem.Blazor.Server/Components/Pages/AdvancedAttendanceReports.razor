@@ -58,6 +58,15 @@
             @GenerateButtonSection()
         </MudGrid>
     </MudTabPanel>
+    <MudTabPanel Text="Horas Extra por Depto">
+        <MudGrid Class="pa-4">
+            @FilterDateSection(allowSpecific: true)
+            @FilterBranchSection()
+            @FilterDepartmentSection()
+            @FilterEmployeeSection()
+            @GenerateButtonSection()
+        </MudGrid>
+    </MudTabPanel>
     <MudTabPanel Text="Horario Erróneo">
          <MudGrid Class="pa-4">
             @FilterDateSection(allowSpecific: true)
@@ -76,29 +85,70 @@
     </MudTabPanel>
 </MudTabs>
 
-<MudTable Items="@DisplayedSummaries" Hover="true" Striped="true" Class="mt-4">
-    <HeaderContent>
-        <MudTh>ID</MudTh>
-        <MudTh>Empleado</MudTh>
-        <MudTh>Departamento</MudTh>
-        <MudTh>Total</MudTh>
-        <MudTh>Detalle Global</MudTh>
-        <MudTh>Acciones</MudTh>
-    </HeaderContent>
-    <RowTemplate>
-        <MudTd>@context.EmployeeId</MudTd>
-        <MudTd>@context.EmployeeName</MudTd>
-        <MudTd>@context.DepartmentName</MudTd>
-        <MudTd>@context.Count</MudTd>
-        <MudTd>@context.FormattedTotal</MudTd>
-        <MudTd>
-            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenDetails(context))">Ver Detalles</MudButton>
-        </MudTd>
-    </RowTemplate>
-    <PagerContent>
-        <MudTablePager />
-    </PagerContent>
-</MudTable>
+@if (SelectedReportType == "HorasExtraPorDepartamento")
+{
+    var grouped = DisplayedSummaries.GroupBy(x => x.DepartmentName);
+    foreach (var group in grouped)
+    {
+        var totalDeptMins = group.Sum(x => x.TotalMetric);
+        var totalDeptSpan = TimeSpan.FromMinutes(totalDeptMins);
+
+        <MudCard Class="mt-4 mb-4">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.h6">Departamento: @(string.IsNullOrEmpty(group.Key) ? "Sin Departamento" : group.Key)</MudText>
+                    <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Total Horas Extra del Departamento: @($"{(int)totalDeptSpan.TotalHours:00}:{totalDeptSpan.Minutes:00}")</MudText>
+                </CardHeaderContent>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTable Items="@group" Hover="true" Striped="true" Elevation="0">
+                    <HeaderContent>
+                        <MudTh>ID</MudTh>
+                        <MudTh>Empleado</MudTh>
+                        <MudTh>Total Eventos</MudTh>
+                        <MudTh>Detalles de Horas Extra</MudTh>
+                        <MudTh>Acciones</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.EmployeeId</MudTd>
+                        <MudTd>@context.EmployeeName</MudTd>
+                        <MudTd>@context.Count</MudTd>
+                        <MudTd>@context.FormattedTotal</MudTd>
+                        <MudTd>
+                            <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenDetails(context))">Ver Detalles</MudButton>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudCardContent>
+        </MudCard>
+    }
+}
+else
+{
+    <MudTable Items="@DisplayedSummaries" Hover="true" Striped="true" Class="mt-4">
+        <HeaderContent>
+            <MudTh>ID</MudTh>
+            <MudTh>Empleado</MudTh>
+            <MudTh>Departamento</MudTh>
+            <MudTh>Total</MudTh>
+            <MudTh>Detalle Global</MudTh>
+            <MudTh>Acciones</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.EmployeeId</MudTd>
+            <MudTd>@context.EmployeeName</MudTd>
+            <MudTd>@context.DepartmentName</MudTd>
+            <MudTd>@context.Count</MudTd>
+            <MudTd>@context.FormattedTotal</MudTd>
+            <MudTd>
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" Color="Color.Info" OnClick="@(() => OpenDetails(context))">Ver Detalles</MudButton>
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+}
 
 @code {
     // Shared State
@@ -483,7 +533,8 @@
         var data = await Mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, SelectedReportType, branchId, employeeId, deptId));
         
         // Generate Excel
-        var excelBytes = ExportService.GenerateOvertimeExcel(data, start, end, isDetailed, isSpecific, Branches.Count > 1);
+        bool isGrouped = SelectedReportType == "HorasExtraPorDepartamento";
+        var excelBytes = ExportService.GenerateOvertimeExcel(data, start, end, isDetailed, isSpecific, Branches.Count > 1, isGrouped);
         
         // Download
         using var stream = new MemoryStream(excelBytes);
@@ -500,8 +551,9 @@
             1 => "DescansoTrabajado",
             2 => "Retardos",
             3 => "HorasExtra",
-            4 => "HorarioErroneo",
-            5 => "DescansoErroneo",
+            4 => "HorasExtraPorDepartamento",
+            5 => "HorarioErroneo",
+            6 => "DescansoErroneo",
             _ => "Faltas"
         };
         
@@ -647,7 +699,7 @@
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="DownloadLateArrivalReport" StartIcon="@Icons.Material.Filled.FileDownload">Exportar Excel</MudButton>
             }
-            @if (SelectedReportType == "HorasExtra")
+            @if (SelectedReportType == "HorasExtra" || SelectedReportType == "HorasExtraPorDepartamento")
             {
                 <MudButton Variant="Variant.Outlined" Color="Color.Success" OnClick="DownloadOvertimeReport" StartIcon="@Icons.Material.Filled.FileDownload">Exportar Excel</MudButton>
             }
