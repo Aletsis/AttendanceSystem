@@ -62,8 +62,22 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         {
             attendance.ShiftId = shift.Id;
             attendance.ShiftName = shift.Name;
-            attendance.ScheduledCheckIn = shift.StartTime;
-            attendance.ScheduledCheckOut = shift.EndTime;
+            
+            var dayStartTime = shift.StartTime;
+            var dayEndTime = shift.EndTime;
+
+            if (shift.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto)
+            {
+                var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == attendance.Date.DayOfWeek);
+                if (dayConfig != null)
+                {
+                    dayStartTime = dayConfig.StartTime;
+                    dayEndTime = dayConfig.EndTime;
+                }
+            }
+
+            attendance.ScheduledCheckIn = dayStartTime;
+            attendance.ScheduledCheckOut = dayEndTime;
             attendance.ToleranceMinutes = shift.ToleranceMinutes;
         }
 
@@ -113,8 +127,22 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         
         ShiftId = shift.Id;
         ShiftName = shift.Name;
-        ScheduledCheckIn = shift.StartTime;
-        ScheduledCheckOut = shift.EndTime;
+
+        var dayStartTime = shift.StartTime;
+        var dayEndTime = shift.EndTime;
+
+        if (shift.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto)
+        {
+            var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == Date.DayOfWeek);
+            if (dayConfig != null)
+            {
+                dayStartTime = dayConfig.StartTime;
+                dayEndTime = dayConfig.EndTime;
+            }
+        }
+
+        ScheduledCheckIn = dayStartTime;
+        ScheduledCheckOut = dayEndTime;
         ToleranceMinutes = shift.ToleranceMinutes;
         
         // If updating shift, it's likely not a Rest Day anymore unless strict override, but usually shift implies work day.
