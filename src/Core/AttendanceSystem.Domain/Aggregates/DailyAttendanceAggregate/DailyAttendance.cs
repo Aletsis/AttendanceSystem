@@ -292,7 +292,15 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 if (totalWorkedMinutes >= scheduledMinutes)
                 {
                     double overtime = 0;
-                    if (CalculateOvertimeBeforeEntry)
+
+                    if (LateMinutes > 0)
+                    {
+                        double nextHalfHourMinutes = Math.Ceiling(ActualCheckIn.Value.TimeOfDay.TotalMinutes / 30.0) * 30.0;
+                        DateTime effectiveStartTime = ActualCheckIn.Value.Date.AddMinutes(nextHalfHourMinutes);
+                        var timeFromEffectiveStart = (ActualCheckOut.Value - effectiveStartTime).TotalMinutes;
+                        overtime = timeFromEffectiveStart - scheduledMinutes;
+                    }
+                    else if (CalculateOvertimeBeforeEntry)
                     {
                         // Calculate overtime based on total hours worked
                         // This includes time worked before scheduled entry and after scheduled exit
