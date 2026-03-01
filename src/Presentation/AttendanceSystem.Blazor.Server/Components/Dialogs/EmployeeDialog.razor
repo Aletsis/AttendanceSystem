@@ -12,6 +12,8 @@
 @using GenderEnum = AttendanceSystem.Domain.Enumerations.Gender
 @using OvertimeEnum = AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod
 @using OvertimeCapEnum = AttendanceSystem.Domain.Enumerations.OvertimeCapType
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthenticationStateProvider AuthStateProvider
 @inject ISender Sender
 @inject ISnackbar Snackbar
 
@@ -36,16 +38,16 @@
                             <MudTextField @bind-Value="LastName" Label="Apellido" Required="true" RequiredError="El apellido es requerido" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudDatePicker @bind-Date="_hireDate" Label="Fecha de Contratación" Required="true" Editable="true" Mask="@(new DateMask("dd/MM/yyyy"))" />
+                            <MudDatePicker @bind-Date="_hireDate" Label="Fecha de Contratación" Required="true" Editable="true" Mask="@(new DateMask("dd/MM/yyyy"))" Disabled="@(!_canEditAll)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="Email" Label="Email" InputType="InputType.Email" />
+                            <MudTextField @bind-Value="Email" Label="Email" InputType="InputType.Email" Disabled="@(!_canEditAll)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="PhoneNumber" Label="Teléfono" />
+                            <MudTextField @bind-Value="PhoneNumber" Label="Teléfono" Disabled="@(!_canEditAll)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="GenderEnum" @bind-Value="Gender" Label="Sexo" Required="true" RequiredError="El sexo es requerido">
+                            <MudSelect T="GenderEnum" @bind-Value="Gender" Label="Sexo" Required="true" RequiredError="El sexo es requerido" Disabled="@(!_canEditAll)">
                                 @foreach (var gender in Enum.GetValues<GenderEnum>())
                                 {
                                     <MudSelectItem T="GenderEnum" Value="@gender">@(gender == GenderEnum.Male ? "Masculino" : "Femenino")</MudSelectItem>
@@ -53,7 +55,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true" Disabled="@(string.IsNullOrEmpty(EmployeeId))">
+                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true" Disabled="@(string.IsNullOrEmpty(EmployeeId) || !_canEditAll)">
                                 @foreach (var status in Enum.GetValues<StatusEnum>())
                                 {
                                     <MudSelectItem T="StatusEnum" Value="@status">@status.ToString()</MudSelectItem>
@@ -65,7 +67,7 @@
                 <MudTabPanel Text="Puesto">
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid" @bind-Value="BranchId" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida">
+                            <MudSelect T="Guid" @bind-Value="BranchId" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida" Disabled="@(!_canEditAll)">
                                 @foreach (var branch in _branches)
                                 {
                                     <MudSelectItem T="Guid" Value="@branch.Id">@branch.Name</MudSelectItem>
@@ -81,7 +83,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid" @bind-Value="PositionId" Label="Puesto" Required="true" RequiredError="El puesto es requerido" Disabled="@(DepartmentId == Guid.Empty)">
+                            <MudSelect T="Guid" @bind-Value="PositionId" Label="Puesto" Required="true" RequiredError="El puesto es requerido">
                                 @foreach (var position in _filteredPositions)
                                 {
                                     <MudSelectItem T="Guid" Value="@position.Id">@position.Name</MudSelectItem>
@@ -93,7 +95,7 @@
                 <MudTabPanel Text="Horario">
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="ShiftTypeEnum?" @bind-Value="_selectedShiftType" Label="Turno" Clearable="true">
+                            <MudSelect T="ShiftTypeEnum?" @bind-Value="_selectedShiftType" Label="Turno" Clearable="true" Disabled="@(!_canEditAll)">
                                 @foreach (var type in Enum.GetValues<ShiftTypeEnum>())
                                 {
                                     <MudSelectItem T="ShiftTypeEnum?" Value="@type">@type.ToString()</MudSelectItem>
@@ -101,7 +103,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue)">
+                            <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll)">
                                 @foreach (var shift in FilteredSchedules)
                                 {
                                     <MudSelectItem T="Guid?" Value="@shift.Id">@shift.Name</MudSelectItem>
@@ -109,7 +111,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true">
+                            <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true" Disabled="@(!_canEditAll)">
                                 @foreach (var day in Enum.GetValues<WeekDayEnum>())
                                 {
                                     <MudSelectItem T="WeekDayEnum?" Value="@day">@day.ToString()</MudSelectItem>
@@ -117,13 +119,13 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" />
+                            <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditAll)" />
                         </MudItem>
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudCheckBox @bind-Value="CalculateOvertimeBeforeEntry" Label="Calcular Tiempo Extra Antes de Entrada" Color="Color.Secondary" Disabled="@(!OvertimeAuthorized)" />
+                            <MudCheckBox @bind-Value="CalculateOvertimeBeforeEntry" Label="Calcular Tiempo Extra Antes de Entrada" Color="Color.Secondary" Disabled="@(!OvertimeAuthorized || !_canEditAll)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized)">
+                            <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized || !_canEditAll)">
                                 @foreach (var method in Enum.GetValues<OvertimeEnum>())
                                 {
                                     <MudSelectItem T="OvertimeEnum" Value="@method">
@@ -139,7 +141,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="OvertimeCapEnum" @bind-Value="OvertimeCapType" Label="Tope Tiempo Extra">
+                            <MudSelect T="OvertimeCapEnum" @bind-Value="OvertimeCapType" Label="Tope Tiempo Extra" Disabled="@(!_canEditAll)">
                                 @foreach (var type in Enum.GetValues<OvertimeCapEnum>())
                                 {
                                     <MudSelectItem T="OvertimeCapEnum" Value="@type">
@@ -155,7 +157,7 @@
                             </MudSelect>
                         </MudItem>
                          <MudItem xs="12" sm="6">
-                            <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None)" Min="0" />
+                            <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None || !_canEditAll)" Min="0" />
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
@@ -194,6 +196,9 @@
 
     private DateTime? _hireDate;
     private bool _loading = true;
+    private bool _isAdmin;
+    private bool _isEditing => !string.IsNullOrEmpty(EmployeeId);
+    private bool _canEditAll => _isAdmin || !_isEditing;
     private ShiftTypeEnum? _selectedShiftType;
     private List<BranchDto> _branches = new();
     private List<DepartmentDto> _departments = new();
@@ -211,6 +216,9 @@
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        _isAdmin = authState.User.IsInRole("Administrador");
+
         _hireDate = HireDate;
         
         // Si estamos editando, usar el EmployeeId como Id

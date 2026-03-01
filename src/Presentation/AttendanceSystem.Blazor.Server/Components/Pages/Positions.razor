@@ -39,14 +39,16 @@
             <MudTd DataLabel="Nombre">@context.Name</MudTd>
             <MudTd DataLabel="Descripción">@context.Description</MudTd>
             <MudTd DataLabel="Salario Base">@context.BaseSalary.ToString("c2")</MudTd>
-            <MudTd DataLabel="Acciones">
-                <MudTooltip Text="Editar">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
-                </MudTooltip>
-                <MudTooltip Text="Eliminar">
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeletePosition(context))" Size="Size.Small" />
-                </MudTooltip>
-            </MudTd>
+            <AuthorizeView Roles="Administrador" Context="authContext">
+                <MudTd DataLabel="Acciones">
+                    <MudTooltip Text="Editar">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                    </MudTooltip>
+                    <MudTooltip Text="Eliminar">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeletePosition(context))" Size="Size.Small" />
+                    </MudTooltip>
+                </MudTd>
+            </AuthorizeView>
         </RowTemplate>
         <PagerContent>
             <MudTablePager />

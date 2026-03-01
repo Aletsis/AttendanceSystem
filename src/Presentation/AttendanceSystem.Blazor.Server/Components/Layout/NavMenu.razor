@@ -4,19 +4,24 @@
         <MudNavLink Href="/employees" Icon="@Icons.Material.Filled.PersonAdd">Empleados</MudNavLink>
         <AuthorizeView Roles="Administrador">
             <MudNavLink Href="/branches" Icon="@Icons.Material.Filled.Business">Sucursales</MudNavLink>
+        </AuthorizeView>
             <MudNavLink Href="/departments" Icon="@Icons.Material.Filled.AccountTree">Departamentos</MudNavLink>
             <MudNavLink Href="/positions" Icon="@Icons.Material.Filled.Work">Puestos</MudNavLink>
             <MudNavLink Href="/shifts" Icon="@Icons.Material.Filled.Schedule">Horarios</MudNavLink>
-        </AuthorizeView>
+        
     </MudNavGroup>
-    <AuthorizeView Roles="Administrador">
+    
     <MudNavGroup Title="Dispositivos y descargas" Expanded="false" Icon="@Icons.Material.Filled.Devices" >
+        <AuthorizeView Roles="Administrador">
         <MudNavLink Href="/devices" Icon="@Icons.Material.Filled.DeviceHub">Dispositivos</MudNavLink>
+        </AuthorizeView>
         <MudNavLink Href="/attendance/download" Icon="@Icons.Material.Filled.Download">Descargas e Historial</MudNavLink>
+        <AuthorizeView Roles="Administrador">
         <MudNavLink Href="/attendance/manual-logs" Icon="@Icons.Material.Filled.EditNote">Registros manuales</MudNavLink>
         <MudNavLink Href="/attendance/calculation" Icon="@Icons.Material.Filled.Calculate">Cálculo de asistencia</MudNavLink>
+        </AuthorizeView>
     </MudNavGroup>
-    </AuthorizeView>
+    
     <MudNavGroup Title="Reportes y análisis" Expanded="false" Icon="@Icons.Material.Filled.Assessment" >
         <MudNavLink Href="/attendance/reports" Icon="@Icons.Material.Filled.TableChart">Reporte de Asistencia</MudNavLink>
         <MudNavLink Href="/attendance/cards" Icon="@Icons.Material.Filled.Badge">Impresión de Checadores</MudNavLink>

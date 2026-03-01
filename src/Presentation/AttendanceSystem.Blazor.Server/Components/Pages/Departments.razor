@@ -31,19 +31,23 @@
         <HeaderContent>
             <MudTh>Nombre</MudTh>
             <MudTh>Descripción</MudTh>
-            <MudTh>Acciones</MudTh>
+            <AuthorizeView Roles="Administrador" Context="authContext">
+                <MudTh>Acciones</MudTh>
+            </AuthorizeView>
         </HeaderContent>
         <RowTemplate>
             <MudTd DataLabel="Nombre">@context.Name</MudTd>
             <MudTd DataLabel="Descripción">@context.Description</MudTd>
-            <MudTd DataLabel="Acciones">
-                <MudTooltip Text="Editar">
-                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
-                </MudTooltip>
-                <MudTooltip Text="Eliminar">
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDepartment(context))" Size="Size.Small" />
-                </MudTooltip>
-            </MudTd>
+            <AuthorizeView Roles="Administrador" Context="authContext">
+                <MudTd DataLabel="Acciones">
+                    <MudTooltip Text="Editar">
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                    </MudTooltip>
+                    <MudTooltip Text="Eliminar">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDepartment(context))" Size="Size.Small" />
+                    </MudTooltip>
+                </MudTd>
+            </AuthorizeView>
         </RowTemplate>
         <PagerContent>
             <MudTablePager />

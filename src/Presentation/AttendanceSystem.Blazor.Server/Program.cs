@@ -265,11 +265,19 @@ app.UseMiddleware<RequestLoggingMiddleware>();
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    app.UseHsts();
+    // Solo habilitar HSTS si realmente se requiere seguridad estricta
+    // app.UseHsts();
 }
 
-app.UseHttpsRedirection();
+// En instalaciones con instalador (IIS Local), a menudo no hay SSL configurado.
+// Solo redirigir si el puerto HTTPS está presente en la configuración.
+if (!string.IsNullOrEmpty(builder.Configuration["HTTPS_PORT"]) || app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
 app.UseStaticFiles();
+app.MapStaticAssets(); // Obligatorio para .NET 9 / MudBlazor 8
 app.UseRouting();
 
 // ===== AUTHENTICATION & AUTHORIZATION =====
@@ -288,31 +296,6 @@ app.UseAntiforgery();
 app.MapRazorComponents<AttendanceSystem.Blazor.Server.Components.App>()
     .AddInteractiveServerRenderMode();
 
-
-// ===== TEMPORARY REQUEST LOGGING MIDDLEWARE =====
-app.Use(async (context, next) =>
-{
-    var logger = context.RequestServices
-        .GetRequiredService<ILogger<Program>>();
-    
-    logger.LogInformation(
-        "🌐 REQUEST: {Method} {Path}{Query} | Host: {Host} | Body pendiente",
-        context.Request.Method,
-        context.Request.Path,
-        context.Request.QueryString,
-        context.Request.Host);
-
-    // Leer body para loggearlo
-    context.Request.EnableBuffering();
-    using var reader = new StreamReader(context.Request.Body, leaveOpen: true);
-    var body = await reader.ReadToEndAsync();
-    context.Request.Body.Position = 0;
-    
-    if (!string.IsNullOrWhiteSpace(body))
-        logger.LogInformation("📨 BODY: {Body}", body);
-
-    await next();
-});
 
 app.MapControllers(); // Map Controllers
 

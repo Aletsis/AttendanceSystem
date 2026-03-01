@@ -146,9 +146,11 @@
                     <MudTooltip Text="Editar">
                         <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context.Item))" Size="Size.Medium" />
                     </MudTooltip>
-                    <MudTooltip Text="Eliminar">
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteEmployee(context.Item.Id))" Size="Size.Medium" />
-                    </MudTooltip>
+                    <AuthorizeView Roles="Administrador" Context="authContext">
+                        <MudTooltip Text="Eliminar">
+                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteEmployee(context.Item.Id))" Size="Size.Medium" />
+                        </MudTooltip>
+                    </AuthorizeView>
                 </CellTemplate>
             </TemplateColumn>
         </Columns>
