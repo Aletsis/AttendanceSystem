@@ -280,6 +280,7 @@
                         <tr>
                             <th>Fecha</th>
                             <th>Día</th>
+                            <th>Horario Entrada</th>
                             <th>Entrada</th>
                             <th>Salida</th>
                             <th>Hrs. Extra</th>
@@ -291,6 +292,7 @@
                             <tr>
                                 <td>@day.Date.ToString("dd/MM/yyyy")</td>
                                 <td>@day.Date.ToString("ddd")</td>
+                                <td>@(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</td>
                                 <td>@(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</td>
                                 <td>@(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</td>
                                 <td>@(FormatMinuteString(day.RoundedOvertimeMinutes))</td>
@@ -299,7 +301,7 @@
                     </tbody>
                     <tfoot>
                          <tr class="total-row">
-                            <td colspan="4" style="text-align: right;">Total Horas Extra:</td>
+                            <td colspan="5" style="text-align: right;">Total Horas Extra:</td>
                             <td>@FormatMinuteString(group.Value.Sum(x => x.RoundedOvertimeMinutes))</td>
                         </tr>
                     </tfoot>
