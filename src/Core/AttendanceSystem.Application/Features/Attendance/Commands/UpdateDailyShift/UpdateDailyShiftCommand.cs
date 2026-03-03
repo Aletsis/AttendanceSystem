@@ -205,8 +205,8 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
         {
             daily.UpdateShift(shift);
             daily.SetRestDayOverride(isRestDay);
-            if (checkInRecord != null) daily.SetCheckIn(checkIn.Value, checkInRecord.Id); else daily.RemoveCheckIn();
-            if (checkOutRecord != null) daily.SetCheckOut(checkOut.Value, checkOutRecord.Id); else daily.RemoveCheckOut();
+            if (checkInRecord != null && checkIn.HasValue) daily.SetCheckIn(checkIn.Value, checkInRecord.Id); else daily.RemoveCheckIn();
+            if (checkOutRecord != null && checkOut.HasValue) daily.SetCheckOut(checkOut.Value, checkOutRecord.Id); else daily.RemoveCheckOut();
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
