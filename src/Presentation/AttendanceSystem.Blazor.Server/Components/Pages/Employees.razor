@@ -21,7 +21,13 @@
     <MudText Typo="Typo.h3" GutterBottom="true">Empleados</MudText>
     <MudText Typo="Typo.subtitle1" Class="mb-4">Gestiona los empleados de la empresa.</MudText>
 
-    <MudDataGrid T="EmployeeDto" ServerData="ServerReload" @ref="_dataGrid" Filterable="true" FilterMode="@DataGridFilterMode.ColumnFilterRow" Hideable="true">
+    @if (!_isLoaded)
+    {
+        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mt-16 mx-auto d-block" />
+    }
+    else
+    {
+        <MudDataGrid T="EmployeeDto" ServerData="ServerReload" @ref="_dataGrid" Filterable="true" FilterMode="@DataGridFilterMode.ColumnFilterRow" Hideable="true">
         <ToolBarContent>
             <MudText Typo="Typo.h6">Lista de Empleados</MudText>
             <MudSpacer />
@@ -84,32 +90,8 @@
                     </MudPopover>
                 </FilterTemplate>
             </PropertyColumn>
-            <PropertyColumn Property="x => x.PositionName" Title="Puesto" Sortable="false" Filterable="true" >
-                <FilterTemplate>
-                    <MudBadge Overlap="true" Color="Color.Primary" Visible="@(_selectedPositions.Any())" Dot="true">
-                         <MudIconButton OnClick="@OpenPosFilter" Icon="@(_posFilterOpen ? Icons.Material.Filled.FilterListOff : Icons.Material.Filled.FilterList)" Size="@Size.Small" />
-                    </MudBadge>
-                    <MudOverlay Visible="@_posFilterOpen" OnClick="@(() => _posFilterOpen = false)" />
-                    <MudPopover Open="@_posFilterOpen" AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter" Style="width:250px" Class="pa-2">
-                        <MudStack Spacing="2">
-                            <MudCheckBox T="bool" Label="Seleccionar Todo" Size="@Size.Small" Value="@_selectAllPositions" ValueChanged="@SelectAllPositions" />
-                            <MudDivider />
-                            <MudStack Spacing="0" Style="overflow-y:auto;max-height:250px">
-                                @foreach (var pos in _availablePositions)
-                                {
-                                    <MudCheckBox T="bool" Label="@pos" Size="@Size.Small" Value="@(_selectedPositions.Contains(pos))"
-                                                 ValueChanged="@((value) => PosSelectionChanged(value, pos))" />
-                                }
-                            </MudStack>
-                            <MudStack Row="true" Justify="Justify.FlexEnd">
-                                <MudButton OnClick="@ClearPosFilter" Variant="Variant.Text" Color="Color.Default" Size="Size.Small">Limpiar</MudButton>
-                                <MudButton OnClick="@ApplyPosFilter" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">Filtrar</MudButton>
-                            </MudStack>
-                        </MudStack>
-                    </MudPopover>
-                </FilterTemplate>
-            </PropertyColumn>
             <PropertyColumn Property="x => x.ScheduleName" Title="Horario" Sortable="false" Filterable="false" />
+            <PropertyColumn Property="x => x.RestDayName" Title="Descanso" Sortable="false" Filterable="false" />
             <PropertyColumn Property="x => x.Status" Title="Estado" Sortable="false" Filterable="true" >
                 <FilterTemplate>
                     <MudBadge Overlap="true" Color="Color.Primary" Visible="@(_selectedStatuses.Any())" Dot="true">
@@ -158,11 +140,13 @@
             <MudDataGridPager T="EmployeeDto" />
         </PagerContent>
     </MudDataGrid>
+    }
 
 </MudContainer>
 
 @code {
     private MudDataGrid<EmployeeDto> _dataGrid;
+    private bool _isLoaded = false;
 
     // Custom Filters Logic
     
@@ -178,11 +162,6 @@
     private HashSet<string> _selectedDepts = new();
     private List<string> _availableDepts = new();
 
-    // Position
-    private bool _posFilterOpen;
-    private bool _selectAllPositions;
-    private HashSet<string> _selectedPositions = new();
-    private List<string> _availablePositions = new();
 
     // Status
     private bool _statusFilterOpen;
@@ -193,6 +172,7 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadFilterOptions();
+        _isLoaded = true;
     }
 
     private async Task LoadFilterOptions()
@@ -211,12 +191,6 @@
             _availableDepts = deptResult.Value.Select(d => d.Name).Distinct().OrderBy(n => n).ToList();
         }
 
-        // Load Positions
-        var posResult = await Sender.Send(new GetPositionsQuery());
-        if (posResult.IsSuccess)
-        {
-            _availablePositions = posResult.Value.Select(p => p.Name).Distinct().OrderBy(n => n).ToList();
-        }
     }
 
     // Branch Filter Methods
@@ -269,30 +243,6 @@
         _dataGrid.ReloadServerData();
     }
 
-    // Position Filter Methods
-    private void OpenPosFilter() => _posFilterOpen = true;
-    private void SelectAllPositions(bool value)
-    {
-        _selectAllPositions = value;
-        if (value) _selectedPositions = _availablePositions.ToHashSet(); else _selectedPositions.Clear();
-    }
-    private void PosSelectionChanged(bool isSelected, string pos)
-    {
-        if (isSelected) _selectedPositions.Add(pos); else _selectedPositions.Remove(pos);
-        _selectAllPositions = _selectedPositions.Count == _availablePositions.Count;
-    }
-    private void ClearPosFilter()
-    {
-        _selectedPositions.Clear();
-        _selectAllPositions = false;
-        _posFilterOpen = false;
-        _dataGrid.ReloadServerData();
-    }
-    private void ApplyPosFilter()
-    {
-        _posFilterOpen = false;
-        _dataGrid.ReloadServerData();
-    }
 
     // Status Filter Methods
     private void OpenStatusFilter() => _statusFilterOpen = true;
@@ -341,7 +291,6 @@
         // Use selected items if any, otherwise null (means all)
         var branchesToFilter = _selectedBranches.Any() ? _selectedBranches : null;
         var deptsToFilter = _selectedDepts.Any() ? _selectedDepts : null;
-        var posToFilter = _selectedPositions.Any() ? _selectedPositions : null;
         var statusToFilter = _selectedStatuses.Any() ? _selectedStatuses : null;
 
         var query = new GetEmployeesWithPaginationQuery(
@@ -354,7 +303,7 @@
             GetFilter(nameof(EmployeeDto.FullName)),
             branchesToFilter, // Use custom filter list
             deptsToFilter, // Custom list
-            posToFilter, // Custom list
+            null, // Custom list
             statusToFilter // Custom list
         );
 
