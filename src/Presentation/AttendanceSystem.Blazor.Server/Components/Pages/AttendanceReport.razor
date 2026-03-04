@@ -58,7 +58,7 @@
     </MudItem>
 </MudGrid>
 
-<MudDataGrid Items="@AttendanceList" WebConfig="false" @bind-FilteredItems="_filteredVisibleItems" Filterable="true" Sortable="true" Class="mt-4">
+<MudDataGrid @ref="_dataGrid" Items="@AttendanceList" Filterable="true" Class="mt-4">
     <Columns>
         <PropertyColumn T="AttendanceReportViewDto" TProperty="string" Property="x => x.EmployeeId" Title="ID" SortBy="@SortByEmployeeId" />
         <PropertyColumn Property="x => x.EmployeeName" Title="Empleado" />
@@ -95,7 +95,7 @@
     private EmployeeDto? SelectedEmployeeObj;
 
     private List<AttendanceReportViewDto> AttendanceList = new();
-    private IEnumerable<AttendanceReportViewDto> _filteredVisibleItems = Enumerable.Empty<AttendanceReportViewDto>();
+    private MudDataGrid<AttendanceReportViewDto> _dataGrid = default!;
     private List<EmployeeDto> _allEmployees = new();
     private List<BranchDto> Branches = new();
     private SystemConfigurationDto _config = default!;
@@ -177,8 +177,8 @@
 
         try
         {
-            var data = _filteredVisibleItems != null && _filteredVisibleItems.Any() 
-                ? _filteredVisibleItems 
+            var data = _dataGrid?.FilteredItems != null && _dataGrid.FilteredItems.Any() 
+                ? _dataGrid.FilteredItems 
                 : AttendanceList;
 
             var sortedData = data.OrderBy(x => 
@@ -211,8 +211,8 @@
 
         try
         {
-            var data = _filteredVisibleItems != null && _filteredVisibleItems.Any() 
-                 ? _filteredVisibleItems 
+            var data = _dataGrid?.FilteredItems != null && _dataGrid.FilteredItems.Any() 
+                 ? _dataGrid.FilteredItems 
                  : AttendanceList;
                  
             var sortedData = data.OrderBy(x => 
