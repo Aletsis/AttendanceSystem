@@ -95,10 +95,10 @@
     private EmployeeDto? SelectedEmployeeObj;
 
     private List<AttendanceReportViewDto> AttendanceList = new();
-    private IEnumerable<AttendanceReportViewDto> _filteredVisibleItems;
+    private IEnumerable<AttendanceReportViewDto> _filteredVisibleItems = Enumerable.Empty<AttendanceReportViewDto>();
     private List<EmployeeDto> _allEmployees = new();
     private List<BranchDto> Branches = new();
-    private SystemConfigurationDto _config;
+    private SystemConfigurationDto _config = default!;
     
     // Cache for autocomplete
     private List<EmployeeDto> FilteredEmployees => SelectedBranchId.HasValue
@@ -169,9 +169,9 @@
 
     private async Task ExportExcel(bool detailed)
     {
-        if (!AttendanceList.Any())
+        if (!AttendanceList.Any() || StartDate == null || EndDate == null)
         {
-            Snackbar.Add("No hay datos para exportar", Severity.Warning);
+            Snackbar.Add("No hay datos para exportar o fechas inválidas", Severity.Warning);
             return;
         }
 
@@ -203,9 +203,9 @@
 
     private async Task ExportPdf()
     {
-        if (!AttendanceList.Any())
+        if (!AttendanceList.Any() || StartDate == null || EndDate == null)
         {
-            Snackbar.Add("No hay datos para exportar", Severity.Warning);
+            Snackbar.Add("No hay datos para exportar o fechas inválidas", Severity.Warning);
             return;
         }
 

@@ -145,7 +145,7 @@
 </MudContainer>
 
 @code {
-    private MudDataGrid<EmployeeDto> _dataGrid;
+    private MudDataGrid<EmployeeDto> _dataGrid = default!;
     private bool _isLoaded = false;
 
     // Custom Filters Logic
@@ -272,7 +272,7 @@
     }
 
 
-    private string _searchString;
+    private string _searchString = string.Empty;
 
     private void OnSearch(string text)
     {
@@ -332,7 +332,7 @@
         var dialog = await DialogService.ShowAsync<EmployeeDialog>("Nuevo Empleado", options);
         var result = await dialog.Result;
 
-        if (!result.Canceled && result.Data is CreateEmployeeCommand command)
+        if (result is not null && !result.Canceled && result.Data is CreateEmployeeCommand command)
         {
              var createResult = await Sender.Send(command);
              if (createResult.IsSuccess)
@@ -385,7 +385,7 @@
         var dialog = await DialogService.ShowAsync<EmployeeDialog>("Editar Empleado", parameters, options);
         var result = await dialog.Result;
 
-        if (!result.Canceled && result.Data is UpdateEmployeeCommand command)
+        if (result is not null && !result.Canceled && result.Data is UpdateEmployeeCommand command)
         {
              var updateResult = await Sender.Send(command);
              if (updateResult.IsSuccess)
@@ -451,7 +451,7 @@
         var dialog = await DialogService.ShowAsync<ImportEmployeesDialog>("Importar Empleados", options);
         var result = await dialog.Result;
 
-        if (!result.Canceled)
+        if (result is not null && !result.Canceled)
         {
             await LoadEmployees();
         }

@@ -293,7 +293,7 @@
         var dialog = await DialogService.ShowAsync<ConfirmationDialog>("Confirmar Restauración", parameters);
         var dialogResult = await dialog.Result;
 
-        if (!dialogResult.Canceled)
+        if (dialogResult is not null && !dialogResult.Canceled)
         {
             _isRestoring = true;
             try
@@ -372,7 +372,7 @@
         var dialog = await DialogService.ShowAsync<ConfirmationDialog>("Confirmar Eliminación", parameters);
         var dialogResult = await dialog.Result;
 
-        if (!dialogResult.Canceled)
+        if (dialogResult is not null && !dialogResult.Canceled)
         {
             try
             {

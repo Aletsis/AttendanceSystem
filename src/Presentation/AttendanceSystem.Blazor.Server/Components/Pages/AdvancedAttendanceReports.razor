@@ -166,7 +166,7 @@ else
     private List<DepartmentDto> Departments = new();
     
     private List<AdvancedReportSummaryDto> DisplayedSummaries = new();
-    private SystemConfigurationDto _config;
+    private SystemConfigurationDto _config = default!;
 
     private int SelectedYear = DateTime.Today.Year;
     private int SelectedPeriodNumber = 1;
@@ -568,14 +568,14 @@ else
         DisplayedSummaries.Clear();
     }
 
-    private void OpenDetails(AdvancedReportSummaryDto item)
+    private async Task OpenDetails(AdvancedReportSummaryDto item)
     {
         var parameters = new DialogParameters();
         parameters.Add("Records", item.Details);
         parameters.Add("ReportType", SelectedReportType);
 
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
-        DialogService.Show<ReportDetailsDialog>($"Detalles - {item.EmployeeName}", parameters, options);
+        await DialogService.ShowAsync<ReportDetailsDialog>($"Detalles - {item.EmployeeName}", parameters, options);
     }
     
     // UI FRAGMENT HELPERS

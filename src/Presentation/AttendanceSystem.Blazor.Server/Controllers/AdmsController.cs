@@ -285,7 +285,7 @@ public class AdmsController : ControllerBase
             {
                 var parts = line.Split('\t');
                 
-                string pin = "";
+                string? pin = "";
                 DateTime checkTime = DateTime.MinValue;
                 int checkType = 0;
                 int verifyMethod = 3;

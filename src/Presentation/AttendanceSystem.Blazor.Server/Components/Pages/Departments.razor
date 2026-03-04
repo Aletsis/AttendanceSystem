@@ -183,7 +183,7 @@
         var dialog = await DialogService.ShowAsync<ConfirmDialog>("Eliminar Departamento", parameters, options);
         var result = await dialog.Result;
 
-        if (!result.Canceled)
+        if (result is not null && !result.Canceled)
         {
             var deleteResult = await Sender.Send(new DeleteDepartmentCommand(department.Id));
             if (deleteResult.IsSuccess)

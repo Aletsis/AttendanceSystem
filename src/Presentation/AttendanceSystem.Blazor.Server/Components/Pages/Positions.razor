@@ -100,7 +100,7 @@
         var dialog = await DialogService.ShowAsync<PositionDialog>("Nuevo Puesto", parameters, options);
         var result = await dialog.Result;
 
-        if (!result.Canceled && result.Data is CreatePositionCommand command)
+        if (result is not null && !result.Canceled && result.Data is CreatePositionCommand command)
         {
              var createResult = await Sender.Send(command);
              if (createResult.IsSuccess)
@@ -130,7 +130,7 @@
         var dialog = await DialogService.ShowAsync<PositionDialog>("Editar Puesto", parameters, options);
         var result = await dialog.Result;
 
-        if (!result.Canceled && result.Data is UpdatePositionCommand command)
+        if (result is not null && !result.Canceled && result.Data is UpdatePositionCommand command)
         {
              var updateResult = await Sender.Send(command);
              if (updateResult.IsSuccess)
@@ -166,7 +166,7 @@
         var dialog = await DialogService.ShowAsync<ImportPositionsDialog>("Importar Puestos", options);
         var result = await dialog.Result;
 
-        if (!result.Canceled)
+        if (result is not null && !result.Canceled)
         {
             await LoadPositions();
         }
@@ -185,7 +185,7 @@
         var dialog = await DialogService.ShowAsync<ConfirmDialog>("Eliminar Puesto", parameters, options);
         var result = await dialog.Result;
 
-        if (!result.Canceled)
+        if (result is not null && !result.Canceled)
         {
             var deleteResult = await Sender.Send(new DeletePositionCommand(position.Id));
             if (deleteResult.IsSuccess)

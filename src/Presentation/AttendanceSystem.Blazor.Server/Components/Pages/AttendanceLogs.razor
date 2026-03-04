@@ -128,7 +128,7 @@
         var dialog = await DialogService.ShowAsync<ManualLogDialog>("Registro Manual", parameters);
         var result = await dialog.Result;
 
-        if (!result.Canceled && result.Data is ManualLogDialog.ManualLogResult logResult)
+        if (result is not null && !result.Canceled && result.Data is ManualLogDialog.ManualLogResult logResult)
         {
             await CreateManualLog(logResult.DateTime, logResult.Type);
         }
@@ -178,7 +178,7 @@
         var dialog = await DialogService.ShowAsync<ChangeShiftDialog>("Cambiar Horario", parameters);
         var result = await dialog.Result;
 
-        if (!result.Canceled && result.Data is Guid shiftId)
+        if (result is not null && !result.Canceled && result.Data is Guid shiftId)
         {
             await UpdateDailyShift(shiftId);
         }

@@ -39,7 +39,7 @@
     [Parameter] public UserDto? User { get; set; }
 
     private bool IsCreation => User == null;
-    private MudForm form;
+    private MudForm form = default!;
     private bool success;
     
     private UserViewModel model = new();

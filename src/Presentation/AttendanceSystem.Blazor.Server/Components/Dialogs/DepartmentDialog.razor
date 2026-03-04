@@ -47,7 +47,7 @@
             {
                 var department = deptResult.Value;
                 Name = department.Name; // Ensure name/desc are synced from source of truth
-                Description = department.Description;
+                Description = department.Description ?? string.Empty;
                 
                 if (department.PositionIds != null)
                 {

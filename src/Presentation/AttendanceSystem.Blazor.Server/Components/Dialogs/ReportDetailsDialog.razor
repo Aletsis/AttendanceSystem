@@ -54,10 +54,10 @@
 </MudDialog>
 
 @code {
-    [CascadingParameter] IMudDialogInstance MudDialog { get; set; }
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
 
     [Parameter] public List<AttendanceSystem.Application.DTOs.AdvancedReportDetailDto> Records { get; set; } = new();
-    [Parameter] public string ReportType { get; set; }
+    [Parameter] public string ReportType { get; set; } = string.Empty;
 
     async Task ToggleRestDay(AttendanceSystem.Application.DTOs.AdvancedReportDetailDto item)
     {
