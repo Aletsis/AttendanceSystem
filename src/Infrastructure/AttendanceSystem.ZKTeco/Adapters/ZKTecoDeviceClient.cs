@@ -379,14 +379,13 @@ public class ZKTecoDeviceClient : IZKTecoDeviceClient
         {
             return await Task.Run(() =>
         {
-            bool anyDeleted = false;
+
             for (int i = 0; i < 10; i++)
             {
                 try
                 {
                     if (_device.SSR_DeleteEnrollData(1, userId, i))
                     {
-                        anyDeleted = true;
                         _logger.LogInformation("Huella {FingerIndex} eliminada para usuario {UserId}", i, userId);
                     }
                 }
