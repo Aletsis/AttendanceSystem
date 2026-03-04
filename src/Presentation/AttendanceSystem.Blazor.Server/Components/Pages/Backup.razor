@@ -143,8 +143,7 @@
                                     </MudStack>
                                 </MudTd>
                                 <MudTd DataLabel="Tipo">
-                                    <MudBadge Color="@(context.BackupType == "Full" ? Color.Primary : Color.Secondary)" 
-                                              Variant="Variant.Filled">
+                                    <MudBadge Color="@(context.BackupType == "Full" ? Color.Primary : Color.Secondary)">
                                         @context.BackupType
                                     </MudBadge>
                                 </MudTd>
@@ -161,12 +160,12 @@
                                                        Size="Size.Small"
                                                        Disabled="@_isRestoring"
                                                        OnClick="@(() => RestoreBackup(context))"
-                                                       Title="@(_isRestoring ? "Restaurando..." : "Restaurar")" />
+                                                       title="@(_isRestoring ? "Restaurando..." : "Restaurar")" />
                                         <MudIconButton Icon="@Icons.Material.Filled.Delete"
                                                        Color="Color.Error"
                                                        Size="Size.Small"
                                                        OnClick="@(() => DeleteBackup(context))"
-                                                       Title="Eliminar" />
+                                                       title="Eliminar" />
                                     </MudButtonGroup>
                                 </MudTd>
                             </RowTemplate>
