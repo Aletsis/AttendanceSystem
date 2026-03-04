@@ -872,7 +872,7 @@ public class ReportExportService : IReportExportService
                     {
                         col = 1;
                         worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
-                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
+                        worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}"; 
                         worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                         worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -905,7 +905,7 @@ public class ReportExportService : IReportExportService
                 {
                     if (summary.Count > 0)
                     {
-                        worksheet.Cell(currentRow, 1).Value = summary.EmployeeId;
+                        worksheet.Cell(currentRow, 1).Value = $"'{summary.EmployeeId}";
                         worksheet.Cell(currentRow, 2).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, 3).Value = summary.Count;
                         currentRow++;
@@ -954,7 +954,7 @@ public class ReportExportService : IReportExportService
                     if (summary.Count == 0) continue;
 
                     col = 1;
-                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                     worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                     worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                     worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -1045,7 +1045,7 @@ public class ReportExportService : IReportExportService
                 if (summary.Count == 0) continue;
 
                 col = 1;
-                worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                 worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                 worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                 worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -1096,7 +1096,7 @@ public class ReportExportService : IReportExportService
                 if (summary.Count > 0)
                 {
                     col = 1;
-                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                     worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                     worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                     worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -1153,7 +1153,7 @@ public class ReportExportService : IReportExportService
                     {
                         col = 1;
                         worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
-                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId; 
+                        worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}"; 
                         worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                         worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -1185,7 +1185,7 @@ public class ReportExportService : IReportExportService
                 {
                     if (summary.Count > 0)
                     {
-                        worksheet.Cell(currentRow, 1).Value = summary.EmployeeId;
+                        worksheet.Cell(currentRow, 1).Value = $"'{summary.EmployeeId}";
                         worksheet.Cell(currentRow, 2).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, 3).Value = summary.Count;
                         currentRow++;
@@ -1231,7 +1231,7 @@ public class ReportExportService : IReportExportService
                     if (summary.Count == 0) continue;
 
                     col = 1;
-                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                     worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                     worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                     worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -1321,7 +1321,7 @@ public class ReportExportService : IReportExportService
                 foreach (var emp in validEmployees)
                 {
                     col = 1;
-                    worksheet.Cell(currentRow, col++).Value = emp.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = $"'{emp.EmployeeId}";
                     worksheet.Cell(currentRow, col++).Value = emp.EmployeeName;
                     worksheet.Cell(currentRow, col++).Value = FormatMinuteString(emp.TotalMetric);
                     worksheet.Cell(currentRow, col++).Value = string.IsNullOrEmpty(group.Key) ? "Sin Departamento" : group.Key;
@@ -1368,13 +1368,28 @@ public class ReportExportService : IReportExportService
                     {
                         col = 1;
                         worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
-                        worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                        worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                         worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                         worksheet.Cell(currentRow, col++).Value = summary.PositionName;
                         if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
                         
-                        var otStr = FormatMinuteString(detail.OvertimeMinutes);
+                        int mins = (int)Math.Round(detail.OvertimeMinutes);
+                        int he2MinsToday = Math.Min(mins, 3 * 60);
+                        int he3MinsToday = mins - he2MinsToday;
+                        
+                        string otStr = "";
+                        if (he2MinsToday > 0)
+                        {
+                            double he2 = he2MinsToday / 60 + (he2MinsToday % 60) / 100.0;
+                            otStr = $"{he2.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE2";
+                        }
+                        if (he3MinsToday > 0)
+                        {
+                            double he3 = he3MinsToday / 60 + (he3MinsToday % 60) / 100.0;
+                            otStr += string.IsNullOrEmpty(otStr) ? $"{he3.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE3" : $",{he3.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE3";
+                        }
+                        
                         worksheet.Cell(currentRow, col++).Value = otStr;
                         worksheet.Cell(currentRow, col-1).Style.Font.FontColor = XLColor.Blue;
                         
@@ -1404,7 +1419,7 @@ public class ReportExportService : IReportExportService
                     var totalMins = summary.Details.Sum(d => d.OvertimeMinutes);
                     if (totalMins > 0)
                     {
-                        worksheet.Cell(currentRow, 1).Value = summary.EmployeeId;
+                        worksheet.Cell(currentRow, 1).Value = $"'{summary.EmployeeId}";
                         worksheet.Cell(currentRow, 2).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, 3).Value = FormatMinuteString(totalMins);
                         currentRow++;
@@ -1450,7 +1465,7 @@ public class ReportExportService : IReportExportService
                     if (summary.Details.Sum(d => d.OvertimeMinutes) == 0) continue;
 
                     col = 1;
-                    worksheet.Cell(currentRow, col++).Value = summary.EmployeeId;
+                    worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                     worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                     worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                     worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -1458,23 +1473,65 @@ public class ReportExportService : IReportExportService
 
                     var otDict = summary.Details
                         .Where(d => d.OvertimeMinutes > 0)
-                        .ToDictionary(d => d.Date.Date, d => d.OvertimeMinutes);
+                        .OrderBy(d => d.Date)
+                        .ToList();
+
+                    int accumulatedHE2Mins = 0;
+                    int accumulatedHE3Mins = 0;
 
                     int dateCol = dateColStart;
                     foreach (var dt in dates)
                     {
-                        if (otDict.ContainsKey(dt))
+                        var detail = otDict.FirstOrDefault(d => d.Date.Date == dt);
+                        if (detail != null)
                         {
-                            var mins = otDict[dt];
-                            worksheet.Cell(currentRow, dateCol).Value = FormatMinuteString(mins);
+                            int mins = (int)Math.Round(detail.OvertimeMinutes);
+                            
+                            int he2MinsToday = Math.Min(mins, 3 * 60);
+                            if (accumulatedHE2Mins + he2MinsToday > 9 * 60)
+                            {
+                                he2MinsToday = Math.Max(0, 9 * 60 - accumulatedHE2Mins);
+                            }
+                            
+                            int he3MinsToday = mins - he2MinsToday;
+                            accumulatedHE2Mins += he2MinsToday;
+                            accumulatedHE3Mins += he3MinsToday;
+                            
+                            string otStr = "";
+                            if (he2MinsToday > 0)
+                            {
+                                double he2 = he2MinsToday / 60 + (he2MinsToday % 60) / 100.0;
+                                string he2Formatted = he2.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                                otStr = $"{he2Formatted}HE2";
+                            }
+                            if (he3MinsToday > 0)
+                            {
+                                double he3 = he3MinsToday / 60 + (he3MinsToday % 60) / 100.0;
+                                string he3Formatted = he3.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
+                                otStr += string.IsNullOrEmpty(otStr) ? $"{he3Formatted}HE3" : $",{he3Formatted}HE3";
+                            }
+
+                            worksheet.Cell(currentRow, dateCol).Value = otStr;
                             worksheet.Cell(currentRow, dateCol).Style.Font.FontColor = XLColor.Blue;
                             worksheet.Cell(currentRow, dateCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                         }
                         dateCol++;
                     }
 
-                    var totalMins = summary.Details.Sum(d => d.OvertimeMinutes);
-                    worksheet.Cell(currentRow, totalColIndex).Value = FormatMinuteString(totalMins);
+                    string totalOtStr = "";
+                    if (accumulatedHE2Mins > 0)
+                    {
+                        double he2 = accumulatedHE2Mins / 60 + (accumulatedHE2Mins % 60) / 100.0;
+                        totalOtStr = $"{he2.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE2";
+                    }
+                    if (accumulatedHE3Mins > 0)
+                    {
+                        double he3 = accumulatedHE3Mins / 60 + (accumulatedHE3Mins % 60) / 100.0;
+                        totalOtStr += string.IsNullOrEmpty(totalOtStr) ? $"{he3.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE3" : $",{he3.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE3";
+                    }
+                    if (string.IsNullOrEmpty(totalOtStr)) totalOtStr = "0";
+
+                    worksheet.Cell(currentRow, totalColIndex).Value = totalOtStr;
                     currentRow++;
                 }
             }

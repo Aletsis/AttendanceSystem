@@ -152,7 +152,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
             var summary = new AdvancedReportSummaryDto
             {
-                EmployeeId = empRef.Id.Value,
+                EmployeeId = string.IsNullOrEmpty(empRef.Id.Value) ? "" : empRef.Id.Value.PadLeft(4, '0'),
                 EmployeeName = empRef.GetFullName(),
                 DepartmentName = deptName,
                 PositionName = posName,
@@ -207,10 +207,13 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
         if (request.ReportType == "HorasExtraPorDepartamento")
         {
-            return summaries.OrderBy(s => s.DepartmentName).ThenBy(s => s.EmployeeId);
+            return summaries.OrderBy(s => s.DepartmentName)
+                            .ThenBy(s => int.TryParse(s.EmployeeId, out int id) ? id : int.MaxValue)
+                            .ThenBy(s => s.EmployeeId);
         }
 
-        return summaries.OrderBy(s => s.EmployeeName);
+        return summaries.OrderBy(s => int.TryParse(s.EmployeeId, out int id) ? id : int.MaxValue)
+                        .ThenBy(s => s.EmployeeId);
     }
 
     private AdvancedReportDetailDto MapToDetail(DailyAttendance att, Employee emp)
