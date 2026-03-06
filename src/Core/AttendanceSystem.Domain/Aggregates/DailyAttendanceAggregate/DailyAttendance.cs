@@ -175,32 +175,11 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             {
                  WorkedOnRestDay = true;
             }
-
-            // Rule: On rest days, overtime depends on assigned schedule if available
-            if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
+            else
             {
-                var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
-
-                if (ScheduledCheckIn.HasValue && ScheduledCheckOut.HasValue)
-                {
-                     var schedIn = Date.Add(ScheduledCheckIn.Value);
-                     var schedOut = Date.Add(ScheduledCheckOut.Value);
-                     if (ScheduledCheckOut < ScheduledCheckIn)
-                     {
-                         schedOut = schedOut.AddDays(1);
-                     }
-                     var schedMinutes = (schedOut - schedIn).TotalMinutes;
-                     
-                     // Overtime = Worked - Scheduled
-                     OvertimeMinutes = Math.Max(0, (int)(totalMinutes - schedMinutes));
-                }
-                else
-                {
-                    // Fallback: Default to 8 hours (480 min) deduction if strictly no schedule found
-                    OvertimeMinutes = Math.Max(0, (int)totalMinutes - 480);
-                }
+                // If they did not punch anything on their rest day, they are just resting. Not absent.
+                return;
             }
-            return;
         }
 
         // Normal Day Logic
@@ -288,19 +267,24 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 // Calculate scheduled work duration
                 var scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
 
-                // Only calculate overtime if employee worked at least the scheduled hours
-                if (totalWorkedMinutes >= scheduledMinutes)
-                {
-                    double overtime = 0;
+                double overtime = 0;
 
-                    if (LateMinutes > 0)
-                    {
-                        double nextHalfHourMinutes = Math.Ceiling(ActualCheckIn.Value.TimeOfDay.TotalMinutes / 30.0) * 30.0;
-                        DateTime effectiveStartTime = ActualCheckIn.Value.Date.AddMinutes(nextHalfHourMinutes);
-                        var timeFromEffectiveStart = (ActualCheckOut.Value - effectiveStartTime).TotalMinutes;
-                        overtime = timeFromEffectiveStart - scheduledMinutes;
-                    }
-                    else if (CalculateOvertimeBeforeEntry)
+                if (LateMinutes > 0)
+                {
+                    double previousHalfHourMinutes = Math.Floor(ActualCheckIn.Value.TimeOfDay.TotalMinutes / 30.0) * 30.0;
+                    double diffFromPreviousHalfHour = ActualCheckIn.Value.TimeOfDay.TotalMinutes - previousHalfHourMinutes;
+                    
+                    double effectiveStartMinutes = diffFromPreviousHalfHour <= ToleranceMinutes 
+                        ? previousHalfHourMinutes 
+                        : previousHalfHourMinutes + 30.0;
+                        
+                    DateTime effectiveStartTime = ActualCheckIn.Value.Date.AddMinutes(effectiveStartMinutes);
+                    var timeFromEffectiveStart = (ActualCheckOut.Value - effectiveStartTime).TotalMinutes;
+                    overtime = timeFromEffectiveStart - scheduledMinutes;
+                }
+                else if (totalWorkedMinutes >= scheduledMinutes)
+                {
+                    if (CalculateOvertimeBeforeEntry)
                     {
                         // Calculate overtime based on total hours worked
                         // This includes time worked before scheduled entry and after scheduled exit
@@ -313,11 +297,11 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                         var timeFromScheduledStart = (ActualCheckOut.Value - scheduledInDateTime).TotalMinutes;
                         overtime = timeFromScheduledStart - scheduledMinutes;
                     }
+                }
 
-                    if (overtime > 0)
-                    {
-                        OvertimeMinutes = (int)overtime;
-                    }
+                if (overtime > 0)
+                {
+                    OvertimeMinutes = (int)overtime;
                 }
             }
         }
