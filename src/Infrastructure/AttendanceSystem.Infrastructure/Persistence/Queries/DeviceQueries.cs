@@ -32,6 +32,7 @@ public class DeviceQueries : IDeviceQueries
             d.Location,
             d.IsActive,
             d.Status.Name,
+            d.Brand,
             d.DownloadMethod,
             d.LastDownloadAt,
             d.TotalDownloadCount,
@@ -46,7 +47,9 @@ public class DeviceQueries : IDeviceQueries
             d.HardwareInfo.UserCapacity,
             d.HardwareInfo.FingerprintCapacity,
             d.HardwareInfo.FaceCapacity,
-            d.HardwareInfo.AttendanceRecordCapacity
+            d.HardwareInfo.AttendanceRecordCapacity,
+            d.Username,
+            d.Password
         ));
 
     }
@@ -72,6 +75,7 @@ public class DeviceQueries : IDeviceQueries
             device.Location,
             device.IsActive,
             device.Status.Name,
+            device.Brand,
             device.DownloadMethod,
             device.LastDownloadAt,
             device.TotalDownloadCount,
@@ -86,7 +90,9 @@ public class DeviceQueries : IDeviceQueries
             device.HardwareInfo.UserCapacity,
             device.HardwareInfo.FingerprintCapacity,
             device.HardwareInfo.FaceCapacity,
-            device.HardwareInfo.AttendanceRecordCapacity
+            device.HardwareInfo.AttendanceRecordCapacity,
+            device.Username,
+            device.Password
         );
     }
 }

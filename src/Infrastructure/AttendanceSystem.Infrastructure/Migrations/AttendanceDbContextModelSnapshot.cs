@@ -187,6 +187,9 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<int>("Brand")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -216,6 +219,9 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<string>("Password")
+                        .HasColumnType("text");
+
                     b.Property<int>("Port")
                         .HasColumnType("integer");
 
@@ -228,6 +234,9 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.Property<int>("TotalDownloadCount")
                         .HasColumnType("integer");
+
+                    b.Property<string>("Username")
+                        .HasColumnType("text");
 
                     b.HasKey("Id");
 

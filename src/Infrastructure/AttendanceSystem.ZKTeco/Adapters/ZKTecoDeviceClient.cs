@@ -4,9 +4,9 @@ using AttendanceSystem.Application.DTOs;
 
 namespace AttendanceSystem.ZKTeco.Adapters;
 
-// Esta es la implementación del puerto IZKTecoDeviceClient
+// Esta es la implementación del puerto IDeviceClient
 // Vive en Infrastructure pero se compila como x86
-public class ZKTecoDeviceClient : IZKTecoDeviceClient
+public class ZKTecoDeviceClient : IDeviceClient
 {
     private readonly zkemkeeper.CZKEMClass _device;
     private readonly ILogger<ZKTecoDeviceClient> _logger;
@@ -460,21 +460,36 @@ public class ZKTecoDeviceClient : IZKTecoDeviceClient
             _device.EnableDevice(1, false); // Deshabilitar para evitar conflictos
             try
             {
-                // 1. Información Básica y Tarjeta
-                if (!string.IsNullOrWhiteSpace(user.CardNumber))
-                {
-                    _device.SetStrCardNumber(user.CardNumber);
-                }
-                
+                // 1. Información Básica
+                // Nos aseguramos de enviar el nombre. Algunos dispositivos requieren SetUserInfo (Legacy) 
+                // además de SSR_SetUserInfo para mostrar el nombre en pantalla.
                 bool result = _device.SSR_SetUserInfo(1, user.UserId, user.Name, user.Password, user.Privilege, user.Enabled);
                 
+                // Fallback de nombre para dispositivos que no soportan SSR para el nombre
+                if (result && !string.IsNullOrEmpty(user.Name))
+                {
+                    try 
+                    {
+                        // Intentar SetUserInfo (legacy) si el ID es numérico
+                        if (int.TryParse(user.UserId, out int dwEnrollNumber))
+                        {
+                            _device.SetUserInfo(1, dwEnrollNumber, user.Name, user.Password, user.Privilege, user.Enabled);
+                        }
+                    }
+                    catch { /* Ignorar si falla el fallback legacy */ }
+                }
+
                 if (!result)
                 {
                     int errorCode = 0;
                     _device.GetLastError(ref errorCode);
-                    _logger.LogWarning("Fallo al enviar usuario {UserId} (Info Básica). Código error: {ErrorCode}", user.UserId, errorCode);
+                    _logger.LogWarning("Fallo al enviar usuario {UserId} (SSR_SetUserInfo). Código error: {ErrorCode}", user.UserId, errorCode);
                     return false;
                 }
+
+                // 2. Tarjeta
+                // Siempre intentamos enviar la tarjeta (aunque sea vacía para limpiar)
+                _device.SetStrCardNumber(user.CardNumber ?? "");
 
                 // 3. Huellas
                 if (user.Fingerprints != null && user.Fingerprints.Any())
@@ -485,36 +500,18 @@ public class ZKTecoDeviceClient : IZKTecoDeviceClient
                         if (!_device.SSR_SetUserTmpStr(1, user.UserId, fp.Index, fp.Template))
                         {
                             // Fallback 1: SetUserTmpExStr (Soporte VX10 explícito, flag 1 = Valid)
-                            // Nota: Algunos SDK/Dispositivos requieren esto para VX10 strings.
                             bool fallbackSuccess = false;
                             try 
                             { 
                                 fallbackSuccess = _device.SetUserTmpExStr(1, user.UserId, fp.Index, 1, fp.Template); 
                             } 
-                            catch { /* Método no existente en DLL antigua */ }
-
-                            if (!fallbackSuccess)
-                            {
-                                // Fallback 2: SetUserTmpStr (Legacy B&W)
-                                try 
-                                { 
-                                    if (int.TryParse(user.UserId, out int userIdInt))
-                                    {
-                                        fallbackSuccess = _device.SetUserTmpStr(1, userIdInt, fp.Index, fp.Template); 
-                                    }
-                                } 
-                                catch { }
-                            }
+                            catch { }
 
                             if (!fallbackSuccess)
                             {
                                 int fpErrorCode = 0;
                                 _device.GetLastError(ref fpErrorCode);
-                                _logger.LogWarning("Fallo al guardar huella {Index} para {UserId} tras múltiples intentos. Error: {ErrorCode}. Posible incompatibilidad de algoritmo o duplicado.", fp.Index, user.UserId, fpErrorCode);
-                            }
-                            else
-                            {
-                                _logger.LogInformation("Huella {Index} para {UserId} guardada usando método alternativo.", fp.Index, user.UserId);
+                                _logger.LogWarning("Fallo al guardar huella {Index} para {UserId}. Error: {ErrorCode}", fp.Index, user.UserId, fpErrorCode);
                             }
                         }
                     }
@@ -523,11 +520,20 @@ public class ZKTecoDeviceClient : IZKTecoDeviceClient
                 // 4. Rostro
                 if (!string.IsNullOrWhiteSpace(user.FaceTemplate))
                 {
-                    _device.SetUserFaceStr(1, user.UserId, 50, user.FaceTemplate, user.FaceTemplate.Length);
+                    // Intento 1: SetUserFaceStr (Estándar index 50)
+                    if (!_device.SetUserFaceStr(1, user.UserId, 50, user.FaceTemplate, user.FaceTemplate.Length))
+                    {
+                        // Fallback: SetUserFaceExStr (Para modelos nuevos como SpeedFace)
+                        try 
+                        {
+                             _device.SetUserFaceExStr(1, user.UserId, 50, user.FaceTemplate, user.FaceTemplate.Length);
+                        }
+                        catch { }
+                    }
                 }
 
                 _device.RefreshData(1); // Confirmar cambios
-                _logger.LogInformation("Usuario y biometría {UserId} enviado exitosamente.", user.UserId);
+                _logger.LogInformation("Usuario {UserId} ({Name}) y biometría enviados exitosamente.", user.UserId, user.Name);
                 return true;
             }
             catch (Exception ex)

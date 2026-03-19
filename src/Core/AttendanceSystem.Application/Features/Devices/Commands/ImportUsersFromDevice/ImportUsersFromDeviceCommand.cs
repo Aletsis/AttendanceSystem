@@ -12,20 +12,20 @@ public sealed record ImportUsersFromDeviceCommand(string DeviceId) : IRequest<Re
 
 public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFromDeviceCommand, Result<int>>
 {
-    private readonly IZKTecoDeviceClient _zkClient;
+    private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly IDeviceRepository _deviceRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ImportUsersFromDeviceCommandHandler> _logger;
 
     public ImportUsersFromDeviceCommandHandler(
-        IZKTecoDeviceClient zkClient,
+        IDeviceClientFactory deviceClientFactory,
         IDeviceRepository deviceRepository,
         IEmployeeRepository employeeRepository,
         IUnitOfWork unitOfWork,
         ILogger<ImportUsersFromDeviceCommandHandler> logger)
     {
-        _zkClient = zkClient;
+        _deviceClientFactory = deviceClientFactory;
         _deviceRepository = deviceRepository;
         _employeeRepository = employeeRepository;
         _unitOfWork = unitOfWork;
@@ -42,14 +42,17 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
                 return Result<int>.Failure($"Dispositivo {request.DeviceId} no encontrado.");
             }
 
-            if (!await _zkClient.ConnectAsync(device.IpAddress, device.Port, cancellationToken))
+            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+
+            var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
+            if (!connected)
             {
                 return Result<int>.Failure($"No se pudo conectar al dispositivo {device.Name} ({device.IpAddress}).");
             }
 
             try
             {
-                var deviceUsers = await _zkClient.GetAllUsersAsync(cancellationToken);
+                var deviceUsers = await deviceClient.GetAllUsersAsync(cancellationToken);
                 _logger.LogInformation("Se obtuvieron {Count} usuarios del dispositivo. Procesando...", deviceUsers.Count);
 
                 // Cargar todos los empleados en memoria para evitar consultas N+1 y verificar existencia eficientemente.
@@ -102,7 +105,7 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
             }
             finally
             {
-                 await _zkClient.DisconnectAsync(cancellationToken);
+                 await deviceClient.DisconnectAsync(cancellationToken);
             }
         }
         catch (Exception ex)

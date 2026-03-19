@@ -1,5 +1,8 @@
 namespace AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 
+using AttendanceSystem.Domain.Enumerations;
+
+
 public class Device : AggregateRoot<DeviceId>
 {
     public string Name { get; private set; } = null!;
@@ -13,8 +16,11 @@ public class Device : AggregateRoot<DeviceId>
     public int TotalDownloadCount { get; private set; }
     public DeviceStatus Status { get; private set; } = null!;
     public DeviceDownloadMethod DownloadMethod { get; private set; }
+    public DeviceBrand Brand { get; private set; }
     public DeviceHardwareInfo HardwareInfo { get; private set; } = null!;
     public string? DeviceType { get; private set; }
+    public string? Username { get; private set; }
+    public string? Password { get; private set; }
 
     public void SetDeviceType(string deviceType)
     {
@@ -29,10 +35,13 @@ public class Device : AggregateRoot<DeviceId>
         string name,
         string ipAddress,
         int port,
+        DeviceBrand brand = DeviceBrand.ZKTeco,
         string? location = null,
         bool shouldClearAfterDownload = false,
         DeviceDownloadMethod downloadMethod = DeviceDownloadMethod.Sdk,
-        string? serialNumber = null)
+        string? serialNumber = null,
+        string? username = null,
+        string? password = null)
     {
         // Validaciones
         if (string.IsNullOrWhiteSpace(name))
@@ -63,6 +72,7 @@ public class Device : AggregateRoot<DeviceId>
             Name = name,
             IpAddress = ipAddress,
             Port = port,
+            Brand = brand,
             Location = location,
             IsActive = true,
             ShouldClearAfterDownload = shouldClearAfterDownload,
@@ -70,7 +80,9 @@ public class Device : AggregateRoot<DeviceId>
             CreatedAt = DateTime.UtcNow,
             Status = DeviceStatus.Disconnected,
             TotalDownloadCount = 0,
-            HardwareInfo = DeviceHardwareInfo.Empty
+            HardwareInfo = DeviceHardwareInfo.Empty,
+            Username = username,
+            Password = password
         };
 
         if (!string.IsNullOrWhiteSpace(serialNumber))
@@ -90,10 +102,13 @@ public class Device : AggregateRoot<DeviceId>
         string name,
         string ipAddress,
         int port,
+        DeviceBrand brand,
         string? location,
         bool shouldClearAfterDownload,
         DeviceDownloadMethod downloadMethod,
-        string? serialNumber = null)
+        string? serialNumber = null,
+        string? username = null,
+        string? password = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del dispositivo es requerido");
@@ -107,9 +122,12 @@ public class Device : AggregateRoot<DeviceId>
         Name = name;
         IpAddress = ipAddress;
         Port = port;
+        Brand = brand;
         Location = location;
         ShouldClearAfterDownload = shouldClearAfterDownload;
         DownloadMethod = downloadMethod;
+        Username = username;
+        Password = password;
 
         if (!string.IsNullOrWhiteSpace(serialNumber))
         {

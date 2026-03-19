@@ -48,7 +48,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
             IsAutoDownloadEnabled = false,
             AutoDownloadTime = null,
             AutoDownloadOnlyToday = false,
-            AdmsPort = 16373, // Puerto dedicado para ADMS
+            AdmsPort = 18373, // Puerto dedicado para ADMS
             BackupDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Backups"),
             BackupTimeoutMinutes = 10, // Timeout por defecto: 10 minutos
             WorkPeriodMode = WorkPeriodMode.Weekly,

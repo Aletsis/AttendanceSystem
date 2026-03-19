@@ -9,7 +9,7 @@ namespace AttendanceSystem.Infrastructure.Adapters;
 /// <summary>
 /// Implementación real del cliente ZKTeco usando gRPC para comunicarse con el servicio Windows.
 /// </summary>
-public class GrpcZKTecoDeviceClient : IZKTecoDeviceClient
+public class GrpcZKTecoDeviceClient : IDeviceClient
 {
     private readonly ZKTecoService.ZKTecoServiceClient _client;
     private readonly ILogger<GrpcZKTecoDeviceClient> _logger;
@@ -22,10 +22,7 @@ public class GrpcZKTecoDeviceClient : IZKTecoDeviceClient
         _logger = logger;
     }
 
-    public async Task<bool> ConnectAsync(
-        string ipAddress, 
-        int port, 
-        CancellationToken cancellationToken = default)
+    public async Task<bool> ConnectAsync(string ipAddress, int port, string? username = null, string? password = null, CancellationToken cancellationToken = default)
     {
         try
         {

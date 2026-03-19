@@ -62,6 +62,12 @@
                                 }
                             </MudSelect>
                         </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="CardNumber" Label="Número de Tarjeta" HelperText="Deje vacío si no aplica" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudTextField @bind-Value="DevicePassword" Label="Contraseña PIN" HelperText="Máximo 8 dígitos" InputType="InputType.Password" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Lock" />
+                        </MudItem>
                     </MudGrid>
                 </MudTabPanel>
                 <MudTabPanel Text="Puesto">
@@ -193,6 +199,8 @@
     [Parameter] public OvertimeCapEnum OvertimeCapType { get; set; }
     [Parameter] public double? OvertimeCapMinutes { get; set; }
     [Parameter] public bool CalculateOvertimeBeforeEntry { get; set; }
+    [Parameter] public string? CardNumber { get; set; }
+    [Parameter] public string? DevicePassword { get; set; }
 
     private DateTime? _hireDate;
     private bool _loading = true;
@@ -367,7 +375,9 @@
                 OvertimeCalculationMethod,
                 OvertimeCapType,
                 OvertimeCapMinutes,
-                CalculateOvertimeBeforeEntry)));
+                CalculateOvertimeBeforeEntry,
+                CardNumber,
+                DevicePassword)));
         }
         else
         {
@@ -389,7 +399,9 @@
                 OvertimeCalculationMethod,
                 OvertimeCapType,
                 OvertimeCapMinutes,
-                CalculateOvertimeBeforeEntry)));
+                CalculateOvertimeBeforeEntry,
+                CardNumber,
+                DevicePassword)));
         }
     }
 }

@@ -28,10 +28,24 @@ public sealed class GetActiveDevicesQueryHandler : IRequestHandler<GetActiveDevi
             d.Location, 
             d.IsActive, 
             d.Status.Name,
+            d.Brand,
             d.DownloadMethod,
             d.LastDownloadAt, 
             d.TotalDownloadCount,
-            d.ShouldClearAfterDownload
+            d.ShouldClearAfterDownload,
+            d.HardwareInfo.SerialNumber,
+            d.HardwareInfo.FirmwareVersion,
+            d.HardwareInfo.Platform,
+            d.HardwareInfo.UserCount,
+            d.HardwareInfo.FingerprintCount,
+            d.HardwareInfo.FaceCount,
+            d.HardwareInfo.AttendanceRecordCount,
+            d.HardwareInfo.UserCapacity,
+            d.HardwareInfo.FingerprintCapacity,
+            d.HardwareInfo.FaceCapacity,
+            d.HardwareInfo.AttendanceRecordCapacity,
+            d.Username,
+            d.Password
         ));
 
         return Result<IEnumerable<DeviceDto>>.Success(dtos);

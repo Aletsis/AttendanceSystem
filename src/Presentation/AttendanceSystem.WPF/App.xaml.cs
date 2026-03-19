@@ -1,4 +1,4 @@
-﻿using System.Windows;
+using System.Windows;
 using AttendanceSystem.WPF.Views;
 using AttendanceSystem.WPF.Services;
 using Prism.Ioc;

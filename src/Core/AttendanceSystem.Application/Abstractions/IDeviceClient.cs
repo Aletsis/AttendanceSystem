@@ -2,13 +2,12 @@ namespace AttendanceSystem.Application.Abstractions;
 
 using AttendanceSystem.Application.DTOs;
 
-// Puerto: La aplicación define QUÉ necesita, no CÓMO se implementa
-public interface IZKTecoDeviceClient
+/// <summary>
+/// Puerto: La aplicación define QUÉ necesita, no CÓMO se implementa.
+/// </summary>
+public interface IDeviceClient
 {
-    Task<bool> ConnectAsync(
-        string ipAddress, 
-        int port, 
-        CancellationToken cancellationToken = default);
+    Task<bool> ConnectAsync(string ipAddress, int port, string? username = null, string? password = null, CancellationToken cancellationToken = default);
     
     Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(
         string deviceId,
@@ -46,4 +45,3 @@ public interface IZKTecoDeviceClient
         DeviceUserDto user,
         CancellationToken cancellationToken = default);
 }
-

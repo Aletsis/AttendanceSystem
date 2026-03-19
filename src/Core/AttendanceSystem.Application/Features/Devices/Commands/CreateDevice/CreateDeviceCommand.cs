@@ -1,5 +1,7 @@
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Domain.Enumerations;
+
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Repositories;
 using MediatR;
@@ -12,26 +14,29 @@ public sealed record CreateDeviceCommand(
     string IpAddress,
     int Port,
     string? Location,
+    DeviceBrand Brand,
     bool ShouldClearAfterDownload,
     DeviceDownloadMethod DownloadMethod,
-    string? SerialNumber = null) : IRequest<Result<Guid>>;
+    string? SerialNumber = null,
+    string? Username = null,
+    string? Password = null) : IRequest<Result<Guid>>;
 
 public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCommand, Result<Guid>>
 {
     private readonly IDeviceRepository _deviceRepository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IZKTecoDeviceClient _deviceClient;
+    private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly ILogger<CreateDeviceCommandHandler> _logger;
 
     public CreateDeviceCommandHandler(
         IDeviceRepository deviceRepository, 
         IUnitOfWork unitOfWork,
-        IZKTecoDeviceClient deviceClient,
+        IDeviceClientFactory deviceClientFactory,
         ILogger<CreateDeviceCommandHandler> logger)
     {
         _deviceRepository = deviceRepository;
         _unitOfWork = unitOfWork;
-        _deviceClient = deviceClient;
+        _deviceClientFactory = deviceClientFactory;
         _logger = logger;
     }
 
@@ -42,24 +47,28 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
             request.Name,
             request.IpAddress,
             request.Port,
+            request.Brand,
             request.Location,
             request.ShouldClearAfterDownload,
             request.DownloadMethod,
-            request.SerialNumber);
+            request.SerialNumber,
+            request.Username,
+            request.Password);
 
         // Intentar conectar y obtener información del dispositivo solo si es SDK
         if (request.DownloadMethod == DeviceDownloadMethod.Sdk)
         {
             try
             {
-                _logger.LogInformation("Conectando al dispositivo {IpAddress}:{Port} para obtener información...", 
-                    request.IpAddress, request.Port);
+                _logger.LogInformation("Conectando al dispositivo {Brand} {IpAddress}:{Port} para obtener información...", 
+                    request.Brand, request.IpAddress, request.Port);
 
-                var connected = await _deviceClient.ConnectAsync(request.IpAddress, request.Port, cancellationToken);
+                var deviceClient = _deviceClientFactory.GetClient(request.Brand);
+                var connected = await deviceClient.ConnectAsync(request.IpAddress, request.Port, request.Username, request.Password, cancellationToken);
                 
                 if (connected)
                 {
-                    var deviceInfo = await _deviceClient.GetDeviceInfoAsync(cancellationToken);
+                    var deviceInfo = await deviceClient.GetDeviceInfoAsync(cancellationToken);
                     
                     if (deviceInfo != null)
                     {
@@ -82,7 +91,7 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
                             deviceInfo.SerialNumber);
                     }
 
-                    await _deviceClient.DisconnectAsync(cancellationToken);
+                    await deviceClient.DisconnectAsync(cancellationToken);
                 }
                 else
                 {

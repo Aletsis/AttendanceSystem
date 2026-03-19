@@ -11,16 +11,16 @@ public record RefreshDeviceInfoCommand(Guid DeviceId) : IRequest<Result>;
 public class RefreshDeviceInfoCommandHandler : IRequestHandler<RefreshDeviceInfoCommand, Result>
 {
     private readonly IDeviceRepository _deviceRepository;
-    private readonly IZKTecoDeviceClient _deviceClient;
+    private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly IUnitOfWork _unitOfWork;
 
     public RefreshDeviceInfoCommandHandler(
         IDeviceRepository deviceRepository,
-        IZKTecoDeviceClient deviceClient,
+        IDeviceClientFactory deviceClientFactory,
         IUnitOfWork unitOfWork)
     {
         _deviceRepository = deviceRepository;
-        _deviceClient = deviceClient;
+        _deviceClientFactory = deviceClientFactory;
         _unitOfWork = unitOfWork;
     }
 
@@ -34,8 +34,11 @@ public class RefreshDeviceInfoCommandHandler : IRequestHandler<RefreshDeviceInfo
             return Result.Failure("Dispositivo no encontrado");
         }
 
+        // 0. Obtener cliente específico
+        var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+
         // 1. Conectar
-        var connected = await _deviceClient.ConnectAsync(device.IpAddress, device.Port, cancellationToken);
+        var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
         if (!connected)
         {
             return Result.Failure($"No se pudo conectar a {device.IpAddress}");
@@ -44,7 +47,7 @@ public class RefreshDeviceInfoCommandHandler : IRequestHandler<RefreshDeviceInfo
         try
         {
             // 2. Obtener Info
-            var info = await _deviceClient.GetDeviceInfoAsync(cancellationToken);
+            var info = await deviceClient.GetDeviceInfoAsync(cancellationToken);
             if (info is null)
             {
                 return Result.Failure("No se pudo obtener la información del dispositivo");
@@ -74,7 +77,7 @@ public class RefreshDeviceInfoCommandHandler : IRequestHandler<RefreshDeviceInfo
         finally
         {
             // 4. Desconectar
-            await _deviceClient.DisconnectAsync(cancellationToken);
+            await deviceClient.DisconnectAsync(cancellationToken);
         }
     }
 }

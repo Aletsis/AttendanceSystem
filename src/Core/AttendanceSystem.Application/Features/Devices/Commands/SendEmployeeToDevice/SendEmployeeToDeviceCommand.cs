@@ -11,18 +11,18 @@ public sealed record SendEmployeeToDeviceCommand(string EmployeeId, string Devic
 
 public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeToDeviceCommand, Result<bool>>
 {
-    private readonly IZKTecoDeviceClient _zkClient;
+    private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly IDeviceRepository _deviceRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly ILogger<SendEmployeeToDeviceCommandHandler> _logger;
 
     public SendEmployeeToDeviceCommandHandler(
-        IZKTecoDeviceClient zkClient,
+        IDeviceClientFactory deviceClientFactory,
         IDeviceRepository deviceRepository,
         IEmployeeRepository employeeRepository,
         ILogger<SendEmployeeToDeviceCommandHandler> logger)
     {
-        _zkClient = zkClient;
+        _deviceClientFactory = deviceClientFactory;
         _deviceRepository = deviceRepository;
         _employeeRepository = employeeRepository;
         _logger = logger;
@@ -39,7 +39,9 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
             var employee = await _employeeRepository.GetByIdAsync(employeeId, cancellationToken);
             if (employee == null) return Result<bool>.Failure($"Empleado {request.EmployeeId} no encontrado.");
 
-            if (!await _zkClient.ConnectAsync(device.IpAddress, device.Port, cancellationToken))
+            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+
+            var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
             {
                 return Result<bool>.Failure($"No se pudo conectar al dispositivo {device.Name} ({device.IpAddress}).");
             }
@@ -57,7 +59,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                     employee.FaceTemplate
                 );
 
-                var success = await _zkClient.SetUserAsync(userDto, cancellationToken);
+                var success = await deviceClient.SetUserAsync(userDto, cancellationToken);
                 
                 if (success)
                     return Result<bool>.Success(true);
@@ -66,7 +68,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
             }
             finally
             {
-                await _zkClient.DisconnectAsync(cancellationToken);
+                await deviceClient.DisconnectAsync(cancellationToken);
             }
         }
         catch (Exception ex)

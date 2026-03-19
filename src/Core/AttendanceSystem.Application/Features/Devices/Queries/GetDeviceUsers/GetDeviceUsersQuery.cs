@@ -10,14 +10,14 @@ public record GetDeviceUsersQuery(string DeviceId) : IRequest<Result<IReadOnlyLi
 
 public class GetDeviceUsersHandler : IRequestHandler<GetDeviceUsersQuery, Result<IReadOnlyList<DeviceUserDto>>>
 {
-    private readonly IZKTecoDeviceClient _deviceClient;
+    private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly IDeviceQueries _deviceQueries;
 
     public GetDeviceUsersHandler(
-        IZKTecoDeviceClient deviceClient,
+        IDeviceClientFactory deviceClientFactory,
         IDeviceQueries deviceQueries)
     {
-        _deviceClient = deviceClient;
+        _deviceClientFactory = deviceClientFactory;
         _deviceQueries = deviceQueries;
     }
 
@@ -31,7 +31,8 @@ public class GetDeviceUsersHandler : IRequestHandler<GetDeviceUsersQuery, Result
                 return Result<IReadOnlyList<DeviceUserDto>>.Failure($"Device.NotFound: Device {request.DeviceId} not found");
             }
 
-            var connected = await _deviceClient.ConnectAsync(device.IpAddress, device.Port, cancellationToken);
+            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+            var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
             if (!connected)
             {
                 return Result<IReadOnlyList<DeviceUserDto>>.Failure($"Device.ConnectionFailed: Could not connect to device at {device.IpAddress}");
@@ -39,12 +40,12 @@ public class GetDeviceUsersHandler : IRequestHandler<GetDeviceUsersQuery, Result
 
             try
             {
-                var users = await _deviceClient.GetAllUsersAsync(cancellationToken);
+                var users = await deviceClient.GetAllUsersAsync(cancellationToken);
                 return Result<IReadOnlyList<DeviceUserDto>>.Success(users);
             }
             finally
             {
-                await _deviceClient.DisconnectAsync(cancellationToken);
+                await deviceClient.DisconnectAsync(cancellationToken);
             }
         }
         catch (Exception ex)

@@ -9,12 +9,12 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
 {
     private readonly ILogger<ZKTecoGrpcService> _logger;
     // We instantiate the client directly or via DI if possible, but since ZKTecoDeviceClient lives in Infrastructure.ZKTeco...
-    // Let's assume DI is set up in Program.cs to inject IZKTecoDeviceClient implementation.
-    private readonly IZKTecoDeviceClient _zkClient;
+    // Let's assume DI is set up in Program.cs to inject IDeviceClient implementation.
+    private readonly IDeviceClient _zkClient;
 
     public ZKTecoGrpcService(
         ILogger<ZKTecoGrpcService> logger,
-        IZKTecoDeviceClient zkClient)
+        IDeviceClient zkClient)
     {
         _logger = logger;
         _zkClient = zkClient;

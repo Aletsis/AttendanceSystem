@@ -135,8 +135,12 @@ builder.Services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
     options.MaxSendMessageSize = 10 * 1024 * 1024; // 10 MB
 });
 
-// Adaptador gRPC que implementa IZKTecoDeviceClient (stub por ahora)
-builder.Services.AddScoped<IZKTecoDeviceClient, GrpcZKTecoDeviceClient>();
+// Clientes de dispositivos (Implementaciones)
+builder.Services.AddScoped<GrpcZKTecoDeviceClient>();
+builder.Services.AddHttpClient<HikvisionDeviceClient>();
+
+// Fábrica de clientes para resolver por marca
+builder.Services.AddScoped<IDeviceClientFactory, DeviceClientFactory>();
 
 // Servicios de infraestructura
 builder.Services.AddScoped<IEmailService, SendGridEmailService>();
@@ -310,7 +314,7 @@ using (var scope = app.Services.CreateScope())
     {
         // Obtener configuración del sistema
         var systemConfig = await configRepo.GetConfigurationAsync();
-        var admsPort = systemConfig?.AdmsPort ?? 16373;
+        var admsPort = systemConfig?.AdmsPort ?? 18373;
         
         // Obtener las URLs en las que está escuchando el servidor
         var addresses = app.Urls;

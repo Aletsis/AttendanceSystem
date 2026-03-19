@@ -12,6 +12,11 @@
             <MudNumericField @bind-Value="Port" Label="Puerto" Required="true" Min="1" Max="65535" />
             <MudTextField @bind-Value="Location" Label="Ubicación" />
             
+            <MudSelect T="DeviceBrand" Label="Marca" @bind-Value="Brand" Required="true" Class="mb-3">
+                <MudSelectItem Value="@DeviceBrand.ZKTeco">ZKTeco</MudSelectItem>
+                <MudSelectItem Value="@DeviceBrand.Hikvision">Hikvision</MudSelectItem>
+            </MudSelect>
+
             <MudTextField @bind-Value="SerialNumber" Label="Número de Serie (Requerido para ADMS)" 
                           HelperText="Para dispositivos ADMS (Push), ingrese el número de serie exacto."
                           Required="@(DownloadMethod == DeviceDownloadMethod.Adms)" 
@@ -23,6 +28,11 @@
             </MudSelect>
 
             <MudSwitch @bind-Value="ShouldClearAfterDownload" Label="Borrar registros después de descargar" Color="Color.Secondary" />
+
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Credenciales (Solo SDK / Hikvision)</MudText>
+            <MudTextField @bind-Value="Username" Label="Usuario" HelperText="Por defecto 'admin' para Hikvision" />
+            <MudTextField @bind-Value="Password" Label="Contraseña" InputType="InputType.Password" />
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -39,9 +49,12 @@
     [Parameter] public string IpAddress { get; set; } = string.Empty;
     [Parameter] public int Port { get; set; } = 4370;
     [Parameter] public string? Location { get; set; }
+    [Parameter] public DeviceBrand Brand { get; set; } = DeviceBrand.ZKTeco;
     [Parameter] public bool ShouldClearAfterDownload { get; set; }
     [Parameter] public DeviceDownloadMethod DownloadMethod { get; set; } = DeviceDownloadMethod.Sdk;
     [Parameter] public string? SerialNumber { get; set; }
+    [Parameter] public string? Username { get; set; }
+    [Parameter] public string? Password { get; set; }
 
     private bool success;
     private MudForm form = default!;
@@ -56,11 +69,11 @@
         {
             if (string.IsNullOrEmpty(DeviceId))
             {
-                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod, SerialNumber)));
+                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, SerialNumber, Username, Password)));
             }
             else
             {
-                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, ShouldClearAfterDownload, DownloadMethod, SerialNumber)));
+                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, SerialNumber, Username, Password)));
             }
         }
     }

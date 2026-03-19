@@ -25,7 +25,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IDeviceRepository _deviceRepository;
     private readonly IAttendanceRepository _attendanceRepository;
     private readonly IDownloadLogRepository _downloadLogRepository;
-    private readonly IZKTecoDeviceClient _deviceClient; // Puerto (Interfaz)
+    private readonly IDeviceClientFactory _deviceClientFactory; // Fábrica para resolver por marca
     private readonly IUnitOfWork _unitOfWork;
     private readonly AttendanceDeduplicationService _deduplicationService;
     private readonly ILogger<DownloadFromDeviceCommandHandler> _logger;
@@ -37,7 +37,7 @@ public sealed class DownloadFromDeviceCommandHandler
         IDeviceRepository deviceRepository,
         IAttendanceRepository attendanceRepository,
         IDownloadLogRepository downloadLogRepository,
-        IZKTecoDeviceClient deviceClient,
+        IDeviceClientFactory deviceClientFactory,
         IUnitOfWork unitOfWork,
         AttendanceDeduplicationService deduplicationService,
         ILogger<DownloadFromDeviceCommandHandler> logger,
@@ -48,7 +48,7 @@ public sealed class DownloadFromDeviceCommandHandler
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
         _downloadLogRepository = downloadLogRepository;
-        _deviceClient = deviceClient;
+        _deviceClientFactory = deviceClientFactory;
         _unitOfWork = unitOfWork;
         _deduplicationService = deduplicationService;
         _logger = logger;
@@ -222,6 +222,9 @@ public sealed class DownloadFromDeviceCommandHandler
         var deviceIp = device.IpAddress;
         var devicePort = device.Port;
         var deviceIdValue = device.Id.Value;
+        var deviceBrand = device.Brand;
+        var username = device.Username;
+        var password = device.Password;
         var shouldClear = device.ShouldClearAfterDownload;
         DateTime? filterDate = command.FromDate ?? device.LastDownloadAt;
 
@@ -233,10 +236,15 @@ public sealed class DownloadFromDeviceCommandHandler
 
         try 
         {
-            // 3. Conectar al dispositivo físico (Operación Larga)
-            var connected = await _deviceClient.ConnectAsync(
+            // 3. Obtener el cliente específico para la marca del dispositivo
+            var deviceClient = _deviceClientFactory.GetClient(deviceBrand);
+
+            // 4. Conectar al dispositivo físico (Operación Larga)
+            var connected = await deviceClient.ConnectAsync(
                 deviceIp, 
                 devicePort, 
+                username,
+                password,
                 cancellationToken);
 
             if (!connected)
@@ -252,8 +260,8 @@ public sealed class DownloadFromDeviceCommandHandler
                 return Result<DownloadResultDto>.Failure("No se pudo conectar al dispositivo");
             }
 
-            // 4. Descargar registros
-            var rawRecords = await _deviceClient.GetAttendanceLogsAsync(
+            // 5. Descargar registros
+            var rawRecords = await deviceClient.GetAttendanceLogsAsync(
                 deviceIdValue, 
                 filterDate, 
                 command.ToDate,
@@ -329,10 +337,10 @@ public sealed class DownloadFromDeviceCommandHandler
             // 8. Opcional: Limpiar dispositivo físico
             if (shouldClear)
             {
-                await _deviceClient.ClearLogsAsync(deviceIdValue, cancellationToken);
+                await deviceClient.ClearLogsAsync(deviceIdValue, cancellationToken);
             }
 
-            await _deviceClient.DisconnectAsync(cancellationToken);
+            await deviceClient.DisconnectAsync(cancellationToken);
 
             // Trigger Process
             if (command.CalculateAttendance && minDate.HasValue && maxDate.HasValue)

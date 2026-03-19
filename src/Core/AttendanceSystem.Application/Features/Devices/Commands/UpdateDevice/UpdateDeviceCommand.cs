@@ -1,5 +1,5 @@
-using AttendanceSystem.Application.Common;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
+using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using MediatR;
 
@@ -11,9 +11,12 @@ public sealed record UpdateDeviceCommand(
     string IpAddress,
     int Port,
     string? Location,
+    DeviceBrand Brand,
     bool ShouldClearAfterDownload,
     DeviceDownloadMethod DownloadMethod,
-    string? SerialNumber = null) : IRequest<Result>;
+    string? SerialNumber = null,
+    string? Username = null,
+    string? Password = null) : IRequest<Result>;
 
 public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCommand, Result>
 {
@@ -48,10 +51,13 @@ public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCom
             request.Name,
             request.IpAddress,
             request.Port,
+            request.Brand,
             request.Location,
             request.ShouldClearAfterDownload,
             request.DownloadMethod,
-            request.SerialNumber);
+            request.SerialNumber,
+            request.Username,
+            request.Password);
 
         _logger.LogInformation("Dispositivo actualizado en memoria. SN actual en entidad: '{SerialNumber}'", 
             device.HardwareInfo.SerialNumber);

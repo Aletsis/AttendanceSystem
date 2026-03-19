@@ -34,7 +34,10 @@
     
     <MudDrawer @bind-Open="@_drawerOpen" Elevation="2">
         <MudDrawerHeader>
-            <MudText Typo="Typo.h6">Menú</MudText>
+            <div class="d-flex flex-column">
+                <MudText Typo="Typo.h6">Menú</MudText>
+                <MudText Typo="Typo.caption">Versión @typeof(Program).Assembly.GetName().Version?.ToString()</MudText>
+            </div>
         </MudDrawerHeader>
         <NavMenu />
     </MudDrawer>

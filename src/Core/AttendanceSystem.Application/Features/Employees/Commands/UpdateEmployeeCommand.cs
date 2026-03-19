@@ -34,7 +34,9 @@ public sealed record UpdateEmployeeCommand(
     OvertimeCalculationMethod OvertimeCalculationMethod,
     OvertimeCapType OvertimeCapType,
     double? OvertimeCapMinutes,
-    bool CalculateOvertimeBeforeEntry) : IRequest<Result<EmployeeDto>>;
+    bool CalculateOvertimeBeforeEntry,
+    string? CardNumber = null,
+    string? DevicePassword = null) : IRequest<Result<EmployeeDto>>;
 
 public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmployeeCommand, Result<EmployeeDto>>
 {
@@ -128,7 +130,9 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 request.OvertimeCalculationMethod,
                 request.OvertimeCapType,
                 request.OvertimeCapMinutes,
-                request.CalculateOvertimeBeforeEntry);
+                request.CalculateOvertimeBeforeEntry,
+                request.CardNumber,
+                request.DevicePassword);
 
             _employeeRepository.Update(employee);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -159,7 +163,9 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 OvertimeCalculationMethod = employee.OvertimeCalculationMethod,
                 OvertimeCapType = employee.OvertimeCapType,
                 OvertimeCapMinutes = employee.OvertimeCapMinutes,
-                CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry
+                CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry,
+                CardNumber = employee.CardNumber,
+                DevicePassword = employee.DevicePassword
             };
 
             _logger.LogInformation("Empleado actualizado: {EmployeeId} - {FullName}", employee.Id.Value, employee.GetFullName());

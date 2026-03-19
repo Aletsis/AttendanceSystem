@@ -57,7 +57,7 @@ public class Program
         builder.Services.AddGrpc();
         
         // ZKTeco SDK Service registration
-        builder.Services.AddSingleton<IZKTecoDeviceClient, ZKTecoDeviceClient>(); 
+        builder.Services.AddSingleton<IDeviceClient, ZKTecoDeviceClient>(); 
 
         // Configurar Kestrel explícitamente si es necesario, o usar appsettings
         builder.WebHost.ConfigureKestrel(options =>

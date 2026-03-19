@@ -9,14 +9,14 @@ public record DeleteDeviceUserCommand(string DeviceId, string UserId) : IRequest
 
 public class DeleteDeviceUserHandler : IRequestHandler<DeleteDeviceUserCommand, Result>
 {
-    private readonly IZKTecoDeviceClient _deviceClient;
+    private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly IDeviceQueries _deviceQueries;
 
     public DeleteDeviceUserHandler(
-        IZKTecoDeviceClient deviceClient,
+        IDeviceClientFactory deviceClientFactory,
         IDeviceQueries deviceQueries)
     {
-        _deviceClient = deviceClient;
+        _deviceClientFactory = deviceClientFactory;
         _deviceQueries = deviceQueries;
     }
 
@@ -30,7 +30,10 @@ public class DeleteDeviceUserHandler : IRequestHandler<DeleteDeviceUserCommand, 
                 return Result.Failure($"Device.NotFound: Device {request.DeviceId} not found");
             }
 
-            var connected = await _deviceClient.ConnectAsync(device.IpAddress, device.Port, cancellationToken);
+            // 0. Obtener cliente específico
+            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+
+            var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
             if (!connected)
             {
                 return Result.Failure($"Device.ConnectionFailed: Could not connect to device at {device.IpAddress}");
@@ -38,14 +41,14 @@ public class DeleteDeviceUserHandler : IRequestHandler<DeleteDeviceUserCommand, 
 
             try
             {
-                var success = await _deviceClient.DeleteUserAsync(request.UserId, cancellationToken);
+                var success = await deviceClient.DeleteUserAsync(request.UserId, cancellationToken);
                 return success 
                     ? Result.Success() 
                     : Result.Failure("Device.DeleteUserFailed: Device returned failure status");
             }
             finally
             {
-                await _deviceClient.DisconnectAsync(cancellationToken);
+                await deviceClient.DisconnectAsync(cancellationToken);
             }
         }
         catch (Exception ex)

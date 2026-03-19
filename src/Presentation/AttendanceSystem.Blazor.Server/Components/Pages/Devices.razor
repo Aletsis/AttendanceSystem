@@ -177,9 +177,12 @@
             { "IpAddress", device.IpAddress },
             { "Port", device.Port },
             { "Location", device.Location },
+            { "Brand", device.Brand },
             { "ShouldClearAfterDownload", device.ShouldClearAfterDownload },
             { "DownloadMethod", device.DownloadMethod },
-            { "SerialNumber", device.SerialNumber } // IMPORTANT: Pass SerialNumber
+            { "SerialNumber", device.SerialNumber },
+            { "Username", device.Username },
+            { "Password", device.Password }
         };
         
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };

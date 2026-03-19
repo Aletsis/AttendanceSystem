@@ -28,6 +28,7 @@ public sealed record DeviceDto(
     string? Location,
     bool IsActive,
     string Status,
+    DeviceBrand Brand,
     DeviceDownloadMethod DownloadMethod,
     DateTime? LastDownloadAt,
     int TotalDownloadCount,
@@ -42,7 +43,9 @@ public sealed record DeviceDto(
     int? UserCapacity = null,
     int? FingerprintCapacity = null,
     int? FaceCapacity = null,
-    int? AttendanceRecordCapacity = null);
+    int? AttendanceRecordCapacity = null,
+    string? Username = null,
+    string? Password = null);
 
 public sealed record CreateDeviceDto(
     string DeviceId,
@@ -50,8 +53,11 @@ public sealed record CreateDeviceDto(
     string IpAddress,
     int Port,
     string? Location,
+    DeviceBrand Brand,
     bool ShouldClearAfterDownload,
-    DeviceDownloadMethod DownloadMethod);
+    DeviceDownloadMethod DownloadMethod,
+    string? Username = null,
+    string? Password = null);
 
 public sealed record DeviceInfoDto(
     string SerialNumber,
@@ -72,8 +78,11 @@ public sealed record UpdateDeviceDto(
     string IpAddress,
     int Port,
     string? Location,
+    DeviceBrand Brand,
     bool ShouldClearAfterDownload,
-    DeviceDownloadMethod DownloadMethod);
+    DeviceDownloadMethod DownloadMethod,
+    string? Username = null,
+    string? Password = null);
 
 // DTOs de Descargas
 public sealed record DownloadResultDto(

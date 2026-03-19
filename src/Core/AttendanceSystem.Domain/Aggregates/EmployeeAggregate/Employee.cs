@@ -116,7 +116,9 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         OvertimeCalculationMethod overtimeCalculationMethod = OvertimeCalculationMethod.NoRounding,
         OvertimeCapType overtimeCapType = OvertimeCapType.None,
         double? overtimeCapMinutes = null,
-        bool calculateOvertimeBeforeEntry = false)
+        bool calculateOvertimeBeforeEntry = false,
+        string? cardNumber = null,
+        string? devicePassword = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -140,6 +142,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         OvertimeCapType = overtimeCapType;
         OvertimeCapMinutes = overtimeCapMinutes;
         CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry;
+        CardNumber = cardNumber;
+        DevicePassword = devicePassword;
     }
 
     public void Deactivate()
