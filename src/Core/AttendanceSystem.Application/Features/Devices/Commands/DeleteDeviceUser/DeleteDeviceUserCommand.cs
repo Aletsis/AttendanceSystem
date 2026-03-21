@@ -31,7 +31,7 @@ public class DeleteDeviceUserHandler : IRequestHandler<DeleteDeviceUserCommand, 
             }
 
             // 0. Obtener cliente específico
-            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+            var deviceClient = _deviceClientFactory.GetClient(device);
 
             var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
             if (!connected)

@@ -138,6 +138,7 @@ builder.Services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
 // Clientes de dispositivos (Implementaciones)
 builder.Services.AddScoped<GrpcZKTecoDeviceClient>();
 builder.Services.AddHttpClient<HikvisionDeviceClient>();
+builder.Services.AddScoped<AdmsDeviceClient>();
 
 // Fábrica de clientes para resolver por marca
 builder.Services.AddScoped<IDeviceClientFactory, DeviceClientFactory>();

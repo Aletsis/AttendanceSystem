@@ -30,7 +30,7 @@ public class DeleteDeviceUserFingerprintsHandler : IRequestHandler<DeleteDeviceU
                 return Result.Failure($"Device.NotFound: Device {request.DeviceId} not found");
             }
 
-            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+            var deviceClient = _deviceClientFactory.GetClient(device);
             var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
             if (!connected)
             {

@@ -33,6 +33,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     private readonly List<EmployeeFingerprint> _fingerprints = new();
     public IReadOnlyCollection<EmployeeFingerprint> Fingerprints => _fingerprints.AsReadOnly();
     public string? FaceTemplate { get; private set; }
+    public string? Photo { get; private set; }
 
     private Employee() { } // Para EF Core
 
@@ -56,7 +57,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         double? overtimeCapMinutes = null,
         bool calculateOvertimeBeforeEntry = false,
         string? cardNumber = null,
-        string? devicePassword = null)
+        string? devicePassword = null,
+        string? photo = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -84,18 +86,35 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             OvertimeCapMinutes = overtimeCapMinutes,
             CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
             CardNumber = cardNumber,
-            DevicePassword = devicePassword
+            DevicePassword = devicePassword,
+            Photo = photo
         };
     }
 
-    public void UpdateBiometrics(string? cardNumber, string? devicePassword, string? faceTemplate, List<EmployeeFingerprint> fingerprints)
+    public void UpdateBiometrics(
+        string? cardNumber = null, 
+        string? devicePassword = null, 
+        string? faceTemplate = null, 
+        List<EmployeeFingerprint>? fingerprints = null, 
+        string? photo = null)
     {
-        CardNumber = cardNumber;
-        DevicePassword = devicePassword;
-        FaceTemplate = faceTemplate;
+        if (cardNumber != null) CardNumber = cardNumber;
+        if (devicePassword != null) DevicePassword = devicePassword;
+        if (faceTemplate != null) FaceTemplate = faceTemplate;
+        if (photo != null) Photo = photo;
         
-        _fingerprints.Clear();
-        _fingerprints.AddRange(fingerprints);
+        if (fingerprints != null)
+        {
+            foreach (var fp in fingerprints)
+            {
+                var existing = _fingerprints.FirstOrDefault(f => f.FingerIndex == fp.FingerIndex);
+                if (existing != null)
+                {
+                    _fingerprints.Remove(existing);
+                }
+                _fingerprints.Add(fp);
+            }
+        }
     }
 
     public void Update(
@@ -118,7 +137,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         double? overtimeCapMinutes = null,
         bool calculateOvertimeBeforeEntry = false,
         string? cardNumber = null,
-        string? devicePassword = null)
+        string? devicePassword = null,
+        string? photo = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -144,6 +164,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry;
         CardNumber = cardNumber;
         DevicePassword = devicePassword;
+        Photo = photo ?? Photo;
     }
 
     public void Deactivate()

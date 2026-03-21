@@ -35,7 +35,8 @@ public sealed record CreateEmployeeCommand(
     double? OvertimeCapMinutes,
     bool CalculateOvertimeBeforeEntry,
     string? CardNumber = null,
-    string? DevicePassword = null) : IRequest<Result<EmployeeDto>>;
+    string? DevicePassword = null,
+    string? Photo = null) : IRequest<Result<EmployeeDto>>;
 
 public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmployeeCommand, Result<EmployeeDto>>
 {
@@ -131,7 +132,8 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 request.OvertimeCapMinutes,
                 request.CalculateOvertimeBeforeEntry,
                 request.CardNumber,
-                request.DevicePassword);
+                request.DevicePassword,
+                request.Photo);
 
             _employeeRepository.Add(employee);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -164,7 +166,8 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 OvertimeCapMinutes = employee.OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry,
                 CardNumber = employee.CardNumber,
-                DevicePassword = employee.DevicePassword
+                DevicePassword = employee.DevicePassword,
+                Photo = employee.Photo
             };
 
             _logger.LogInformation("Empleado creado: {EmployeeId} - {FullName}", employee.Id.Value, employee.GetFullName());

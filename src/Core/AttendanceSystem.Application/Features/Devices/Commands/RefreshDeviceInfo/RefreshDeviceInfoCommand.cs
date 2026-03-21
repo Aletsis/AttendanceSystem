@@ -35,7 +35,7 @@ public class RefreshDeviceInfoCommandHandler : IRequestHandler<RefreshDeviceInfo
         }
 
         // 0. Obtener cliente específico
-        var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+        var deviceClient = _deviceClientFactory.GetClient(device);
 
         // 1. Conectar
         var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);

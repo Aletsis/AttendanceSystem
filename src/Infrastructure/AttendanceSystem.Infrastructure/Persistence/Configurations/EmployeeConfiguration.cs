@@ -116,6 +116,10 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .IsRequired(false)
             .HasMaxLength(200000); // Templates de rostro son grandes (decenas de KB)
 
+        builder.Property(e => e.Photo)
+            .IsRequired(false)
+            .HasMaxLength(1000000); // Fotografías en Base64 pueden ser pesadas
+
         // Configuración de huellas
         builder.OwnsMany(e => e.Fingerprints, fb =>
         {

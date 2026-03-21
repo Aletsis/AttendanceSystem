@@ -39,9 +39,10 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
             var employee = await _employeeRepository.GetByIdAsync(employeeId, cancellationToken);
             if (employee == null) return Result<bool>.Failure($"Empleado {request.EmployeeId} no encontrado.");
 
-            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+            var deviceClient = _deviceClientFactory.GetClient(device);
 
             var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
+            if (!connected)
             {
                 return Result<bool>.Failure($"No se pudo conectar al dispositivo {device.Name} ({device.IpAddress}).");
             }
@@ -56,7 +57,8 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                     employee.Status == Domain.Enumerations.EmployeeStatus.Alta,
                     employee.CardNumber,
                     employee.Fingerprints?.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.Template)).ToList(),
-                    employee.FaceTemplate
+                    employee.FaceTemplate,
+                    employee.Photo
                 );
 
                 var success = await deviceClient.SetUserAsync(userDto, cancellationToken);

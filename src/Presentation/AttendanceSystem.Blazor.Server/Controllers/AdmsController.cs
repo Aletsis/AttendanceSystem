@@ -1,6 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
 using MediatR;
-using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance; 
+using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
+using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
+using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Enumerations;
 using Microsoft.Extensions.Logging;
 using AttendanceSystem.Domain.Repositories;
@@ -20,6 +22,7 @@ public class AdmsController : ControllerBase
     private readonly IDownloadLogRepository _downloadLogRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAdmsCommandService _admsCommandService;
+    private readonly IEmployeeRepository _employeeRepository;
 
     public AdmsController(
         ILogger<AdmsController> logger, 
@@ -27,6 +30,7 @@ public class AdmsController : ControllerBase
         IDeviceRepository deviceRepository,
         IUnitOfWork unitOfWork,
         IAdmsCommandService admsCommandService,
+        IEmployeeRepository employeeRepository,
         IDownloadLogRepository downloadLogRepository)
     {
         _logger = logger;
@@ -35,19 +39,19 @@ public class AdmsController : ControllerBase
         _unitOfWork = unitOfWork;
         _admsCommandService = admsCommandService;
         _downloadLogRepository = downloadLogRepository;
+        _employeeRepository = employeeRepository;
     }
 
     // 1. GET /iclock/cdata — solo dice si está registrado o no
     [HttpGet("cdata")]
     public IActionResult CheckData([FromQuery] string SN, [FromQuery] string? options = null)
     {
-        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
+        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
         _logger.LogInformation("🔧 GET cdata {SN}", SN);
 
-        // El manual dice: si el dispositivo NO está registrado, responder solo "OK"
-        // Si YA está registrado, responder con registry=ok + config
-        // Por simplicidad, siempre respondemos "OK" para forzar el registro
-        return Content("OK", "text/plain");
+        // Si el dispositivo ya está en nuestra BD, le decimos que el registro es "ok" 
+        // para que proceda a pedir la configuración completa vía POST /push
+        return Content("registry=ok\n", "text/plain");
     }
 
     // 2. POST /iclock/registry — responder SOLO el RegistryCode
@@ -75,7 +79,7 @@ public class AdmsController : ControllerBase
             await _unitOfWork.SaveChangesAsync();
         }
 
-        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
+        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
 
         // Manual página 32: respuesta normal es SOLO RegistryCode
         var registryCode = Guid.NewGuid().ToString("N")[..10].ToUpper();
@@ -90,7 +94,7 @@ public class AdmsController : ControllerBase
         var body = await reader.ReadToEndAsync();
         _logger.LogInformation("📥 POST push {SN}", SN);
 
-        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
+        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
 
         var device = await _deviceRepository.GetBySerialNumberAsync(SN);
         var isAccessMode = device?.DeviceType == "acc";
@@ -104,6 +108,7 @@ public class AdmsController : ControllerBase
 
         // TransTables diferente según el modo
         var transTable = isAccessMode ? "Transaction" : "User Transaction";
+        transTable += ",User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
 
         // Manual sección 7.5: esta es la respuesta correcta al /push
         var sessionId = Guid.NewGuid().ToString("N").ToUpper();
@@ -111,7 +116,7 @@ public class AdmsController : ControllerBase
                        $"ServerName=ADMS\n" +
                        $"PushVersion=3.1.2\n" +
                        $"ErrorDelay=60\n" +
-                       $"RequestDelay=2\n" +
+                       $"RequestDelay=5\n" +
                        $"TransTimes=00:00;14:00\n" +
                        $"TransInterval=1\n" +
                        $"TransTables={transTable}\n" +
@@ -120,7 +125,7 @@ public class AdmsController : ControllerBase
                        $"TimeoutSec=10\n" +
                        $"ATTLOGStamp={stamp}\n" +    // ← aquí va el stamp, no en registry
                        $"OPERLOGStamp=9999\n" +
-                       $"ATTPHOTOStamp=9999\n";
+                       $"ATTPHOTOStamp=0\n";
 
         _logger.LogInformation("📋 Push {SN} stamp={Stamp} ({StampReadable}) mode={Mode}",
             SN, stamp,
@@ -151,6 +156,16 @@ public class AdmsController : ControllerBase
             return Content($"OK: {lines.Length}", "text/plain");
         }
 
+        if (table?.Equals("USER", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("USERINFO", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("USERPIC", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("BIODATA", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            await ProcessDeviceData(lines, SN, table);
+            return Content("OK", "text/plain");
+        }
+
         // rtstate, options, tabledata, etc. — responder OK
         return Content("OK", "text/plain");
     }
@@ -159,7 +174,7 @@ public class AdmsController : ControllerBase
     [HttpGet("getrequest")]
     public IActionResult GetRequest([FromQuery] string SN)
     {
-        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
+        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
         _logger.LogInformation("� getrequest {SN}", SN);
 
         if (_admsCommandService.HasPendingCommands(SN))
@@ -167,7 +182,7 @@ public class AdmsController : ControllerBase
             var (command, logId) = _admsCommandService.GetNextCommand(SN);
             if (!string.IsNullOrEmpty(command))
             {
-                var cmdId = DateTime.UtcNow.Ticks.ToString();
+                var cmdId = new Random().Next(1000, 9999).ToString();
                 if (logId.HasValue)
                     _admsCommandService.RegisterPendingExecution(SN, cmdId, logId.Value);
 
@@ -202,7 +217,7 @@ public class AdmsController : ControllerBase
     [HttpPost("devicecmd")]
     public async Task<IActionResult> DeviceCmd([FromQuery] string? SN = null)
     {
-        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
+        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
 
         // El reloj puede mandar SN, ID, Return en query string O en el body
         string sn = SN ?? "";
@@ -278,6 +293,7 @@ public class AdmsController : ControllerBase
         if (device == null) return 0;
         int processed = 0;
         DateTime? lastCheckTime = null;
+        var uniqueCalculations = new HashSet<(string Pin, DateTime Date)>();
 
         foreach (var line in lines)
         {
@@ -339,6 +355,9 @@ public class AdmsController : ControllerBase
 
                     processed++;
                     
+                    // Collect for calculation
+                    uniqueCalculations.Add((pin, checkTime.Date));
+
                     // Rastrear el timestamp más reciente del batch
                     if (lastCheckTime == null || checkTime > lastCheckTime)
                         lastCheckTime = checkTime;
@@ -361,8 +380,95 @@ public class AdmsController : ControllerBase
             await _unitOfWork.SaveChangesAsync();
             _logger.LogInformation("✅ {Count} registros de {SN}, stamp actualizado a {Stamp}", 
                 processed, SN, lastCheckTime);
+
+            // Trigger attendance calculation for each affected employee and day
+            foreach (var (pin, date) in uniqueCalculations)
+            {
+                try
+                {
+                    await _mediator.Send(new ProcessDailyAttendanceCommand(date, date, EmployeeId: EmployeeId.From(pin)));
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error calculando asistencia para empleado {Pin} en fecha {Date}", pin, date);
+                }
+            }
         }
 
         return processed;
+    }
+
+    private async Task ProcessDeviceData(string[] lines, string SN, string table)
+    {
+        foreach (var line in lines)
+        {
+            try
+            {
+                var parts = line.Split('\t');
+                var data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (var part in parts)
+                {
+                    var kvp = part.Split('=', 2);
+                    if (kvp.Length == 2) data[kvp[0].Trim()] = kvp[1].Trim();
+                }
+
+                if (!data.TryGetValue("PIN", out var pin)) continue;
+
+                var employeeId = EmployeeId.From(pin);
+                var employee = await _employeeRepository.GetByIdAsync(employeeId);
+                if (employee == null)
+                {
+                    _logger.LogWarning("ADMS: Recibidos datos para PIN {Pin} pero el empleado no existe en BD. SN:{SN} Table:{Table}", pin, SN, table);
+                    continue;
+                }
+
+                if (table.Equals("USERPIC", StringComparison.OrdinalIgnoreCase))
+                {
+                    // protocol can be FileName=... Content=...
+                    if (data.TryGetValue("Content", out var base64))
+                    {
+                        _logger.LogInformation("📸 ADMS: Recibida foto de perfil para {Pin} ({SN})", pin, SN);
+                        employee.UpdateBiometrics(photo: base64);
+                    }
+                }
+                else if (table.Equals("BIODATA", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (data.TryGetValue("Type", out var typeStr) && int.TryParse(typeStr, out var type) && data.TryGetValue("Content", out var content))
+                    {
+                        if (type == 0) // Fingerprint
+                        {
+                            int index = data.TryGetValue("Index", out var idxStr) && int.TryParse(idxStr, out var idx) ? idx : 0;
+                            var fingerprints = new List<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeFingerprint>
+                            {
+                                new(index, content)
+                            };
+                            employee.UpdateBiometrics(fingerprints: fingerprints);
+                            _logger.LogInformation("☝️ ADMS: Recibida huella {Index} para {Pin} ({SN})", index, pin, SN);
+                        }
+                        else if (type == 9) // Face
+                        {
+                            employee.UpdateBiometrics(faceTemplate: content);
+                            _logger.LogInformation("👤 ADMS: Recibido rostro para {Pin} ({SN})", pin, SN);
+                        }
+                    }
+                }
+                else if (table.Equals("USER", StringComparison.OrdinalIgnoreCase) || 
+                         table.Equals("USERINFO", StringComparison.OrdinalIgnoreCase))
+                {
+                    string? card = data.TryGetValue("Card", out var c) ? c : null;
+                    string? pass = data.TryGetValue("Password", out var p) ? p : null;
+                    
+                    employee.UpdateBiometrics(cardNumber: card, devicePassword: pass);
+                    _logger.LogInformation("📝 ADMS: Recibida info de usuario para {Pin} ({SN})", pin, SN);
+                }
+
+                _employeeRepository.Update(employee);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error procesando línea de datos ADMS: {Line}", line);
+            }
+        }
+        await _unitOfWork.SaveChangesAsync();
     }
 }

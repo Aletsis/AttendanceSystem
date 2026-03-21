@@ -327,10 +327,14 @@ public class ZKTecoDeviceClient : IDeviceClient
                     }
                 }
 
-                string faceTemplate = "";
-                int faceLen = 0;
                 if (_device.GetUserFaceStr(1, enrollNumber, 50, ref faceTemplate, ref faceLen))
                 {
+                }
+
+                string photoData = "";
+                if (_device.GetUserPhoto(1, enrollNumber, out photoData))
+                {
+                    // photoData is Base64
                 }
                 
                 users.Add(new DeviceUserDto(
@@ -341,7 +345,8 @@ public class ZKTecoDeviceClient : IDeviceClient
                     enabled,
                     string.IsNullOrWhiteSpace(cardNumber) ? null : cardNumber,
                     fingerprints.Any() ? fingerprints : null,
-                    string.IsNullOrWhiteSpace(faceTemplate) ? null : faceTemplate));
+                    string.IsNullOrWhiteSpace(faceTemplate) ? null : faceTemplate,
+                    Photo: string.IsNullOrWhiteSpace(photoData) ? null : photoData));
             }
             return users;
         }, cancellationToken);
@@ -530,6 +535,12 @@ public class ZKTecoDeviceClient : IDeviceClient
                         }
                         catch { }
                     }
+                }
+
+                // 5. Fotografía
+                if (!string.IsNullOrWhiteSpace(user.Photo))
+                {
+                    _device.SetUserPhoto(1, user.UserId, user.Photo);
                 }
 
                 _device.RefreshData(1); // Confirmar cambios

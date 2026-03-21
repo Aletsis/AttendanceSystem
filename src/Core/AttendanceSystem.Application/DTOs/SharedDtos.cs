@@ -183,4 +183,5 @@ public sealed record DeviceUserDto(
     bool Enabled,
     string? CardNumber = null,
     List<DeviceFingerprintDto>? Fingerprints = null,
-    string? FaceTemplate = null);
+    string? FaceTemplate = null,
+    string? Photo = null);

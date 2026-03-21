@@ -200,7 +200,8 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
                 u.Enabled,
                 string.IsNullOrEmpty(u.CardNumber) ? null : u.CardNumber,
                 u.Fingerprints.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.TemplateData)).ToList(),
-                string.IsNullOrEmpty(u.FaceTemplate) ? null : u.FaceTemplate
+                string.IsNullOrEmpty(u.FaceTemplate) ? null : u.FaceTemplate,
+                string.IsNullOrEmpty(u.Photo) ? null : u.Photo
             )).ToList();
         }
         catch (Exception ex)
@@ -283,7 +284,8 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
                 Privilege = user.Privilege,
                 Enabled = user.Enabled,
                 CardNumber = user.CardNumber ?? "",
-                FaceTemplate = user.FaceTemplate ?? ""
+                FaceTemplate = user.FaceTemplate ?? "",
+                Photo = user.Photo ?? ""
             };
 
             if (user.Fingerprints != null)

@@ -107,6 +107,7 @@ message RegisterEmployeeRequest {
   string card_number = 7;
   repeated UserFingerprint fingerprints = 8;
   string face_template = 9;
+  string photo = 10;
 }
 
 message UserFingerprint {
@@ -177,6 +178,7 @@ message DeviceUser {
   string card_number = 6;
   repeated UserFingerprint fingerprints = 7;
   string face_template = 8;
+  string photo = 9;
 }
 
 message DeleteUserFingerprintsRequest {

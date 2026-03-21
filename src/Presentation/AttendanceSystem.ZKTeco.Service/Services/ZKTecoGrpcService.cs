@@ -226,7 +226,8 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
                     Privilege = u.Privilege,
                     Enabled = u.Enabled,
                     CardNumber = u.CardNumber ?? "",
-                    FaceTemplate = u.FaceTemplate ?? ""
+                    FaceTemplate = u.FaceTemplate ?? "",
+                    Photo = u.Photo ?? ""
                 };
                 if (u.Fingerprints != null)
                 {
@@ -322,7 +323,8 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
                 request.Enabled,
                 string.IsNullOrEmpty(request.CardNumber) ? null : request.CardNumber,
                 request.Fingerprints.Select(f => new Application.DTOs.DeviceFingerprintDto(f.FingerIndex, f.TemplateData)).ToList(),
-                string.IsNullOrEmpty(request.FaceTemplate) ? null : request.FaceTemplate);
+                string.IsNullOrEmpty(request.FaceTemplate) ? null : request.FaceTemplate,
+                Photo: string.IsNullOrEmpty(request.Photo) ? null : request.Photo);
 
             var success = await _zkClient.SetUserAsync(userDto, context.CancellationToken);
             

@@ -37,4 +37,5 @@ public sealed record EmployeeDto
     public string? DevicePassword { get; init; }
     public int FingerprintCount { get; init; }
     public bool HasFace { get; init; }
+    public string? Photo { get; init; }
 }

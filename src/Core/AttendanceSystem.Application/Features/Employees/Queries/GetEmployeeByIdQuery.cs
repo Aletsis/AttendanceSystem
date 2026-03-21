@@ -88,7 +88,8 @@ public sealed class GetEmployeeByIdQueryHandler : IRequestHandler<GetEmployeeByI
                 HasFace = !string.IsNullOrEmpty(employee.FaceTemplate),
                 OvertimeCapType = employee.OvertimeCapType,
                 OvertimeCapMinutes = employee.OvertimeCapMinutes,
-                CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry
+                CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry,
+                Photo = employee.Photo
             };
 
             return Result<EmployeeDto>.Success(dto);

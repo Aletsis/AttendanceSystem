@@ -14,6 +14,30 @@ public class DeviceClientFactory : IDeviceClientFactory
         _serviceProvider = serviceProvider;
     }
 
+    public IDeviceClient GetClient(Device device)
+    {
+        if (device.DownloadMethod == DeviceDownloadMethod.Adms)
+        {
+            var admsClient = _serviceProvider.GetRequiredService<AdmsDeviceClient>();
+            admsClient.SetDevice(device.HardwareInfo.SerialNumber);
+            return admsClient;
+        }
+
+        return GetClient(device.Brand);
+    }
+
+    public IDeviceClient GetClient(AttendanceSystem.Application.DTOs.DeviceDto device)
+    {
+        if (device.DownloadMethod == DeviceDownloadMethod.Adms)
+        {
+            var admsClient = _serviceProvider.GetRequiredService<AdmsDeviceClient>();
+            admsClient.SetDevice(device.SerialNumber ?? "");
+            return admsClient;
+        }
+
+        return GetClient(device.Brand);
+    }
+
     public IDeviceClient GetClient(DeviceBrand brand)
     {
         return brand switch

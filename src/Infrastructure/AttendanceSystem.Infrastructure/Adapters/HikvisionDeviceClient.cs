@@ -184,6 +184,27 @@ public class HikvisionDeviceClient : IDeviceClient
             <maxResults>1000</maxResults>
             <searchResultPosition>0</searchResultPosition>
         </UserInfoSearchCond>";
+        
+        var faceDict = new Dictionary<string, string>();
+        try 
+        {
+            var faceSearchXml = $@"<FaceInfoSearchCond>
+                <searchID>{Guid.NewGuid()}</searchID>
+                <maxResults>1000</maxResults>
+                <searchResultPosition>0</searchResultPosition>
+            </FaceInfoSearchCond>";
+            
+            var faceResponse = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/UserInfo/Face/Search", faceSearchXml, cancellationToken);
+            if (faceResponse.IsSuccessStatusCode)
+            {
+                var faceXml = await faceResponse.Content.ReadAsStringAsync(cancellationToken);
+                faceDict = ParseFaces(faceXml);
+            }
+        }
+        catch (Exception ex)
+        {
+             _logger.LogWarning(ex, "Error buscando rostros/fotos en Hikvision. Continuando sin fotos.");
+        }
 
         try
         {
@@ -191,7 +212,7 @@ public class HikvisionDeviceClient : IDeviceClient
             if (!response.IsSuccessStatusCode) return new List<DeviceUserDto>();
 
             var xml = await response.Content.ReadAsStringAsync(cancellationToken);
-            return ParseUsers(xml);
+            return ParseUsers(xml, faceDict);
         }
         catch (Exception ex)
         {
@@ -200,7 +221,7 @@ public class HikvisionDeviceClient : IDeviceClient
         }
     }
 
-    private List<DeviceUserDto> ParseUsers(string xml)
+    private List<DeviceUserDto> ParseUsers(string xml, Dictionary<string, string>? faceDict = null)
     {
         var users = new List<DeviceUserDto>();
         var pattern = "<UserInfo>";
@@ -215,14 +236,44 @@ public class HikvisionDeviceClient : IDeviceClient
             var pin = ExtractXmlValue(userXml, "employeeNo");
             var name = ExtractXmlValue(userXml, "name");
             var privilege = ExtractXmlValue(userXml, "userType") == "admin" ? 3 : 0;
+            
+            string? photo = null;
+            if (pin != null && faceDict?.TryGetValue(pin, out photo) == true)
+            {
+                // Hikvision photo is in faceDict
+            }
 
             if (!string.IsNullOrEmpty(pin))
             {
-                users.Add(new DeviceUserDto(pin, name ?? string.Empty, string.Empty, privilege, true));
+                users.Add(new DeviceUserDto(pin, name ?? string.Empty, string.Empty, privilege, true, Photo: photo));
             }
             pos = end + 11;
         }
         return users;
+    }
+
+    private Dictionary<string, string> ParseFaces(string xml)
+    {
+        var faceDict = new Dictionary<string, string>();
+        var pattern = "<FaceInfo>";
+        var pos = 0;
+
+        while ((pos = xml.IndexOf(pattern, pos)) != -1)
+        {
+            var end = xml.IndexOf("</FaceInfo>", pos);
+            if (end == -1) break;
+
+            var faceXml = xml[pos..(end + 11)];
+            var pin = ExtractXmlValue(faceXml, "employeeNo");
+            var faceData = ExtractXmlValue(faceXml, "faceData"); // This is the Base64 image data
+
+            if (!string.IsNullOrEmpty(pin) && !string.IsNullOrEmpty(faceData))
+            {
+                faceDict[pin] = faceData;
+            }
+            pos = end + 11;
+        }
+        return faceDict;
     }
 
     public async Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
@@ -308,7 +359,26 @@ public class HikvisionDeviceClient : IDeviceClient
         {
             // Record create/update
             var response = await SendRequestAsync(HttpMethod.Put, "/ISAPI/AccessControl/UserInfo/Record", userXml, cancellationToken);
-            return response.IsSuccessStatusCode;
+            var success = response.IsSuccessStatusCode;
+
+            if (success && !string.IsNullOrWhiteSpace(user.Photo))
+            {
+                var faceXml = $@"<FaceInfoRecord>
+                    <employeeNo>{user.UserId}</employeeNo>
+                    <faceData>{user.Photo}</faceData>
+                </FaceInfoRecord>";
+                
+                try 
+                {
+                    await SendRequestAsync(HttpMethod.Put, "/ISAPI/AccessControl/UserInfo/Face/Record", faceXml, cancellationToken);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error enviando foto de usuario {UserId} a Hikvision", user.UserId);
+                }
+            }
+
+            return success;
         }
         catch (Exception ex)
         {

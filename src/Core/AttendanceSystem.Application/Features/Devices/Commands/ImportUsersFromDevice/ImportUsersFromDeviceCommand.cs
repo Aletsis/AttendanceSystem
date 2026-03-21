@@ -42,7 +42,7 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
                 return Result<int>.Failure($"Dispositivo {request.DeviceId} no encontrado.");
             }
 
-            var deviceClient = _deviceClientFactory.GetClient(device.Brand);
+            var deviceClient = _deviceClientFactory.GetClient(device);
 
             var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
             if (!connected)
@@ -78,11 +78,12 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
                             .Select(fp => new EmployeeFingerprint(fp.Index, fp.Template))
                             .ToList() ?? new List<EmployeeFingerprint>();
 
-                        employee.UpdateBiometrics(
-                             dUser.CardNumber, 
-                             dUser.Password, 
-                             dUser.FaceTemplate, 
-                             fingerprints);
+                         employee.UpdateBiometrics(
+                              dUser.CardNumber, 
+                              dUser.Password, 
+                              dUser.FaceTemplate, 
+                              fingerprints,
+                              dUser.Photo);
                          
                          _employeeRepository.Update(employee);
                          processedCount++;

@@ -13,5 +13,10 @@ public interface IDeviceClientFactory
     /// <summary>
     /// Obtiene el cliente apropiado basado en la entidad Device.
     /// </summary>
-    IDeviceClient GetClient(Device device) => GetClient(device.Brand);
+    IDeviceClient GetClient(Device device);
+
+    /// <summary>
+    /// Obtiene el cliente apropiado basado en el DTO DeviceDto.
+    /// </summary>
+    IDeviceClient GetClient(AttendanceSystem.Application.DTOs.DeviceDto device);
 }

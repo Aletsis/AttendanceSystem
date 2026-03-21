@@ -25,7 +25,8 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
 
     public async Task<Result<IEnumerable<DownloadResultDto>>> Handle(DownloadFromAllDevicesCommand request, CancellationToken cancellationToken)
     {
-        var devices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
+        var allActiveDevices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
+        var devices = allActiveDevices.Where(d => d.DownloadMethod != AttendanceSystem.Domain.Enumerations.DeviceDownloadMethod.Adms).ToList();
         var results = new List<DownloadResultDto>();
         
         DateTime? globalMinDate = null;

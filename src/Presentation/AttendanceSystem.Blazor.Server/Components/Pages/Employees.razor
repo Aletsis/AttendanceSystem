@@ -38,6 +38,20 @@
             <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel" Class="ml-2">Exportar</MudButton>
         </ToolBarContent>
         <Columns>
+            <TemplateColumn Title="Foto" Sortable="false" Filterable="false">
+                <CellTemplate>
+                    @if (!string.IsNullOrEmpty(context.Item.Photo))
+                    {
+                        <MudAvatar Image="@($"data:image/jpeg;base64,{context.Item.Photo}")" Size="Size.Medium" />
+                    }
+                    else
+                    {
+                        <MudAvatar Color="Color.Default" Size="Size.Medium">
+                            <MudIcon Icon="@Icons.Material.Filled.Person" />
+                        </MudAvatar>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
             <PropertyColumn Property="x => x.Id" Title="ID" Filterable="false" />
             <PropertyColumn Property="x => x.FullName" Title="Nombre Completo" />
             <PropertyColumn Property="x => x.BranchName" Title="Sucursal" Sortable="false" Filterable="true" >
@@ -379,7 +393,8 @@
             { "OvertimeCapMinutes", employee.OvertimeCapMinutes },
             { "CalculateOvertimeBeforeEntry", employee.CalculateOvertimeBeforeEntry },
             { "CardNumber", employee.CardNumber },
-            { "DevicePassword", employee.DevicePassword }
+            { "DevicePassword", employee.DevicePassword },
+            { "Photo", employee.Photo }
         };
         
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };

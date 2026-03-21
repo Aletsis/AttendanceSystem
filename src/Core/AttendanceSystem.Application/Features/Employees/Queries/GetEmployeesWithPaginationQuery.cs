@@ -95,7 +95,8 @@ public sealed class GetEmployeesWithPaginationQueryHandler : IRequestHandler<Get
                 HasFace = !string.IsNullOrEmpty(e.FaceTemplate),
                 OvertimeCapType = e.OvertimeCapType,
                 OvertimeCapMinutes = e.OvertimeCapMinutes,
-                CalculateOvertimeBeforeEntry = e.CalculateOvertimeBeforeEntry
+                CalculateOvertimeBeforeEntry = e.CalculateOvertimeBeforeEntry,
+                Photo = e.Photo
             }).AsQueryable();
 
             // 1. Filtrado Global

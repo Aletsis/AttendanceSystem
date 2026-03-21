@@ -25,6 +25,23 @@
         }
         else
         {
+            <div class="d-flex flex-column align-center pa-4 mb-2">
+                @if (!string.IsNullOrEmpty(Photo))
+                {
+                    <MudAvatar Image="@($"data:image/jpeg;base64,{Photo}")" Style="height:100px; width:100px;" Elevation="4" />
+                }
+                else
+                {
+                    <MudAvatar Color="Color.Default" Style="height:100px; width:100px;" Elevation="4">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Large" />
+                    </MudAvatar>
+                }
+                @if (!string.IsNullOrEmpty(FirstName))
+                {
+                    <MudText Typo="Typo.h6" Class="mt-2">@FirstName @LastName</MudText>
+                }
+            </div>
+
             <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6">
                 <MudTabPanel Text="General">
                     <MudGrid>
@@ -201,6 +218,7 @@
     [Parameter] public bool CalculateOvertimeBeforeEntry { get; set; }
     [Parameter] public string? CardNumber { get; set; }
     [Parameter] public string? DevicePassword { get; set; }
+    [Parameter] public string? Photo { get; set; }
 
     private DateTime? _hireDate;
     private bool _loading = true;
@@ -377,7 +395,8 @@
                 OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry,
                 CardNumber,
-                DevicePassword)));
+                DevicePassword,
+                Photo)));
         }
         else
         {
@@ -401,7 +420,8 @@
                 OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry,
                 CardNumber,
-                DevicePassword)));
+                DevicePassword,
+                Photo)));
         }
     }
 }
