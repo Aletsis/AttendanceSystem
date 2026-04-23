@@ -122,7 +122,7 @@
                                 <MudTh>Detalles</MudTh>
                             </HeaderContent>
                             <RowTemplate>
-                                <MudTd DataLabel="Fecha/Hora">@context.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
+                                <MudTd DataLabel="Fecha/Hora">@context.StartedAt.ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
                                 <MudTd DataLabel="Dispositivo">
                                     @{
                                         var deviceName = GetDeviceName(context.DeviceId.Value);

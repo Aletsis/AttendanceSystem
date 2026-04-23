@@ -10,11 +10,11 @@
         <MudGrid>
             <MudItem xs="12" md="6">
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Fecha/Hora Inicio</MudText>
-                <MudText Typo="Typo.body1">@Log.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudText>
+                <MudText Typo="Typo.body1">@Log.StartedAt.ToString("dd/MM/yyyy HH:mm:ss")</MudText>
             </MudItem>
             <MudItem xs="12" md="6">
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Fecha/Hora Fin</MudText>
-                <MudText Typo="Typo.body1">@(Log.CompletedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "En curso")</MudText>
+                <MudText Typo="Typo.body1">@(Log.CompletedAt?.ToString("dd/MM/yyyy HH:mm:ss") ?? "En curso")</MudText>
             </MudItem>
             
             <MudItem xs="12" md="6">
@@ -57,11 +57,11 @@
 
             <MudItem xs="12" md="6">
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Rango Solicitado (Desde)</MudText>
-                <MudText Typo="Typo.body1">@(Log.FromDate?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "N/A")</MudText>
+                <MudText Typo="Typo.body1">@(Log.FromDate?.ToString("dd/MM/yyyy HH:mm") ?? "N/A")</MudText>
             </MudItem>
             <MudItem xs="12" md="6">
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Rango Solicitado (Hasta)</MudText>
-                <MudText Typo="Typo.body1">@(Log.ToDate?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "N/A")</MudText>
+                <MudText Typo="Typo.body1">@(Log.ToDate?.ToString("dd/MM/yyyy HH:mm") ?? "N/A")</MudText>
             </MudItem>
 
             <MudItem xs="12" md="6">
@@ -106,7 +106,7 @@
                                     <MudText Typo="Typo.body2">@context.EmployeeName</MudText>
                                     <MudText Typo="Typo.caption">@context.EmployeeId</MudText>
                                 </MudTd>
-                                <MudTd DataLabel="Hora">@context.CheckTime.ToLocalTime().ToString("HH:mm:ss")</MudTd>
+                                <MudTd DataLabel="Hora">@context.CheckTime.ToString("HH:mm:ss")</MudTd>
                                 <MudTd DataLabel="Método">@context.VerifyMethod</MudTd>
                                 <MudTd DataLabel="Tipo">@context.EntryType</MudTd>
                             </RowTemplate>
