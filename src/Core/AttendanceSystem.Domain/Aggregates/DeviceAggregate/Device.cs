@@ -161,9 +161,9 @@ public class Device : AggregateRoot<DeviceId>
         AddDomainEvent(new DeviceDeactivatedEvent(Id));
     }
 
-    public void RecordSuccessfulDownload(int recordCount)
+    public void RecordSuccessfulDownload(int recordCount, DateTime? downloadTimestamp = null)
     {
-        LastDownloadAt = DateTime.UtcNow;
+        LastDownloadAt = downloadTimestamp ?? DateTime.UtcNow;
         TotalDownloadCount++;
         Status = DeviceStatus.Online;
 

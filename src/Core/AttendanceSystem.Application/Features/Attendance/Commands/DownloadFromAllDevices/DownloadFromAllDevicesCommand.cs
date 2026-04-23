@@ -32,6 +32,8 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
         DateTime? globalMinDate = null;
         DateTime? globalMaxDate = null;
 
+        var allAffectedEmployeeIds = new HashSet<string>();
+
         foreach (var device in devices)
         {
             var command = new DownloadFromDeviceCommand(
@@ -59,6 +61,14 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
                     if (globalMaxDate == null || result.Value.MaxDate > globalMaxDate)
                         globalMaxDate = result.Value.MaxDate;
                 }
+
+                if (result.Value.AffectedEmployeeIds != null)
+                {
+                    foreach (var id in result.Value.AffectedEmployeeIds)
+                    {
+                        allAffectedEmployeeIds.Add(id);
+                    }
+                }
             }
             else
             {
@@ -71,9 +81,15 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
             }
         }
         
-        if (globalMinDate.HasValue && globalMaxDate.HasValue)
+        if (allAffectedEmployeeIds.Any() && globalMinDate.HasValue && globalMaxDate.HasValue)
         {
-            await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(globalMinDate.Value, globalMaxDate.Value), cancellationToken);
+            foreach (var empId in allAffectedEmployeeIds)
+            {
+                await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(
+                    globalMinDate.Value, 
+                    globalMaxDate.Value, 
+                    EmployeeId: EmployeeId.From(empId)), cancellationToken);
+            }
         }
 
         return Result<IEnumerable<DownloadResultDto>>.Success(results);

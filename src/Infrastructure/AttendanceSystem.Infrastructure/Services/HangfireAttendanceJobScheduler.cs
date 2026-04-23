@@ -56,16 +56,8 @@ public class AttendanceJobs
     [JobDisplayName("Download Logs from All Devices")]
     public async Task DownloadFromAllDevices()
     {
-        var configResult = await _mediator.Send(new GetSystemConfigurationQuery());
-        DateTime? fromDate = null;
-        DateTime? toDate = null;
-
-        if (configResult.IsSuccess && configResult.Value.AutoDownloadOnlyToday)
-        {
-             fromDate = DateTime.Today;
-             toDate = DateTime.Today.AddDays(1).AddTicks(-1);
-        }
-
-        await _mediator.Send(new DownloadFromAllDevicesCommand(fromDate, toDate));
+        // Se cambió para que siempre use la última descarga registrada en cada dispositivo
+        // y descargue hasta el momento actual.
+        await _mediator.Send(new DownloadFromAllDevicesCommand(null, null));
     }
 }

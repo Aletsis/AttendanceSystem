@@ -256,17 +256,20 @@ public class AdmsController : ControllerBase
                     {
                         var returnCode = int.TryParse(ret, out var r) ? r : -1;
                         
-                        if (returnCode >= 0)
+                        if (returnCode >= 0 || returnCode == -2)
                         {
-                             // Return >= 0 = éxito según el manual (Appendix 1)
+                             // Return >= 0 o -2 = éxito o sin datos nuevos en el rango
                              log.MarkAsSuccessful(0, 0); 
+                             
+                             // Actualizar LastDownloadAt del dispositivo usando el ToDate solicitado
+                             var device = await _deviceRepository.GetBySerialNumberAsync(sn);
+                             if (device != null && log.ToDate.HasValue)
+                             {
+                                 device.RecordSuccessfulDownload(0, log.ToDate);
+                                 await _deviceRepository.UpdateAsync(device);
+                             }
+
                              _logger.LogInformation("✅ ADMS: Descarga completada SN:{SerialNumber} CMD:{CommandId}", sn, id);
-                        }
-                        else if (returnCode == -2)
-                        {
-                             // Return -2 = No hay datos en el rango
-                             log.MarkAsSuccessful(0, 0);
-                             _logger.LogInformation("✅ ADMS: Descarga completada (sin datos) SN:{SerialNumber} CMD:{CommandId}", sn, id);
                         }
                         else
                         {

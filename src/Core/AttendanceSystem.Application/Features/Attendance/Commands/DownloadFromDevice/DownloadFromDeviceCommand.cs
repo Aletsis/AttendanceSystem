@@ -90,13 +90,15 @@ public sealed class DownloadFromDeviceCommandHandler
             ? DownloadType.Automatic 
             : DownloadType.Manual;
             
+        var requestToDate = command.ToDate ?? DateTime.UtcNow;
+
         var downloadLog = DownloadLog.Create(
             deviceId,
             downloadType,
             command.InitiatedByUserId,
             command.InitiatedByUserName,
             command.FromDate,
-            command.ToDate);
+            requestToDate);
 
         var downloadLogId = downloadLog.Id; // Guardar ID para luego
 
@@ -128,58 +130,45 @@ public sealed class DownloadFromDeviceCommandHandler
                  
                  bool isAccessMode = device.DeviceType == "acc";
 
-                 if (!command.FromDate.HasValue)
-                 {
-                     // Descarga general / Forzar todo
-                     if (isAccessMode)
-                     {
-                         // 1. Resetear el stamp en BD a null/0
-                         //    Así el PRÓXIMO /push que haga el reloj recibirá stamp=0 y enviará todo su historial
-                         await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
-                         await _unitOfWork.SaveChangesAsync(cancellationToken);
-                         
-                         // En lugar de forzar punteros en RAM, utilizamos el comando puro de extracción soportado
-                         // nativamente por los equipos ADMS. (Como se ve en el repo ZKTecoADMS de referencia).
-                         // Esto obliga al dispositivo a devolver el historial entero explícitamente y lo vuelca en cdata o POST.
-                         admsCmd = "DATA QUERY ATTLOG StartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
-                         
-                         _logger.LogInformation("ADMS: Descarga completa en modo acceso — stamp reseteado a 0 y comando DATA QUERY ATTLOG encolado para {SN}", sn);
-                     }
-                     else
-                     {
-                         admsCmd = "DATA UPDATE ATTLOG";
-                         _logger.LogInformation("ADMS: Solicitada descarga completa, enviando DATA UPDATE ATTLOG");
-                     }
-                 }
-                 else
-                 {
-                     if (isAccessMode)
-                     {
-                         // Filtro manual estricto soportado por SDK ZKTeco:
-                         var startTimeStr = command.FromDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
-                         var endTimeStr = (command.ToDate ?? DateTime.Now.AddDays(1)).ToString("yyyy-MM-ddTHH:mm:ss");
-                         
-                         admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
-                         
-                         _logger.LogInformation("ADMS: Solicitada descarga parcial (desde {Date}), enviando DATA QUERY ATTLOG", command.FromDate.Value);
-                     }
-                     else
-                     {
-                         // Modo asistencia: tabla ATTLOG, soporta filtro de fechas
-                         var fromStr = command.FromDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
-                         if (command.ToDate.HasValue)
-                         {
-                             var toStr = command.ToDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
-                             admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
-                             _logger.LogInformation("ADMS: Solicitada descarga parcial (desde {From} hasta {To}), enviando comando con rango", command.FromDate, command.ToDate);
-                         }
-                         else
-                         {
-                             admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>\"{fromStr}\"";
-                             _logger.LogInformation("ADMS: Solicitada descarga parcial (desde {Date}), enviando comando desde fecha", command.FromDate);
-                         }
-                     }
-                 }
+                  // Determinar el comando ADMS basado en el rango calculado
+                  if (filterDate.HasValue)
+                  {
+                      if (isAccessMode)
+                      {
+                          // Modo acceso: Siempre usamos DATA QUERY con rango para mayor precisi�n
+                          var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
+                          var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
+                          
+                          admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
+                          _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
+                      }
+                      else
+                      {
+                          // Modo asistencia: Usamos DATA UPDATE FROM con filtro de tiempo
+                          var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                          var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
+                          
+                          admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
+                          _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
+                      }
+                  }
+                  else
+                  {
+                      // Si NO hay fecha de filtro (primera descarga), entonces s� forzamos todo
+                      if (isAccessMode)
+                      {
+                          await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
+                          await _unitOfWork.SaveChangesAsync(cancellationToken);
+                          
+                          admsCmd = "DATA QUERY ATTLOG StartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
+                          _logger.LogInformation("ADMS: Primera descarga (completa) en modo acceso");
+                      }
+                      else
+                      {
+                          admsCmd = "DATA UPDATE ATTLOG";
+                          _logger.LogInformation("ADMS: Primera descarga (completa) en modo asistencia");
+                      }
+                  }
                  
                  if (!string.IsNullOrEmpty(admsCmd))
                  {
@@ -227,6 +216,7 @@ public sealed class DownloadFromDeviceCommandHandler
         var password = device.Password;
         var shouldClear = device.ShouldClearAfterDownload;
         DateTime? filterDate = command.FromDate ?? device.LastDownloadAt;
+        // requestToDate ya se definió arriba
 
         // LIMPIAR EL TRACKER COMPLETO
         // Esto asegura que no hay entidades "viejas" o "sucias" trackeadas.
@@ -264,7 +254,7 @@ public sealed class DownloadFromDeviceCommandHandler
             var rawRecords = await deviceClient.GetAttendanceLogsAsync(
                 deviceIdValue, 
                 filterDate, 
-                command.ToDate,
+                requestToDate,
                 cancellationToken);
 
             // 5. Convertir a entidades de dominio
@@ -281,6 +271,7 @@ public sealed class DownloadFromDeviceCommandHandler
             DateTime? minDate = null;
             DateTime? maxDate = null;
             int newRecordsCount = 0;
+            var affectedEmployeeIds = new List<string>();
 
             if (domainRecords.Any())
             {
@@ -297,6 +288,8 @@ public sealed class DownloadFromDeviceCommandHandler
                 
                 if (newRecords.Any())
                 {
+                    affectedEmployeeIds = newRecords.Select(r => r.EmployeeId.Value).Distinct().ToList();
+                    
                     // 6. Persistir solo nuevos
                     foreach (var nr in newRecords) nr.DownloadLogId = downloadLogId;
                     
@@ -314,12 +307,12 @@ public sealed class DownloadFromDeviceCommandHandler
                 // Aplicar logic
                 if (newRecordsCount > 0 || domainRecords.Count > 0)
                 {
-                     deviceToUpdate.RecordSuccessfulDownload(newRecordsCount);
+                     deviceToUpdate.RecordSuccessfulDownload(newRecordsCount, requestToDate);
                 }
                 else
                 {
                      // Mantener lógica de negocio
-                     deviceToUpdate.RecordSuccessfulDownload(0);
+                     deviceToUpdate.RecordSuccessfulDownload(0, requestToDate);
                 }
                 
                 await _deviceRepository.UpdateAsync(deviceToUpdate, cancellationToken);
@@ -344,10 +337,16 @@ public sealed class DownloadFromDeviceCommandHandler
 
             await deviceClient.DisconnectAsync(cancellationToken);
 
-            // Trigger Process
-            if (command.CalculateAttendance && minDate.HasValue && maxDate.HasValue)
+            // Trigger Process - solo para empleados afectados
+            if (command.CalculateAttendance && affectedEmployeeIds.Any() && minDate.HasValue && maxDate.HasValue)
             {
-                await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(minDate.Value, maxDate.Value), cancellationToken);
+                foreach (var empId in affectedEmployeeIds)
+                {
+                    await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(
+                        minDate.Value, 
+                        maxDate.Value, 
+                        EmployeeId: EmployeeId.From(empId)), cancellationToken);
+                }
             }
 
             return Result<DownloadResultDto>.Success(new DownloadResultDto(
@@ -355,7 +354,8 @@ public sealed class DownloadFromDeviceCommandHandler
                 domainRecords.Count,
                 DateTime.UtcNow,
                 minDate,
-                maxDate));
+                maxDate,
+                AffectedEmployeeIds: affectedEmployeeIds));
         }
         catch (Exception ex)
         {

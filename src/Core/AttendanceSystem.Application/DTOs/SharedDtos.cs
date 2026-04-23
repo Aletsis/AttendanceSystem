@@ -92,7 +92,8 @@ public sealed record DownloadResultDto(
     DateTime? MinDate = null,
     DateTime? MaxDate = null,
     bool Success = true,
-    string? ErrorMessage = null);
+    string? ErrorMessage = null,
+    List<string>? AffectedEmployeeIds = null);
 
 public sealed record BulkDownloadResultDto(
     int TotalDevices,
