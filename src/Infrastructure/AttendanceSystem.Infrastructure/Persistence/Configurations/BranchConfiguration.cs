@@ -18,15 +18,24 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
                 id => id.Value,
                 value => BranchId.From(value));
 
+        builder.Property(b => b.Code)
+            .IsRequired()
+            .HasMaxLength(3)
+            .IsFixedLength();
+
         builder.Property(b => b.Name)
             .IsRequired()
             .HasMaxLength(100);
 
-        builder.Property(b => b.Description)
+        builder.Property(b => b.Address)
             .IsRequired(false)
             .HasMaxLength(255);
 
-        builder.Property(b => b.Address)
+        builder.Property(b => b.IsExternal)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(b => b.ExternalHost)
             .IsRequired(false)
             .HasMaxLength(255);
     }

@@ -22,8 +22,10 @@ public class BranchQueries : IBranchQueries
 
         return branches.Select(b => new BranchDto(
                 b.Id.Value,
+                b.Code,
                 b.Name,
-                b.Description,
-                b.Address));
+                b.Address,
+                b.IsExternal,
+                b.ExternalHost));
     }
 }

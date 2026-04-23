@@ -9,9 +9,11 @@ namespace AttendanceSystem.Application.Features.Branches.Commands.UpdateBranch;
 
 public sealed record UpdateBranchCommand(
     Guid Id,
+    string Code,
     string Name,
-    string? Description,
-    string? Address) : IRequest<Result<Unit>>;
+    string? Address,
+    bool IsExternal,
+    string? ExternalHost) : IRequest<Result<Unit>>;
 
 public sealed class UpdateBranchCommandHandler : IRequestHandler<UpdateBranchCommand, Result<Unit>>
 {
@@ -33,9 +35,11 @@ public sealed class UpdateBranchCommandHandler : IRequestHandler<UpdateBranchCom
                 return Result<Unit>.Failure("Sucursal no encontrada");
 
             branch.Update(
+                request.Code,
                 request.Name,
-                request.Description,
-                request.Address);
+                request.Address,
+                request.IsExternal,
+                request.ExternalHost);
 
             _repository.Update(branch);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

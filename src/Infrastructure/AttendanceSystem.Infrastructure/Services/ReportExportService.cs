@@ -510,20 +510,24 @@ public class ReportExportService : IReportExportService
         var worksheet = workbook.Worksheets.Add("Sucursales");
 
         // Headers
-        worksheet.Cell(1, 1).Value = "Nombre";
-        worksheet.Cell(1, 2).Value = "Descripción";
+        worksheet.Cell(1, 1).Value = "Código";
+        worksheet.Cell(1, 2).Value = "Nombre";
         worksheet.Cell(1, 3).Value = "Dirección";
+        worksheet.Cell(1, 4).Value = "Externa";
+        worksheet.Cell(1, 5).Value = "Host Externo";
         
-        var header = worksheet.Range("A1:C1");
+        var header = worksheet.Range("A1:E1");
         header.Style.Font.Bold = true;
         header.Style.Fill.BackgroundColor = XLColor.LightGray;
 
         int row = 2;
         foreach (var item in branches)
         {
-            worksheet.Cell(row, 1).Value = item.Name;
-            worksheet.Cell(row, 2).Value = item.Description;
+            worksheet.Cell(row, 1).Value = item.Code;
+            worksheet.Cell(row, 2).Value = item.Name;
             worksheet.Cell(row, 3).Value = item.Address;
+            worksheet.Cell(row, 4).Value = item.IsExternal ? "Sí" : "No";
+            worksheet.Cell(row, 5).Value = item.ExternalHost;
             row++;
         }
         

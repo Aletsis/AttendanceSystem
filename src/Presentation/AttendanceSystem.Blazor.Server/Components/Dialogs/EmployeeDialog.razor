@@ -116,9 +116,13 @@
                     </MudGrid>
                 </MudTabPanel>
                 <MudTabPanel Text="Horario">
+                    @if (IsSelectedBranchExternal)
+                    {
+                        <MudAlert Severity="Severity.Info" Class="mb-4">Esta sucursal es externa. El horario será gestionado en la sucursal de origen.</MudAlert>
+                    }
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="ShiftTypeEnum?" @bind-Value="_selectedShiftType" Label="Turno" Clearable="true" Disabled="@(!_canEditAll)">
+                            <MudSelect T="ShiftTypeEnum?" @bind-Value="_selectedShiftType" Label="Turno" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var type in Enum.GetValues<ShiftTypeEnum>())
                                 {
                                     <MudSelectItem T="ShiftTypeEnum?" Value="@type">@type.ToString()</MudSelectItem>
@@ -126,7 +130,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll)">
+                            <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var shift in FilteredSchedules)
                                 {
                                     <MudSelectItem T="Guid?" Value="@shift.Id">@shift.Name</MudSelectItem>
@@ -134,7 +138,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true" Disabled="@(!_canEditAll)">
+                            <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var day in Enum.GetValues<WeekDayEnum>())
                                 {
                                     <MudSelectItem T="WeekDayEnum?" Value="@day">@day.ToString()</MudSelectItem>
@@ -225,6 +229,7 @@
     private bool _isAdmin;
     private bool _isEditing => !string.IsNullOrEmpty(EmployeeId);
     private bool _canEditAll => _isAdmin || !_isEditing;
+    private bool IsSelectedBranchExternal => _branches.FirstOrDefault(b => b.Id == BranchId)?.IsExternal ?? false;
     private ShiftTypeEnum? _selectedShiftType;
     private List<BranchDto> _branches = new();
     private List<DepartmentDto> _departments = new();

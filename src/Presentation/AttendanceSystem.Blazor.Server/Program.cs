@@ -148,6 +148,7 @@ builder.Services.AddScoped<IEmailService, SendGridEmailService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
+builder.Services.AddScoped<ILogTransferService, LogTransferService>();
 
 // Servicios de Query (CQRS - Lectura)
 builder.Services.AddScoped<IDeviceQueries, DeviceQueries>();

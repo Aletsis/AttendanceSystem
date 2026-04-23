@@ -13,7 +13,7 @@
         <MudText Typo="Typo.body1" Class="mb-4">
             Suba un archivo Excel (.xlsx) con los datos de las sucursales.
             <br />
-            <b>Columnas requeridas:</b> Nombre, Descripción, Dirección.
+            <b>Columnas requeridas:</b> Código, Nombre, Dirección.
         </MudText>
 
         <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
@@ -107,7 +107,7 @@
              if (result.ValidEntries.Count == 0) return;
         }
 
-        var commands = result.ValidEntries.Select(dto => new CreateBranchCommand(dto.Name, dto.Description, dto.Address)).ToList();
+        var commands = result.ValidEntries.Select(dto => new CreateBranchCommand(dto.Code, dto.Name, dto.Address, false, null)).ToList();
 
         // 2. Send Commands
         _progressText = $"Importando {commands.Count} registros...";

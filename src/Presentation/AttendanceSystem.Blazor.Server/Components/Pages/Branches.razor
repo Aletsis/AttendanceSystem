@@ -29,15 +29,21 @@
              <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel" Class="ml-2">Exportar</MudButton>
         </ToolBarContent>
         <HeaderContent>
+            <MudTh>Código</MudTh>
             <MudTh>Nombre</MudTh>
-            <MudTh>Descripción</MudTh>
             <MudTh>Dirección</MudTh>
+            <MudTh>Externa</MudTh>
             <MudTh>Acciones</MudTh>
         </HeaderContent>
         <RowTemplate>
+            <MudTd DataLabel="Código">@context.Code</MudTd>
             <MudTd DataLabel="Nombre">@context.Name</MudTd>
-            <MudTd DataLabel="Descripción">@context.Description</MudTd>
             <MudTd DataLabel="Dirección">@context.Address</MudTd>
+            <MudTd DataLabel="Externa">
+                <MudChip T="string" Color="@(context.IsExternal ? Color.Secondary : Color.Default)" Size="Size.Small">
+                    @(context.IsExternal ? "Sí" : "No")
+                </MudChip>
+            </MudTd>
             <MudTd DataLabel="Acciones">
                 <MudTooltip Text="Editar">
                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
@@ -79,9 +85,9 @@
     {
         if (string.IsNullOrWhiteSpace(_searchString))
             return true;
-        if (branch.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
+        if (branch.Code.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
             return true;
-        if (branch.Description?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) == true)
+        if (branch.Name.Contains(_searchString, StringComparison.OrdinalIgnoreCase))
             return true;
         if (branch.Address?.Contains(_searchString, StringComparison.OrdinalIgnoreCase) == true)
             return true;
@@ -116,9 +122,11 @@
         var parameters = new DialogParameters
         {
             { "BranchId", branch.Id },
+            { "Code", branch.Code },
             { "Name", branch.Name },
-            { "Description", branch.Description },
-            { "Address", branch.Address }
+            { "Address", branch.Address },
+            { "IsExternal", branch.IsExternal },
+            { "ExternalHost", branch.ExternalHost }
         };
         
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };

@@ -7,9 +7,11 @@ using MediatR;
 namespace AttendanceSystem.Application.Features.Branches.Commands.CreateBranch;
 
 public sealed record CreateBranchCommand(
+    string Code,
     string Name,
-    string? Description,
-    string? Address) : IRequest<Result<Guid>>;
+    string? Address,
+    bool IsExternal,
+    string? ExternalHost) : IRequest<Result<Guid>>;
 
 public sealed class CreateBranchCommandHandler : IRequestHandler<CreateBranchCommand, Result<Guid>>
 {
@@ -27,9 +29,11 @@ public sealed class CreateBranchCommandHandler : IRequestHandler<CreateBranchCom
         try 
         {
             var branch = Branch.Create(
+                request.Code,
                 request.Name,
-                request.Description,
-                request.Address);
+                request.Address,
+                request.IsExternal,
+                request.ExternalHost);
 
             await _repository.AddAsync(branch, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

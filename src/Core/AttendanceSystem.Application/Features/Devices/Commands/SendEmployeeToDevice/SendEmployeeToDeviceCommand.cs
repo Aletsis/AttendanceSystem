@@ -14,17 +14,20 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
     private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly IDeviceRepository _deviceRepository;
     private readonly IEmployeeRepository _employeeRepository;
+    private readonly IBranchRepository _branchRepository;
     private readonly ILogger<SendEmployeeToDeviceCommandHandler> _logger;
 
     public SendEmployeeToDeviceCommandHandler(
         IDeviceClientFactory deviceClientFactory,
         IDeviceRepository deviceRepository,
         IEmployeeRepository employeeRepository,
+        IBranchRepository branchRepository,
         ILogger<SendEmployeeToDeviceCommandHandler> logger)
     {
         _deviceClientFactory = deviceClientFactory;
         _deviceRepository = deviceRepository;
         _employeeRepository = employeeRepository;
+        _branchRepository = branchRepository;
         _logger = logger;
     }
 
@@ -49,8 +52,18 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
 
             try
             {
+                var employeeBranch = await _branchRepository.GetByIdAsync(employee.BranchId, cancellationToken);
+                string deviceUserId = employee.Id.Value;
+
+                if (employeeBranch != null && employeeBranch.IsExternal)
+                {
+                    deviceUserId = $"{employeeBranch.Code}{employee.Id.Value}";
+                    _logger.LogInformation("Empleado {Id} pertenece a sucursal externa {Code}. Usando ID concatenado: {DeviceUserId}", 
+                        employee.Id.Value, employeeBranch.Code, deviceUserId);
+                }
+
                 var userDto = new DeviceUserDto(
-                    employee.Id.Value,
+                    deviceUserId,
                     employee.GetFullName(),
                     employee.DevicePassword ?? "",
                     0, // Privilege default, maybe add property to Employee?

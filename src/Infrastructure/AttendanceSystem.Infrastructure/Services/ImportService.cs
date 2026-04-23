@@ -186,13 +186,13 @@ public class ImportService : IImportService
                 {
                     try
                     {
-                        var name = row.Cell(1).GetValue<string>();
-                        var desc = row.Cell(2).GetValue<string>();
+                        var code = row.Cell(1).GetValue<string>();
+                        var name = row.Cell(2).GetValue<string>();
                         var addr = row.Cell(3).GetValue<string>();
 
-                        if (!string.IsNullOrWhiteSpace(name))
+                        if (!string.IsNullOrWhiteSpace(code) && !string.IsNullOrWhiteSpace(name))
                         {
-                            result.ValidEntries.Add(new ImportBranchDto(name, desc, addr));
+                            result.ValidEntries.Add(new ImportBranchDto(code, name, addr));
                         }
                     }
                     catch (Exception ex)

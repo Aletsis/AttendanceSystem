@@ -32,6 +32,8 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IMediator _mediator;
     private readonly IDeviceLockService _deviceLockService;
     private readonly IAdmsCommandService _admsCommandService;
+    private readonly IBranchRepository _branchRepository;
+    private readonly ILogTransferService _logTransferService;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -43,7 +45,9 @@ public sealed class DownloadFromDeviceCommandHandler
         ILogger<DownloadFromDeviceCommandHandler> logger,
         IMediator mediator,
         IDeviceLockService deviceLockService,
-        IAdmsCommandService admsCommandService)
+        IAdmsCommandService admsCommandService,
+        IBranchRepository branchRepository,
+        ILogTransferService logTransferService)
     {
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -55,6 +59,8 @@ public sealed class DownloadFromDeviceCommandHandler
         _mediator = mediator;
         _deviceLockService = deviceLockService;
         _admsCommandService = admsCommandService;
+        _branchRepository = branchRepository;
+        _logTransferService = logTransferService;
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
@@ -77,7 +83,7 @@ public sealed class DownloadFromDeviceCommandHandler
     {
         var deviceId = DeviceId.From(command.DeviceId);
         
-        // 1. Obtener dispositivo INICIAL (solo para validación y datos básicos)
+        // 1. Obtener dispositivo INICIAL (solo para validaciÃ³n y datos bÃ¡sicos)
         var device = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
         if (device == null)
             return Result<DownloadResultDto>.Failure("Dispositivo no encontrado");
@@ -91,6 +97,7 @@ public sealed class DownloadFromDeviceCommandHandler
             : DownloadType.Manual;
             
         var requestToDate = command.ToDate ?? DateTime.UtcNow;
+        DateTime? filterDate = command.FromDate ?? device.LastDownloadAt;
 
         var downloadLog = DownloadLog.Create(
             deviceId,
@@ -123,7 +130,7 @@ public sealed class DownloadFromDeviceCommandHandler
 
                  if (string.IsNullOrEmpty(sn))
                  {
-                     return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene número de serie registrado.");
+                     return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene nÃºmero de serie registrado.");
                  }
 
                  string admsCmd = "";
@@ -135,7 +142,7 @@ public sealed class DownloadFromDeviceCommandHandler
                   {
                       if (isAccessMode)
                       {
-                          // Modo acceso: Siempre usamos DATA QUERY con rango para mayor precisi�n
+                          // Modo acceso: Siempre usamos DATA QUERY con rango para mayor precisión
                           var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
                           var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
                           
@@ -154,7 +161,7 @@ public sealed class DownloadFromDeviceCommandHandler
                   }
                   else
                   {
-                      // Si NO hay fecha de filtro (primera descarga), entonces s� forzamos todo
+                      // Si NO hay fecha de filtro (primera descarga), entonces sí forzamos todo
                       if (isAccessMode)
                       {
                           await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
@@ -175,24 +182,24 @@ public sealed class DownloadFromDeviceCommandHandler
                      // PASAMOS el LogId para rastrear cuando termine
                      _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
                      
-                     _logger.LogInformation("✅ ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}", 
+                     _logger.LogInformation("âœ… ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}", 
                          admsCmd, sn!, downloadLogId.Value);
-                     _logger.LogInformation("⏳ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vía GET /getrequest", 
+                     _logger.LogInformation("â³ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vÃ­a GET /getrequest", 
                          sn!);
-                     _logger.LogInformation("📋 ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
+                     _logger.LogInformation("ðŸ“‹ ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
                  }
                  else
                  {
-                     // Si no se encoló comando (ej. ForceFullSync actuará vía push), damos por exitoso el log de tracking de inmediato
+                     // Si no se encolÃ³ comando (ej. ForceFullSync actuarÃ¡ vÃ­a push), damos por exitoso el log de tracking de inmediato
                      // para que la UI no se quede esperando un POST /devicecmd
                      downloadLog.MarkAsSuccessful(0, 0);
                      await _unitOfWork.SaveChangesAsync(cancellationToken);
                  }
                  
-                 // NO marcamos el log como exitoso aquí. Lo hará AdmsController cuando reciba DeviceCmd.
-                 // Retornamos éxito indicando que se programó.
-                 // Nota: El frontend verá "0 registros" pero el log quedará sin fecha de fin.
-                 // Dependiendo del frontend, podría mostrarse un spinner o simplemente "Iniciado".
+                 // NO marcamos el log como exitoso aquÃ­. Lo harÃ¡ AdmsController cuando reciba DeviceCmd.
+                 // Retornamos Ã©xito indicando que se programÃ³.
+                 // Nota: El frontend verÃ¡ "0 registros" pero el log quedarÃ¡ sin fecha de fin.
+                 // Dependiendo del frontend, podrÃ­a mostrarse un spinner o simplemente "Iniciado".
                  
                  return Result<DownloadResultDto>.Success(new DownloadResultDto(
                      deviceId.Value,
@@ -215,7 +222,7 @@ public sealed class DownloadFromDeviceCommandHandler
         var username = device.Username;
         var password = device.Password;
         var shouldClear = device.ShouldClearAfterDownload;
-        DateTime? filterDate = command.FromDate ?? device.LastDownloadAt;
+        // filterDate ya se definió arriba
         // requestToDate ya se definió arriba
 
         // LIMPIAR EL TRACKER COMPLETO
@@ -226,10 +233,10 @@ public sealed class DownloadFromDeviceCommandHandler
 
         try 
         {
-            // 3. Obtener el cliente específico para la marca del dispositivo
+            // 3. Obtener el cliente especÃ­fico para la marca del dispositivo
             var deviceClient = _deviceClientFactory.GetClient(deviceBrand);
 
-            // 4. Conectar al dispositivo físico (Operación Larga)
+            // 4. Conectar al dispositivo fÃ­sico (OperaciÃ³n Larga)
             var connected = await deviceClient.ConnectAsync(
                 deviceIp, 
                 devicePort, 
@@ -259,14 +266,51 @@ public sealed class DownloadFromDeviceCommandHandler
 
             // 5. Convertir a entidades de dominio
             // Nota: Usamos deviceId (ValueObject) que creamos al principio
-            var domainRecords = rawRecords.Select(raw => 
-                AttendanceRecord.Create(
-                    EmployeeId.From(raw.UserId),
-                    deviceId,
-                    raw.CheckTime,
-                    VerifyMethod.FromValue(raw.VerifyMethod),
-                    CheckType.FromValue(raw.InOutMode)
-                )).ToList();
+            var domainRecords = new List<AttendanceRecord>();
+            
+            // Obtener todas las sucursales externas para filtrar rápido
+            var allBranches = await _branchRepository.GetAllAsync(cancellationToken);
+            var externalBranches = allBranches.Where(b => b.IsExternal).ToList();
+
+            foreach (var raw in rawRecords)
+            {
+                // Si el ID tiene al menos 4 caracteres (3 de código + al menos 1 de ID)
+                // y los primeros 3 coinciden con una sucursal externa
+                bool isExternal = false;
+                if (raw.UserId.Length > 3)
+                {
+                    var branchCode = raw.UserId.Substring(0, 3);
+                    var externalBranch = externalBranches.FirstOrDefault(b => b.Code == branchCode);
+                    if (externalBranch != null)
+                    {
+                        isExternal = true;
+                        var actualEmployeeId = raw.UserId.Substring(3);
+                        
+                        _logger.LogInformation("Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}", 
+                            branchCode, actualEmployeeId, externalBranch.ExternalHost);
+
+                        // Transferir log (esto podría ser asíncrono en segundo plano si son muchos)
+                        await _logTransferService.TransferLogAsync(
+                            externalBranch.ExternalHost!,
+                            actualEmployeeId,
+                            raw.CheckTime,
+                            raw.VerifyMethod,
+                            raw.InOutMode,
+                            cancellationToken);
+                    }
+                }
+
+                if (!isExternal)
+                {
+                    domainRecords.Add(AttendanceRecord.Create(
+                        EmployeeId.From(raw.UserId),
+                        deviceId,
+                        raw.CheckTime,
+                        VerifyMethod.FromValue(raw.VerifyMethod),
+                        CheckType.FromValue(raw.InOutMode)
+                    ));
+                }
+            }
 
             DateTime? minDate = null;
             DateTime? maxDate = null;
@@ -294,13 +338,13 @@ public sealed class DownloadFromDeviceCommandHandler
                     foreach (var nr in newRecords) nr.DownloadLogId = downloadLogId;
                     
                     await _attendanceRepository.AddRangeAsync(newRecords, cancellationToken);
-                    // Guardar attendance records. No debería haber conflictos aquí.
+                    // Guardar attendance records. No deberÃ­a haber conflictos aquÃ­.
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
                 }
             }
 
             // 7. Actualizar el dispositivo
-            // RE-OBTENER instancia fresca. Esto es lo más importante para la concurrencia.
+            // RE-OBTENER instancia fresca. Esto es lo mÃ¡s importante para la concurrencia.
             var deviceToUpdate = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
             if (deviceToUpdate != null)
             {
@@ -311,7 +355,7 @@ public sealed class DownloadFromDeviceCommandHandler
                 }
                 else
                 {
-                     // Mantener lógica de negocio
+                     // Mantener lÃ³gica de negocio
                      deviceToUpdate.RecordSuccessfulDownload(0, requestToDate);
                 }
                 
@@ -329,7 +373,7 @@ public sealed class DownloadFromDeviceCommandHandler
             // Guardar actualizaciones finales (Device y Log)
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // 8. Opcional: Limpiar dispositivo físico
+            // 8. Opcional: Limpiar dispositivo fÃ­sico
             if (shouldClear)
             {
                 await deviceClient.ClearLogsAsync(deviceIdValue, cancellationToken);
@@ -378,8 +422,8 @@ public sealed class DownloadFromDeviceCommandHandler
             }
             catch(Exception saveEx) 
             {
-                 // Si falla esto, ya no podemos hacer nada más que loguear a consola/archivo
-                 _logger.LogError(saveEx, "Error CRÍTICO guardando el log de fallo en BD.");
+                 // Si falla esto, ya no podemos hacer nada mÃ¡s que loguear a consola/archivo
+                 _logger.LogError(saveEx, "Error CRÃTICO guardando el log de fallo en BD.");
             }
             
             return Result<DownloadResultDto>.Failure($"Error: {ex.Message}");

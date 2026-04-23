@@ -3,9 +3,14 @@
 
 <MudDialog>
     <DialogContent>
+        <MudTextField @bind-Value="Code" Label="Código" Required="true" RequiredError="El código es requerido" Placeholder="A01" MaxLength="3" HelperText="Formato: 1 letra y 2 números (Ej: A01)" />
         <MudTextField @bind-Value="Name" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
-        <MudTextField @bind-Value="Description" Label="Descripción" Lines="3" />
         <MudTextField @bind-Value="Address" Label="Dirección" />
+        <MudCheckBox @bind-Value="IsExternal" Label="Externa" Color="Color.Primary" />
+        @if (IsExternal)
+        {
+            <MudTextField @bind-Value="ExternalHost" Label="Host (API URL)" Placeholder="https://api.sucursal.com" Required="true" RequiredError="El host es requerido para sucursales externas" />
+        }
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancelar</MudButton>
@@ -17,26 +22,33 @@
     [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
 
     [Parameter] public Guid? BranchId { get; set; }
+    [Parameter] public string Code { get; set; } = string.Empty;
     [Parameter] public string Name { get; set; } = string.Empty;
-    [Parameter] public string Description { get; set; } = string.Empty;
     [Parameter] public string Address { get; set; } = string.Empty;
+    [Parameter] public bool IsExternal { get; set; }
+    [Parameter] public string? ExternalHost { get; set; }
 
     private void Cancel() => MudDialog.Cancel();
 
     private void Submit()
     {
-        if (string.IsNullOrWhiteSpace(Name))
+        if (string.IsNullOrWhiteSpace(Code) || string.IsNullOrWhiteSpace(Name))
+        {
+            return;
+        }
+
+        if (IsExternal && string.IsNullOrWhiteSpace(ExternalHost))
         {
             return;
         }
 
         if (BranchId.HasValue)
         {
-            MudDialog.Close(DialogResult.Ok(new UpdateBranchCommand(BranchId.Value, Name, Description, Address)));
+            MudDialog.Close(DialogResult.Ok(new UpdateBranchCommand(BranchId.Value, Code, Name, Address, IsExternal, ExternalHost)));
         }
         else
         {
-            MudDialog.Close(DialogResult.Ok(new CreateBranchCommand(Name, Description, Address)));
+            MudDialog.Close(DialogResult.Ok(new CreateBranchCommand(Code, Name, Address, IsExternal, ExternalHost)));
         }
     }
 }

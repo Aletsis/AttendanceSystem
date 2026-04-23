@@ -11,7 +11,7 @@ public sealed record ImportResult<T>
 
 public sealed record ImportedLogEntryDto(string EmployeeId, DateTime DateTime, string Type);
 
-public sealed record ImportBranchDto(string Name, string Description, string Address);
+public sealed record ImportBranchDto(string Code, string Name, string Address);
 
 public sealed record ImportDepartmentDto(string Name, string Description);
 

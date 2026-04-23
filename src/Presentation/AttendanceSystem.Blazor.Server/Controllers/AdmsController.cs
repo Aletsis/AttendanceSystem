@@ -23,6 +23,8 @@ public class AdmsController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAdmsCommandService _admsCommandService;
     private readonly IEmployeeRepository _employeeRepository;
+    private readonly IBranchRepository _branchRepository;
+    private readonly ILogTransferService _logTransferService;
 
     public AdmsController(
         ILogger<AdmsController> logger, 
@@ -31,7 +33,9 @@ public class AdmsController : ControllerBase
         IUnitOfWork unitOfWork,
         IAdmsCommandService admsCommandService,
         IEmployeeRepository employeeRepository,
-        IDownloadLogRepository downloadLogRepository)
+        IDownloadLogRepository downloadLogRepository,
+        IBranchRepository branchRepository,
+        ILogTransferService logTransferService)
     {
         _logger = logger;
         _mediator = mediator;
@@ -40,6 +44,8 @@ public class AdmsController : ControllerBase
         _admsCommandService = admsCommandService;
         _downloadLogRepository = downloadLogRepository;
         _employeeRepository = employeeRepository;
+        _branchRepository = branchRepository;
+        _logTransferService = logTransferService;
     }
 
     // 1. GET /iclock/cdata — solo dice si está registrado o no
@@ -352,16 +358,42 @@ public class AdmsController : ControllerBase
 
                 if (isValid && !string.IsNullOrEmpty(pin))
                 {
-                    await _mediator.Send(new RecordAttendanceCommand(
-                        pin, device.Id.Value.ToString(),
-                        checkTime, verifyMethod, checkType));
+                    bool isExternal = false;
+                    if (pin.Length > 3)
+                    {
+                        var branchCode = pin.Substring(0, 3);
+                        var externalBranch = (await _branchRepository.GetAllAsync()).FirstOrDefault(b => b.IsExternal && b.Code == branchCode);
+                        
+                        if (externalBranch != null)
+                        {
+                            isExternal = true;
+                            var actualEmployeeId = pin.Substring(3);
+                            
+                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}", 
+                                branchCode, actualEmployeeId, externalBranch.ExternalHost);
 
-                    processed++;
-                    
-                    // Collect for calculation
-                    uniqueCalculations.Add((pin, checkTime.Date));
+                            await _logTransferService.TransferLogAsync(
+                                externalBranch.ExternalHost!,
+                                actualEmployeeId,
+                                checkTime,
+                                verifyMethod,
+                                checkType);
+                        }
+                    }
 
-                    // Rastrear el timestamp más reciente del batch
+                    if (!isExternal)
+                    {
+                        await _mediator.Send(new RecordAttendanceCommand(
+                            pin, device.Id.Value.ToString(),
+                            checkTime, verifyMethod, checkType));
+
+                        processed++;
+                        
+                        // Collect for calculation
+                        uniqueCalculations.Add((pin, checkTime.Date));
+                    }
+
+                    // Rastrear el timestamp más reciente del batch (incluso si es externo, para no repetir descarga si aplica)
                     if (lastCheckTime == null || checkTime > lastCheckTime)
                         lastCheckTime = checkTime;
                 }
