@@ -90,7 +90,7 @@
                 <MudTabPanel Text="Puesto">
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid" @bind-Value="BranchId" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida" Disabled="@(!_canEditAll)">
+                            <MudSelect T="Guid" Value="BranchId" ValueChanged="OnBranchChanged" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida" Disabled="@(!_canEditAll)">
                                 @foreach (var branch in _branches)
                                 {
                                     <MudSelectItem T="Guid" Value="@branch.Id">@branch.Name</MudSelectItem>
@@ -146,13 +146,13 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditAll)" />
+                            <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
                         </MudItem>
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudCheckBox @bind-Value="CalculateOvertimeBeforeEntry" Label="Calcular Tiempo Extra Antes de Entrada" Color="Color.Secondary" Disabled="@(!OvertimeAuthorized || !_canEditAll)" />
+                            <MudCheckBox @bind-Value="CalculateOvertimeBeforeEntry" Label="Calcular Tiempo Extra Antes de Entrada" Color="Color.Secondary" Disabled="@(!OvertimeAuthorized || !_canEditAll || IsSelectedBranchExternal)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized || !_canEditAll)">
+                            <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized || !_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var method in Enum.GetValues<OvertimeEnum>())
                                 {
                                     <MudSelectItem T="OvertimeEnum" Value="@method">
@@ -168,7 +168,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="OvertimeCapEnum" @bind-Value="OvertimeCapType" Label="Tope Tiempo Extra" Disabled="@(!_canEditAll)">
+                            <MudSelect T="OvertimeCapEnum" @bind-Value="OvertimeCapType" Label="Tope Tiempo Extra" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var type in Enum.GetValues<OvertimeCapEnum>())
                                 {
                                     <MudSelectItem T="OvertimeCapEnum" Value="@type">
@@ -184,7 +184,7 @@
                             </MudSelect>
                         </MudItem>
                          <MudItem xs="12" sm="6">
-                            <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None || !_canEditAll)" Min="0" />
+                            <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None || !_canEditAll || IsSelectedBranchExternal)" Min="0" />
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
@@ -277,6 +277,22 @@
     }
 
     private IEnumerable<PositionDto> _filteredPositions = new List<PositionDto>();
+
+    private void OnBranchChanged(Guid branchId)
+    {
+        BranchId = branchId;
+        if (IsSelectedBranchExternal)
+        {
+            _selectedShiftType = null;
+            ScheduleId = null;
+            RestDay = null;
+            OvertimeAuthorized = false;
+            CalculateOvertimeBeforeEntry = false;
+            OvertimeCalculationMethod = OvertimeEnum.NoRounding;
+            OvertimeCapType = OvertimeCapEnum.None;
+            OvertimeCapMinutes = null;
+        }
+    }
 
     private void OnDepartmentChanged(Guid newDepartmentId)
     {
