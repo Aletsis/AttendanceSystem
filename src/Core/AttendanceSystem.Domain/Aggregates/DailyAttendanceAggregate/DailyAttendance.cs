@@ -12,6 +12,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     // Shift Snapshot
     public ShiftId? ShiftId { get; private set; }
     public string? ShiftName { get; private set; }
+    public AttendanceSystem.Domain.Enumerations.ShiftType? ShiftType { get; private set; }
     public TimeSpan? ScheduledCheckIn { get; private set; }
     public TimeSpan? ScheduledCheckOut { get; private set; }
     public int ToleranceMinutes { get; private set; }
@@ -34,6 +35,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public bool IsRestDay { get; private set; }
     public bool WorkedOnRestDay { get; private set; }
     public bool CalculateOvertimeBeforeEntry { get; private set; }
+    public bool OvertimeAuthorized { get; private set; }
 
     private DailyAttendance() { }
 
@@ -46,7 +48,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         bool isRestDay = false,
         AttendanceRecordId? checkInRecordId = null,
         AttendanceRecordId? checkOutRecordId = null,
-        bool calculateOvertimeBeforeEntry = false)
+        bool calculateOvertimeBeforeEntry = false,
+        bool overtimeAuthorized = true)
     {
         var attendance = new DailyAttendance
         {
@@ -54,7 +57,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             EmployeeId = employeeId,
             Date = date.Date,
             IsRestDay = isRestDay,
-            CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry
+            CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
+            OvertimeAuthorized = overtimeAuthorized
         };
 
         // 1. Configure Shift Snapshot
@@ -62,6 +66,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         {
             attendance.ShiftId = shift.Id;
             attendance.ShiftName = shift.Name;
+            attendance.ShiftType = shift.ShiftType;
             
             var dayStartTime = shift.StartTime;
             var dayEndTime = shift.EndTime;
@@ -127,6 +132,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         
         ShiftId = shift.Id;
         ShiftName = shift.Name;
+        ShiftType = shift.ShiftType;
 
         var dayStartTime = shift.StartTime;
         var dayEndTime = shift.EndTime;
@@ -154,6 +160,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public void SetRestDayOverride(bool isRestDay)
     {
         IsRestDay = isRestDay;
+        CalculateStatus();
+    }
+
+    public void UpdateOvertimeConfiguration(bool overtimeAuthorized, bool calculateOvertimeBeforeEntry)
+    {
+        OvertimeAuthorized = overtimeAuthorized;
+        CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry;
         CalculateStatus();
     }
 
@@ -226,20 +239,22 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
         // LATE Check (Retardo)
         // Rule: Only late after tolerance. 
-        // Example: Tol 5. 8:05:59 is OK (5 min). 8:06:00 is Late (6 min).
-        // Logic: Check integer minute difference.
         if (ActualCheckIn.HasValue)
         {
-            // Calculate delay in minutes
-            // We use (int) to get full completed minutes, or just total minutes comparison
-            // 8:05:59 - 8:00 = 5.98 min. (int) = 5. 5 > 5 is False.
-            // 8:06:00 - 8:00 = 6.0 min. (int) = 6. 6 > 5 is True.
-            var diff = (ActualCheckIn.Value - scheduledInDateTime).TotalMinutes;
-            int delayMinutes = (int)diff;
-
-            if (delayMinutes > ToleranceMinutes)
+            if (ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo || ScheduledCheckIn == null)
             {
-                LateMinutes = delayMinutes;
+                // In Continuo or No-Shift mode, there are no lates.
+                LateMinutes = 0;
+            }
+            else
+            {
+                var diff = (ActualCheckIn.Value - scheduledInDateTime).TotalMinutes;
+                int delayMinutes = (int)diff;
+
+                if (delayMinutes > ToleranceMinutes)
+                {
+                    LateMinutes = delayMinutes;
+                }
             }
         }
 
@@ -248,7 +263,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         {
             var scheduledOutDateTime = Date.Add(ScheduledCheckOut.Value);
             
-             if (ScheduledCheckOut < ScheduledCheckIn)
+             if (ScheduledCheckOut <= ScheduledCheckIn)
             {
                 scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
             }
@@ -299,7 +314,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     }
                 }
 
-                if (overtime > 0)
+                if (overtime > 0 && OvertimeAuthorized)
                 {
                     OvertimeMinutes = (int)overtime;
                 }

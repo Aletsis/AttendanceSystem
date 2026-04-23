@@ -65,6 +65,8 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.MissingCheckOut);
         builder.Property(x => x.IsRestDay);
         builder.Property(x => x.WorkedOnRestDay);
+        builder.Property(x => x.CalculateOvertimeBeforeEntry);
+        builder.Property(x => x.OvertimeAuthorized);
 
         builder.Ignore(x => x.DomainEvents);
 

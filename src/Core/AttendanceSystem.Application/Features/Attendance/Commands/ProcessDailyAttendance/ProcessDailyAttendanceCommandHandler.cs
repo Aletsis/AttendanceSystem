@@ -115,12 +115,12 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     shift = await _shiftRepo.GetByIdAsync(employee.ScheduleId, cancellationToken);
                 }
 
-                // Check for Night Shift (e.g., 22:00 - 06:00)
-                // If it's a night shift, we extend search to the next day to catch the exit
-                bool isNightShift = false;
+                // Check for Night Shift or 24h Shift (Cross-Day)
+                // If it's a cross-day shift, we extend search to the next day to catch the exit
+                bool isCrossDay = false;
                 TimeSpan dayStartTime = TimeSpan.Zero;
                 TimeSpan dayEndTime = TimeSpan.Zero;
-
+                
                 if (shift != null)
                 {
                     dayStartTime = shift.StartTime;
@@ -136,9 +136,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         }
                     }
 
-                    if (dayEndTime < dayStartTime)
+                    if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Jornada24h || shift.ShiftType == ShiftType.Continuo)
                     {
-                        isNightShift = true;
+                        isCrossDay = true;
                         searchEndDate = searchStartDate.AddDays(1);
                     }
                 }
@@ -167,7 +167,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     // "Best Fit" Logic using Scheduled Times
                     var scheduledIn = date.Add(dayStartTime);
                     var scheduledOut = date.Add(dayEndTime);
-                    if (isNightShift) 
+                    if (isCrossDay) 
                     { 
                         scheduledOut = scheduledOut.AddDays(1); 
                     }
@@ -176,81 +176,136 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     double maxInDistance = 300;   // 5 hours max early/late for CheckIn
                     double maxOutDistance = 960;  // 16 hours max for CheckOut (allows double shifts)
 
-                    // For Night Shifts, use TIME WINDOWS to prevent mismatching
-                    // Entry should be in the evening/night, Exit should be in the early morning
+                    // For Cross-Day Shifts, use RELATIVE TIME WINDOWS to prevent mismatching
                     IEnumerable<AttendanceRecord> entryRecords = records;
                     IEnumerable<AttendanceRecord> exitRecords = records;
 
-                    if (isNightShift)
+                    if (isCrossDay)
                     {
-                        // Entry Window: From noon of current day to end of day (12:00 - 23:59)
-                        // This prevents early morning records (like 6:20 AM) from being matched as entries
-                        var entryWindowStart = date.Date.AddHours(12);
-                        var entryWindowEnd = date.Date.AddDays(1).AddSeconds(-1);
-                        
-                        entryRecords = records.Where(r => 
-                            r.CheckTime >= entryWindowStart && 
-                            r.CheckTime <= entryWindowEnd &&
-                            r.Status == AttendanceStatus.Pending); // Only use unprocessed records for entry
+                        if (shift.ShiftType == ShiftType.Continuo)
+                        {
+                            // FLEXIBLE Logic: First of the day -> Next available within 24h
+                            // Note: we only look for the entry on the 'date' being processed
+                            var potentialIn = records
+                                .Where(r => r.CheckTime.Date == date.Date && r.Status == AttendanceStatus.Pending)
+                                .OrderBy(r => r.CheckTime)
+                                .FirstOrDefault();
 
-                        // Exit Window: From start of next day to noon (00:00 - 12:00)
-                        // This ensures we only look for exits in the morning period
-                        var exitWindowStart = date.Date.AddDays(1);
-                        var exitWindowEnd = date.Date.AddDays(1).AddHours(12);
-                        
-                        exitRecords = records.Where(r => 
-                            r.CheckTime >= exitWindowStart && 
-                            r.CheckTime <= exitWindowEnd);
-                        // Note: We allow already processed records for exit ONLY if we're reprocessing
-                        // This handles the case where we need to reclaim an exit that was wrongly assigned
+                            if (potentialIn != null)
+                            {
+                                checkInRecord = potentialIn;
+                                checkIn = potentialIn.CheckTime;
+
+                                // Search for ANY next record of this employee within 24 hours
+                                checkOutRecord = records
+                                    .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 24)
+                                    .OrderBy(r => r.CheckTime)
+                                    .FirstOrDefault();
+                                
+                                if (checkOutRecord != null)
+                                {
+                                    checkOut = checkOutRecord.CheckTime;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // RELATIVE WINDOWS Logic for Cross-Day / Night Shifts
+                            // Entry Window: +/- 6 hours around scheduled In
+                            var entryWindowStart = scheduledIn.AddHours(-6);
+                            var entryWindowEnd = scheduledIn.AddHours(6);
+                            
+                            entryRecords = records.Where(r => 
+                                r.CheckTime >= entryWindowStart && 
+                                r.CheckTime <= entryWindowEnd &&
+                                r.Status == AttendanceStatus.Pending); // Only use unprocessed records for entry
+
+                            // Exit Window: +/- 10 hours around scheduled Out
+                            var exitWindowStart = scheduledOut.AddHours(-10);
+                            var exitWindowEnd = scheduledOut.AddHours(10);
+                            
+                            exitRecords = records.Where(r => 
+                                r.CheckTime >= exitWindowStart && 
+                                r.CheckTime <= exitWindowEnd);
+                            
+                            // Find best candidate for IN
+                            var matchIn = entryRecords
+                                .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+                                .Where(x => x.Diff <= maxInDistance)
+                                .OrderBy(x => x.Diff)
+                                .FirstOrDefault();
+
+                            if (matchIn != null)
+                            {
+                                checkInRecord = matchIn.Record;
+                                checkIn = matchIn.Record.CheckTime;
+                            }
+
+                            // Find best candidate for OUT
+                            var matchOut = exitRecords
+                                .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+                                .Where(x => x.Diff <= maxOutDistance)
+                                .OrderBy(x => x.Diff)
+                                .FirstOrDefault();
+
+                            if (matchOut != null)
+                            {
+                                // Check for overlap (same record matched as both IN and OUT)
+                                if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                                {
+                                    // Decide based on which is closer
+                                    if (matchOut.Diff < matchIn!.Diff)
+                                    {
+                                        checkOutRecord = matchOut.Record;
+                                        checkOut = matchOut.Record.CheckTime;
+                                        checkIn = null;
+                                        checkInRecord = null;
+                                    }
+                                }
+                                else
+                                {
+                                    checkOutRecord = matchOut.Record;
+                                    checkOut = matchOut.Record.CheckTime;
+                                }
+                            }
+                        }
                     }
                     else
                     {
                         // For regular shifts, only use pending records to avoid stealing from other days
                         entryRecords = records.Where(r => r.Status == AttendanceStatus.Pending);
                         exitRecords = records.Where(r => r.Status == AttendanceStatus.Pending);
-                    }
+                        
+                         // Find best candidate for IN
+                        var matchIn = entryRecords
+                            .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+                            .Where(x => x.Diff <= maxInDistance)
+                            .OrderBy(x => x.Diff)
+                            .FirstOrDefault();
 
-                    // Find best candidate for IN
-                    var matchIn = entryRecords
-                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
-                        .Where(x => x.Diff <= maxInDistance)
-                        .OrderBy(x => x.Diff)
-                        .FirstOrDefault();
-
-                    if (matchIn != null)
-                    {
-                        checkInRecord = matchIn.Record;
-                        checkIn = matchIn.Record.CheckTime;
-                    }
-
-                    // Find best candidate for OUT
-                    var matchOut = exitRecords
-                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
-                        .Where(x => x.Diff <= maxOutDistance)
-                        .OrderBy(x => x.Diff)
-                        .FirstOrDefault();
-
-                    if (matchOut != null)
-                    {
-                        // Check for overlap (same record matched as both IN and OUT)
-                        if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                        if (matchIn != null)
                         {
-                            // Decide based on which is closer
-                            if (matchOut.Diff < matchIn!.Diff)
-                            {
-                                // Closer to Out -> It's an Out
-                                checkOutRecord = matchOut.Record;
-                                checkOut = matchOut.Record.CheckTime;
-                                checkIn = null;
-                                checkInRecord = null;
-                            }
-                            // Else keep as In
+                            checkInRecord = matchIn.Record;
+                            checkIn = matchIn.Record.CheckTime;
                         }
-                        else
+
+                        // Find best candidate for OUT
+                        var matchOut = exitRecords
+                            .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+                            .Where(x => x.Diff <= maxOutDistance)
+                            .OrderBy(x => x.Diff)
+                            .FirstOrDefault();
+
+                        if (matchOut != null)
                         {
-                            checkOutRecord = matchOut.Record;
-                            checkOut = matchOut.Record.CheckTime;
+                            if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                            {
+                                if (matchOut.Diff < matchIn!.Diff) { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; checkIn = null; checkInRecord = null; }
+                            }
+                            else
+                            {
+                                checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime;
+                            }
                         }
                     }
 
@@ -331,7 +386,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     isRestDay,
                     checkInRecord?.Id,
                     checkOutRecord?.Id,
-                    employee.CalculateOvertimeBeforeEntry);
+                    employee.CalculateOvertimeBeforeEntry,
+                    employee.OvertimeAuthorized);
 
                 // 7. Save or Update
                 // 7. Save

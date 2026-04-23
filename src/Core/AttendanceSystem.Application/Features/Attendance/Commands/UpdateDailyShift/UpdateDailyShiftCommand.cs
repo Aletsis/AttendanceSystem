@@ -71,8 +71,8 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             }
         }
 
-        bool isNightShift = dayEndTime < dayStartTime;
-        if (isNightShift)
+        bool isCrossDay = dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Jornada24h || shift.ShiftType == ShiftType.Continuo;
+        if (isCrossDay)
         {
             searchEndDate = searchStartDate.AddDays(1);
         }
@@ -106,7 +106,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
         {
             var scheduledIn = date.Add(dayStartTime);
             var scheduledOut = date.Add(dayEndTime);
-            if (isNightShift) scheduledOut = scheduledOut.AddDays(1);
+            if (isCrossDay) scheduledOut = scheduledOut.AddDays(1);
 
             double maxInDistance = 300;
             double maxOutDistance = 960;
@@ -114,47 +114,84 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             IEnumerable<AttendanceSystem.Domain.Aggregates.AttendanceAggregate.AttendanceRecord> entryRecords = records;
             IEnumerable<AttendanceSystem.Domain.Aggregates.AttendanceAggregate.AttendanceRecord> exitRecords = records;
 
-            if (isNightShift)
+            if (isCrossDay)
             {
-                var entryWindowStart = date.Date.AddHours(12);
-                var entryWindowEnd = date.Date.AddDays(1).AddSeconds(-1);
-                entryRecords = records.Where(r => r.CheckTime >= entryWindowStart && r.CheckTime <= entryWindowEnd && (r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)));
+                if (shift.ShiftType == ShiftType.Continuo)
+                {
+                    var potentialIn = records
+                        .Where(r => r.CheckTime.Date == date.Date && (r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)))
+                        .OrderBy(r => r.CheckTime)
+                        .FirstOrDefault();
 
-                var exitWindowStart = date.Date.AddDays(1);
-                var exitWindowEnd = date.Date.AddDays(1).AddHours(12);
-                exitRecords = records.Where(r => r.CheckTime >= exitWindowStart && r.CheckTime <= exitWindowEnd);
+                    if (potentialIn != null)
+                    {
+                        checkInRecord = potentialIn;
+                        checkIn = potentialIn.CheckTime;
+
+                        checkOutRecord = records
+                            .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 24)
+                            .OrderBy(r => r.CheckTime)
+                            .FirstOrDefault();
+                        
+                        if (checkOutRecord != null) checkOut = checkOutRecord.CheckTime;
+                    }
+                }
+                else
+                {
+                    var entryWindowStart = scheduledIn.AddHours(-6);
+                    var entryWindowEnd = scheduledIn.AddHours(6);
+                    entryRecords = records.Where(r => r.CheckTime >= entryWindowStart && r.CheckTime <= entryWindowEnd && (r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)));
+
+                    var exitWindowStart = scheduledOut.AddHours(-10);
+                    var exitWindowEnd = scheduledOut.AddHours(10);
+                    exitRecords = records.Where(r => r.CheckTime >= exitWindowStart && r.CheckTime <= exitWindowEnd);
+
+                    var matchIn = entryRecords
+                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+                        .Where(x => x.Diff <= maxInDistance)
+                        .OrderBy(x => x.Diff).FirstOrDefault();
+
+                    if (matchIn != null) { checkInRecord = matchIn.Record; checkIn = checkInRecord.CheckTime; }
+
+                    var matchOut = exitRecords
+                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+                        .Where(x => x.Diff <= maxOutDistance)
+                        .OrderBy(x => x.Diff).FirstOrDefault();
+
+                    if (matchOut != null)
+                    {
+                        if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                        {
+                            if (matchOut.Diff < matchIn!.Diff) { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; checkIn = null; checkInRecord = null; }
+                        }
+                        else { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; }
+                    }
+                }
             }
             else
             {
                 entryRecords = records.Where(r => r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId));
                 exitRecords = records.Where(r => r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckOutRecordId));
-            }
 
-            var matchIn = entryRecords
-                .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
-                .Where(x => x.Diff <= maxInDistance)
-                .OrderBy(x => x.Diff).FirstOrDefault();
+                var matchIn = entryRecords
+                    .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+                    .Where(x => x.Diff <= maxInDistance)
+                    .OrderBy(x => x.Diff).FirstOrDefault();
 
-            if (matchIn != null)
-            {
-                checkInRecord = matchIn.Record;
-                checkIn = checkInRecord.CheckTime;
-            }
+                if (matchIn != null) { checkInRecord = matchIn.Record; checkIn = checkInRecord.CheckTime; }
 
-            var matchOut = exitRecords
-                .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
-                .Where(x => x.Diff <= maxOutDistance)
-                .OrderBy(x => x.Diff).FirstOrDefault();
+                var matchOut = exitRecords
+                    .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+                    .Where(x => x.Diff <= maxOutDistance)
+                    .OrderBy(x => x.Diff).FirstOrDefault();
 
-            if (matchOut != null)
-            {
-                if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                if (matchOut != null)
                 {
-                    if (matchOut.Diff < matchIn!.Diff) { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; checkIn = null; checkInRecord = null; }
-                }
-                else
-                {
-                    checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime;
+                    if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                    {
+                        if (matchOut.Diff < matchIn!.Diff) { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; checkIn = null; checkInRecord = null; }
+                    }
+                    else { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; }
                 }
             }
 
@@ -197,7 +234,8 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
                 isRestDay,
                 checkInRecord?.Id,
                 checkOutRecord?.Id,
-                employee.CalculateOvertimeBeforeEntry
+                employee.CalculateOvertimeBeforeEntry,
+                employee.OvertimeAuthorized
             );
             _dailyRepo.Add(daily);
         }
@@ -205,6 +243,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
         {
             daily.UpdateShift(shift);
             daily.SetRestDayOverride(isRestDay);
+            daily.UpdateOvertimeConfiguration(employee.OvertimeAuthorized, employee.CalculateOvertimeBeforeEntry);
             if (checkInRecord != null && checkIn.HasValue) daily.SetCheckIn(checkIn.Value, checkInRecord.Id); else daily.RemoveCheckIn();
             if (checkOutRecord != null && checkOut.HasValue) daily.SetCheckOut(checkOut.Value, checkOutRecord.Id); else daily.RemoveCheckOut();
         }
