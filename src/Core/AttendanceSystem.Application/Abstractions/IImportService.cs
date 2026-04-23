@@ -12,4 +12,10 @@ public interface IImportService
     Task<ImportResult<ImportDepartmentDto>> ParseDepartmentsAsync(Stream stream);
     Task<ImportResult<ImportPositionDto>> ParsePositionsAsync(Stream stream);
     Task<ImportResult<ImportEmployeeDto>> ParseEmployeesAsync(Stream stream);
+
+    byte[] GenerateAttendanceLogsTemplate();
+    byte[] GenerateBranchesTemplate();
+    byte[] GenerateDepartmentsTemplate();
+    byte[] GeneratePositionsTemplate();
+    byte[] GenerateEmployeesTemplate();
 }

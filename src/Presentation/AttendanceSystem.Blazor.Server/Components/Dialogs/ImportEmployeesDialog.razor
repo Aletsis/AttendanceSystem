@@ -13,6 +13,8 @@
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IImportService ImportService
+@inject IJSRuntime JS
+@using Microsoft.JSInterop
 
 <MudDialog>
     <DialogContent>
@@ -22,13 +24,19 @@
             <b>Columnas requeridas:</b> ID, Nombre, Apellido, Email, Sucursal(Nombre), Departamento(Nombre), Puesto(Nombre), Fecha Contratación, Genero (M/F).
         </MudText>
 
-        <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
-            <ActivatorContent>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
-                    Seleccionar Archivo
-                </MudButton>
-            </ActivatorContent>
-        </MudFileUpload>
+        <div class="d-flex align-center gap-4 mb-4">
+            <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                        Seleccionar Archivo
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadTemplate">
+                Descargar Formato
+            </MudButton>
+        </div>
 
         @if (_processing)
         {
@@ -93,6 +101,21 @@
     }
 
     private void Cancel() => MudDialog.Cancel();
+
+    private async Task DownloadTemplate()
+    {
+        try
+        {
+            var bytes = ImportService.GenerateEmployeesTemplate();
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", "Plantilla_Empleados.xlsx", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al descargar: {ex.Message}", Severity.Error);
+        }
+    }
 
     private async Task UploadFiles(IBrowserFile file)
     {

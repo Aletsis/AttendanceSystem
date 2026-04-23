@@ -3,9 +3,11 @@
 @using AttendanceSystem.Application.DTOs.Import
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.JSInterop
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IImportService ImportService
+@inject IJSRuntime JS
 
 <MudDialog>
     <DialogContent>
@@ -15,13 +17,19 @@
             <b>Columnas requeridas:</b> Nombre, Descripción, Salario Base.
         </MudText>
 
-        <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
-            <ActivatorContent>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
-                    Seleccionar Archivo
-                </MudButton>
-            </ActivatorContent>
-        </MudFileUpload>
+        <div class="d-flex align-center gap-4 mb-4">
+            <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                        Seleccionar Archivo
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadTemplate">
+                Descargar Formato
+            </MudButton>
+        </div>
 
         @if (_processing)
         {
@@ -53,6 +61,21 @@
     private List<string> _summary = new();
 
     private void Cancel() => MudDialog.Cancel();
+
+    private async Task DownloadTemplate()
+    {
+        try
+        {
+            var bytes = ImportService.GeneratePositionsTemplate();
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", "Plantilla_Puestos.xlsx", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al descargar: {ex.Message}", Severity.Error);
+        }
+    }
 
     private async Task UploadFiles(IBrowserFile file)
     {

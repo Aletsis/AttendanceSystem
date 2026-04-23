@@ -12,6 +12,8 @@
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IImportService ImportService
+@inject IJSRuntime JS
+@using Microsoft.JSInterop
 
 <PageTitle>Registrar Logs</PageTitle>
 
@@ -73,13 +75,19 @@
             Suba un archivo Excel (.xlsx) con las columnas: <b>EmployeeId</b>, <b>Date</b> (dd/MM/yyyy), <b>Time</b> (HH:mm), <b>Type</b> (Entrada/Salida).
         </MudText>
         
-        <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx, .csv">
-            <ActivatorContent>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
-                    Seleccionar Archivo
-                </MudButton>
-            </ActivatorContent>
-        </MudFileUpload>
+        <div class="d-flex align-center gap-4">
+            <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx, .csv">
+                <ActivatorContent>
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">
+                        Seleccionar Archivo
+                    </MudButton>
+                </ActivatorContent>
+            </MudFileUpload>
+
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Download" OnClick="DownloadTemplate">
+                Descargar Formato
+            </MudButton>
+        </div>
         
         @if (_processingImport)
         {
@@ -222,6 +230,21 @@
         finally
         {
             _processing = false;
+        }
+    }
+
+    private async Task DownloadTemplate()
+    {
+        try
+        {
+            var bytes = ImportService.GenerateAttendanceLogsTemplate();
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", "Plantilla_Logs.xlsx", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al descargar: {ex.Message}", Severity.Error);
         }
     }
 

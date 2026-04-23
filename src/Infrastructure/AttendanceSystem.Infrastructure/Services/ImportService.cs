@@ -356,4 +356,86 @@ public class ImportService : IImportService
             return result;
         });
     }
+
+    public byte[] GenerateAttendanceLogsTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Logs");
+        ws.Cell(1, 1).Value = "ID Empleado";
+        ws.Cell(1, 2).Value = "Fecha";
+        ws.Cell(1, 3).Value = "Hora";
+        ws.Cell(1, 4).Value = "Tipo";
+        
+        // Add sample data for clarity
+        ws.Cell(2, 1).Value = "1001";
+        ws.Cell(2, 2).Value = DateTime.Today.ToString("yyyy-MM-dd");
+        ws.Cell(2, 3).Value = "08:00:00";
+        ws.Cell(2, 4).Value = "Entrada";
+
+        ws.Columns().AdjustToContents();
+        using var ms = new MemoryStream();
+        workbook.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    public byte[] GenerateBranchesTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Sucursales");
+        ws.Cell(1, 1).Value = "Código";
+        ws.Cell(1, 2).Value = "Nombre";
+        ws.Cell(1, 3).Value = "Dirección";
+
+        ws.Columns().AdjustToContents();
+        using var ms = new MemoryStream();
+        workbook.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    public byte[] GenerateDepartmentsTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Departamentos");
+        ws.Cell(1, 1).Value = "Nombre";
+        ws.Cell(1, 2).Value = "Descripción";
+
+        ws.Columns().AdjustToContents();
+        using var ms = new MemoryStream();
+        workbook.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    public byte[] GeneratePositionsTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Puestos");
+        ws.Cell(1, 1).Value = "Nombre";
+        ws.Cell(1, 2).Value = "Descripción";
+        ws.Cell(1, 3).Value = "Sueldo Base";
+
+        ws.Columns().AdjustToContents();
+        using var ms = new MemoryStream();
+        workbook.SaveAs(ms);
+        return ms.ToArray();
+    }
+
+    public byte[] GenerateEmployeesTemplate()
+    {
+        using var workbook = new XLWorkbook();
+        var ws = workbook.Worksheets.Add("Empleados");
+        ws.Cell(1, 1).Value = "ID";
+        ws.Cell(1, 2).Value = "Nombre";
+        ws.Cell(1, 3).Value = "Apellido";
+        ws.Cell(1, 4).Value = "Email";
+        ws.Cell(1, 5).Value = "Sucursal";
+        ws.Cell(1, 6).Value = "Departamento";
+        ws.Cell(1, 7).Value = "Puesto";
+        ws.Cell(1, 8).Value = "Fecha Contratación";
+        ws.Cell(1, 9).Value = "Género";
+
+        ws.Columns().AdjustToContents();
+        using var ms = new MemoryStream();
+        workbook.SaveAs(ms);
+        return ms.ToArray();
+    }
 }
