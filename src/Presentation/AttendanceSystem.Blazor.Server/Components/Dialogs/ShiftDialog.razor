@@ -10,7 +10,7 @@
         <MudSelect @bind-Value="_shiftType" Label="Tipo de Turno" Class="mt-4 mb-4">
             @foreach (ShiftType type in Enum.GetValues(typeof(ShiftType)))
             {
-                <MudSelectItem Value="@type">@type</MudSelectItem>
+                <MudSelectItem Value="@type">@GetShiftTypeName(type)</MudSelectItem>
             }
         </MudSelect>
 
@@ -35,6 +35,10 @@
                     </MudTd>
                 </RowTemplate>
             </MudTable>
+        }
+        else if (_shiftType == ShiftType.Continuo)
+        {
+            <MudNumericField @bind-Value="_targetHours" Label="Horas de Jornada Objetivo" Min="1" Max="24" Step="1" HelperText="Horas que el empleado debe cumplir para no contar como salida anticipada" />
         }
         else
         {
@@ -63,6 +67,7 @@
     private TimeSpan? _startTime;
     private TimeSpan? _endTime;
     private int _toleranceMinutes;
+    private int _targetHours = 8;
     private ShiftType _shiftType;
     
     private List<DayConfig> _days = new();
@@ -82,9 +87,13 @@
         _toleranceMinutes = ToleranceMinutes;
         _shiftType = ShiftType;
         
-        if (WorkHours.HasValue && StartTime.HasValue)
+        if (WorkHours.HasValue)
         {
-             _endTime = StartTime.Value.Add(WorkHours.Value);
+             _targetHours = (int)WorkHours.Value.TotalHours;
+             if (StartTime.HasValue)
+             {
+                 _endTime = StartTime.Value.Add(WorkHours.Value);
+             }
         }
         else
         {
@@ -143,8 +152,16 @@
         if (string.IsNullOrWhiteSpace(_name))
             return;
 
-        if (_shiftType != ShiftType.Mixto && (_startTime == null || _endTime == null))
+        if (_shiftType == ShiftType.Continuo)
+        {
+            // For Continuous, start time is symbolic (default to 00:00)
+            _startTime = TimeSpan.Zero;
+            _endTime = TimeSpan.FromHours(_targetHours);
+        }
+        else if (_shiftType != ShiftType.Mixto && (_startTime == null || _endTime == null))
+        {
             return;
+        }
 
         var start = _startTime ?? new TimeSpan(9, 0, 0);
         var end = _endTime ?? new TimeSpan(18, 0, 0);
@@ -182,4 +199,15 @@
             MudDialog.Close(DialogResult.Ok(command));
         }
     }
+
+    private string GetShiftTypeName(ShiftType type) => type switch
+    {
+        ShiftType.Matutino => "Matutino",
+        ShiftType.Vespertino => "Vespertino",
+        ShiftType.Nocturno => "Nocturno",
+        ShiftType.Mixto => "Mixto",
+        ShiftType.Continuo => "Continuo",
+        ShiftType.Jornada24h => "Jornada 24 Horas",
+        _ => type.ToString()
+    };
 }

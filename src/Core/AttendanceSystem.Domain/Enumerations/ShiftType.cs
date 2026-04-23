@@ -6,5 +6,6 @@ public enum ShiftType
     Vespertino = 1,
     Nocturno = 2,
     Mixto = 3,
-    Continuo = 4
+    Continuo = 4,
+    Jornada24h = 5
 }
