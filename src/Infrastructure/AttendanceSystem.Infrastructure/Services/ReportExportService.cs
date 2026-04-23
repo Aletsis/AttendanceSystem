@@ -1562,7 +1562,8 @@ public class ReportExportService : IReportExportService
         {
              if (long.TryParse(x.EmployeeId, out var id)) return id;
              return long.MaxValue;
-        }).ThenBy(x => x.EmployeeId);
+        }).ThenBy(x => x.EmployeeId)
+          .ThenBy(x => x.CheckTime);
 
         int row = 2;
         foreach (var log in sortedLogs)

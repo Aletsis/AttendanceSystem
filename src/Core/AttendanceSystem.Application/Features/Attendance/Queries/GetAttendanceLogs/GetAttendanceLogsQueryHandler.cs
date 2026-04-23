@@ -91,6 +91,11 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
             };
         });
 
-        return dtos.OrderByDescending(x => x.CheckTime);
+        return dtos.OrderBy(x => 
+        {
+             if (long.TryParse(x.EmployeeId, out var id)) return id;
+             return long.MaxValue;
+        }).ThenBy(x => x.EmployeeId)
+          .ThenBy(x => x.CheckTime);
     }
 }
