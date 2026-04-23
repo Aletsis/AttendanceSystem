@@ -5,3 +5,4 @@ global using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 global using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 global using AttendanceSystem.Domain.Repositories;
 global using AttendanceSystem.Domain.Events;
+global using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;

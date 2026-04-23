@@ -298,6 +298,8 @@ public sealed class DownloadFromDeviceCommandHandler
                 if (newRecords.Any())
                 {
                     // 6. Persistir solo nuevos
+                    foreach (var nr in newRecords) nr.DownloadLogId = downloadLogId;
+                    
                     await _attendanceRepository.AddRangeAsync(newRecords, cancellationToken);
                     // Guardar attendance records. No debería haber conflictos aquí.
                     await _unitOfWork.SaveChangesAsync(cancellationToken);

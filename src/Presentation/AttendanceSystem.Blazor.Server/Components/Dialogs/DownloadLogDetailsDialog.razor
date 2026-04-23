@@ -1,0 +1,172 @@
+@using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate
+@inject IDialogService DialogService
+@inject IMediator Mediator
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Attendance.Queries.GetAttendanceByDownloadLog
+
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Fecha/Hora Inicio</MudText>
+                <MudText Typo="Typo.body1">@Log.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudText>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Fecha/Hora Fin</MudText>
+                <MudText Typo="Typo.body1">@(Log.CompletedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "En curso")</MudText>
+            </MudItem>
+            
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Dispositivo</MudText>
+                <MudText Typo="Typo.body1">@DeviceName</MudText>
+                <MudText Typo="Typo.caption" Color="Color.Secondary">ID: @Log.DeviceId.Value</MudText>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Estado</MudText>
+                @if (!Log.CompletedAt.HasValue)
+                {
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.Loop">En curso</MudChip>
+                }
+                else if (Log.IsSuccessful)
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small" Icon="@Icons.Material.Filled.CheckCircle">Exitoso</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.Error">Fallido</MudChip>
+                }
+            </MudItem>
+
+            <MudItem xs="12" md="4">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Tipo</MudText>
+                <MudText Typo="Typo.body1">@(Log.DownloadType == DownloadType.Manual ? "Manual" : "Automática")</MudText>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Iniciado por</MudText>
+                <MudText Typo="Typo.body1">@(Log.InitiatedByUserName ?? "Sistema")</MudText>
+            </MudItem>
+             <MudItem xs="12" md="4">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Duración</MudText>
+                <MudText Typo="Typo.body1">@Log.DurationMs ms</MudText>
+            </MudItem>
+
+            <MudItem xs="12">
+                <MudDivider Class="my-2" />
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Rango Solicitado (Desde)</MudText>
+                <MudText Typo="Typo.body1">@(Log.FromDate?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "N/A")</MudText>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Rango Solicitado (Hasta)</MudText>
+                <MudText Typo="Typo.body1">@(Log.ToDate?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "N/A")</MudText>
+            </MudItem>
+
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="0" Outlined="true">
+                    <MudText Typo="Typo.h5" Color="Color.Primary">@Log.TotalRecordsDownloaded</MudText>
+                    <MudText Typo="Typo.caption">Total Descargados</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" md="6">
+                <MudPaper Class="pa-4 d-flex flex-column align-center" Elevation="0" Outlined="true">
+                    <MudText Typo="Typo.h5" Color="@(Log.NewRecordsAdded > 0 ? Color.Success : Color.Default)">@Log.NewRecordsAdded</MudText>
+                    <MudText Typo="Typo.caption">Nuevos Registros</MudText>
+                    @if (Log.NewRecordsAdded > 0)
+                    {
+                        <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" OnClick="LoadNewRecords" Disabled="@_loadingRecords">
+                            @(_showRecords ? "Ocultar Detalles" : "Ver Detalles")
+                        </MudButton>
+                    }
+                </MudPaper>
+            </MudItem>
+
+            @if (_showRecords)
+            {
+                <MudItem xs="12">
+                    <MudDivider Class="my-2" />
+                    <MudText Typo="Typo.h6" Class="mb-2">Registros Importados</MudText>
+                    @if (_loadingRecords)
+                    {
+                        <MudProgressLinear Color="Color.Primary" Indeterminate="true" />
+                    }
+                    else if (_newRecords != null)
+                    {
+                        <MudTable Items="@_newRecords" Dense="true" Hover="true" Striped="true" MaxHeight="300px" FixedHeader="true">
+                            <HeaderContent>
+                                <MudTh>Empleado</MudTh>
+                                <MudTh>Hora</MudTh>
+                                <MudTh>Método</MudTh>
+                                <MudTh>Tipo</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd DataLabel="Empleado">
+                                    <MudText Typo="Typo.body2">@context.EmployeeName</MudText>
+                                    <MudText Typo="Typo.caption">@context.EmployeeId</MudText>
+                                </MudTd>
+                                <MudTd DataLabel="Hora">@context.CheckTime.ToLocalTime().ToString("HH:mm:ss")</MudTd>
+                                <MudTd DataLabel="Método">@context.VerifyMethod</MudTd>
+                                <MudTd DataLabel="Tipo">@context.EntryType</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    }
+                </MudItem>
+            }
+
+            @if (!string.IsNullOrEmpty(Log.ErrorMessage))
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="mt-2">
+                        <MudText Typo="Typo.subtitle2">Mensaje de Error:</MudText>
+                        <MudText Typo="Typo.body2">@Log.ErrorMessage</MudText>
+                    </MudAlert>
+                </MudItem>
+            }
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Color="Color.Primary">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] 
+    IMudDialogInstance? MudDialog { get; set; }
+
+    [Parameter] 
+    public required DownloadLog Log { get; set; }
+
+    [Parameter]
+    public string DeviceName { get; set; } = string.Empty;
+
+    private List<AttendanceLogViewDto>? _newRecords;
+    private bool _loadingRecords;
+    private bool _showRecords;
+
+    void Close() => MudDialog?.Close();
+
+    private async Task LoadNewRecords()
+    {
+        if (_showRecords)
+        {
+            _showRecords = false;
+            return;
+        }
+
+        _showRecords = true;
+        if (_newRecords != null) return;
+
+        _loadingRecords = true;
+        try
+        {
+            var result = await Mediator.Send(new GetAttendanceByDownloadLogQuery(Log.Id));
+            _newRecords = result.ToList();
+        }
+        finally
+        {
+            _loadingRecords = false;
+        }
+    }
+}

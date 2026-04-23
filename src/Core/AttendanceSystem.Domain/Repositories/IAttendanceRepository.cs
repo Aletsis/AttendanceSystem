@@ -1,3 +1,5 @@
+using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
+
 namespace AttendanceSystem.Domain.Repositories;
 
 public interface IAttendanceRepository
@@ -16,6 +18,9 @@ public interface IAttendanceRepository
         DeviceId deviceId,
         DateTime startDateTime,
         DateTime endDateTime,
+        CancellationToken cancellationToken = default);
+    Task<IReadOnlyList<AttendanceRecord>> GetByDownloadLogIdAsync(
+        DownloadLogId downloadLogId,
         CancellationToken cancellationToken = default);
     
     Task AddAsync(

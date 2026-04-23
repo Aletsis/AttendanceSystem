@@ -58,9 +58,9 @@ public class AdmsDeviceClient : IDeviceClient
 
         // Para equipos modernos (especialmente Visible Light), la sintaxis suele ser 'DATA QUERY TABLE=NombreTabla'
         // Intentamos esta versión para resolver el error -629.
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY TABLE=USERINFO");
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY TABLE=USERPIC");
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY TABLE=BIODATA");
+        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=USERINFO");
+        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=USERPIC");
+        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=BIODATA");
         
         _logger.LogInformation("Comandos de consulta de datos encolados para dispositivo ADMS {SN}", _serialNumber);
         
@@ -71,14 +71,14 @@ public class AdmsDeviceClient : IDeviceClient
     public Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
-        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA DELETE USERINFO PIN={userId}");
+        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA DELETE USERINFO\tPIN={userId}");
         return Task.FromResult(true);
     }
 
     public Task<bool> DeleteUserFingerprintsAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
-        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA DELETE BIODATA PIN={userId}\tType=0");
+        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA DELETE BIODATA\tPIN={userId}\tType=0");
         return Task.FromResult(true);
     }
 
@@ -100,15 +100,14 @@ public class AdmsDeviceClient : IDeviceClient
         if (!string.IsNullOrEmpty(user.Password)) userCmd += $"\tPassword={user.Password}";
         if (!string.IsNullOrEmpty(user.CardNumber)) userCmd += $"\tCard={user.CardNumber}";
         
-        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE USERINFO {userCmd}");
+        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE USERINFO\t{userCmd}");
 
         // 2. Huellas Digitales
         if (user.Fingerprints != null && user.Fingerprints.Any())
         {
             foreach (var fp in user.Fingerprints)
             {
-                // Type 0 = Fingerprint
-                _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE BIODATA PIN={user.UserId}\tType=0\tIndex={fp.Index}\tVersion=10.0\tContent={fp.Template}");
+                _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE BIODATA\tPIN={user.UserId}\tType=0\tIndex={fp.Index}\tVersion=10.0\tContent={fp.Template}");
             }
         }
 
@@ -116,13 +115,13 @@ public class AdmsDeviceClient : IDeviceClient
         if (!string.IsNullOrEmpty(user.FaceTemplate))
         {
             // Type 9 = Face
-            _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE BIODATA PIN={user.UserId}\tType=9\tVersion=58.0\tContent={user.FaceTemplate}");
+            _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE BIODATA\tPIN={user.UserId}\tType=9\tVersion=58.0\tContent={user.FaceTemplate}");
         }
 
         // 4. Fotografía de Perfil
         if (!string.IsNullOrEmpty(user.Photo))
         {
-            _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE USERPIC PIN={user.UserId}\tContent={user.Photo}");
+            _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE USERPIC\tPIN={user.UserId}\tContent={user.Photo}");
         }
 
         return Task.FromResult(true);

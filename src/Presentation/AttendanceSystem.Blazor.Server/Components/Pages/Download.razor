@@ -9,6 +9,9 @@
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IDialogService DialogService
+@using AttendanceSystem.Blazor.Server.Components.Dialogs
+
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
     <MudText Typo="Typo.h4" GutterBottom="true">Gestión de Descargas</MudText>
@@ -116,7 +119,7 @@
                                 <MudTh>Total</MudTh>
                                 <MudTh>Nuevos</MudTh>
                                 <MudTh>Duración (ms)</MudTh>
-                                <MudTh>Error</MudTh>
+                                <MudTh>Detalles</MudTh>
                             </HeaderContent>
                             <RowTemplate>
                                 <MudTd DataLabel="Fecha/Hora">@context.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
@@ -168,13 +171,11 @@
                                     </MudText>
                                 </MudTd>
                                 <MudTd DataLabel="Duración">@context.DurationMs</MudTd>
-                                <MudTd DataLabel="Error">
-                                    @if (!string.IsNullOrEmpty(context.ErrorMessage))
-                                    {
-                                        <MudTooltip Text="@context.ErrorMessage">
-                                            <MudIcon Icon="@Icons.Material.Filled.Info" Color="Color.Error" Size="Size.Small" />
-                                        </MudTooltip>
-                                    }
+                                <MudTd DataLabel="Detalles">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Info" 
+                                                   Color="@(string.IsNullOrEmpty(context.ErrorMessage) ? Color.Default : Color.Error)" 
+                                                   Size="Size.Small" 
+                                                   OnClick="@(() => ShowDetails(context))" />
                                 </MudTd>
                             </RowTemplate>
                              <PagerContent>
@@ -325,5 +326,18 @@
     private string GetDeviceName(string deviceId)
     {
         return _deviceNames.TryGetValue(deviceId, out var name) ? name : deviceId;
+    }
+
+    private async Task ShowDetails(DownloadLog log)
+    {
+        var parameters = new DialogParameters<DownloadLogDetailsDialog>
+        {
+            { x => x.Log, log },
+            { x => x.DeviceName, GetDeviceName(log.DeviceId.Value) }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+        await DialogService.ShowAsync<DownloadLogDetailsDialog>("Detalles de Descarga", parameters, options);
     }
 }

@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
+using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
 
 namespace AttendanceSystem.Infrastructure.Persistence.Repositories;
 
@@ -55,6 +56,16 @@ public class AttendanceRepository : IAttendanceRepository
             .Where(x => x.DeviceId == deviceId 
                      && x.CheckTime >= startDateTime 
                      && x.CheckTime <= endDateTime)
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AttendanceRecord>> GetByDownloadLogIdAsync(
+        DownloadLogId downloadLogId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.AttendanceRecords
+            .Where(x => x.DownloadLogId == downloadLogId)
+            .OrderByDescending(x => x.CheckTime)
             .ToListAsync(cancellationToken);
     }
 

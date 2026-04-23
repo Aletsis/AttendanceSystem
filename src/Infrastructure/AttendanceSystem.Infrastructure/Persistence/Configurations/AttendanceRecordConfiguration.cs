@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
 
 namespace AttendanceSystem.Infrastructure.Persistence.Configurations;
 
@@ -60,6 +61,12 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
             .HasColumnName("StatusId")
             .HasColumnType("int")
             .IsRequired();
+
+        builder.Property(x => x.DownloadLogId)
+            .HasConversion(
+                id => id == null ? (Guid?)null : id.Value,
+                value => value == null ? null : DownloadLogId.From(value.Value))
+            .IsRequired(false);
 
         // Ignorar eventos de dominio (no se persisten)
         builder.Ignore(x => x.DomainEvents);

@@ -8,6 +8,7 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
     public required VerifyMethod VerifyMethod { get; set; }
     public required CheckType CheckType { get; set; }
     public required AttendanceStatus Status { get; set; }
+    public DownloadLogId? DownloadLogId { get; set; }
 
     // Constructor privado - solo se crea mediante Factory
     private AttendanceRecord() { }

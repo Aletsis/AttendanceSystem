@@ -187,11 +187,11 @@ public class AdmsController : ControllerBase
                     _admsCommandService.RegisterPendingExecution(SN, cmdId, logId.Value);
 
                 _logger.LogInformation("📤 Comando → {SN}: {Command}", SN, command);
-                return Content($"C:{cmdId}:{command}\n", "text/plain");
+                return Content($"C:{cmdId}:{command}\n", "text/plain;charset=ISO-8859-1");
             }
         }
 
-        return Content("OK", "text/plain");
+        return Content("OK", "text/plain;charset=ISO-8859-1");
     }
 
     // Diagnostic endpoint to check pending commands
