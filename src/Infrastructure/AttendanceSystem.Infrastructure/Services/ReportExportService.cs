@@ -1543,4 +1543,42 @@ public class ReportExportService : IReportExportService
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
+    public byte[] GenerateAttendanceLogsExcel(IEnumerable<AttendanceLogViewDto> logs)
+    {
+        using var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Logs de Asistencia");
+
+        // Headers
+        string[] headers = { "ID Empleado", "Nombre", "Fecha", "Hora", "Tipo Asignación" };
+        for (int i = 0; i < headers.Length; i++)
+        {
+            var cell = worksheet.Cell(1, i + 1);
+            cell.Value = headers[i];
+            StyleHeaderCell(cell);
+        }
+
+        // Sort by ID (ascending)
+        var sortedLogs = logs.OrderBy(x => 
+        {
+             if (long.TryParse(x.EmployeeId, out var id)) return id;
+             return long.MaxValue;
+        }).ThenBy(x => x.EmployeeId);
+
+        int row = 2;
+        foreach (var log in sortedLogs)
+        {
+            SetCell(worksheet, row, 1, log.EmployeeId);
+            SetCell(worksheet, row, 2, log.EmployeeName);
+            SetCell(worksheet, row, 3, log.CheckTime.ToString("dd/MM/yyyy"));
+            SetCell(worksheet, row, 4, log.CheckTime.ToString("HH:mm:ss"));
+            SetCell(worksheet, row, 5, log.EntryType);
+            row++;
+        }
+
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
+    }
 }

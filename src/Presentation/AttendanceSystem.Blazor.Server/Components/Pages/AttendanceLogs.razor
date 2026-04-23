@@ -12,6 +12,8 @@
 @using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
 @using AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift
 @inject IDialogService DialogService
+@inject IReportExportService ExportService
+@inject IJSRuntime JS
 
 <PageTitle>Bitácora de Asistencia (Logs)</PageTitle>
 
@@ -33,13 +35,18 @@
     </MudItem>
     
     <MudItem xs="12" Class="d-flex align-center justify-end gap-2">
-        <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="OpenChangeShiftDialog" Disabled="@(SelectedEmployeeObj == null)">
-            Cambiar Horario
-        </MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="OpenManualLogDialog" Disabled="@(SelectedEmployeeObj == null)">
-            Agregar Manual
-        </MudButton>
+        <AuthorizeView Roles="Administrador">
+            <Authorized>
+                <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="OpenChangeShiftDialog" Disabled="@(SelectedEmployeeObj == null)">
+                    Cambiar Horario
+                </MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Secondary" OnClick="OpenManualLogDialog" Disabled="@(SelectedEmployeeObj == null)">
+                    Agregar Manual
+                </MudButton>
+            </Authorized>
+        </AuthorizeView>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData">Ver Logs</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="ExportToExcel" StartIcon="@Icons.Material.Filled.FileDownload" Disabled="@(!LogsList.Any())">Exportar Excel</MudButton>
     </MudItem>
 </MudGrid>
 
@@ -239,4 +246,22 @@
         LogsList = result.ToList();
     }
 
+    private async Task ExportToExcel()
+    {
+        try
+        {
+            if (!LogsList.Any()) return;
+
+            var bytes = ExportService.GenerateAttendanceLogsExcel(LogsList);
+            var fileName = $"Logs_Asistencia_{SelectedDate?.ToString("yyyyMMdd") ?? DateTime.Now.ToString("yyyyMMdd")}.xlsx";
+            
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", fileName, streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar: {ex.Message}", Severity.Error);
+        }
+    }
 }

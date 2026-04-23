@@ -25,4 +25,5 @@ public interface IReportExportService
     byte[] GenerateWorkedRestDayExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool showBranch);
     byte[] GenerateLateArrivalExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch);
     byte[] GenerateOvertimeExcel(IEnumerable<AdvancedReportSummaryDto> data, DateTime start, DateTime end, bool detailed, bool specificDate, bool showBranch, bool groupByDepartment = false);
+    byte[] GenerateAttendanceLogsExcel(IEnumerable<AttendanceLogViewDto> logs);
 }
