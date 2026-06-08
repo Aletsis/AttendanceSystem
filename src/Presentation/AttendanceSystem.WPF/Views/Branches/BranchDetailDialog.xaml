@@ -1,0 +1,107 @@
+<UserControl x:Class="AttendanceSystem.WPF.Views.Branches.BranchDetailDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Width="450">
+    
+    <prism:Dialog.WindowStyle>
+        <Style TargetType="Window">
+            <Setter Property="prism:Dialog.WindowStartupLocation" Value="CenterOwner" />
+            <Setter Property="ResizeMode" Value="NoResize"/>
+            <Setter Property="ShowInTaskbar" Value="False"/>
+            <Setter Property="SizeToContent" Value="Height"/>
+            <Setter Property="WindowStyle" Value="None"/>
+            <Setter Property="AllowsTransparency" Value="True"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+    </prism:Dialog.WindowStyle>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
+        </Border.Effect>
+        
+        <Grid Margin="25">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
+                <TextBlock Text="Complete la información de la sucursal" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+            </StackPanel>
+
+            <!-- Form -->
+            <StackPanel Grid.Row="1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="2*"/>
+                    </Grid.ColumnDefinitions>
+                    
+                    <StackPanel Grid.Column="0" Margin="0,0,10,15">
+                        <TextBlock Text="Código" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Ej: A01"
+                                 MaxLength="3"
+                                 Padding="10,8"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="0,0,0,15">
+                        <TextBlock Text="Nombre" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Nombre de la sucursal"
+                                 Padding="10,8"/>
+                    </StackPanel>
+                </Grid>
+
+                <StackPanel Margin="0,0,0,15">
+                    <TextBlock Text="Dirección" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBox Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" 
+                             mah:TextBoxHelper.Watermark="Dirección física"
+                             Padding="10,8"/>
+                </StackPanel>
+
+                <CheckBox Content="Es Sucursal Externa" 
+                          IsChecked="{Binding IsExternal}"
+                          Margin="0,5,0,15"
+                          Foreground="#4E5D78"/>
+
+                <StackPanel Visibility="{Binding IsExternal, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <TextBlock Text="Host (API URL)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBox Text="{Binding ExternalHost, UpdateSourceTrigger=PropertyChanged}" 
+                             mah:TextBoxHelper.Watermark="https://api.sucursal.com"
+                             Padding="10,8"/>
+                    <TextBlock Text="Requerido para sincronización remota." FontSize="11" Foreground="#858796" Margin="2,5,0,0"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- Actions -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                <Button Content="Cancelar" 
+                        Command="{Binding CancelCommand}"
+                        Style="{StaticResource MahApps.Styles.Button.Flat}"
+                        Margin="0,0,10,0"
+                        Padding="20,10"/>
+                
+                <Button Content="Guardar" 
+                        Command="{Binding SaveCommand}"
+                        Background="#4E73DF"
+                        Foreground="White"
+                        Padding="30,10"
+                        BorderThickness="0">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="8"/>
+                        </Style>
+                    </Button.Resources>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

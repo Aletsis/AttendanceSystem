@@ -48,6 +48,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private OvertimeCapType _overtimeCapType = OvertimeCapType.None;
         private double? _overtimeCapMinutes;
         private bool _calculateOvertimeBeforeEntry = false;
+        private string? _cardNumber;
+        private string? _devicePassword;
+        private string? _photo;
 
         // Validation
         private string _title = "Nuevo Empleado";
@@ -125,6 +128,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public OvertimeCapType SelectedOvertimeCapType { get => _overtimeCapType; set => SetProperty(ref _overtimeCapType, value); }
         public double? OvertimeCapMinutes { get => _overtimeCapMinutes; set => SetProperty(ref _overtimeCapMinutes, value); }
         public bool CalculateOvertimeBeforeEntry { get => _calculateOvertimeBeforeEntry; set => SetProperty(ref _calculateOvertimeBeforeEntry, value); }
+        public string? CardNumber { get => _cardNumber; set => SetProperty(ref _cardNumber, value); }
+        public string? DevicePassword { get => _devicePassword; set => SetProperty(ref _devicePassword, value); }
+        public string? Photo { get => _photo; set => SetProperty(ref _photo, value); }
 
 
         public ICommand SaveCommand { get; }
@@ -177,14 +183,14 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 if (deps.IsSuccess) 
                 {
                     Departments.Clear();
-                    Departments.AddRange(deps.Value);
+                    Departments.AddRange(deps.Value.OrderBy(d => d.Name));
                 }
 
                 var positions = await _mediator.Send(new GetPositionsQuery());
                 if (positions.IsSuccess)
                 {
                     Positions.Clear();
-                    Positions.AddRange(positions.Value);
+                    Positions.AddRange(positions.Value.OrderBy(p => p.Name));
                 }
 
                 var branches = await _mediator.Send(new GetBranchesQuery());
@@ -198,7 +204,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 if (shifts.IsSuccess)
                 {
                     Shifts.Clear();
-                    Shifts.AddRange(shifts.Value);
+                    Shifts.AddRange(shifts.Value.OrderBy(s => s.StartTime));
                 }
                 
                 // Initial filter after loading catalogs
@@ -224,7 +230,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             var dept = Departments.FirstOrDefault(d => d.Id.ToString() == SelectedDepartmentId);
             if (dept != null && dept.PositionIds != null)
             {
-                var filtered = Positions.Where(p => dept.PositionIds.Contains(p.Id)).ToList();
+                var filtered = Positions.Where(p => dept.PositionIds.Contains(p.Id)).OrderBy(p => p.Name).ToList();
                 VisiblePositions.AddRange(filtered);
             }
             else
@@ -243,7 +249,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private void FilterShifts()
         {
             VisibleShifts.Clear();
-            var filtered = Shifts.Where(s => s.ShiftType == SelectedShiftType).ToList();
+            var filtered = Shifts.Where(s => s.ShiftType == SelectedShiftType).OrderBy(s => s.StartTime).ToList();
             VisibleShifts.AddRange(filtered);
             
             // Validate if selected shift is still valid
@@ -287,6 +293,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     SelectedOvertimeCapType = emp.OvertimeCapType;
                     OvertimeCapMinutes = emp.OvertimeCapMinutes;
                     CalculateOvertimeBeforeEntry = emp.CalculateOvertimeBeforeEntry;
+                    CardNumber = emp.CardNumber;
+                    DevicePassword = emp.DevicePassword;
+                    Photo = emp.Photo;
                 }
                 else
                 {
@@ -332,7 +341,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         SelectedOvertimeCalculationMethod,
                         SelectedOvertimeCapType,
                         OvertimeCapMinutes,
-                        CalculateOvertimeBeforeEntry
+                        CalculateOvertimeBeforeEntry,
+                        CardNumber,
+                        DevicePassword,
+                        Photo
                     );
 
                     var result = await _mediator.Send(command);
@@ -359,7 +371,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         SelectedOvertimeCalculationMethod,
                         SelectedOvertimeCapType,
                         OvertimeCapMinutes,
-                        CalculateOvertimeBeforeEntry
+                        CalculateOvertimeBeforeEntry,
+                        CardNumber,
+                        DevicePassword,
+                        Photo
                     );
 
                     var result = await _mediator.Send(command);
@@ -416,6 +431,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             SelectedRestDay = null;
             OvertimeAuthorized = false;
             CalculateOvertimeBeforeEntry = false;
+            CardNumber = null;
+            DevicePassword = null;
+            Photo = null;
         }
     }
 }

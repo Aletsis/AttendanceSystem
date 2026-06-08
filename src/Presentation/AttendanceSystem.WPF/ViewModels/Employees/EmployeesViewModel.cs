@@ -8,6 +8,19 @@ using AttendanceSystem.Application.Features.Employees.Queries;
 using AttendanceSystem.Application.Features.Employees.Commands;
 using AttendanceSystem.Application.Features.Employees;
 using AttendanceSystem.Domain.Enumerations;
+using Microsoft.Win32;
+using System.IO;
+using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Features.Branches.Queries.GetBranches;
+using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments;
+using AttendanceSystem.Application.Features.Positions.Queries.GetPositions;
+using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts;
+using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices;
+using AttendanceSystem.Application.Features.Devices.Commands.SendEmployeeToDevice;
+using System.Collections.Generic;
+using System;
+using System.Threading.Tasks;
+using Prism.Services.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Employees
 {
@@ -16,6 +29,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IImportService _importService;
+        private readonly IReportExportService _exportService;
+        private readonly IDialogService _dialogService;
 
         private ObservableCollection<EmployeeListItem> _employees = new();
         private ObservableCollection<EmployeeListItem> _filteredEmployees = new();
@@ -67,15 +83,25 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public ICommand DeleteEmployeeCommand { get; }
         public ICommand RefreshCommand { get; }
         public ICommand BackToDashboardCommand { get; }
+        public ICommand ImportEmployeesCommand { get; }
+        public ICommand ExportEmployeesCommand { get; }
+        public ICommand DownloadTemplateCommand { get; }
+        public ICommand SendToDeviceCommand { get; }
 
         public EmployeesViewModel(
             IFrameNavigationService navigationService,
             IMessageService messageService,
-            IMediator mediator)
+            IMediator mediator,
+            IImportService importService,
+            IReportExportService exportService,
+            IDialogService dialogService)
         {
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
+            _importService = importService;
+            _exportService = exportService;
+            _dialogService = dialogService;
 
             AddEmployeeCommand = new DelegateCommand(ExecuteAddEmployee);
             EditEmployeeCommand = new DelegateCommand(ExecuteEditEmployee, CanExecuteEditEmployee)
@@ -84,6 +110,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 .ObservesProperty(() => SelectedEmployee);
             RefreshCommand = new DelegateCommand(async () => await LoadEmployeesAsync());
             BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
+            ImportEmployeesCommand = new DelegateCommand(async () => await ExecuteImportEmployeesAsync());
+            ExportEmployeesCommand = new DelegateCommand(async () => await ExecuteExportEmployeesAsync());
+            DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());
+            SendToDeviceCommand = new DelegateCommand<EmployeeListItem>(async (emp) => await ExecuteSendToDeviceAsync(emp));
 
             _ = LoadEmployeesAsync();
         }
@@ -214,6 +244,183 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private bool CanExecuteEditEmployee()
         {
             return SelectedEmployee != null;
+        }
+
+        private async Task ExecuteImportEmployeesAsync()
+        {
+            var openFileDialog = new OpenFileDialog
+            {
+                Filter = "Excel Files (*.xlsx)|*.xlsx",
+                Title = "Seleccionar archivo de empleados"
+            };
+
+            if (openFileDialog.ShowDialog() == true)
+            {
+                SetBusy(true, "Procesando importación...");
+                try
+                {
+                    // 1. Cargar catálogos para mapeo
+                    var branchesResult = await _mediator.Send(new GetBranchesQuery());
+                    var departmentsResult = await _mediator.Send(new GetDepartmentsQuery());
+                    var positionsResult = await _mediator.Send(new GetPositionsQuery());
+                    var shiftsResult = await _mediator.Send(new GetShiftsQuery());
+
+                    var branches = branchesResult.IsSuccess ? branchesResult.Value.ToDictionary(b => b.Name, b => b.Id, StringComparer.OrdinalIgnoreCase) : new();
+                    var departments = departmentsResult.IsSuccess ? departmentsResult.Value.ToDictionary(d => d.Name, d => d.Id, StringComparer.OrdinalIgnoreCase) : new();
+                    var positions = positionsResult.IsSuccess ? positionsResult.Value.ToDictionary(p => p.Name, p => p.Id, StringComparer.OrdinalIgnoreCase) : new();
+
+                    using var stream = File.OpenRead(openFileDialog.FileName);
+                    var importResult = await _importService.ParseEmployeesAsync(stream);
+
+                    if (importResult.Errors.Any() && !importResult.ValidEntries.Any())
+                    {
+                        await _messageService.ShowErrorAsync($"Error al leer el archivo: {string.Join("\n", importResult.Errors.Take(5))}");
+                        return;
+                    }
+
+                    int successCount = 0;
+                    int errorCount = 0;
+
+                    foreach (var dto in importResult.ValidEntries)
+                    {
+                        try
+                        {
+                            if (!branches.TryGetValue(dto.BranchName, out var branchId) ||
+                                !departments.TryGetValue(dto.DepartmentName, out var deptId) ||
+                                !positions.TryGetValue(dto.PositionName, out var posId))
+                            {
+                                errorCount++;
+                                continue;
+                            }
+
+                            var gender = Gender.Male;
+                            if (!string.IsNullOrWhiteSpace(dto.Gender) && dto.Gender.StartsWith("F", StringComparison.OrdinalIgnoreCase))
+                                gender = Gender.Female;
+
+                            var command = new CreateEmployeeCommand(
+                                dto.EmployeeId, dto.FirstName, dto.LastName, dto.Email, string.Empty, dto.HireDate, gender,
+                                branchId.ToString(), deptId.ToString(), posId.ToString(),
+                                ShiftType.Matutino, null, null, false, OvertimeCalculationMethod.NoRounding,
+                                OvertimeCapType.None, null, false
+                            );
+
+                            var result = await _mediator.Send(command);
+                            if (result.IsSuccess) successCount++;
+                            else errorCount++;
+                        }
+                        catch
+                        {
+                            errorCount++;
+                        }
+                    }
+
+                    await _messageService.ShowSuccessAsync($"Importación completada. Exitosos: {successCount}, Errores: {errorCount}");
+                    await LoadEmployeesAsync();
+                }
+                catch (Exception ex)
+                {
+                    await _messageService.ShowErrorAsync($"Error durante la importación: {ex.Message}");
+                }
+                finally
+                {
+                    SetBusy(false);
+                }
+            }
+        }
+
+        private async Task ExecuteExportEmployeesAsync()
+        {
+            if (!_allEmployeesData.Any())
+            {
+                await _messageService.ShowWarningAsync("No hay datos para exportar.");
+                return;
+            }
+
+            var saveFileDialog = new SaveFileDialog
+            {
+                Filter = "Excel Files (*.xlsx)|*.xlsx",
+                FileName = $"Empleados_{DateTime.Now:yyyyMMdd}.xlsx",
+                Title = "Guardar exportación de empleados"
+            };
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                SetBusy(true, "Generando archivo...");
+                try
+                {
+                    var bytes = _exportService.GenerateEmployeesExcel(_allEmployeesData);
+                    await File.WriteAllBytesAsync(saveFileDialog.FileName, bytes);
+                    await _messageService.ShowSuccessAsync("Archivo exportado correctamente.");
+                }
+                catch (Exception ex)
+                {
+                    await _messageService.ShowErrorAsync($"Error al exportar: {ex.Message}");
+                }
+                finally
+                {
+                    SetBusy(false);
+                }
+            }
+        }
+
+        private async Task ExecuteDownloadTemplateAsync()
+        {
+            var saveFileDialog = new SaveFileDialog
+            {
+                Filter = "Excel Files (*.xlsx)|*.xlsx",
+                FileName = "Plantilla_Empleados.xlsx",
+                Title = "Descargar plantilla de importación"
+            };
+
+            if (saveFileDialog.ShowDialog() == true)
+            {
+                try
+                {
+                    var bytes = _importService.GenerateEmployeesTemplate();
+                    await File.WriteAllBytesAsync(saveFileDialog.FileName, bytes);
+                    await _messageService.ShowSuccessAsync("Plantilla descargada correctamente.");
+                }
+                catch (Exception ex)
+                {
+                    await _messageService.ShowErrorAsync($"Error al descargar plantilla: {ex.Message}");
+                }
+            }
+        }
+
+        private async Task ExecuteSendToDeviceAsync(EmployeeListItem employee)
+        {
+            if (employee == null) return;
+
+            _dialogService.ShowDialog("SelectDeviceDialog", null, async result =>
+            {
+                if (result.Result == ButtonResult.OK)
+                {
+                    var deviceId = result.Parameters.GetValue<string>("DeviceId");
+                    var deviceName = result.Parameters.GetValue<string>("DeviceName");
+
+                    SetBusy(true, $"Enviando a {deviceName}...");
+                    try
+                    {
+                        var cmdResult = await _mediator.Send(new SendEmployeeToDeviceCommand(employee.Id, deviceId));
+                        if (cmdResult.IsSuccess)
+                        {
+                            await _messageService.ShowSuccessAsync($"Empleado sincronizado correctamente en {deviceName}.");
+                        }
+                        else
+                        {
+                            await _messageService.ShowErrorAsync($"Error al sincronizar con {deviceName}: {cmdResult.Error}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        await _messageService.ShowErrorAsync($"Error durante la sincronización: {ex.Message}");
+                    }
+                    finally
+                    {
+                        SetBusy(false);
+                    }
+                }
+            });
         }
     }
 

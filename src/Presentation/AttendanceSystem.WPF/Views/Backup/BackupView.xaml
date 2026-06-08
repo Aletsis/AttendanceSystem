@@ -1,97 +1,229 @@
 <UserControl x:Class="AttendanceSystem.WPF.Views.Backup.BackupView"
-      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
-      xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-      Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
-    <Grid Margin="20">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Background="#F5F7FA">
+    
+    <UserControl.Resources>
+        <DropShadowEffect x:Key="CardShadow" BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
+
+        <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Circle}">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="#F8F9FC"/>
+        </Style>
+
+        <Style x:Key="StatCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="15"/>
+            <Setter Property="Margin" Value="0,0,10,0"/>
+            <Setter Property="Effect" Value="{StaticResource CardShadow}"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
         
         <!-- Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,20">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <Button Grid.Column="0" Command="{Binding BackToDashboardCommand}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="40" Height="40" Margin="0,0,15,0">
-                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20"/>
+        <Grid Grid.Row="0" Margin="0,0,0,25">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0"
+                    Command="{Binding BackToDashboardCommand}"
+                    Style="{StaticResource MahApps.Styles.Button.Circle}"
+                    Width="40" Height="40" Margin="0,0,15,0"
+                    Background="White" Effect="{StaticResource CardShadow}">
+                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
             </Button>
+
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Text="Respaldo y Restauración" FontSize="28" FontWeight="Bold"/>
-                <TextBlock Text="Gestione los respaldos de la base de datos" FontSize="14" Foreground="{DynamicResource MahApps.Brushes.Gray}"/>
+                <TextBlock Text="Respaldo y Restauración" FontSize="28" FontWeight="Bold" Foreground="#4E5D78"/>
+                <TextBlock Text="Proteja y recupere su información de asistencia de forma segura" FontSize="14" Foreground="#858796"/>
             </StackPanel>
-            <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Command="{Binding RefreshCommand}" Style="{DynamicResource MahApps.Styles.Button.Square}" Width="40" Height="40" Margin="0,0,10,0">
-                    <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20"/>
-                </Button>
-                <Button Command="{Binding CreateBackupCommand}" Style="{DynamicResource MahApps.Styles.Button.Square.Accent}" Height="40" Padding="20,0">
-                    <StackPanel Orientation="Horizontal">
-                        <iconPacks:PackIconMaterial Kind="DatabasePlus" Width="20" Height="20" Margin="0,0,8,0"/>
-                        <TextBlock Text="Crear Respaldo" VerticalAlignment="Center" FontWeight="SemiBold"/>
-                    </StackPanel>
-                </Button>
-            </StackPanel>
+
+            <Button Grid.Column="2" Command="{Binding RefreshCommand}" Style="{StaticResource MahApps.Styles.Button.Circle}" Width="40" Height="40" Background="White" BorderBrush="#EAECF4" Effect="{StaticResource CardShadow}">
+                <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
+            </Button>
         </Grid>
-        
-        <!-- Warning Banner -->
-        <Border Grid.Row="1" Background="#FFF3CD" BorderBrush="#FFE69C" BorderThickness="1" CornerRadius="5" Padding="15" Margin="0,0,0,15">
-            <StackPanel Orientation="Horizontal">
-                <iconPacks:PackIconMaterial Kind="AlertCircle" Width="24" Height="24" Foreground="#856404" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                <TextBlock TextWrapping="Wrap" Foreground="#856404">
-                    <Run FontWeight="SemiBold">Advertencia:</Run>
-                    <Run>La restauración de un respaldo sobrescribirá completamente la base de datos actual. Asegúrese de crear un respaldo antes de restaurar.</Run>
-                </TextBlock>
-            </StackPanel>
-        </Border>
-        
-        <!-- Backup List -->
-        <Grid Grid.Row="2">
-            <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            
-            <DataGrid Grid.Row="0" ItemsSource="{Binding BackupFiles}" SelectedItem="{Binding SelectedBackup}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" AlternatingRowBackground="{DynamicResource MahApps.Brushes.Gray10}">
-                <DataGrid.Columns>
-                    <DataGridTextColumn Header="Nombre del Archivo" Binding="{Binding FileName}" Width="*"/>
-                    <DataGridTextColumn Header="Tamaño" Binding="{Binding FileSizeFormatted}" Width="120"/>
-                    <DataGridTextColumn Header="Fecha de Creación" Binding="{Binding CreatedDate, StringFormat='dd/MM/yyyy HH:mm'}" Width="160"/>
-                    <DataGridTemplateColumn Header="Acciones" Width="180">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                    <Button Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2" ToolTip="Restaurar">
-                                        <iconPacks:PackIconMaterial Kind="DatabaseRefresh" Width="14" Height="14"/>
-                                    </Button>
-                                    <Button Command="{Binding DataContext.DownloadBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2" ToolTip="Descargar">
-                                        <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14"/>
-                                    </Button>
-                                    <Button Command="{Binding DataContext.DeleteBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2" ToolTip="Eliminar">
-                                        <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14"/>
-                                    </Button>
-                                </StackPanel>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                </DataGrid.Columns>
-            </DataGrid>
-            
-            <!-- Instructions -->
-            <Border Grid.Row="1" Background="{DynamicResource MahApps.Brushes.Tile}" CornerRadius="5" Padding="20" Margin="0,15,0,0">
-                <StackPanel>
-                    <TextBlock Text="Instrucciones" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
-                    <TextBlock TextWrapping="Wrap" Foreground="{DynamicResource MahApps.Brushes.Gray}">
-                        • <Run FontWeight="SemiBold">Crear Respaldo:</Run> Crea un respaldo completo de la base de datos actual.
-                        <LineBreak/>
-                        • <Run FontWeight="SemiBold">Restaurar:</Run> Restaura la base de datos desde el respaldo seleccionado. La aplicación debe reiniciarse después.
-                        <LineBreak/>
-                       • <Run FontWeight="SemiBold">Descargar:</Run> Descarga el archivo del respaldo a su equipo.
-                        <LineBreak/>
-                        • <Run FontWeight="SemiBold">Eliminar:</Run> Elimina permanentemente el respaldo seleccionado.
-                    </TextBlock>
+
+        <!-- Stats Row -->
+        <UniformGrid Grid.Row="1" Columns="3" Margin="0,0,0,25">
+            <Border Style="{StaticResource StatCardStyle}">
+                <StackPanel Orientation="Horizontal">
+                    <Border Background="#E7F0FD" CornerRadius="10" Width="45" Height="45" Margin="0,0,15,0">
+                        <iconPacks:PackIconMaterial Kind="Counter" Foreground="#4E73DF" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Total Respaldos" FontSize="11" Foreground="#858796" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding TotalBackups}" FontSize="18" FontWeight="Bold" Foreground="#4E5D78"/>
+                    </StackPanel>
                 </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource StatCardStyle}">
+                <StackPanel Orientation="Horizontal">
+                    <Border Background="#E8F9F3" CornerRadius="10" Width="45" Height="45" Margin="0,0,15,0">
+                        <iconPacks:PackIconMaterial Kind="Server" Foreground="#1CC88A" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Espacio Usado" FontSize="11" Foreground="#858796" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding UsedSpaceFormatted}" FontSize="18" FontWeight="Bold" Foreground="#4E5D78"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource StatCardStyle}" Margin="0">
+                <StackPanel Orientation="Horizontal">
+                    <Border Background="#FFF7E6" CornerRadius="10" Width="45" Height="45" Margin="0,0,15,0">
+                        <iconPacks:PackIconMaterial Kind="CalendarClock" Foreground="#F6C23E" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="Último Respaldo" FontSize="11" Foreground="#858796" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding LastBackupDate}" FontSize="18" FontWeight="Bold" Foreground="#4E5D78"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+        
+        <!-- Main Content -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="320"/>
+                <ColumnDefinition Width="25"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+            
+            <!-- Actions Panel -->
+            <StackPanel Grid.Column="0">
+                <Border Background="White" CornerRadius="15" Padding="20" Effect="{StaticResource CardShadow}">
+                    <StackPanel>
+                        <TextBlock Text="Crear Nuevo Respaldo" FontSize="16" FontWeight="Bold" Foreground="#4E5D78" Margin="0,0,0,15"/>
+                        
+                        <TextBlock Text="Descripción (opcional)" FontSize="12" Foreground="#858796" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding BackupDescription}" 
+                                 mah:TextBoxHelper.Watermark="Escriba una referencia..."
+                                 AcceptsReturn="True" Height="80" VerticalScrollBarVisibility="Auto" 
+                                 Padding="10" Margin="0,0,0,15"
+                                 BorderBrush="#EAECF4" Background="#F8F9FC"/>
+
+                        <Button Command="{Binding CreateFullBackupCommand}" 
+                                Background="#4E73DF" Foreground="White" Height="45" Margin="0,0,0,10" BorderThickness="0">
+                            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="CloudDownload" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Respaldo Completo" FontWeight="Bold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding CreateDatabaseBackupCommand}" 
+                                Style="{StaticResource MahApps.Styles.Button.Flat}"
+                                Foreground="#4E73DF" BorderBrush="#EAECF4" Height="45" Margin="0,0,0,15">
+                            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="Database" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Solo Base de Datos" FontWeight="Bold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Border Background="#E1F5FE" CornerRadius="8" Padding="12">
+                            <StackPanel>
+                                <TextBlock Text="Información:" FontWeight="Bold" Foreground="#01579B" FontSize="12" Margin="0,0,0,5"/>
+                                <TextBlock Text="Completo: BD + Configuración" FontSize="11" Foreground="#0288D1"/>
+                                <TextBlock Text="Solo BD: Datos de asistencia" FontSize="11" Foreground="#0288D1"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Border>
+
+                <!-- Warning Panel -->
+                <Border Background="#FFF3CD" CornerRadius="15" Padding="20" Margin="0,20,0,0" BorderBrush="#FFE69C" BorderThickness="1">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <iconPacks:PackIconMaterial Kind="Alert" Foreground="#856404" Width="16" Height="16" Margin="0,0,8,0"/>
+                            <TextBlock Text="¡Advertencia!" FontWeight="Bold" Foreground="#856404"/>
+                        </StackPanel>
+                        <TextBlock Text="La restauración sobrescribe los datos actuales y requiere reiniciar la aplicación." FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- List Panel -->
+            <Border Grid.Column="2" Background="White" CornerRadius="15" Effect="{StaticResource CardShadow}">
+                <Grid Margin="15">
+                    <DataGrid ItemsSource="{Binding BackupFiles}"
+                              SelectedItem="{Binding SelectedBackup}"
+                              AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
+                              GridLinesVisibility="None" HeadersVisibility="Column" BorderThickness="0" Background="Transparent" RowHeight="55">
+                        <DataGrid.ColumnHeaderStyle>
+                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
+                                <Setter Property="Background" Value="#F8F9FC"/><Setter Property="Foreground" Value="#4E5D78"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Padding" Value="10,15"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Setter Property="BorderBrush" Value="#EAECF4"/>
+                            </Style>
+                        </DataGrid.ColumnHeaderStyle>
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="Archivo" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding FileName}" FontWeight="Bold" Foreground="#4E5D78"/>
+                                            <TextBlock Text="{Binding Description, TargetNullValue='Sin descripción'}" FontSize="10" Foreground="#858796" MaxWidth="250" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="Tipo" Width="80">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding BackupType, Converter={StaticResource BackupTypeToBrushConverter}}" CornerRadius="8" Padding="6,2" HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding BackupType}" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="Tamaño" Binding="{Binding SizeInBytes, Converter={StaticResource BytesToSizeConverter}}" Width="90"/>
+                            <DataGridTextColumn Header="Fecha" Binding="{Binding CreatedAt, StringFormat='dd/MM/yyyy HH:mm'}" Width="130"/>
+                            <DataGridTemplateColumn Header="Acciones" Width="140">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                            <Button Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    CommandParameter="{Binding}" Style="{StaticResource ActionButtonStyle}" ToolTip="Restaurar">
+                                                <iconPacks:PackIconMaterial Kind="DatabaseRefresh" Width="14" Height="14" Foreground="#1CC88A"/>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.DownloadBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    CommandParameter="{Binding}" Style="{StaticResource ActionButtonStyle}" ToolTip="Descargar">
+                                                <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14" Foreground="#36B9CC"/>
+                                            </Button>
+                                            <Button Command="{Binding DataContext.DeleteBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                    CommandParameter="{Binding}" Style="{StaticResource ActionButtonStyle}" ToolTip="Eliminar">
+                                                <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>
+                                            </Button>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
             </Border>
         </Grid>
         
         <!-- Loading Overlay -->
-        <Border Grid.Row="0" Grid.RowSpan="3" Background="#80000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="#B3000000" CornerRadius="15" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="-30">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
                 <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White"/>
-                <TextBlock Text="{Binding BusyMessage}" Foreground="White" FontSize="16" Margin="0,15,0,0" HorizontalAlignment="Center"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="White" FontSize="18" FontWeight="SemiBold" Margin="0,15,0,0" HorizontalAlignment="Center"/>
             </StackPanel>
         </Border>
     </Grid>

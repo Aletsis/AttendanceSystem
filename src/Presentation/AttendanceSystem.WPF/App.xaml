@@ -1,4 +1,4 @@
-﻿<prism:PrismApplication x:Class="AttendanceSystem.WPF.App"
+<prism:PrismApplication x:Class="AttendanceSystem.WPF.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:prism="http://prismlibrary.com/"
@@ -14,8 +14,16 @@
             </ResourceDictionary.MergedDictionaries>
             
             <!-- Global Converters -->
-            <BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+            <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
             <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+            <converters:BooleanToStatusTextConverter x:Key="BooleanToStatusTextConverter" />
+            <converters:BooleanToStatusBrushConverter x:Key="BooleanToStatusBrushConverter" />
+            <converters:SuccessToIconConverter x:Key="SuccessToIconConverter" />
+            <converters:SuccessToBrushConverter x:Key="SuccessToBrushConverter" />
+            <converters:ByteArrayToImageConverter x:Key="ByteArrayToImageConverter" />
+            <converters:WorkPeriodModeToVisibilityConverter x:Key="WorkPeriodModeToVisibilityConverter" />
+            <converters:BytesToSizeConverter x:Key="BytesToSizeConverter" />
+            <converters:BackupTypeToBrushConverter x:Key="BackupTypeToBrushConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </prism:PrismApplication>

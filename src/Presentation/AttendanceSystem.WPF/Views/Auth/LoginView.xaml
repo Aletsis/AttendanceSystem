@@ -5,67 +5,125 @@
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:prism="http://prismlibrary.com/"
              prism:ViewModelLocator.AutoWireViewModel="True"
-             Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
+             Background="#F5F7FA">
+    
+    <UserControl.Resources>
+        <!-- Shadow Effect -->
+        <DropShadowEffect x:Key="LoginShadow" 
+                          BlurRadius="30" 
+                          ShadowDepth="5" 
+                          Opacity="0.15" 
+                          Color="Black"/>
+
+        <LinearGradientBrush x:Key="LoginAccentGradient" StartPoint="0,0" EndPoint="1,1">
+            <GradientStop Color="#4E73DF" Offset="0"/>
+            <GradientStop Color="#224ABE" Offset="1"/>
+        </LinearGradientBrush>
+    </UserControl.Resources>
+
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+        <!-- Background Decoration -->
+        <Canvas IsHitTestVisible="False">
+            <Ellipse Width="400" Height="400" Fill="#EBF0F9" Canvas.Left="-100" Canvas.Top="-100"/>
+            <Ellipse Width="300" Height="300" Fill="#F0F3F9" Canvas.Right="-50" Canvas.Bottom="-50"/>
+        </Canvas>
 
-        <Border Grid.Row="1" 
-                Background="{DynamicResource MahApps.Brushes.Tile}"
-                CornerRadius="10"
-                Padding="40"
-                MaxWidth="450"
-                Margin="20">
-            <StackPanel>
-                <iconPacks:PackIconMaterial Kind="AccountCircle" 
-                                          Width="80" 
-                                          Height="80"
-                                          Foreground="{DynamicResource MahApps.Brushes.Accent}"
-                                          HorizontalAlignment="Center"
-                                          Margin="0,0,0,20"/>
-                
-                <TextBlock Text="Sistema de Asistencia" 
-                          FontSize="24" 
-                          FontWeight="Bold"
-                          HorizontalAlignment="Center"
-                          Margin="0,0,0,10"/>
-                
-                <TextBlock Text="Iniciar Sesión" 
-                          FontSize="16"
-                          HorizontalAlignment="Center"
-                          Foreground="{DynamicResource MahApps.Brushes.Gray}"
-                          Margin="0,0,0,30"/>
+        <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+            <Border Background="White" 
+                    CornerRadius="20" 
+                    Padding="50" 
+                    Width="450"
+                    Effect="{StaticResource LoginShadow}">
+                <StackPanel>
+                    <!-- Logo/Icon Container -->
+                    <Border Width="80" 
+                            Height="80" 
+                            Background="#F8F9FC" 
+                            CornerRadius="40" 
+                            Margin="0,0,0,25" 
+                            HorizontalAlignment="Center">
+                        <iconPacks:PackIconMaterial Kind="Fingerprint" 
+                                                  Width="40" 
+                                                  Height="40"
+                                                  Foreground="#4E73DF"
+                                                  VerticalAlignment="Center"
+                                                  HorizontalAlignment="Center"/>
+                    </Border>
+                    
+                    <TextBlock Text="Sistema de Asistencia" 
+                               FontSize="28" 
+                               FontWeight="Bold" 
+                               Foreground="#4E5D78"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,8"/>
+                    
+                    <TextBlock Text="Bienvenido de nuevo, por favor inicie sesión." 
+                               FontSize="14" 
+                               Foreground="#858796"
+                               HorizontalAlignment="Center"
+                               Margin="0,0,0,40"/>
 
-                <TextBlock Text="Usuario" Margin="0,0,0,5"/>
-                <TextBox Text="{Binding Username}" 
-                         mah:TextBoxHelper.ClearTextButton="True"
-                         mah:TextBoxHelper.Watermark="Ingrese su usuario"
-                         FontSize="14"
-                         Padding="10,8"
-                         Margin="0,0,0,20"/>
+                    <!-- Form Fields -->
+                    <StackPanel Margin="0,0,0,30">
+                        <TextBlock Text="Usuario" 
+                                   FontSize="12" 
+                                   FontWeight="SemiBold" 
+                                   Foreground="#5A5C69" 
+                                   Margin="0,0,0,8"/>
+                        <TextBox Text="{Binding Username}" 
+                                 mah:TextBoxHelper.ClearTextButton="True"
+                                 mah:TextBoxHelper.Watermark="Ej: admin"
+                                 FontSize="15"
+                                 Padding="12,10"
+                                 BorderThickness="1.5"
+                                 BorderBrush="#EAECF4"
+                                 Background="#F8F9FC"
+                                 mah:ControlsHelper.FocusBorderBrush="#4E73DF"
+                                 Margin="0,0,0,20"/>
 
-                <TextBlock Text="Contraseña" Margin="0,0,0,5"/>
-                <PasswordBox x:Name="PasswordBox"
-                            mah:TextBoxHelper.ClearTextButton="True"
-                            mah:TextBoxHelper.Watermark="Ingrese su contraseña"
-                            FontSize="14"
-                            Padding="10,8"
-                            Margin="0,0,0,20"/>
+                        <TextBlock Text="Contraseña" 
+                                   FontSize="12" 
+                                   FontWeight="SemiBold" 
+                                   Foreground="#5A5C69" 
+                                   Margin="0,0,0,8"/>
+                        <PasswordBox x:Name="PasswordBox"
+                                    mah:TextBoxHelper.ClearTextButton="True"
+                                    mah:TextBoxHelper.Watermark="••••••••"
+                                    FontSize="15"
+                                    Padding="12,10"
+                                    BorderThickness="1.5"
+                                    BorderBrush="#EAECF4"
+                                    Background="#F8F9FC"
+                                    mah:ControlsHelper.FocusBorderBrush="#4E73DF"
+                                    Margin="0,0,0,10"/>
+                    </StackPanel>
 
-                <Button Content="Iniciar Sesión"
-                       Command="{Binding LoginCommand}"
-                       CommandParameter="{Binding ElementName=PasswordBox}"
-                       Style="{DynamicResource MahApps.Styles.Button.Square.Accent}"
-                       FontSize="16"
-                       Padding="20,12"/>
-            </StackPanel>
-        </Border>
+                    <!-- Login Button -->
+                    <Button Command="{Binding LoginCommand}"
+                            CommandParameter="{Binding ElementName=PasswordBox}"
+                            Background="{StaticResource LoginAccentGradient}"
+                            Foreground="White"
+                            BorderThickness="0"
+                            Height="50"
+                            FontSize="16"
+                            FontWeight="Bold"
+                            Cursor="Hand">
+                        <Button.Resources>
+                            <Style TargetType="Border">
+                                <Setter Property="CornerRadius" Value="10"/>
+                            </Style>
+                        </Button.Resources>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="Iniciar Sesión"/>
+                            <iconPacks:PackIconMaterial Kind="Login" Width="18" Height="18" Margin="10,0,0,0" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Border>
+        </Grid>
 
         <!-- Busy Indicator Overlay -->
-        <Grid Grid.RowSpan="3" Background="#80000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid Background="#B3000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                 <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White" Margin="0,0,0,15"/>
                 <TextBlock Text="{Binding BusyMessage}" Foreground="White" HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold"/>

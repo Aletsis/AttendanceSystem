@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using System.Windows.Input;
 using Prism.Commands;
 using AttendanceSystem.WPF.Services;
@@ -6,6 +7,7 @@ using MediatR;
 using AttendanceSystem.Application.Features.Employees.Queries;
 using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments;
 using AttendanceSystem.Application.Features.Branches.Queries.GetBranches;
+using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.WPF.ViewModels.Reports
 {
@@ -78,7 +80,7 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
                 {
                     Employees.Clear();
                     Employees.Add("Todos");
-                    foreach (var emp in empResult.Value) Employees.Add($"{emp.Id} - {emp.FullName}");
+                    foreach (var emp in empResult.Value.Where(e => e.Status == EmployeeStatus.Alta)) Employees.Add($"{emp.Id} - {emp.FullName}");
                     SelectedEmployee = "Todos";
                 }
 

@@ -33,11 +33,6 @@ namespace AttendanceSystem.WPF
 
         protected override Window CreateShell()
         {
-            // Configure Serilog
-            Log.Logger = new LoggerConfiguration()
-                .ReadFrom.Configuration(Configuration)
-                .CreateLogger();
-
             var shell = Container.Resolve<ShellWindow>();
             
             // Navigate to Dashboard
@@ -56,6 +51,11 @@ namespace AttendanceSystem.WPF
                 .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
             Configuration = builder.Build();
             containerRegistry.RegisterInstance(Configuration);
+
+            // Configure Serilog
+            Log.Logger = new LoggerConfiguration()
+                .ReadFrom.Configuration(Configuration)
+                .CreateLogger();
 
             // Build a ServiceProvider for MediatR and EF Core
             var connectionString = Configuration.GetConnectionString("DefaultConnection");
@@ -109,6 +109,11 @@ namespace AttendanceSystem.WPF
             // Add UnitOfWork
             services.AddScoped<IUnitOfWork, AttendanceSystem.Infrastructure.Common.UnitOfWork>();
             
+            // Add Services
+            services.AddScoped<IImportService, ImportService>();
+            services.AddScoped<IReportExportService, ReportExportService>();
+            services.AddScoped<IBackupService, BackupService>();
+            
             // Add JobScheduler implementation for WPF Client (No-Op)
             services.AddSingleton<IAttendanceJobScheduler, WpfAttendanceJobScheduler>();
 
@@ -127,6 +132,10 @@ namespace AttendanceSystem.WPF
             containerRegistry.RegisterSingleton<IAuthenticationStateService, AuthenticationStateService>();
             containerRegistry.RegisterSingleton<IFrameNavigationService, FrameNavigationService>();
             containerRegistry.RegisterSingleton<IMessageService, MessageService>();
+            
+            containerRegistry.RegisterInstance<IImportService>(_serviceProvider.GetRequiredService<IImportService>());
+            containerRegistry.RegisterInstance<IReportExportService>(_serviceProvider.GetRequiredService<IReportExportService>());
+            containerRegistry.RegisterInstance<IBackupService>(_serviceProvider.GetRequiredService<IBackupService>());
 
             // ViewModels
             containerRegistry.RegisterForNavigation<Views.Employees.EmployeesView, ViewModels.Employees.EmployeesViewModel>();
@@ -142,6 +151,17 @@ namespace AttendanceSystem.WPF
             containerRegistry.RegisterForNavigation<Views.Settings.SettingsView, ViewModels.Settings.SettingsViewModel>();
             containerRegistry.RegisterForNavigation<Views.Backup.BackupView, ViewModels.Backup.BackupViewModel>();
             containerRegistry.RegisterForNavigation<Views.Auth.LoginView, ViewModels.Auth.LoginViewModel>();
+
+            // Dialogs
+            containerRegistry.RegisterDialog<Views.Devices.SelectDeviceDialog, ViewModels.Devices.SelectDeviceViewModel>();
+            containerRegistry.RegisterDialog<Views.Branches.BranchDetailDialog, ViewModels.Branches.BranchDetailViewModel>();
+            containerRegistry.RegisterDialog<Views.Departments.DepartmentDetailDialog, ViewModels.Departments.DepartmentDetailViewModel>();
+            containerRegistry.RegisterDialog<Views.Positions.PositionDetailDialog, ViewModels.Positions.PositionDetailViewModel>();
+            containerRegistry.RegisterDialog<Views.Shifts.ShiftDetailDialog, ViewModels.Shifts.ShiftDetailViewModel>();
+            containerRegistry.RegisterDialog<Views.Devices.DeviceDetailDialog, ViewModels.Devices.DeviceDetailViewModel>();
+            containerRegistry.RegisterDialog<Views.Devices.DownloadLogDetailsDialog, ViewModels.Devices.DownloadLogDetailsViewModel>();
+            containerRegistry.RegisterDialog<Views.Devices.DownloadLogsRangeDialog, ViewModels.Devices.DownloadLogsRangeViewModel>();
+            containerRegistry.RegisterDialog<Views.Devices.DeviceAdvancedDetailsDialog, ViewModels.Devices.DeviceAdvancedDetailsViewModel>();
         }
 
         protected override void OnExit(ExitEventArgs e)

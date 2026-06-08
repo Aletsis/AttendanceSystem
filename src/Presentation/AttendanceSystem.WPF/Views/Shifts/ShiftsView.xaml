@@ -1,58 +1,277 @@
 <UserControl x:Class="AttendanceSystem.WPF.Views.Shifts.ShiftsView"
-      xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-      xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-      xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
-      xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-      Background="{DynamicResource MahApps.Brushes.ThemeBackground}">
-    <Grid Margin="20">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <Grid Grid.Row="0" Margin="0,0,0,20">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <Button Grid.Column="0" Command="{Binding BackToDashboardCommand}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="40" Height="40" Margin="0,0,15,0">
-                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20"/>
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Background="#F5F7FA">
+    
+    <UserControl.Resources>
+        <!-- Shadow Effect -->
+        <DropShadowEffect x:Key="CardShadow" 
+                          BlurRadius="15" 
+                          ShadowDepth="2" 
+                          Opacity="0.1" 
+                          Color="Black"/>
+
+        <Style x:Key="ActionButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Circle}">
+            <Setter Property="Width" Value="32"/>
+            <Setter Property="Height" Value="32"/>
+            <Setter Property="Margin" Value="2"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Background" Value="#F8F9FC"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid Margin="30">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <Grid Grid.Row="0" Margin="0,0,0,25">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+            </Grid.ColumnDefinitions>
+
+            <Button Grid.Column="0"
+                    Command="{Binding BackToDashboardCommand}"
+                    Style="{StaticResource MahApps.Styles.Button.Circle}"
+                    Width="40"
+                    Height="40"
+                    Margin="0,0,15,0"
+                    Background="White"
+                    Effect="{StaticResource CardShadow}">
+                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
             </Button>
+
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Text="Gestión de Turnos" FontSize="28" FontWeight="Bold"/>
-                <TextBlock Text="Administre los turnos de trabajo" FontSize="14" Foreground="{DynamicResource MahApps.Brushes.Gray}"/>
+                <TextBlock Text="Horarios y Turnos" 
+                           FontSize="28" 
+                           FontWeight="Bold"
+                           Foreground="#4E5D78"/>
+                <TextBlock Text="Configure los esquemas de tiempo laboral para su personal"
+                           FontSize="14"
+                           Foreground="#858796"/>
             </StackPanel>
-            <Button Grid.Column="2" Command="{Binding AddShiftCommand}" Style="{DynamicResource MahApps.Styles.Button.Square.Accent}" Height="40" Padding="15,0">
+
+            <Button Grid.Column="2"
+                    Command="{Binding AddShiftCommand}"
+                    Background="#4E73DF"
+                    Foreground="White"
+                    Height="45"
+                    Padding="20,0"
+                    BorderThickness="0"
+                    Effect="{StaticResource CardShadow}">
+                <Button.Resources>
+                    <Style TargetType="Border">
+                        <Setter Property="CornerRadius" Value="8"/>
+                    </Style>
+                </Button.Resources>
                 <StackPanel Orientation="Horizontal">
-                    <iconPacks:PackIconMaterial Kind="Plus" Width="20" Height="20" Margin="0,0,5,0"/>
-                    <TextBlock Text="Nuevo Turno" VerticalAlignment="Center"/>
+                    <iconPacks:PackIconMaterial Kind="Plus" 
+                                              Width="18" 
+                                              Height="18"
+                                              Margin="0,0,10,0"
+                                              VerticalAlignment="Center"/>
+                    <TextBlock Text="Nuevo Turno" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
             </Button>
         </Grid>
-        <Grid Grid.Row="1" Margin="0,0,0,15">
-            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-            <TextBox Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" mah:TextBoxHelper.Watermark="Buscar turno..." mah:TextBoxHelper.ClearTextButton="True" FontSize="14" Padding="10" Margin="0,0,10,0"/>
-            <Button Grid.Column="1" Command="{Binding RefreshCommand}" Style="{DynamicResource MahApps.Styles.Button.Square}" Width="40" Height="40">
-                <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20"/>
-            </Button>
-        </Grid>
-        <DataGrid Grid.Row="2" ItemsSource="{Binding Shifts}" SelectedItem="{Binding SelectedShift}" AutoGenerateColumns="False" IsReadOnly="True" GridLinesVisibility="Horizontal" AlternatingRowBackground="{DynamicResource MahApps.Brushes.Gray10}">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="*"/>
-                <DataGridTextColumn Header="Hora Entrada" Binding="{Binding StartTime}" Width="120"/>
-                <DataGridTextColumn Header="Hora Salida" Binding="{Binding EndTime}" Width="120"/>
-                <DataGridTextColumn Header="Horas Trabajo" Binding="{Binding WorkingHours}" Width="120"/>
-                <DataGridCheckBoxColumn Header="Nocturno" Binding="{Binding IsNightShift}" Width="100"/>
-                <DataGridTextColumn Header="Empleados" Binding="{Binding EmployeeCount}" Width="100"/>
-                <DataGridTemplateColumn Header="Acciones" Width="120">
-                    <DataGridTemplateColumn.CellTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                <Button Command="{Binding DataContext.EditShiftCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2"><iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14"/></Button>
-                                <Button Command="{Binding DataContext.DeleteShiftCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}" Style="{DynamicResource MahApps.Styles.Button.Circle}" Width="32" Height="32" Margin="2"><iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14"/></Button>
-                            </StackPanel>
-                        </DataTemplate>
-                    </DataGridTemplateColumn.CellTemplate>
-                </DataGridTemplateColumn>
-            </DataGrid.Columns>
-        </DataGrid>
-        <Border Grid.Row="0" Grid.RowSpan="3" Background="#80000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+
+        <!-- Main Content Card -->
+        <Border Grid.Row="1" 
+                Background="White" 
+                CornerRadius="15" 
+                Effect="{StaticResource CardShadow}">
+            <Grid Margin="20">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                </Grid.RowDefinitions>
+
+                <!-- Search and Refresh -->
+                <Grid Grid.Row="0" Margin="0,0,0,20">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+
+                    <TextBox Grid.Column="0"
+                            Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            mah:TextBoxHelper.Watermark="Buscar por nombre o tipo de turno..."
+                            mah:TextBoxHelper.ClearTextButton="True"
+                            FontSize="14"
+                            Padding="12,10"
+                            BorderThickness="1"
+                            BorderBrush="#EAECF4"
+                            Background="#F8F9FC"
+                            Margin="0,0,10,0"/>
+
+                    <Button Grid.Column="1"
+                            Command="{Binding RefreshCommand}"
+                            Style="{StaticResource MahApps.Styles.Button.Square}"
+                            Width="42"
+                            Height="42"
+                            Background="#F8F9FC"
+                            BorderBrush="#EAECF4">
+                        <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
+                    </Button>
+                </Grid>
+
+                <!-- Shift Table -->
+                <DataGrid Grid.Row="1"
+                          ItemsSource="{Binding Shifts}"
+                          SelectedItem="{Binding SelectedShift}"
+                          AutoGenerateColumns="False"
+                          IsReadOnly="True"
+                          SelectionMode="Single"
+                          CanUserAddRows="False"
+                          CanUserDeleteRows="False"
+                          CanUserResizeRows="False"
+                          GridLinesVisibility="None"
+                          HeadersVisibility="Column"
+                          BorderThickness="0"
+                          Background="Transparent"
+                          RowHeight="50">
+                    <DataGrid.ColumnHeaderStyle>
+                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
+                            <Setter Property="Background" Value="#F8F9FC"/>
+                            <Setter Property="Foreground" Value="#4E5D78"/>
+                            <Setter Property="FontWeight" Value="Bold"/>
+                            <Setter Property="Padding" Value="10,15"/>
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="BorderBrush" Value="#EAECF4"/>
+                        </Style>
+                    </DataGrid.ColumnHeaderStyle>
+                    <DataGrid.RowStyle>
+                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MahApps.Styles.DataGridRow}">
+                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                            <Setter Property="BorderBrush" Value="#F8F9FC"/>
+                        </Style>
+                    </DataGrid.RowStyle>
+                    
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="Turno" Width="*">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="5,0">
+                                        <Border Width="32" Height="32" Background="#EBF0F9" CornerRadius="16" Margin="0,0,10,0">
+                                            <iconPacks:PackIconMaterial Kind="ClockOutline" Width="16" Height="16" Foreground="#4E73DF" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#5A5C69"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        
+                        <DataGridTextColumn Header="Inicio" Binding="{Binding StartTime}" Width="80">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+
+                        <DataGridTextColumn Header="Fin" Binding="{Binding EndTime}" Width="80">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="FontWeight" Value="SemiBold"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+
+                        <DataGridTextColumn Header="Duración" Binding="{Binding WorkingHours}" Width="100">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="VerticalAlignment" Value="Center"/>
+                                    <Setter Property="HorizontalAlignment" Value="Center"/>
+                                    <Setter Property="Foreground" Value="#858796"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+
+                        <DataGridTemplateColumn Header="Tolerancia" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding ToleranceMinutes}" FontWeight="SemiBold" Foreground="#5A5C69"/>
+                                        <TextBlock Text=" min" FontSize="11" Foreground="#858796" VerticalAlignment="Bottom" Margin="2,0,0,2"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        
+                        <DataGridTemplateColumn Header="Tipo" Width="120">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Background="{Binding IsNightShift, Converter={StaticResource BooleanToStatusBrushConverter}}" 
+                                            CornerRadius="10" Padding="10,3" HorizontalAlignment="Left" Margin="5,0">
+                                        <TextBlock Text="{Binding ShiftTypeDisplay}" Foreground="White" FontSize="11" FontWeight="Bold"/>
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+
+                        <DataGridTemplateColumn Header="Personal" Width="100">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="10,0">
+                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Width="14" Height="14" Foreground="#858796" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding EmployeeCount}" VerticalAlignment="Center" Foreground="#5A5C69"/>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        
+                        <DataGridTemplateColumn Header="Acciones" Width="120">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                        <Button Command="{Binding DataContext.EditShiftCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource ActionButtonStyle}"
+                                                ToolTip="Editar">
+                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
+                                        </Button>
+                                        <Button Command="{Binding DataContext.DeleteShiftCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource ActionButtonStyle}"
+                                                ToolTip="Eliminar">
+                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>
+                                        </Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+
+        <!-- Loading Overlay -->
+        <Border Grid.Row="0" Grid.RowSpan="2"
+                Background="#B3000000"
+                CornerRadius="15"
+                Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
+                Margin="-30">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White"/>
-                <TextBlock Text="{Binding BusyMessage}" Foreground="White" FontSize="16" Margin="0,15,0,0"/>
+                <mah:ProgressRing IsActive="{Binding IsBusy}" 
+                                  Width="60" 
+                                  Height="60"
+                                  Foreground="White"/>
+                <TextBlock Text="{Binding BusyMessage}" 
+                           Foreground="White" 
+                           FontSize="18"
+                           FontWeight="SemiBold"
+                           Margin="0,15,0,0"
+                           HorizontalAlignment="Center"/>
             </StackPanel>
         </Border>
     </Grid>

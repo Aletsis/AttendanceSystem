@@ -4,210 +4,311 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006" 
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008" 
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              mc:Ignorable="d" 
-             d:DesignHeight="800" d:DesignWidth="800">
+             d:DesignHeight="800" d:DesignWidth="1000"
+             Background="#F5F7FA">
+
     <UserControl.Resources>
-        <Style TargetType="TextBlock">
-            <Setter Property="VerticalAlignment" Value="Center"/>
-            <Setter Property="Margin" Value="0,0,0,5"/>
+        <!-- Shadow Effect -->
+        <DropShadowEffect x:Key="CardShadow" 
+                          BlurRadius="15" 
+                          ShadowDepth="2" 
+                          Opacity="0.1" 
+                          Color="Black"/>
+
+        <Style x:Key="SectionCardStyle" TargetType="Border">
+            <Setter Property="Background" Value="White"/>
+            <Setter Property="CornerRadius" Value="12"/>
+            <Setter Property="Effect" Value="{StaticResource CardShadow}"/>
+            <Setter Property="Padding" Value="25"/>
+            <Setter Property="Margin" Value="0,0,0,20"/>
+        </Style>
+
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="#4E5D78"/>
+            <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
-        <Style TargetType="TextBox" BasedOn="{StaticResource MahApps.Styles.TextBox}">
+
+        <Style x:Key="ModernTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource MahApps.Styles.TextBox}">
+            <Setter Property="Padding" Value="10,12"/>
+            <Setter Property="BorderBrush" Value="#EAECF4"/>
+            <Setter Property="Background" Value="#F8F9FC"/>
             <Setter Property="Margin" Value="0,0,0,15"/>
         </Style>
-        <Style TargetType="ComboBox" BasedOn="{StaticResource MahApps.Styles.ComboBox}">
-            <Setter Property="Margin" Value="0,0,0,15"/>
-        </Style>
-        <Style TargetType="DatePicker" BasedOn="{StaticResource MahApps.Styles.DatePicker}">
-            <Setter Property="Margin" Value="0,0,0,15"/>
-        </Style>
-        <Style TargetType="GroupBox" BasedOn="{StaticResource MahApps.Styles.GroupBox}">
+
+        <Style x:Key="ModernComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource MahApps.Styles.ComboBox}">
+            <Setter Property="Padding" Value="10,10"/>
+            <Setter Property="BorderBrush" Value="#EAECF4"/>
+            <Setter Property="Background" Value="#F8F9FC"/>
             <Setter Property="Margin" Value="0,0,0,15"/>
         </Style>
     </UserControl.Resources>
 
-    <Grid Margin="20">
+    <Grid Margin="30">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/> <!-- Title -->
-            <RowDefinition Height="*"/>    <!-- ScrollViewer -->
-            <RowDefinition Height="Auto"/> <!-- Buttons -->
+            <RowDefinition Height="Auto"/> <!-- Header -->
+            <RowDefinition Height="*"/>    <!-- Content -->
+            <RowDefinition Height="Auto"/> <!-- Footer Buttons -->
         </Grid.RowDefinitions>
 
         <!-- Header -->
-        <TextBlock Text="{Binding Title}" FontSize="24" FontWeight="Bold" Margin="0,0,0,20"/>
+        <Grid Grid.Row="0" Margin="0,0,0,25">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
 
-        <!-- Form Content -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,10,0">
-            <StackPanel>
+            <Button Grid.Column="0"
+                    Command="{Binding CancelCommand}"
+                    Style="{StaticResource MahApps.Styles.Button.Circle}"
+                    Width="40"
+                    Height="40"
+                    Margin="0,0,15,0"
+                    Background="White"
+                    Effect="{StaticResource CardShadow}">
+                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
+            </Button>
+
+            <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                <TextBlock Text="{Binding Title}" 
+                           FontSize="28" 
+                           FontWeight="Bold"
+                           Foreground="#4E5D78"/>
+                <TextBlock Text="Gestione la información detallada del colaborador"
+                           FontSize="14"
+                           Foreground="#858796"/>
+            </StackPanel>
+        </Grid>
+
+        <!-- Main Form Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,15,0">
+            <StackPanel MaxWidth="1200" HorizontalAlignment="Center">
                 
-                <!-- Datos Personales -->
-                <GroupBox Header="Datos Personales">
-                    <Grid Margin="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="25"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
 
-                        <!-- Row 0 -->
-                        <StackPanel Grid.Row="0" Grid.Column="0">
-                            <TextBlock Text="No. Empleado"/>
-                            <TextBox Text="{Binding Id, UpdateSourceTrigger=PropertyChanged}" 
-                                     IsEnabled="{Binding IsEditMode, Converter={StaticResource InverseBooleanConverter}}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="0" Grid.Column="2">
-                            <TextBlock Text="Fecha de Contratación"/>
-                            <DatePicker SelectedDate="{Binding HireDate}"/>
-                        </StackPanel>
+                    <!-- Left Column -->
+                    <StackPanel Grid.Column="0">
+                        <!-- Personal Info Card -->
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Información Personal" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="20"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <!-- Photo Placeholder -->
+                                    <Border Grid.Column="0" Width="100" Height="100" CornerRadius="50" Background="#F8F9FC" BorderBrush="#EAECF4" BorderThickness="2" VerticalAlignment="Top">
+                                        <iconPacks:PackIconMaterial Kind="Account" Width="40" Height="40" Foreground="#D1D3E2" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="ID de Empleado" Style="{StaticResource FieldLabelStyle}"/>
+                                        <TextBox Text="{Binding Id, UpdateSourceTrigger=PropertyChanged}" 
+                                                 Style="{StaticResource ModernTextBoxStyle}"
+                                                 IsEnabled="{Binding IsEditMode, Converter={StaticResource InverseBooleanConverter}}"/>
+                                        
+                                        <TextBlock Text="Fecha de Contratación" Style="{StaticResource FieldLabelStyle}"/>
+                                        <DatePicker SelectedDate="{Binding HireDate}" Margin="0,0,0,15"/>
+                                    </StackPanel>
+                                </Grid>
 
-                        <!-- Row 1 -->
-                        <StackPanel Grid.Row="1" Grid.Column="0">
-                            <TextBlock Text="Nombre(s)"/>
-                            <TextBox Text="{Binding FirstName, UpdateSourceTrigger=PropertyChanged}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="1" Grid.Column="2">
-                            <TextBlock Text="Apellidos"/>
-                            <TextBox Text="{Binding LastName, UpdateSourceTrigger=PropertyChanged}"/>
-                        </StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="15"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Nombre(s)" Style="{StaticResource FieldLabelStyle}"/>
+                                        <TextBox Text="{Binding FirstName}" Style="{StaticResource ModernTextBoxStyle}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Apellidos" Style="{StaticResource FieldLabelStyle}"/>
+                                        <TextBox Text="{Binding LastName}" Style="{StaticResource ModernTextBoxStyle}"/>
+                                    </StackPanel>
+                                </Grid>
 
-                        <!-- Row 2 -->
-                        <StackPanel Grid.Row="2" Grid.Column="0">
-                            <TextBlock Text="Correo Electrónico"/>
-                            <TextBox Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="2" Grid.Column="2">
-                            <TextBlock Text="Teléfono"/>
-                            <TextBox Text="{Binding PhoneNumber, UpdateSourceTrigger=PropertyChanged}"/>
-                        </StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="15"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    
+                                    <StackPanel Grid.Column="0">
+                                        <TextBlock Text="Sexo" Style="{StaticResource FieldLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding GenderOptions}" SelectedItem="{Binding Gender}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="Estatus" Style="{StaticResource FieldLabelStyle}"/>
+                                        <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status}" Style="{StaticResource ModernComboBoxStyle}"
+                                                  IsEnabled="{Binding IsEditMode}"/>
+                                    </StackPanel>
+                                </Grid>
 
-                        <!-- Row 3 -->
-                        <StackPanel Grid.Row="3" Grid.Column="0">
-                            <TextBlock Text="Género"/>
-                            <ComboBox ItemsSource="{Binding GenderOptions}" SelectedItem="{Binding Gender}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="3" Grid.Column="2">
-                            <TextBlock Text="Estado" Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status}"
-                                      Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                        </StackPanel>
-                    </Grid>
-                </GroupBox>
+                                <TextBlock Text="Correo Electrónico" Style="{StaticResource FieldLabelStyle}"/>
+                                <TextBox Text="{Binding Email}" Style="{StaticResource ModernTextBoxStyle}"/>
 
-                <!-- Datos Laborales -->
-                <GroupBox Header="Información Laboral">
-                    <Grid Margin="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                                <TextBlock Text="Teléfono" Style="{StaticResource FieldLabelStyle}"/>
+                                <TextBox Text="{Binding PhoneNumber}" Style="{StaticResource ModernTextBoxStyle}"/>
+                            </StackPanel>
+                        </Border>
 
-                        <!-- Row 0 -->
-                        <StackPanel Grid.Row="0" Grid.Column="0">
-                            <TextBlock Text="Sucursal"/>
-                            <ComboBox ItemsSource="{Binding Branches}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedBranchId}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="0" Grid.Column="2">
-                            <TextBlock Text="Departamento"/>
-                            <ComboBox ItemsSource="{Binding Departments}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedDepartmentId}"/>
-                        </StackPanel>
+                        <!-- Labor Info Card -->
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Estructura Organizacional" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                
+                                <TextBlock Text="Sucursal" Style="{StaticResource FieldLabelStyle}"/>
+                                <ComboBox ItemsSource="{Binding Branches}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedBranchId}" Style="{StaticResource ModernComboBoxStyle}"/>
 
-                        <!-- Row 1 -->
-                        <StackPanel Grid.Row="1" Grid.Column="0">
-                            <TextBlock Text="Puesto"/>
-                            <ComboBox ItemsSource="{Binding VisiblePositions}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedPositionId}"/>
-                        </StackPanel>
-                    </Grid>
-                </GroupBox>
+                                <TextBlock Text="Departamento" Style="{StaticResource FieldLabelStyle}"/>
+                                <ComboBox ItemsSource="{Binding Departments}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedDepartmentId}" Style="{StaticResource ModernComboBoxStyle}"/>
 
-                <!-- Horario y Turno -->
-                <GroupBox Header="Asignación de Horario">
-                    <Grid Margin="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                                <TextBlock Text="Puesto" Style="{StaticResource FieldLabelStyle}"/>
+                                <ComboBox ItemsSource="{Binding VisiblePositions}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedPositionId}" Style="{StaticResource ModernComboBoxStyle}"/>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
 
-                        <!-- Row 0 -->
-                        <StackPanel Grid.Row="0" Grid.Column="0">
-                            <TextBlock Text="Tipo de Turno"/>
-                            <ComboBox ItemsSource="{Binding ShiftTypeOptions}" SelectedItem="{Binding SelectedShiftType}"/>
-                        </StackPanel>
-                        <StackPanel Grid.Row="0" Grid.Column="2">
-                            <TextBlock Text="Horario"/>
-                            <ComboBox ItemsSource="{Binding VisibleShifts}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedShiftId}"/>
-                        </StackPanel>
+                    <!-- Right Column -->
+                    <StackPanel Grid.Column="2">
+                        <!-- Schedule Info Card -->
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Horario y Jornada" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                
+                                <TextBlock Text="Tipo de Turno" Style="{StaticResource FieldLabelStyle}"/>
+                                <ComboBox ItemsSource="{Binding ShiftTypeOptions}" SelectedItem="{Binding SelectedShiftType}" Style="{StaticResource ModernComboBoxStyle}"/>
 
-                        <!-- Row 1 -->
-                        <StackPanel Grid.Row="1" Grid.Column="0">
-                            <TextBlock Text="Día de Descanso"/>
-                            <ComboBox ItemsSource="{Binding DaysOfWeek}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding SelectedRestDay}"/>
-                        </StackPanel>
-                    </Grid>
-                </GroupBox>
+                                <TextBlock Text="Horario Asignado" Style="{StaticResource FieldLabelStyle}"/>
+                                <ComboBox ItemsSource="{Binding VisibleShifts}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedShiftId}" Style="{StaticResource ModernComboBoxStyle}"/>
 
-                <!-- Horas Extra -->
-                <GroupBox Header="Configuración de Horas Extra">
-                    <Grid Margin="10">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="Auto"/>
-                        </Grid.RowDefinitions>
+                                <TextBlock Text="Día de Descanso" Style="{StaticResource FieldLabelStyle}"/>
+                                <ComboBox ItemsSource="{Binding DaysOfWeek}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding SelectedRestDay}" Style="{StaticResource ModernComboBoxStyle}"/>
+                            </StackPanel>
+                        </Border>
 
-                        <!-- Row 0 -->
-                        <CheckBox Grid.Row="0" Grid.Column="0" IsChecked="{Binding OvertimeAuthorized}" Content="Autorizar Horas Extra" Margin="0,0,0,15"/>
+                        <!-- Device Config Card -->
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Configuración de Dispositivo" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                
+                                <TextBlock Text="Número de Tarjeta" Style="{StaticResource FieldLabelStyle}"/>
+                                <TextBox Text="{Binding CardNumber}" Style="{StaticResource ModernTextBoxStyle}" mah:TextBoxHelper.Watermark="Ej: 12345678"/>
 
-                        <!-- Row 1 -->
-                        <StackPanel Grid.Row="1" Grid.Column="0" IsEnabled="{Binding OvertimeAuthorized}">
-                            <TextBlock Text="Método de Cálculo"/>
-                            <ComboBox ItemsSource="{Binding OvertimeCalculationMethodOptions}" SelectedItem="{Binding SelectedOvertimeCalculationMethod}"/>
-                        </StackPanel>
+                                <TextBlock Text="Contraseña PIN" Style="{StaticResource FieldLabelStyle}"/>
+                                <TextBox Text="{Binding DevicePassword}" Style="{StaticResource ModernTextBoxStyle}" mah:TextBoxHelper.Watermark="Máx. 8 dígitos"/>
+                                
+                                <TextBlock Text="Biometría Registrada" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,10"/>
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Background="#EBFBEE" CornerRadius="15" Padding="12,6" Margin="0,0,10,0">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconMaterial Kind="Fingerprint" Width="14" Height="14" Foreground="#28A745" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="2 Huellas" FontSize="12" Foreground="#28A745" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Background="#F8F9FC" CornerRadius="15" Padding="12,6">
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconMaterial Kind="FaceRecognition" Width="14" Height="14" Foreground="#858796" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                            <TextBlock Text="Sin Rostro" FontSize="12" Foreground="#858796" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Border>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
-                        <StackPanel Grid.Row="1" Grid.Column="2" IsEnabled="{Binding OvertimeAuthorized}">
-                            <TextBlock Text="Tipo de Tope"/>
-                            <ComboBox ItemsSource="{Binding OvertimeCapTypeOptions}" SelectedItem="{Binding SelectedOvertimeCapType}"/>
-                            
-                            <TextBlock Text="Minutos Máximos" Margin="0,10,0,5"/>
-                            <mah:NumericUpDown Value="{Binding OvertimeCapMinutes}" Minimum="0" StringFormat="N0" Interval="1"/>
-                        </StackPanel>
-                    </Grid>
-                </GroupBox>
+                        <!-- Overtime Config Card -->
+                        <Border Style="{StaticResource SectionCardStyle}">
+                            <StackPanel>
+                                <TextBlock Text="Configuración de Tiempo Extra" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                
+                                <CheckBox IsChecked="{Binding OvertimeAuthorized}" Content="Autorizar Tiempo Extra" Margin="0,0,0,10" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                                <CheckBox IsChecked="{Binding CalculateOvertimeBeforeEntry}" Content="Calcular antes de la entrada" Margin="0,0,0,20" IsEnabled="{Binding OvertimeAuthorized}" Foreground="#858796"/>
 
+                                <StackPanel IsEnabled="{Binding OvertimeAuthorized}">
+                                    <TextBlock Text="Método de Redondeo" Style="{StaticResource FieldLabelStyle}"/>
+                                    <ComboBox ItemsSource="{Binding OvertimeCalculationMethodOptions}" SelectedItem="{Binding SelectedOvertimeCalculationMethod}" Style="{StaticResource ModernComboBoxStyle}"/>
+
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="15"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="Tipo de Tope" Style="{StaticResource FieldLabelStyle}"/>
+                                            <ComboBox ItemsSource="{Binding OvertimeCapTypeOptions}" SelectedItem="{Binding SelectedOvertimeCapType}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Minutos Tope" Style="{StaticResource FieldLabelStyle}"/>
+                                            <mah:NumericUpDown Value="{Binding OvertimeCapMinutes}" Minimum="0" StringFormat="N0" Interval="1" Height="40" Background="#F8F9FC" BorderBrush="#EAECF4"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </Grid>
+                
+                <Rectangle Height="40" Fill="Transparent"/>
             </StackPanel>
         </ScrollViewer>
 
-        <!-- Action Buttons -->
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-            <Button Command="{Binding SaveCommand}" Style="{StaticResource MahApps.Styles.Button.Square.Accent}" Content="Guardar" Width="120" Height="35" Margin="0,0,10,0"/>
-            <Button Command="{Binding CancelCommand}" Style="{StaticResource MahApps.Styles.Button.Square}" Content="Cancelar" Width="120" Height="35"/>
-        </StackPanel>
+        <!-- Footer Actions -->
+        <Border Grid.Row="2" Background="White" Margin="-30,0" Padding="30,20" BorderBrush="#EAECF4" BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button Command="{Binding CancelCommand}" 
+                        Content="Cancelar" 
+                        Width="140" 
+                        Height="45" 
+                        Background="#F8F9FC"
+                        Foreground="#858796"
+                        BorderBrush="#EAECF4"
+                        Margin="0,0,15,0">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="8"/>
+                        </Style>
+                    </Button.Resources>
+                </Button>
+                <Button Command="{Binding SaveCommand}" 
+                        Content="Guardar Colaborador" 
+                        Width="200" 
+                        Height="45" 
+                        Background="#4E73DF"
+                        Foreground="White"
+                        FontWeight="Bold"
+                        BorderThickness="0"
+                        Effect="{StaticResource CardShadow}">
+                    <Button.Resources>
+                        <Style TargetType="Border">
+                            <Setter Property="CornerRadius" Value="8"/>
+                        </Style>
+                    </Button.Resources>
+                </Button>
+            </StackPanel>
+        </Border>
 
         <!-- Loading Overlay -->
-        <Grid Grid.RowSpan="3" Background="#80000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Border Grid.RowSpan="3" Background="#B3000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="-30">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White" Margin="0,0,0,15"/>
-                <TextBlock Text="{Binding BusyMessage}" Foreground="White" HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold"/>
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White" Margin="0,0,0,20"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="White" HorizontalAlignment="Center" FontSize="18" FontWeight="Bold"/>
             </StackPanel>
-        </Grid>
+        </Border>
     </Grid>
 </UserControl>

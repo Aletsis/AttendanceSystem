@@ -8,6 +8,7 @@ namespace AttendanceSystem.WPF.Services
         Task<bool> ShowConfirmationAsync(string title, string message);
         Task ShowErrorAsync(string message);
         Task ShowSuccessAsync(string message);
+        Task ShowWarningAsync(string message);
     }
 
     public class MessageService : IMessageService
@@ -33,6 +34,12 @@ namespace AttendanceSystem.WPF.Services
         public Task ShowSuccessAsync(string message)
         {
             MessageBox.Show(message, "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+            return Task.CompletedTask;
+        }
+
+        public Task ShowWarningAsync(string message)
+        {
+            MessageBox.Show(message, "Advertencia", MessageBoxButton.OK, MessageBoxImage.Warning);
             return Task.CompletedTask;
         }
     }
