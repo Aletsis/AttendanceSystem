@@ -10,18 +10,9 @@ namespace AttendanceSystem.Infrastructure.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<bool>(
-                name: "OvertimeAuthorized",
-                table: "DailyAttendances",
-                type: "boolean",
-                nullable: false,
-                defaultValue: false);
-
-            migrationBuilder.AddColumn<int>(
-                name: "ShiftType",
-                table: "DailyAttendances",
-                type: "integer",
-                nullable: true);
+            migrationBuilder.Sql("ALTER TABLE \"DailyAttendances\" ADD COLUMN IF NOT EXISTS \"OvertimeAuthorized\" boolean NOT NULL DEFAULT false;");
+            migrationBuilder.Sql("ALTER TABLE \"DailyAttendances\" ADD COLUMN IF NOT EXISTS \"CalculateOvertimeBeforeEntry\" boolean NOT NULL DEFAULT false;");
+            migrationBuilder.Sql("ALTER TABLE \"DailyAttendances\" ADD COLUMN IF NOT EXISTS \"ShiftType\" integer NULL;");
         }
 
         /// <inheritdoc />

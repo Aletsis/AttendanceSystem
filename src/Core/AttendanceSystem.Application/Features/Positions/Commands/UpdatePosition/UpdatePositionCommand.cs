@@ -11,7 +11,8 @@ public sealed record UpdatePositionCommand(
     Guid Id,
     string Name,
     string? Description,
-    decimal BaseSalary) : IRequest<Result<Unit>>;
+    decimal BaseSalary,
+    bool IsCritical) : IRequest<Result<Unit>>;
 
 public sealed class UpdatePositionCommandHandler : IRequestHandler<UpdatePositionCommand, Result<Unit>>
 {
@@ -35,7 +36,8 @@ public sealed class UpdatePositionCommandHandler : IRequestHandler<UpdatePositio
             position.Update(
                 request.Name,
                 request.Description,
-                request.BaseSalary);
+                request.BaseSalary,
+                request.IsCritical);
 
             _repository.Update(position);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

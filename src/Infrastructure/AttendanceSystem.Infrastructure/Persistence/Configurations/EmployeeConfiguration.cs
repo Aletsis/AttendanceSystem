@@ -100,6 +100,11 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.Property(e => e.OvertimeCapMinutes)
             .IsRequired(false);
 
+        builder.Property(e => e.DevicePrivilege)
+            .IsRequired()
+            .HasConversion<int>()
+            .HasDefaultValue(AttendanceSystem.Domain.Enumerations.DevicePrivilege.User);
+
         // Índices para mejorar el rendimiento de las consultas
         builder.HasIndex(e => e.BranchId);
         builder.HasIndex(e => e.DepartmentId);

@@ -34,4 +34,9 @@ public interface IAttendanceRepository
     Task UpdateAsync(
         AttendanceRecord record, 
         CancellationToken cancellationToken = default);
+
+    Task<bool> HasCheckInForDateAsync(
+        EmployeeId employeeId, 
+        DateTime date, 
+        CancellationToken cancellationToken = default);
 }

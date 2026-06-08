@@ -28,5 +28,9 @@ public class PositionConfiguration : IEntityTypeConfiguration<Position>
 
         builder.Property(p => p.BaseSalary)
             .HasColumnType("decimal(18,2)");
+
+        builder.Property(p => p.IsCritical)
+            .IsRequired()
+            .HasDefaultValue(false);
     }
 }

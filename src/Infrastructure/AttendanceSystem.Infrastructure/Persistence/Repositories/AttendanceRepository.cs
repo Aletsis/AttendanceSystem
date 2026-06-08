@@ -90,4 +90,20 @@ public class AttendanceRepository : IAttendanceRepository
         _context.AttendanceRecords.Update(record);
         return Task.CompletedTask;
     }
+
+    public async Task<bool> HasCheckInForDateAsync(
+        EmployeeId employeeId, 
+        DateTime date, 
+        CancellationToken cancellationToken = default)
+    {
+        var dayStart = date.Date;
+        var dayEnd = dayStart.AddDays(1);
+
+        return await _context.AttendanceRecords
+            .AnyAsync(r => r.EmployeeId == employeeId && 
+                           r.CheckTime >= dayStart && 
+                           r.CheckTime < dayEnd &&
+                           r.CheckType == AttendanceSystem.Domain.Enumerations.CheckType.CheckIn, 
+                      cancellationToken);
+    }
 }

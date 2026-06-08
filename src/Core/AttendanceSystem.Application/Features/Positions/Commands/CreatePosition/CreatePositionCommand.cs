@@ -9,7 +9,8 @@ namespace AttendanceSystem.Application.Features.Positions.Commands.CreatePositio
 public sealed record CreatePositionCommand(
     string Name,
     string? Description,
-    decimal BaseSalary) : IRequest<Result<Guid>>;
+    decimal BaseSalary,
+    bool IsCritical) : IRequest<Result<Guid>>;
 
 public sealed class CreatePositionCommandHandler : IRequestHandler<CreatePositionCommand, Result<Guid>>
 {
@@ -29,7 +30,8 @@ public sealed class CreatePositionCommandHandler : IRequestHandler<CreatePositio
             var position = Position.Create(
                 request.Name,
                 request.Description,
-                request.BaseSalary);
+                request.BaseSalary,
+                request.IsCritical);
 
             await _repository.AddAsync(position, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

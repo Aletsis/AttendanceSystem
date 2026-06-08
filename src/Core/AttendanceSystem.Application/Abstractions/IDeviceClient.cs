@@ -17,6 +17,8 @@ public interface IDeviceClient
     
     Task<bool> ClearLogsAsync(
         string deviceId,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
         CancellationToken cancellationToken = default);
     
     Task DisconnectAsync(CancellationToken cancellationToken = default);
@@ -43,5 +45,9 @@ public interface IDeviceClient
 
     Task<bool> SetUserAsync(
         DeviceUserDto user,
+        CancellationToken cancellationToken = default);
+
+    Task<DeviceUserDto?> GetUserAsync(
+        string userId,
         CancellationToken cancellationToken = default);
 }

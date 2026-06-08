@@ -80,6 +80,7 @@ public sealed class GetAllEmployeesQueryHandler : IRequestHandler<GetAllEmployee
                 OvertimeCapType = e.OvertimeCapType,
                 OvertimeCapMinutes = e.OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry = e.CalculateOvertimeBeforeEntry,
+                DevicePrivilege = e.DevicePrivilege,
                 Photo = e.Photo
             })
             .OrderBy(e => e.Id.Length).ThenBy(e => e.Id)

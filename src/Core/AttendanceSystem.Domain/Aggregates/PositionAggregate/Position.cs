@@ -7,10 +7,11 @@ public sealed class Position : AggregateRoot<PositionId>
     
     // Often Puestos have a default salary range or level, but we stick to basic info.
     public decimal BaseSalary { get; private set; } 
+    public bool IsCritical { get; private set; }
 
     private Position() { }
 
-    public static Position Create(string name, string? description, decimal baseSalary)
+    public static Position Create(string name, string? description, decimal baseSalary, bool isCritical = false)
     {
          if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del puesto es requerido.");
@@ -20,11 +21,12 @@ public sealed class Position : AggregateRoot<PositionId>
             Id = PositionId.CreateNew(),
             Name = name,
             Description = description,
-            BaseSalary = baseSalary
+            BaseSalary = baseSalary,
+            IsCritical = isCritical
         };
     }
 
-    public void Update(string name, string? description, decimal baseSalary)
+    public void Update(string name, string? description, decimal baseSalary, bool isCritical)
     {
          if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del puesto es requerido.");
@@ -32,5 +34,6 @@ public sealed class Position : AggregateRoot<PositionId>
         Name = name;
         Description = description;
         BaseSalary = baseSalary;
+        IsCritical = isCritical;
     }
 }

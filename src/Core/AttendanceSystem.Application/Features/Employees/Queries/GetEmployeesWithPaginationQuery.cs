@@ -96,6 +96,7 @@ public sealed class GetEmployeesWithPaginationQueryHandler : IRequestHandler<Get
                 OvertimeCapType = e.OvertimeCapType,
                 OvertimeCapMinutes = e.OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry = e.CalculateOvertimeBeforeEntry,
+                DevicePrivilege = e.DevicePrivilege,
                 Photo = e.Photo
             }).AsQueryable();
 

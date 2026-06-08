@@ -3,17 +3,20 @@ using System;
 using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace AttendanceSystem.Infrastructure.Migrations
+namespace AttendanceSystem.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AttendanceDbContext))]
-    partial class AttendanceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260427222635_UpdateSystemConfigurationAlerts")]
+    partial class UpdateSystemConfigurationAlerts
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -351,11 +354,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
-                    b.Property<int>("DevicePrivilege")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
                     b.Property<string>("Email")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -538,9 +536,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
 
-                    b.Property<TimeSpan?>("AutoBackupTime")
-                        .HasColumnType("interval");
-
                     b.Property<bool>("AutoClearDevicesAfterDownload")
                         .HasColumnType("boolean");
 
@@ -548,17 +543,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<TimeSpan?>("AutoDownloadTime")
-                        .HasColumnType("interval");
-
-                    b.Property<string>("AutoReportEmails")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("AutoReportForToday")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<TimeSpan?>("AutoReportTime")
                         .HasColumnType("interval");
 
                     b.Property<string>("BackupDirectory")
@@ -584,17 +568,7 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<int>("FortnightSecondDay")
                         .HasColumnType("integer");
 
-                    b.Property<bool>("IsAutoBackupEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
                     b.Property<bool>("IsAutoDownloadEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<bool>("IsAutoReportEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);

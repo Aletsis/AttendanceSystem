@@ -15,11 +15,11 @@ public class BackupService : IBackupService
     private readonly IConfiguration _configuration;
     private readonly ILogger<BackupService> _logger;
     private readonly ISystemConfigurationRepository _systemConfigRepository;
-    private readonly string _postgresHost;
-    private readonly string _postgresPort;
-    private readonly string _postgresDatabase;
-    private readonly string _postgresUser;
-    private readonly string _postgresPassword;
+    private readonly string _postgresHost = string.Empty;
+    private readonly string _postgresPort = string.Empty;
+    private readonly string _postgresDatabase = string.Empty;
+    private readonly string _postgresUser = string.Empty;
+    private readonly string _postgresPassword = string.Empty;
 
     public BackupService(
         IConfiguration configuration,
@@ -31,15 +31,30 @@ public class BackupService : IBackupService
         _systemConfigRepository = systemConfigRepository;
 
         // Parsear connection string de PostgreSQL
-        var connectionString = configuration.GetConnectionString("AttendanceDb") 
-            ?? throw new InvalidOperationException("Connection string 'AttendanceDb' no encontrada");
+        var connectionString = configuration.GetConnectionString("DefaultConnection") 
+            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' no encontrada");
 
         var connParams = ParseConnectionString(connectionString);
-        _postgresHost = connParams["Host"];
-        _postgresPort = connParams["Port"];
-        _postgresDatabase = connParams["Database"];
-        _postgresUser = connParams["Username"];
-        _postgresPassword = connParams["Password"];
+        _postgresHost = GetValueWithAliases(connParams, "Host", "Server", "Data Source") ?? "";
+        _postgresPort = GetValueWithAliases(connParams, "Port") ?? "5432";
+        _postgresDatabase = GetValueWithAliases(connParams, "Database", "Initial Catalog") ?? "";
+        _postgresUser = GetValueWithAliases(connParams, "Username", "User Id", "UserId", "User") ?? "";
+        _postgresPassword = GetValueWithAliases(connParams, "Password", "Pwd") ?? "";
+
+        if (string.IsNullOrEmpty(_postgresHost) || string.IsNullOrEmpty(_postgresDatabase) || string.IsNullOrEmpty(_postgresUser))
+        {
+            _logger.LogError("Faltan parámetros críticos en la cadena de conexión para el respaldo: Host={Host}, DB={DB}, User={User}", 
+                _postgresHost ?? "NULO", _postgresDatabase ?? "NULO", _postgresUser ?? "NULO");
+        }
+    }
+
+    private string? GetValueWithAliases(Dictionary<string, string> dict, params string[] aliases)
+    {
+        foreach (var alias in aliases)
+        {
+            if (dict.TryGetValue(alias, out var value)) return value;
+        }
+        return null;
     }
 
     private async Task<string> GetBackupDirectoryAsync()
@@ -102,15 +117,15 @@ public class BackupService : IBackupService
                 _logger.LogInformation("[1/4] Creando respaldo de base de datos...");
                 var dbBackupFile = Path.Combine(tempDir, "database.backup");
                 _logger.LogInformation("Archivo de BD temporal: {DbBackupFile}", dbBackupFile);
-                var dbBackupSuccess = await CreateDatabaseBackupFileAsync(dbBackupFile, cancellationToken);
+                var dbResult = await CreateDatabaseBackupFileAsync(dbBackupFile, cancellationToken);
 
-                if (!dbBackupSuccess)
+                if (!dbResult.Success)
                 {
-                    _logger.LogError("Fallo al crear respaldo de base de datos");
+                    _logger.LogError("Fallo al crear respaldo de base de datos: {Message}", dbResult.Message);
                     return new BackupResultDto
                     {
                         Success = false,
-                        Message = "Error al crear respaldo de base de datos"
+                        Message = dbResult.Message
                     };
                 }
                 
@@ -219,14 +234,14 @@ public class BackupService : IBackupService
             var backupFilePath = Path.Combine(backupDirectory, backupFileName);
 
             _logger.LogInformation("Creando respaldo de base de datos...");
-            var success = await CreateDatabaseBackupFileAsync(backupFilePath, cancellationToken);
+            var result = await CreateDatabaseBackupFileAsync(backupFilePath, cancellationToken);
 
-            if (!success)
+            if (!result.Success)
             {
                 return new BackupResultDto
                 {
                     Success = false,
-                    Message = "Error al crear respaldo de base de datos"
+                    Message = result.Message
                 };
             }
 
@@ -312,14 +327,14 @@ public class BackupService : IBackupService
                         var dbFileInfo = new FileInfo(dbBackupFile);
                         _logger.LogInformation("Archivo de BD: {DbBackupFile} ({SizeMB:F2} MB)", dbBackupFile, dbFileInfo.Length / 1024.0 / 1024.0);
                         
-                        var dbRestoreSuccess = await RestoreDatabaseFromFileAsync(dbBackupFile, cancellationToken);
-                        if (!dbRestoreSuccess)
+                        var dbRestoreResult = await RestoreDatabaseFromFileAsync(dbBackupFile, cancellationToken);
+                        if (!dbRestoreResult.Success)
                         {
-                            _logger.LogError("Falló la restauración de la base de datos");
+                            _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
                             return new RestoreResultDto
                             {
                                 Success = false,
-                                Message = "Error al restaurar base de datos. Revise los logs para más detalles."
+                                Message = dbRestoreResult.Message
                             };
                         }
                         _logger.LogInformation("Base de datos restaurada exitosamente");
@@ -346,14 +361,14 @@ public class BackupService : IBackupService
                 {
                     // Respaldo solo de base de datos
                     _logger.LogInformation("[1/1] Restaurando base de datos desde archivo .backup...");
-                    var dbRestoreSuccess = await RestoreDatabaseFromFileAsync(backupFilePath, cancellationToken);
-                    if (!dbRestoreSuccess)
+                    var dbRestoreResult = await RestoreDatabaseFromFileAsync(backupFilePath, cancellationToken);
+                    if (!dbRestoreResult.Success)
                     {
-                        _logger.LogError("Falló la restauración de la base de datos");
+                        _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
                         return new RestoreResultDto
                         {
                             Success = false,
-                            Message = "Error al restaurar base de datos. Revise los logs para más detalles."
+                            Message = dbRestoreResult.Message
                         };
                     }
                     _logger.LogInformation("Base de datos restaurada exitosamente");
@@ -526,7 +541,7 @@ public class BackupService : IBackupService
 
     #region Private Methods
 
-    private async Task<bool> CreateDatabaseBackupFileAsync(string outputPath, CancellationToken cancellationToken)
+    private async Task<(bool Success, string Message)> CreateDatabaseBackupFileAsync(string outputPath, CancellationToken cancellationToken)
     {
         _logger.LogInformation("--- Iniciando respaldo de base de datos con pg_dump ---");
         _logger.LogInformation("Archivo de salida: {OutputPath}", outputPath);
@@ -539,14 +554,12 @@ public class BackupService : IBackupService
             
             if (string.IsNullOrEmpty(pgDumpPath))
             {
-                _logger.LogError("pg_dump no encontrado. Asegúrese de que PostgreSQL esté instalado.");
-                _logger.LogError("Rutas buscadas: C:\\Program Files\\PostgreSQL\\[VERSION]\\bin\\ y PATH del sistema");
-                return false;
+                return (false, "pg_dump no encontrado. Asegúrese de que PostgreSQL esté instalado.");
             }
             
             _logger.LogInformation("pg_dump encontrado en: {PgDumpPath}", pgDumpPath);
 
-            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U {_postgresUser} -F c -b -v -f \"{outputPath}\" {_postgresDatabase}";
+            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -F c -b -v -f \"{outputPath}\" \"{_postgresDatabase}\"";
             _logger.LogInformation("Configuración de conexión:");
             _logger.LogInformation("  Host: {Host}", _postgresHost);
             _logger.LogInformation("  Puerto: {Port}", _postgresPort);
@@ -562,7 +575,8 @@ public class BackupService : IBackupService
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 RedirectStandardInput = true,  // Importante: evita que pg_dump espere entrada
-                CreateNoWindow = true
+                CreateNoWindow = true,
+                WorkingDirectory = Path.GetDirectoryName(pgDumpPath)
             };
 
             // Configurar password via variable de entorno
@@ -606,6 +620,8 @@ public class BackupService : IBackupService
             // Obtener timeout configurado
             var config = await _systemConfigRepository.GetConfigurationAsync(cancellationToken);
             var timeoutMinutes = config?.BackupTimeoutMinutes ?? 10;
+            if (timeoutMinutes <= 0) timeoutMinutes = 10; // Valor por defecto si es 0 o negativo
+            
             _logger.LogInformation("Esperando finalización de pg_dump (timeout: {Timeout} minutos)...", timeoutMinutes);
             
             var waitTask = process.WaitForExitAsync(cancellationToken);
@@ -617,16 +633,7 @@ public class BackupService : IBackupService
                 _logger.LogError("pg_dump excedió el tiempo límite de {Timeout} minutos", timeoutMinutes);
                 _logger.LogError("Salida parcial: {Output}", outputBuilder.ToString());
                 _logger.LogError("Error parcial: {Error}", errorBuilder.ToString());
-                try
-                {
-                    process.Kill(true);
-                    _logger.LogWarning("Proceso pg_dump terminado forzosamente");
-                }
-                catch (Exception killEx)
-                {
-                    _logger.LogError(killEx, "Error al terminar proceso pg_dump");
-                }
-                return false;
+                return (false, $"pg_dump excedió el tiempo límite de {timeoutMinutes} minutos.");
             }
 
             // Esperar a que termine de leer toda la salida
@@ -652,7 +659,10 @@ public class BackupService : IBackupService
             {
                 _logger.LogError("pg_dump falló con código de salida {ExitCode}", process.ExitCode);
                 _logger.LogError("Error: {Error}", error);
-                return false;
+                
+                // Extraer un mensaje corto y limpio para el usuario
+                var cleanError = string.IsNullOrWhiteSpace(error) ? "Error desconocido en pg_dump" : error.Trim();
+                return (false, $"pg_dump falló (Código {process.ExitCode}): {cleanError}");
             }
             
             // Verificar que el archivo se creó
@@ -665,20 +675,20 @@ public class BackupService : IBackupService
             else
             {
                 _logger.LogError("El archivo de respaldo no se creó: {OutputPath}", outputPath);
-                return false;
+                return (false, "El archivo de respaldo no se generó correctamente.");
             }
 
             _logger.LogInformation("--- Respaldo de base de datos completado exitosamente ---");
-            return true;
+            return (true, "Éxito");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al ejecutar pg_dump");
-            return false;
+            return (false, $"Excepción al ejecutar respaldo: {ex.Message}");
         }
     }
 
-    private async Task<bool> RestoreDatabaseFromFileAsync(string backupFilePath, CancellationToken cancellationToken)
+    private async Task<(bool Success, string Message)> RestoreDatabaseFromFileAsync(string backupFilePath, CancellationToken cancellationToken)
     {
         try
         {
@@ -686,8 +696,7 @@ public class BackupService : IBackupService
             var pgRestorePath = FindPgRestorePath();
             if (string.IsNullOrEmpty(pgRestorePath))
             {
-                _logger.LogError("pg_restore no encontrado. Asegúrese de que PostgreSQL esté instalado.");
-                return false;
+                return (false, "pg_restore no encontrado. Asegúrese de que PostgreSQL esté instalado.");
             }
 
             // Primero, limpiar la base de datos (drop y recrear)
@@ -729,6 +738,8 @@ public class BackupService : IBackupService
             // Timeout (usar el mismo que backup o uno mayor, restaurar suele ser más lento)
             var config = await _systemConfigRepository.GetConfigurationAsync(cancellationToken);
             var timeoutMinutes = (config?.BackupTimeoutMinutes ?? 10) * 2; // Doble de tiempo para restaurar
+            if (timeoutMinutes <= 0) timeoutMinutes = 20;
+
             _logger.LogInformation("Esperando finalización de pg_restore (timeout: {Timeout} minutos)...", timeoutMinutes);
 
             var waitTask = process.WaitForExitAsync(cancellationToken);
@@ -739,7 +750,7 @@ public class BackupService : IBackupService
             {
                 _logger.LogError("pg_restore excedió el tiempo límite de {Timeout} minutos", timeoutMinutes);
                 try { process.Kill(true); } catch { }
-                return false;
+                return (false, $"pg_restore excedió el tiempo límite de {timeoutMinutes} minutos.");
             }
 
             // Esperar lectura completa
@@ -750,30 +761,25 @@ public class BackupService : IBackupService
             
             _logger.LogInformation("pg_restore código de salida: {ExitCode}", process.ExitCode);
 
-            // pg_restore puede retornar warnings (código 1) que no son errores fatales
             if (process.ExitCode != 0)
             {
-                // Si hay error, loguearlo, pero a veces exit code 1 es warning.
-                // Sin embargo, para seguridad, si no es 0 revisamos output
+                // pg_restore puede retornar warnings (código 1) que no son errores fatales
                 _logger.LogWarning("pg_restore finalizó con código {ExitCode}. Revise los logs por posibles advertencias.", process.ExitCode);
-                _logger.LogInformation("Salida de error: {Error}", error);
                 
                 // Considerar fallo si hay errores críticos en el log
                 if (error.Contains("fatal:", StringComparison.OrdinalIgnoreCase) || error.Contains("error:", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogError("Se detectaron errores críticos en la restauración.");
-                    return false;
+                    return (false, $"pg_restore falló (Código {process.ExitCode}): {error.Trim()}");
                 }
             }
 
-            return true;
-
-
+            return (true, "Éxito");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al ejecutar pg_restore");
-            return false;
+            return (false, $"Excepción al ejecutar restauración: {ex.Message}");
         }
     }
 
@@ -838,7 +844,7 @@ public class BackupService : IBackupService
 
     private Dictionary<string, string> ParseConnectionString(string connectionString)
     {
-        var result = new Dictionary<string, string>();
+        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
 
         foreach (var part in parts)

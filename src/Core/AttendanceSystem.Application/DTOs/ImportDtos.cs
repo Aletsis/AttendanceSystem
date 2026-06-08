@@ -7,11 +7,15 @@ public sealed record ImportResult<T>
 {
     public List<T> ValidEntries { get; init; } = new();
     public List<string> Errors { get; init; } = new();
+
+    public bool IsSuccess => Errors.Count == 0;
+    public List<T> Data => ValidEntries;
+    public string ErrorMessage => string.Join(", ", Errors);
 }
 
 public sealed record ImportedLogEntryDto(string EmployeeId, DateTime DateTime, string Type);
 
-public sealed record ImportBranchDto(string Code, string Name, string Address);
+public sealed record ImportBranchDto(string Code, string Name, string Address, bool IsExternal = false, string? ExternalHost = null);
 
 public sealed record ImportDepartmentDto(string Name, string Description);
 

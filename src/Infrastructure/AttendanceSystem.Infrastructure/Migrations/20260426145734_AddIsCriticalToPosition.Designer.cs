@@ -3,6 +3,7 @@ using System;
 using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AttendanceSystem.Infrastructure.Migrations
 {
     [DbContext(typeof(AttendanceDbContext))]
-    partial class AttendanceDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260426145734_AddIsCriticalToPosition")]
+    partial class AddIsCriticalToPosition
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -351,11 +354,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
-                    b.Property<int>("DevicePrivilege")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
                     b.Property<string>("Email")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -493,53 +491,14 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.ToTable("Shifts", (string)null);
                 });
 
-            modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .HasColumnType("uuid");
-
-                    b.Property<bool>("IsResolved")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)");
-
-                    b.Property<string>("ReferenceId")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)");
-
-                    b.Property<DateTime>("Timestamp")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
-
-                    b.HasKey("Id");
-
-                    b.ToTable("SystemAlerts", (string)null);
-                });
-
             modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate.SystemConfiguration", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<string>("AbsenceAlertEmails")
-                        .HasColumnType("text");
-
                     b.Property<int>("AdmsPort")
                         .HasColumnType("integer");
-
-                    b.Property<bool>("AreAlertsEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<TimeSpan?>("AutoBackupTime")
-                        .HasColumnType("interval");
 
                     b.Property<bool>("AutoClearDevicesAfterDownload")
                         .HasColumnType("boolean");
@@ -548,17 +507,6 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasColumnType("boolean");
 
                     b.Property<TimeSpan?>("AutoDownloadTime")
-                        .HasColumnType("interval");
-
-                    b.Property<string>("AutoReportEmails")
-                        .HasColumnType("text");
-
-                    b.Property<bool>("AutoReportForToday")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<TimeSpan?>("AutoReportTime")
                         .HasColumnType("interval");
 
                     b.Property<string>("BackupDirectory")
@@ -584,23 +532,10 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<int>("FortnightSecondDay")
                         .HasColumnType("integer");
 
-                    b.Property<bool>("IsAutoBackupEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
                     b.Property<bool>("IsAutoDownloadEnabled")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
                         .HasDefaultValue(false);
-
-                    b.Property<bool>("IsAutoReportEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
-
-                    b.Property<string>("LateAlertEmails")
-                        .HasColumnType("text");
 
                     b.Property<TimeSpan>("LateTolerance")
                         .HasColumnType("interval");
@@ -608,26 +543,8 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<int>("MonthlyStartDay")
                         .HasColumnType("integer");
 
-                    b.Property<bool>("SmtpEnableSsl")
-                        .HasColumnType("boolean");
-
-                    b.Property<string>("SmtpHost")
-                        .HasColumnType("text");
-
-                    b.Property<string>("SmtpPassword")
-                        .HasColumnType("text");
-
-                    b.Property<int>("SmtpPort")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("SmtpUser")
-                        .HasColumnType("text");
-
                     b.Property<TimeSpan>("StandardWorkHours")
                         .HasColumnType("interval");
-
-                    b.Property<string>("SystemFailureAlertEmails")
-                        .HasColumnType("text");
 
                     b.Property<int>("WeeklyStartDay")
                         .HasColumnType("integer");

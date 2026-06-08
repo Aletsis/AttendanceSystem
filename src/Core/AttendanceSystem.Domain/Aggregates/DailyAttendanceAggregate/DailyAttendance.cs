@@ -202,17 +202,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
              if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {
                 var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
-                // If no schedule is known, we can't strictly compare.
-                // Assuming default 8 hours? Or keeping existing logic?
-                // Existing logic assumed > 480 check.
-                // If we want "Worked - Scheduled" and Scheduled is unknown, this is ambiguous.
-                // I will keep the existing fallback logic of > 480 for safety, 
-                // or debatably all of it if Scheduled is considered 0? 
-                // Context: "based on assigned schedules". If no schedule assigned, this block hits.
-                // The previous code deducted 480. I'll stick to that 8h benchmark for "unknown schedule".
-                if (totalMinutes >= 480)
+                
+                // If Rest Day, everything is overtime. If not, fallback to 8h (480m)
+                int goal = IsRestDay ? 0 : 480;
+                
+                if (totalMinutes >= goal)
                 {
-                    OvertimeMinutes = (int)totalMinutes - 480;
+                    OvertimeMinutes = (int)totalMinutes - goal;
                 }
             }
             return;
@@ -276,43 +272,43 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             // OVERTIME logic
             if (ActualCheckIn.HasValue)
             {
-                // Calculate actual worked minutes (from actual check-in to actual check-out)
-                var totalWorkedMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
-                
                 // Calculate scheduled work duration
                 var scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
 
-                double overtime = 0;
-
-                if (LateMinutes > 0)
+                // 1. Determine Reference Entry (Entrada de Referencia)
+                DateTime referenceEntry = ActualCheckIn.Value;
+                
+                if (ShiftType != AttendanceSystem.Domain.Enumerations.ShiftType.Continuo && ScheduledCheckIn.HasValue)
                 {
-                    double previousHalfHourMinutes = Math.Floor(ActualCheckIn.Value.TimeOfDay.TotalMinutes / 30.0) * 30.0;
-                    double diffFromPreviousHalfHour = ActualCheckIn.Value.TimeOfDay.TotalMinutes - previousHalfHourMinutes;
-                    
-                    double effectiveStartMinutes = diffFromPreviousHalfHour <= ToleranceMinutes 
-                        ? previousHalfHourMinutes 
-                        : previousHalfHourMinutes + 30.0;
-                        
-                    DateTime effectiveStartTime = ActualCheckIn.Value.Date.AddMinutes(effectiveStartMinutes);
-                    var timeFromEffectiveStart = (ActualCheckOut.Value - effectiveStartTime).TotalMinutes;
-                    overtime = timeFromEffectiveStart - scheduledMinutes;
-                }
-                else if (totalWorkedMinutes >= scheduledMinutes)
-                {
-                    if (CalculateOvertimeBeforeEntry)
+                    var delayMinutes = (ActualCheckIn.Value - scheduledInDateTime).TotalMinutes;
+                    if (delayMinutes > ToleranceMinutes)
                     {
-                        // Calculate overtime based on total hours worked
-                        // This includes time worked before scheduled entry and after scheduled exit
-                        overtime = totalWorkedMinutes - scheduledMinutes;
+                        // Lateness exceeding tolerance -> round up to next 30-minute block from scheduled start, giving tolerance in each block
+                        double rawK = (delayMinutes - ToleranceMinutes) / 30.0;
+                        int k = (int)Math.Ceiling(rawK);
+                        if (k < 0) k = 0;
+                        
+                        referenceEntry = scheduledInDateTime.AddMinutes(k * 30);
                     }
                     else
                     {
-                        // Calculate time from scheduled check-in to actual check-out
-                        // This ignores time worked before scheduled check-in
-                        var timeFromScheduledStart = (ActualCheckOut.Value - scheduledInDateTime).TotalMinutes;
-                        overtime = timeFromScheduledStart - scheduledMinutes;
+                        if (CalculateOvertimeBeforeEntry)
+                        {
+                            referenceEntry = ActualCheckIn.Value;
+                        }
+                        else
+                        {
+                            referenceEntry = scheduledInDateTime;
+                        }
                     }
                 }
+
+                // 2. Calculate Worked Duration (Tiempo Laborado)
+                var totalWorkedMinutes = (ActualCheckOut.Value - referenceEntry).TotalMinutes;
+                
+                // 3. Calculate Overtime (Tiempo Extra)
+                // Overtime = Worked Duration - Scheduled Duration
+                double overtime = totalWorkedMinutes - scheduledMinutes;
 
                 if (overtime > 0 && OvertimeAuthorized)
                 {

@@ -96,13 +96,17 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
 
     public async Task<bool> ClearLogsAsync(
         string deviceId,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
         CancellationToken cancellationToken = default)
     {
         try
         {
             var request = new ClearDeviceLogsRequest
             {
-                DeviceId = deviceId
+                DeviceId = deviceId,
+                FromDate = fromDate?.ToString("o") ?? "",
+                ToDate = toDate?.ToString("o") ?? ""
             };
 
             var response = await _client.ClearDeviceLogsAsync(request, cancellationToken: cancellationToken);
@@ -304,6 +308,38 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         {
             _logger.LogError(ex, "Error enviando usuario {UserId} vía gRPC", user.UserId);
             return false;
+        }
+    }
+
+    public async Task<DeviceUserDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var request = new GetEmployeeRequest { EmployeeId = userId };
+            var response = await _client.GetEmployeeAsync(request, cancellationToken: cancellationToken);
+
+            if (!response.Success || response.Employee == null)
+            {
+                return null;
+            }
+
+            var e = response.Employee;
+            return new DeviceUserDto(
+                e.UserId,
+                e.Name,
+                e.Password,
+                e.Privilege,
+                e.Enabled,
+                string.IsNullOrEmpty(e.CardNumber) ? null : e.CardNumber,
+                e.Fingerprints.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.TemplateData)).ToList(),
+                string.IsNullOrEmpty(e.FaceTemplate) ? null : e.FaceTemplate,
+                string.IsNullOrEmpty(e.Photo) ? null : e.Photo
+            );
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error obteniendo usuario {UserId} vía gRPC", userId);
+            return null;
         }
     }
 }

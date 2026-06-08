@@ -12,6 +12,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     public EmployeeStatus Status { get; private set; }
     public Gender Gender { get; private set; } // Nuevo campo
     
+    public DevicePrivilege DevicePrivilege { get; private set; }
+    
     // Relaciones con otros agregados
     public BranchId BranchId { get; private set; } = null!;
     public DepartmentId DepartmentId { get; private set; } = null!;
@@ -58,7 +60,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         bool calculateOvertimeBeforeEntry = false,
         string? cardNumber = null,
         string? devicePassword = null,
-        string? photo = null)
+        string? photo = null,
+        DevicePrivilege devicePrivilege = DevicePrivilege.User)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -87,7 +90,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
             CardNumber = cardNumber,
             DevicePassword = devicePassword,
-            Photo = photo
+            Photo = photo,
+            DevicePrivilege = devicePrivilege
         };
     }
 
@@ -138,7 +142,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         bool calculateOvertimeBeforeEntry = false,
         string? cardNumber = null,
         string? devicePassword = null,
-        string? photo = null)
+        string? photo = null,
+        DevicePrivilege devicePrivilege = DevicePrivilege.User)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -165,6 +170,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         CardNumber = cardNumber;
         DevicePassword = devicePassword;
         Photo = photo ?? Photo;
+        DevicePrivilege = devicePrivilege;
     }
 
     public void Deactivate()

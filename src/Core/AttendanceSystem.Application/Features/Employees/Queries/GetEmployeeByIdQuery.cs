@@ -89,6 +89,7 @@ public sealed class GetEmployeeByIdQueryHandler : IRequestHandler<GetEmployeeByI
                 OvertimeCapType = employee.OvertimeCapType,
                 OvertimeCapMinutes = employee.OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry,
+                DevicePrivilege = employee.DevicePrivilege,
                 Photo = employee.Photo
             };
 

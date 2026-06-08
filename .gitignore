@@ -96,3 +96,7 @@ _Pvt_Extensions
 Deploy/*.*
 Output/*.*
 Prepare-Release.ps1
+
+# Artifacts
+artifacts/*.*
+scratch/*.*

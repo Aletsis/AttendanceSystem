@@ -31,6 +31,7 @@ public sealed record EmployeeDto
     public OvertimeCapType OvertimeCapType { get; init; }
     public double? OvertimeCapMinutes { get; init; }
     public bool CalculateOvertimeBeforeEntry { get; init; }
+    public DevicePrivilege DevicePrivilege { get; init; }
     
     // Biometrics info for display
     public string? CardNumber { get; init; }

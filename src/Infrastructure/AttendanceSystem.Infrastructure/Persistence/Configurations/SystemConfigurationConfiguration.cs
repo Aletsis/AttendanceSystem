@@ -50,5 +50,29 @@ public class SystemConfigurationConfiguration : IEntityTypeConfiguration<SystemC
 
         builder.Property(c => c.MonthlyStartDay)
             .IsRequired();
+
+        builder.Property(c => c.AreAlertsEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(c => c.AbsenceAlertEmails);
+        builder.Property(c => c.LateAlertEmails);
+        builder.Property(c => c.SystemFailureAlertEmails);
+
+        // Backup Automation
+        builder.Property(c => c.IsAutoBackupEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+        builder.Property(c => c.AutoBackupTime);
+
+        // Report Automation
+        builder.Property(c => c.IsAutoReportEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+        builder.Property(c => c.AutoReportTime);
+        builder.Property(c => c.AutoReportEmails);
+        builder.Property(c => c.AutoReportForToday)
+            .IsRequired()
+            .HasDefaultValue(false);
     }
 }

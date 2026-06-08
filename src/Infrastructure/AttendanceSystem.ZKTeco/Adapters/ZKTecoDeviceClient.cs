@@ -34,6 +34,8 @@ public class ZKTecoDeviceClient : IDeviceClient
     public async Task<bool> ConnectAsync(
         string ipAddress, 
         int port, 
+        string? username = null,
+        string? password = null,
         CancellationToken cancellationToken = default)
     {
         await _lock.WaitAsync(cancellationToken);
@@ -48,7 +50,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                 _logger.LogInformation(
                     "Conectado exitosamente a {IpAddress}:{Port}", ipAddress, port);
                     
-                // Diagnóstico: Obtener versión de algoritmo de huella
+                // Diagnóstico: Obtener versión de algoritmo de huella y forzar modo Unicode si es posible
                 try 
                 {
                     string zkFpVersion = "";
@@ -57,7 +59,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                         _logger.LogInformation("Dispositivo usa algoritmo de huella versión: {ZKFPVersion}", zkFpVersion);
                     }
                 }
-                catch { /* Ignorar error al obtener versión */ }
+                catch { /* Ignorar error */ }
             }
             else
             {
@@ -161,6 +163,8 @@ public class ZKTecoDeviceClient : IDeviceClient
 
     public async Task<bool> ClearLogsAsync(
         string deviceId,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
         CancellationToken cancellationToken = default)
     {
         if (!_isConnected)
@@ -169,7 +173,43 @@ public class ZKTecoDeviceClient : IDeviceClient
         await _lock.WaitAsync(cancellationToken);
         try
         {
-            return await Task.Run(() => _device.ClearGLog(1), cancellationToken);
+            return await Task.Run(() =>
+            {
+                if (fromDate.HasValue || toDate.HasValue)
+                {
+                    // Si falta una de las fechas, tomamos un valor extremo para cubrir el rango completo
+                    var start = fromDate ?? new DateTime(2000, 1, 1);
+                    var end = toDate ?? DateTime.Now.AddYears(1);
+
+                    var startStr = start.ToString("yyyy-MM-dd HH:mm:ss");
+                    var endStr = end.ToString("yyyy-MM-dd HH:mm:ss");
+
+                    _logger.LogInformation("Borrando logs del dispositivo ZKTeco en el rango: {Start} - {End}", startStr, endStr);
+
+                    bool success = _device.DeleteAttlogBetweenTheDate(1, startStr, endStr);
+                    if (success)
+                    {
+                        _device.RefreshData(1);
+                    }
+                    else
+                    {
+                        int errorCode = 0;
+                        _device.GetLastError(ref errorCode);
+                        _logger.LogError("Fallo al borrar logs por rango en el dispositivo. SDK Error Code: {ErrorCode}", errorCode);
+                    }
+                    return success;
+                }
+                else
+                {
+                    _logger.LogInformation("Borrando todos los logs del dispositivo ZKTeco (ClearGLog)...");
+                    bool success = _device.ClearGLog(1);
+                    if (success)
+                    {
+                        _device.RefreshData(1);
+                    }
+                    return success;
+                }
+            }, cancellationToken);
         }
         finally
         {
@@ -232,37 +272,92 @@ public class ZKTecoDeviceClient : IDeviceClient
 
                 // --- OBTENER CONTEOS ACTUALES (GetDeviceStatus) ---
                 int value = 0;
-                if (_device.GetDeviceStatus(1, 2, ref value)) userCount = value;
-                if (_device.GetDeviceStatus(1, 3, ref value)) fingerprintCount = value;
-                if (_device.GetDeviceStatus(1, 21, ref value)) faceCount = value;
-                if (_device.GetDeviceStatus(1, 6, ref value)) recordCount = value;
+                if (_device.GetDeviceStatus(1, 2, ref value)) userCount = value;           // 2: Usuarios
+                if (_device.GetDeviceStatus(1, 3, ref value)) fingerprintCount = value;    // 3: Huellas
+                if (_device.GetDeviceStatus(1, 21, ref value)) faceCount = value;          // 21: Rostros
+                if (_device.GetDeviceStatus(1, 6, ref value)) recordCount = value;         // 6: Registros (SSR)
+                if (recordCount == 0 && _device.GetDeviceStatus(1, 1, ref value)) recordCount = value; // Fallback 1: Registros (General)
 
-                // --- OBTENER CAPACIDADES (GetSysOption) ---
-                string sValue = "";
-                if (_device.GetSysOption(1, "~MaxUserCount", out sValue) && int.TryParse(sValue, out int uc)) userCapacity = uc;
-                if (_device.GetSysOption(1, "~MaxFingerCount", out sValue) && int.TryParse(sValue, out int fc)) fingerprintCapacity = fc;
-                if (_device.GetSysOption(1, "~MaxFaceCount", out sValue) && int.TryParse(sValue, out int fac)) faceCapacity = fac;
-                if (_device.GetSysOption(1, "~MaxAttLogCount", out sValue) && int.TryParse(sValue, out int rc)) recordCapacity = rc;
-
-                if (userCapacity <= userCount)
-                {
-                    int maxUser = 0;
-                    if (_device.GetDeviceStatus(1, 26, ref maxUser) && maxUser > userCapacity) userCapacity = maxUser;
-                }
-
-                if (recordCapacity <= recordCount)
-                {
-                     int maxLog = 0;
-                     if (_device.GetDeviceStatus(1, 29, ref maxLog) && maxLog > recordCapacity) recordCapacity = maxLog;
-                }
+                // --- OBTENER CAPACIDADES ---
                 
-                if (userCapacity < userCount) userCapacity = userCount;
-                if (fingerprintCapacity < fingerprintCount) fingerprintCapacity = fingerprintCount;
-                if (recordCapacity < recordCount) recordCapacity = recordCount;
+                // Helper para limpiar strings que vienen de COM interop (con null terminators)
+                bool TryParseClean(string val, out int result)
+                {
+                    result = 0;
+                    if (string.IsNullOrWhiteSpace(val)) return false;
+                    string cleaned = val.Replace("\0", "").Trim();
+                    return int.TryParse(cleaned, out result);
+                }
+
+                int TryGetSysOption(string key)
+                {
+                    string sValue = "";
+                    bool success = _device.GetSysOption(1, key, out sValue);
+                    
+                    // Mostrar el dato TOTALMENTE EN CRUDO
+                    _logger.LogInformation("RAW GetSysOption [{Key}] -> Success: {Success}, RawValue: '{RawValue}'", key, success, sValue);
+
+                    if (success && TryParseClean(sValue, out int result))
+                    {
+                        return result;
+                    }
+                    return 0;
+                }
+
+                int TryGetDeviceStatus(int code)
+                {
+                    int temp = 0;
+                    bool success = _device.GetDeviceStatus(1, code, ref temp);
+                    
+                    // Mostrar el dato TOTALMENTE EN CRUDO
+                    _logger.LogInformation("RAW GetDeviceStatus [{Code}] -> Success: {Success}, RawValue: {RawValue}", code, success, temp);
+
+                    if (success)
+                    {
+                        return temp;
+                    }
+                    return 0;
+                }
+
+                // Intentar leer múltiples opciones y quedarse con la que parezca una capacidad válida (generalmente números redondos o mayores a 1000)
+                int[] sysUserOptions = { TryGetSysOption("~MaxUserCount"), TryGetSysOption("MaxUser"), TryGetSysOption("MaxUserCapacity") };
+                int[] sysFingerOptions = { TryGetSysOption("~MaxFingerCount"), TryGetSysOption("MaxFinger"), TryGetSysOption("MaxFingerCapacity") };
+                int[] sysFaceOptions = { TryGetSysOption("~MaxFaceCount"), TryGetSysOption("MaxFace"), TryGetSysOption("MaxFaceCapacity") };
+                int[] sysRecordOptions = { TryGetSysOption("~MaxAttLogCount"), TryGetSysOption("MaxAttLog"), TryGetSysOption("MaxAttLogCapacity") };
+
+                userCapacity = sysUserOptions.Max();
+                fingerprintCapacity = sysFingerOptions.Max();
+                faceCapacity = sysFaceOptions.Max();
+                recordCapacity = sysRecordOptions.Max();
+
+                // Intento 2: GetDeviceStatus (7, 8, 9, 10, 22)
+                int dsUserCap = TryGetDeviceStatus(8);
+                int dsFingerCap = TryGetDeviceStatus(7);
+                int dsRecordCap = TryGetDeviceStatus(9);
+                int dsFaceCap = TryGetDeviceStatus(10);
+                int dsFaceCap2 = TryGetDeviceStatus(22);
+
+                // Si GetDeviceStatus nos da exactamente el mismo número que el count, ES UN BUG DEL FIRMWARE (está devolviendo el count en lugar de capacity).
+                // Ignorar capacidades menores a 1000 (excepto rostros) o que sean exactamente igual al conteo (falso positivo).
+                if (userCapacity <= 0 && dsUserCap > 0 && dsUserCap != userCount) userCapacity = dsUserCap;
+                if (fingerprintCapacity <= 0 && dsFingerCap > 0 && dsFingerCap != fingerprintCount) fingerprintCapacity = dsFingerCap;
+                if (recordCapacity <= 0 && dsRecordCap > 0 && dsRecordCap != recordCount) recordCapacity = dsRecordCap;
+                
+                if (faceCapacity <= 0)
+                {
+                    if (dsFaceCap > 0 && dsFaceCap != faceCount) faceCapacity = dsFaceCap;
+                    else if (dsFaceCap2 > 0 && dsFaceCap2 != faceCount) faceCapacity = dsFaceCap2;
+                }
+
+                // Ajuste final de seguridad: Si todo falló o dio el conteo exacto, poner capacidades por defecto estándar de ZKTeco
+                if (userCapacity <= userCount) userCapacity = Math.Max(userCount > 3000 ? 10000 : 3000, userCount); 
+                if (fingerprintCapacity <= fingerprintCount) fingerprintCapacity = Math.Max(fingerprintCount > 3000 ? 10000 : 3000, fingerprintCount);
+                if (faceCapacity <= faceCount && faceCount > 0) faceCapacity = Math.Max(faceCount > 1500 ? 3000 : 1500, faceCount);
+                if (recordCapacity <= recordCount) recordCapacity = Math.Max(recordCount > 50000 ? 100000 : 50000, recordCount);
 
                 _logger.LogInformation(
-                    "Stats: Users={UserCount}/{UserCapacity}, FP={FingerprintCount}/{FingerprintCapacity}, Recs={RecordCount}/{RecordCapacity}",
-                    userCount, userCapacity, fingerprintCount, fingerprintCapacity, recordCount, recordCapacity);
+                    "Estadísticas del Dispositivo: Usuarios={UserCount}/{UserCapacity}, Huellas={FingerprintCount}/{FingerprintCapacity}, Rostros={FaceCount}/{FaceCapacity}, Registros={RecordCount}/{RecordCapacity}",
+                    userCount, userCapacity, fingerprintCount, fingerprintCapacity, faceCount, faceCapacity, recordCount, recordCapacity);
 
                 return new DeviceInfoDto(
                     serialNumber,
@@ -310,6 +405,8 @@ public class ZKTecoDeviceClient : IDeviceClient
             string password = "";
             int privilege = 0;
             bool enabled = false;
+            string faceTemplate = "";
+            int faceLen = 0;
 
             while (_device.SSR_GetAllUserInfo(1, out enrollNumber, out name, out password, out privilege, out enabled))
             {
@@ -332,10 +429,12 @@ public class ZKTecoDeviceClient : IDeviceClient
                 }
 
                 string photoData = "";
+                /*
                 if (_device.GetUserPhoto(1, enrollNumber, out photoData))
                 {
                     // photoData is Base64
                 }
+                */
                 
                 users.Add(new DeviceUserDto(
                     enrollNumber,
@@ -365,9 +464,10 @@ public class ZKTecoDeviceClient : IDeviceClient
         try
         {
             return await Task.Run(() =>
-        {
-            return _device.SSR_DeleteEnrollData(1, userId, 12);
-        }, cancellationToken);
+            {
+                // 0xff (255) deletes the user entirely (fingerprints, face, card, password, and user info).
+                return _device.SSR_DeleteEnrollData(1, userId, 0xff);
+            }, cancellationToken);
         }
         finally
         {
@@ -383,25 +483,34 @@ public class ZKTecoDeviceClient : IDeviceClient
         try
         {
             return await Task.Run(() =>
-        {
-
-            for (int i = 0; i < 10; i++)
             {
-                try
+                // ZKTeco SDK: 12 deletes all fingerprints at once.
+                bool success = _device.SSR_DeleteEnrollData(1, userId, 12);
+                if (success)
                 {
-                    if (_device.SSR_DeleteEnrollData(1, userId, i))
+                    _logger.LogInformation("Todas las huellas eliminadas para usuario {UserId} usando backup number 12", userId);
+                    return true;
+                }
+
+                // Fallback a borrar una por una
+                _logger.LogWarning("Fallo al eliminar con backup number 12. Intentando borrar huellas una por una...");
+                for (int i = 0; i < 10; i++)
+                {
+                    try
                     {
-                        _logger.LogInformation("Huella {FingerIndex} eliminada para usuario {UserId}", i, userId);
+                        if (_device.SSR_DeleteEnrollData(1, userId, i))
+                        {
+                            _logger.LogInformation("Huella {FingerIndex} eliminada para usuario {UserId}", i, userId);
+                        }
                     }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Error al intentar eliminar huella {FingerIndex} para {UserId}. Ignorando.", i, userId);
+                    }
+                    Thread.Sleep(20);
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Error al intentar eliminar huella {FingerIndex} para {UserId}. Ignorando.", i, userId);
-                }
-                Thread.Sleep(20);
-            }
-            return true;
-        }, cancellationToken);
+                return true;
+            }, cancellationToken);
         }
         finally
         {
@@ -461,106 +570,198 @@ public class ZKTecoDeviceClient : IDeviceClient
         try
         {
             return await Task.Run(() =>
-        {
-            _device.EnableDevice(1, false); // Deshabilitar para evitar conflictos
-            try
             {
-                // 1. Información Básica
-                // Nos aseguramos de enviar el nombre. Algunos dispositivos requieren SetUserInfo (Legacy) 
-                // además de SSR_SetUserInfo para mostrar el nombre en pantalla.
-                bool result = _device.SSR_SetUserInfo(1, user.UserId, user.Name, user.Password, user.Privilege, user.Enabled);
-                
-                // Fallback de nombre para dispositivos que no soportan SSR para el nombre
-                if (result && !string.IsNullOrEmpty(user.Name))
+                _device.EnableDevice(1, false); // Deshabilitar durante actualización
+                try
                 {
-                    try 
+                    // Determinar si el ID es numérico para fallbacks legacy
+                    int dwEnrollNumber = 0;
+                    bool isNumericId = int.TryParse(user.UserId, out dwEnrollNumber);
+
+                    // 1. Iniciar modo batch para agrupar todas las operaciones del usuario.
+                    // Esto evita escrituras lentas y fragmentadas, mejorando la velocidad de transferencia.
+                    _device.BeginBatchUpdate(1, 1);
+
+                    // 2. Tarjeta (CRÍTICO: DEBE establecerse ANTES de llamar a SSR_SetUserInfo o SetUserInfo,
+                    // ya que la función de información de usuario asocia la tarjeta que está actualmente en el buffer)
+                    _device.SetStrCardNumber(user.CardNumber ?? "");
+
+                    // 3. Información Básica - Limpiar nombre y limitar longitud
+                    // ZKTeco suele tener un límite de 24 caracteres para el nombre.
+                    string cleanName = CleanName(user.Name);
+                    if (cleanName.Length > 24) cleanName = cleanName.Substring(0, 24);
+
+                    // Registrar información de usuario en el buffer
+                    bool result = _device.SSR_SetUserInfo(1, user.UserId, cleanName, user.Password, user.Privilege, user.Enabled);
+                    
+                    // Si falló el método moderno y el ID es numérico, intentar con el método legacy como fallback (para dispositivos B&W antiguos)
+                    if (!result && isNumericId)
                     {
-                        // Intentar SetUserInfo (legacy) si el ID es numérico
-                        if (int.TryParse(user.UserId, out int dwEnrollNumber))
-                        {
-                            _device.SetUserInfo(1, dwEnrollNumber, user.Name, user.Password, user.Privilege, user.Enabled);
-                        }
+                        result = _device.SetUserInfo(1, dwEnrollNumber, cleanName, user.Password, user.Privilege, user.Enabled);
                     }
-                    catch { /* Ignorar si falla el fallback legacy */ }
-                }
 
-                if (!result)
-                {
-                    int errorCode = 0;
-                    _device.GetLastError(ref errorCode);
-                    _logger.LogWarning("Fallo al enviar usuario {UserId} (SSR_SetUserInfo). Código error: {ErrorCode}", user.UserId, errorCode);
-                    return false;
-                }
-
-                // 2. Tarjeta
-                // Siempre intentamos enviar la tarjeta (aunque sea vacía para limpiar)
-                _device.SetStrCardNumber(user.CardNumber ?? "");
-
-                // 3. Huellas
-                if (user.Fingerprints != null && user.Fingerprints.Any())
-                {
-                    foreach (var fp in user.Fingerprints)
+                    if (!result)
                     {
-                        // Intento 1: SSR_SetUserTmpStr (Estándar TFT)
-                        if (!_device.SSR_SetUserTmpStr(1, user.UserId, fp.Index, fp.Template))
-                        {
-                            // Fallback 1: SetUserTmpExStr (Soporte VX10 explícito, flag 1 = Valid)
-                            bool fallbackSuccess = false;
-                            try 
-                            { 
-                                fallbackSuccess = _device.SetUserTmpExStr(1, user.UserId, fp.Index, 1, fp.Template); 
-                            } 
-                            catch { }
+                        int errorCode = 0;
+                        _device.GetLastError(ref errorCode);
+                        _logger.LogWarning("Fallo al registrar usuario {UserId} en el buffer del SDK. Código error: {ErrorCode}", user.UserId, errorCode);
+                        
+                        // Cerrar/cancelar batch para no dejar al SDK en estado intermedio bloqueado
+                        _device.BatchUpdate(1);
+                        return false;
+                    }
 
-                            if (!fallbackSuccess)
+                    // 4. Huellas
+                    if (user.Fingerprints != null && user.Fingerprints.Any())
+                    {
+                        foreach (var fp in user.Fingerprints)
+                        {
+                            // Priorizar SetUserTmpExStr (Mejor para VX10 y dispositivos modernos)
+                            // Flag 1 = Huella válida/estándar
+                            if (!_device.SetUserTmpExStr(1, user.UserId, fp.Index, 1, fp.Template))
                             {
-                                int fpErrorCode = 0;
-                                _device.GetLastError(ref fpErrorCode);
-                                _logger.LogWarning("Fallo al guardar huella {Index} para {UserId}. Error: {ErrorCode}", fp.Index, user.UserId, fpErrorCode);
+                                // Fallback a SSR_SetUserTmpStr (Estándar TFT)
+                                if (!_device.SSR_SetUserTmpStr(1, user.UserId, fp.Index, fp.Template))
+                                {
+                                    // Fallback final a SetUserTmpStr (Legacy/B&W) para IDs numéricos
+                                    if (isNumericId) _device.SetUserTmpStr(1, dwEnrollNumber, fp.Index, fp.Template);
+                                }
                             }
                         }
                     }
-                }
 
-                // 4. Rostro
-                if (!string.IsNullOrWhiteSpace(user.FaceTemplate))
-                {
-                    // Intento 1: SetUserFaceStr (Estándar index 50)
-                    if (!_device.SetUserFaceStr(1, user.UserId, 50, user.FaceTemplate, user.FaceTemplate.Length))
+                    // 5. Rostro
+                    if (!string.IsNullOrWhiteSpace(user.FaceTemplate))
                     {
-                        // Fallback: SetUserFaceExStr (Para modelos nuevos como SpeedFace)
-                        try 
-                        {
-                             _device.SetUserFaceExStr(1, user.UserId, 50, user.FaceTemplate, user.FaceTemplate.Length);
-                        }
-                        catch { }
+                        _device.SetUserFaceStr(1, user.UserId, 50, user.FaceTemplate, user.FaceTemplate.Length);
                     }
-                }
 
-                // 5. Fotografía
-                if (!string.IsNullOrWhiteSpace(user.Photo))
+                    _device.BatchUpdate(1); // Confirmar y volcar todos los cambios (User Info, Card, Templates) al dispositivo en un solo lote
+                    _device.RefreshData(1); // Refrescar caché del dispositivo
+                    
+                    _logger.LogInformation("Usuario {UserId} ({Name}) con tarjeta y biometría enviado exitosamente.", user.UserId, user.Name);
+                    return true;
+                }
+                catch (Exception ex)
                 {
-                    _device.SetUserPhoto(1, user.UserId, user.Photo);
+                    _logger.LogError(ex, "Excepción al enviar usuario {UserId}", user.UserId);
+                    try
+                    {
+                        // Asegurar de cerrar el batch en caso de error inesperado
+                        _device.BatchUpdate(1);
+                    }
+                    catch { /* Ignorar error secundario */ }
+                    return false;
                 }
-
-                _device.RefreshData(1); // Confirmar cambios
-                _logger.LogInformation("Usuario {UserId} ({Name}) y biometría enviados exitosamente.", user.UserId, user.Name);
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Excepción al enviar usuario {UserId}", user.UserId);
-                return false;
-            }
-            finally
-            {
-                _device.EnableDevice(1, true); // Rehabilitar
-            }
-        }, cancellationToken);
+                finally
+                {
+                    _device.EnableDevice(1, true); // Rehabilitar el dispositivo para su uso normal
+                }
+            }, cancellationToken);
         }
         finally
         {
             _lock.Release();
+        }
+    }
+
+
+    public async Task<DeviceUserDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        if (!_isConnected) throw new InvalidOperationException("Dispositivo no conectado");
+
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            return await Task.Run(() =>
+            {
+                string name = "", password = "";
+                int privilege = 0;
+                bool enabled = false;
+
+                if (_device.SSR_GetUserInfo(1, userId, out name, out password, out privilege, out enabled))
+                {
+                    // Obtener datos adicionales
+                    string cardNumber = "";
+                    _device.GetStrCardNumber(out cardNumber);
+
+                    var fingerprints = new List<DeviceFingerprintDto>();
+                    for (int i = 0; i < 10; i++)
+                    {
+                        string template = "";
+                        int tmpLen = 0;
+                        int flag = 0;
+                        
+                        // Intentar GetUserTmpExStr primero (Soporta 10.0 y es más robusto)
+                        if (_device.GetUserTmpExStr(1, userId, i, out flag, out template, out tmpLen))
+                        {
+                            fingerprints.Add(new DeviceFingerprintDto(i, template));
+                        }
+                        // Fallback a SSR_GetUserTmpStr
+                        else if (_device.SSR_GetUserTmpStr(1, userId, i, out template, out tmpLen))
+                        {
+                            fingerprints.Add(new DeviceFingerprintDto(i, template));
+                        }
+                        // Fallback legacy para IDs numéricos
+                        else if (int.TryParse(userId, out int dwId))
+                        {
+                            if (_device.GetUserTmpStr(1, dwId, i, ref template, ref tmpLen))
+                            {
+                                fingerprints.Add(new DeviceFingerprintDto(i, template));
+                            }
+                        }
+                    }
+
+                    string faceTemplate = "";
+                    int faceLen = 0;
+                    _device.GetUserFaceStr(1, userId, 50, ref faceTemplate, ref faceLen);
+
+                    return new DeviceUserDto(
+                        userId,
+                        name,
+                        password,
+                        privilege,
+                        enabled,
+                        string.IsNullOrWhiteSpace(cardNumber) ? null : cardNumber,
+                        fingerprints.Any() ? fingerprints : null,
+                        string.IsNullOrWhiteSpace(faceTemplate) ? null : faceTemplate
+                    );
+                }
+
+                return null;
+            }, cancellationToken);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+    private string CleanName(string name)
+    {
+        if (string.IsNullOrEmpty(name)) return "";
+        
+        // Muchos dispositivos ZKTeco no soportan acentos o eñes y muestran basura
+        try
+        {
+            var normalizedString = name.Normalize(System.Text.NormalizationForm.FormD);
+            var stringBuilder = new System.Text.StringBuilder();
+
+            foreach (var c in normalizedString)
+            {
+                var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
+                if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
+                {
+                    stringBuilder.Append(c);
+                }
+            }
+
+            string clean = stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC);
+            // Reemplazar ñ/Ñ manualmente si quedaron
+            return clean.Replace("ñ", "n").Replace("Ñ", "N");
+        }
+        catch
+        {
+            return name;
         }
     }
 }

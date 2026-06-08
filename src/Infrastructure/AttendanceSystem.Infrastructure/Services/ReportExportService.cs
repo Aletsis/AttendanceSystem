@@ -1586,4 +1586,67 @@ public class ReportExportService : IReportExportService
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
+
+    public byte[] GenerateContpaqiNominaExport(IEnumerable<AttendanceReportViewDto> attendanceData)
+    {
+        var sb = new System.Text.StringBuilder();
+        // Layout: CódigoEmpleado, Fecha, TipoIncidencia, Valor
+        // TipoIncidencia (Sugeridos): 1=Falta, 2=Retardo, 3=HoraExtra
+        
+        foreach (var item in attendanceData)
+        {
+            var dateStr = item.Date.ToString("dd/MM/yyyy");
+
+            // 1. Faltas
+            if (item.IsAbsent && !item.IsRestDay)
+            {
+                sb.AppendLine($"{item.EmployeeId},{dateStr},1,1");
+            }
+
+            // 2. Retardos (Si tienen minutos de retardo)
+            if (item.LateMinutes > 0)
+            {
+                sb.AppendLine($"{item.EmployeeId},{dateStr},2,1"); // 1 evento de retardo
+            }
+
+            // 3. Horas Extra (En horas decimales)
+            if (item.RoundedOvertimeMinutes > 0)
+            {
+                double hours = Math.Round(item.RoundedOvertimeMinutes / 60.0, 2);
+                sb.AppendLine($"{item.EmployeeId},{dateStr},3,{hours.ToString(CultureInfo.InvariantCulture)}");
+            }
+        }
+
+        return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+    }
+
+    public byte[] GenerateAspelNoiExport(IEnumerable<AttendanceReportViewDto> attendanceData)
+    {
+        var sb = new System.Text.StringBuilder();
+        // Layout Aspel NOI (Movimientos): ClaveEmpleado, Fecha, ClaveIncidencia, Cantidad
+        // ClaveIncidencia (Sugeridos): F=Falta, R=Retardo, HE=HoraExtra
+        
+        foreach (var item in attendanceData)
+        {
+            var dateStr = item.Date.ToString("dd/MM/yyyy");
+
+            if (item.IsAbsent && !item.IsRestDay)
+            {
+                sb.AppendLine($"{item.EmployeeId},{dateStr},F,1");
+            }
+
+            if (item.LateMinutes > 0)
+            {
+                sb.AppendLine($"{item.EmployeeId},{dateStr},R,1");
+            }
+
+            if (item.RoundedOvertimeMinutes > 0)
+            {
+                double hours = Math.Round(item.RoundedOvertimeMinutes / 60.0, 2);
+                sb.AppendLine($"{item.EmployeeId},{dateStr},HE,{hours.ToString(CultureInfo.InvariantCulture)}");
+            }
+        }
+
+        return System.Text.Encoding.UTF8.GetBytes(sb.ToString());
+    }
 }

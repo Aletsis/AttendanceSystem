@@ -19,7 +19,7 @@ public class DeviceClientFactory : IDeviceClientFactory
         if (device.DownloadMethod == DeviceDownloadMethod.Adms)
         {
             var admsClient = _serviceProvider.GetRequiredService<AdmsDeviceClient>();
-            admsClient.SetDevice(device.HardwareInfo.SerialNumber);
+            admsClient.SetDevice(device.HardwareInfo.SerialNumber ?? "");
             return admsClient;
         }
 

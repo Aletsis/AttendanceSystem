@@ -102,7 +102,11 @@ public class HikvisionDeviceClient : IDeviceClient
         return records;
     }
 
-    public Task<bool> ClearLogsAsync(string deviceId, CancellationToken cancellationToken = default)
+    public Task<bool> ClearLogsAsync(
+        string deviceId,
+        DateTime? fromDate = null,
+        DateTime? toDate = null,
+        CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Hikvision no soporta limpieza remota de logs vía ISAPI de forma estándar o requiere privilegios especiales.");
         return Task.FromResult(true);
@@ -384,6 +388,35 @@ public class HikvisionDeviceClient : IDeviceClient
         {
             _logger.LogError(ex, "Error enviando usuario {UserId} a Hikvision", user.UserId);
             return false;
+        }
+    }
+
+    public async Task<DeviceUserDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
+    {
+        var searchXml = $@"<UserInfoSearchCond>
+            <searchID>{Guid.NewGuid()}</searchID>
+            <maxResults>1</maxResults>
+            <searchResultPosition>0</searchResultPosition>
+            <EmployeeNoList>
+                <EmployeeNo>
+                    <employeeNo>{userId}</employeeNo>
+                </EmployeeNo>
+            </EmployeeNoList>
+        </UserInfoSearchCond>";
+
+        try
+        {
+            var response = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/UserInfo/Search", searchXml, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+
+            var xml = await response.Content.ReadAsStringAsync(cancellationToken);
+            var users = ParseUsers(xml);
+            return users.FirstOrDefault();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error buscando usuario {UserId} en Hikvision", userId);
+            return null;
         }
     }
 }

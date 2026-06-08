@@ -12,4 +12,5 @@ public sealed record AttendanceLogViewDto
     public string VerifyMethod { get; init; } = string.Empty;
     public string DeviceName { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
+    public DateTime? AssignedDate { get; init; }
 }

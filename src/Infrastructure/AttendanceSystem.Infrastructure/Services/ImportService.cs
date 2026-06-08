@@ -189,10 +189,12 @@ public class ImportService : IImportService
                         var code = row.Cell(1).GetValue<string>();
                         var name = row.Cell(2).GetValue<string>();
                         var addr = row.Cell(3).GetValue<string>();
+                        var isExt = row.Cell(4).GetValue<string>()?.ToLower() == "si";
+                        var host = row.Cell(5).GetValue<string>();
 
                         if (!string.IsNullOrWhiteSpace(code) && !string.IsNullOrWhiteSpace(name))
                         {
-                            result.ValidEntries.Add(new ImportBranchDto(code, name, addr));
+                            result.ValidEntries.Add(new ImportBranchDto(code, name, addr, isExt, host));
                         }
                     }
                     catch (Exception ex)
@@ -385,6 +387,8 @@ public class ImportService : IImportService
         ws.Cell(1, 1).Value = "Código";
         ws.Cell(1, 2).Value = "Nombre";
         ws.Cell(1, 3).Value = "Dirección";
+        ws.Cell(1, 4).Value = "Es Externa (Si/No)";
+        ws.Cell(1, 5).Value = "Host Externo (URL)";
 
         ws.Columns().AdjustToContents();
         using var ms = new MemoryStream();

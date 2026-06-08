@@ -24,6 +24,7 @@ public class PositionQueries : IPositionQueries
                 p.Id.Value,
                 p.Name,
                 p.Description,
-                p.BaseSalary));
+                p.BaseSalary,
+                p.IsCritical));
     }
 }

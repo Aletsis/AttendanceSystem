@@ -37,7 +37,8 @@ public sealed record UpdateEmployeeCommand(
     bool CalculateOvertimeBeforeEntry,
     string? CardNumber = null,
     string? DevicePassword = null,
-    string? Photo = null) : IRequest<Result<EmployeeDto>>;
+    string? Photo = null,
+    DevicePrivilege DevicePrivilege = DevicePrivilege.User) : IRequest<Result<EmployeeDto>>;
 
 public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmployeeCommand, Result<EmployeeDto>>
 {
@@ -134,7 +135,8 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 request.CalculateOvertimeBeforeEntry,
                 request.CardNumber,
                 request.DevicePassword,
-                request.Photo);
+                request.Photo,
+                request.DevicePrivilege);
 
             _employeeRepository.Update(employee);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -168,7 +170,8 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry,
                 CardNumber = employee.CardNumber,
                 DevicePassword = employee.DevicePassword,
-                Photo = employee.Photo
+                Photo = employee.Photo,
+                DevicePrivilege = employee.DevicePrivilege
             };
 
             _logger.LogInformation("Empleado actualizado: {EmployeeId} - {FullName}", employee.Id.Value, employee.GetFullName());

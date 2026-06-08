@@ -152,8 +152,6 @@ public sealed record SystemConfigurationDto(
     TimeSpan LateToleranceMinutes,
     TimeSpan StandardWorkHours,
     bool AutoClearDevicesAfterDownload,
-    bool SendEmailAlerts,
-    string? AlertEmailRecipient,
     bool IsAutoDownloadEnabled,
     TimeSpan? AutoDownloadTime,
     bool AutoDownloadOnlyToday,
@@ -164,7 +162,22 @@ public sealed record SystemConfigurationDto(
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,
     int FortnightSecondDay = 16,
-    int MonthlyStartDay = 1);
+    int MonthlyStartDay = 1,
+    bool AreAlertsEnabled = false,
+    string? AbsenceAlertEmails = null,
+    string? LateAlertEmails = null,
+    string? SystemFailureAlertEmails = null,
+    string? SmtpHost = null,
+    int SmtpPort = 587,
+    string? SmtpUser = null,
+    string? SmtpPassword = null,
+    bool SmtpEnableSsl = true,
+    bool IsAutoBackupEnabled = false,
+    TimeSpan? AutoBackupTime = null,
+    bool IsAutoReportEnabled = false,
+    TimeSpan? AutoReportTime = null,
+    string? AutoReportEmails = null,
+    bool AutoReportForToday = false);
 
 // DTO para datos crudos del dispositivo ZKTeco
 public sealed record RawAttendanceRecord(
