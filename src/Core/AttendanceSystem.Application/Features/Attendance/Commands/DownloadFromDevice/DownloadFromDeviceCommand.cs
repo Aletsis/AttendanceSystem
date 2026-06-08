@@ -34,6 +34,8 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IAdmsCommandService _admsCommandService;
     private readonly IBranchRepository _branchRepository;
     private readonly ILogTransferService _logTransferService;
+    private readonly IAttendanceJobScheduler _jobScheduler;
+    private readonly IEmployeeRepository _employeeRepository;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -47,7 +49,9 @@ public sealed class DownloadFromDeviceCommandHandler
         IDeviceLockService deviceLockService,
         IAdmsCommandService admsCommandService,
         IBranchRepository branchRepository,
-        ILogTransferService logTransferService)
+        ILogTransferService logTransferService,
+        IAttendanceJobScheduler jobScheduler,
+        IEmployeeRepository employeeRepository)
     {
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -61,6 +65,8 @@ public sealed class DownloadFromDeviceCommandHandler
         _admsCommandService = admsCommandService;
         _branchRepository = branchRepository;
         _logTransferService = logTransferService;
+        _jobScheduler = jobScheduler;
+        _employeeRepository = employeeRepository;
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
@@ -376,20 +382,38 @@ public sealed class DownloadFromDeviceCommandHandler
             // 8. Opcional: Limpiar dispositivo fÃ­sico
             if (shouldClear)
             {
-                await deviceClient.ClearLogsAsync(deviceIdValue, cancellationToken);
+                await deviceClient.ClearLogsAsync(deviceIdValue, cancellationToken: cancellationToken);
             }
 
             await deviceClient.DisconnectAsync(cancellationToken);
 
             // Trigger Process - solo para empleados afectados
-            if (command.CalculateAttendance && affectedEmployeeIds.Any() && minDate.HasValue && maxDate.HasValue)
+            if (affectedEmployeeIds.Any() && minDate.HasValue && maxDate.HasValue)
             {
                 foreach (var empId in affectedEmployeeIds)
                 {
-                    await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(
-                        minDate.Value, 
-                        maxDate.Value, 
-                        EmployeeId: EmployeeId.From(empId)), cancellationToken);
+                    if (command.CalculateAttendance)
+                    {
+                        // Expand range by 1 day back to ensure night shifts are caught correctly
+                        var processStartDate = minDate.Value.AddDays(-1);
+                        _jobScheduler.EnqueueAttendanceProcessing(processStartDate, maxDate.Value, empId);
+                    }
+
+                    // Queue missing biometrics sync
+                    var emp = await _employeeRepository.GetByIdAsync(EmployeeId.From(empId), cancellationToken);
+                    if (emp != null)
+                    {
+                        bool isMissingBiometrics = !emp.Fingerprints.Any() && 
+                                                   string.IsNullOrEmpty(emp.DevicePassword) && 
+                                                   string.IsNullOrEmpty(emp.CardNumber) && 
+                                                   string.IsNullOrEmpty(emp.FaceTemplate);
+                        
+                        if (isMissingBiometrics)
+                        {
+                            _logger.LogInformation("Biometría faltante detectada para empleado {EmployeeId}. Encolando sincronización.", empId);
+                            _jobScheduler.EnqueueBiometricSync(deviceIdValue, empId);
+                        }
+                    }
                 }
             }
 

@@ -16,11 +16,19 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
 {
     private readonly IDeviceRepository _deviceRepository;
     private readonly IMediator _mediator;
+    private readonly IAttendanceJobScheduler _jobScheduler;
+    private readonly ILogger<DownloadFromAllDevicesCommandHandler> _logger;
 
-    public DownloadFromAllDevicesCommandHandler(IDeviceRepository deviceRepository, IMediator mediator)
+    public DownloadFromAllDevicesCommandHandler(
+        IDeviceRepository deviceRepository, 
+        IMediator mediator,
+        IAttendanceJobScheduler jobScheduler,
+        ILogger<DownloadFromAllDevicesCommandHandler> logger)
     {
         _deviceRepository = deviceRepository;
         _mediator = mediator;
+        _jobScheduler = jobScheduler;
+        _logger = logger;
     }
 
     public async Task<Result<IEnumerable<DownloadResultDto>>> Handle(DownloadFromAllDevicesCommand request, CancellationToken cancellationToken)
@@ -81,15 +89,15 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
             }
         }
         
-        if (allAffectedEmployeeIds.Any() && globalMinDate.HasValue && globalMaxDate.HasValue)
+        if (globalMinDate.HasValue && globalMaxDate.HasValue)
         {
-            foreach (var empId in allAffectedEmployeeIds)
-            {
-                await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(
-                    globalMinDate.Value, 
-                    globalMaxDate.Value, 
-                    EmployeeId: EmployeeId.From(empId)), cancellationToken);
-            }
+            // Al descargar de TODOS los dispositivos, disparamos un proceso GLOBAL (null employeeId)
+            // Esto asegura que se detecten las FALTAS de quienes no registraron nada.
+            // Expandimos 1 día atrás para turnos nocturnos.
+            var processStartDate = globalMinDate.Value.AddDays(-1);
+            
+            _logger.LogInformation("Encolando procesamiento GLOBAL de asistencia para detectar faltas. Rango: {Start} - {End}", processStartDate, globalMaxDate.Value);
+            _jobScheduler.EnqueueAttendanceProcessing(processStartDate, globalMaxDate.Value, null);
         }
 
         return Result<IEnumerable<DownloadResultDto>>.Success(results);

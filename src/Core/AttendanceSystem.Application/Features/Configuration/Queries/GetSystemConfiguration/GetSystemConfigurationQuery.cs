@@ -33,8 +33,6 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             config.LateTolerance,
             config.StandardWorkHours,
             config.AutoClearDevicesAfterDownload,
-            false, // SendEmailAlerts not in entity yet? Wait, I didn't add it.
-            null, // AlertEmailRecipient
             config.IsAutoDownloadEnabled,
             config.AutoDownloadTime,
             config.AutoDownloadOnlyToday,
@@ -45,6 +43,21 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             config.WeeklyStartDay,
             config.FortnightFirstDay,
             config.FortnightSecondDay,
-            config.MonthlyStartDay));
+            config.MonthlyStartDay,
+            config.AreAlertsEnabled,
+            config.AbsenceAlertEmails,
+            config.LateAlertEmails,
+            config.SystemFailureAlertEmails,
+            config.SmtpHost,
+            config.SmtpPort,
+            config.SmtpUser,
+            config.SmtpPassword,
+            config.SmtpEnableSsl,
+            config.IsAutoBackupEnabled,
+            config.AutoBackupTime,
+            config.IsAutoReportEnabled,
+            config.AutoReportTime,
+            config.AutoReportEmails,
+            config.AutoReportForToday));
     }
 }

@@ -47,6 +47,7 @@ public sealed class OutOfHoursCheckDetectedEventHandler
         await _emailService.SendAlertAsync(
             subject: "Checada fuera de horario",
             body: $"Empleado {notification.EmployeeId} registró checada a las {notification.CheckTime}",
-            cancellationToken);
+            level: AlertLevel.Late,
+            cancellationToken: cancellationToken);
     }
 }

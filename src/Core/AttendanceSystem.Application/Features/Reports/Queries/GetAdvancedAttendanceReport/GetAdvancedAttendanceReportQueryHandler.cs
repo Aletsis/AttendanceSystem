@@ -3,6 +3,7 @@ using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
+using AttendanceSystem.Domain.Enumerations;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -183,7 +184,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                  }
 
                  // Handle Period Cap
-                 if (empRef.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
+                 if (empRef.OvertimeCapType == OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
                  {
                      totalOvertime = Math.Min(totalOvertime, empRef.OvertimeCapMinutes.Value);
                  }
@@ -218,7 +219,15 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
     private AdvancedReportDetailDto MapToDetail(DailyAttendance att, Employee emp)
     {
-        var workedVal = (att.ActualCheckOut - att.ActualCheckIn);
+        // 1. Determine Reference Entry (Entrada de Referencia)
+        DateTime? referenceEntry = GetReferenceEntry(att);
+
+
+        // 2. Worked Duration based on the user's rule
+        TimeSpan? workedVal = (att.ActualCheckOut.HasValue && referenceEntry.HasValue) 
+            ? (att.ActualCheckOut.Value - referenceEntry.Value) 
+            : null;
+            
         string workedStr = workedVal.HasValue ? $"{(int)workedVal.Value.TotalHours:00}:{workedVal.Value.Minutes:00}" : "--:--";
 
         double effectiveOvertime = GetEffectiveOvertime(att, emp);
@@ -258,58 +267,40 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
     private double GetEffectiveOvertime(DailyAttendance att, Employee emp)
     {
-        double calculatedOvertime = 0;
-
-        // Calculate dynamically to reflect "Worked vs Scheduled" logic even for historical data
-        if (att.IsRestDay)
+        // 1. PRIORITIZE STORED DATA: If the record has been processed and has overtime, use it.
+        // This ensures manual modifications and reprocessed data are reflected.
+        if (att.OvertimeMinutes > 0)
         {
-            // On Rest Day, use schedule if available (e.g. newly created records), else fallback to 8h
-            if (att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
-            {
-                var totalMinutes = (att.ActualCheckOut.Value - att.ActualCheckIn.Value).TotalMinutes;
-
-                 if (att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue)
-                {
-                    var sIn = att.Date.Add(att.ScheduledCheckIn.Value);
-                    var sOut = att.Date.Add(att.ScheduledCheckOut.Value);
-                    if (att.ScheduledCheckOut < att.ScheduledCheckIn) sOut = sOut.AddDays(1);
-                    
-                    var sMinutes = (sOut - sIn).TotalMinutes;
-                    calculatedOvertime = Math.Max(0, totalMinutes - sMinutes);
-                }
-                else
-                {
-                    calculatedOvertime = Math.Max(0, totalMinutes - 480);
-                }
-            }
+            return att.OvertimeMinutes;
         }
-        else if (att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue && att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
+
+        // 2. FALLBACK/RECALCULATION: If stored is 0 but we have logs, check if there's extra
+        // (This handles rest days with new logic or records not yet fully reprocessed)
+        double calculatedOvertime = 0;
+        double goal = 0;
+        
+        if (!att.IsRestDay && att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue)
         {
-            var scheduledIn = att.Date.Add(att.ScheduledCheckIn.Value);
-            var scheduledOut = att.Date.Add(att.ScheduledCheckOut.Value);
-            if (att.ScheduledCheckOut < att.ScheduledCheckIn)
-            {
-                scheduledOut = scheduledOut.AddDays(1);
-            }
+            var sIn = att.Date.Add(att.ScheduledCheckIn.Value);
+            var sOut = att.Date.Add(att.ScheduledCheckOut.Value);
+            if (att.ScheduledCheckOut < att.ScheduledCheckIn) sOut = sOut.AddDays(1);
+            goal = (sOut - sIn).TotalMinutes;
+        }
+        else if (!att.IsRestDay)
+        {
+            goal = 480; 
+        }
 
-            var scheduledDuration = (scheduledOut - scheduledIn).TotalMinutes;
-            var workedDuration = (att.ActualCheckOut.Value - att.ActualCheckIn.Value).TotalMinutes;
-
-            // Only calculate overtime if employee worked at least the scheduled hours
-            if (workedDuration >= scheduledDuration)
-            {
-                // Calculate time from scheduled check-in to actual check-out
-                var timeFromScheduledStart = (att.ActualCheckOut.Value - scheduledIn).TotalMinutes;
-                
-                // Overtime = Time from scheduled start to actual checkout - Scheduled duration
-                calculatedOvertime = timeFromScheduledStart - scheduledDuration;
-                if (calculatedOvertime < 0) calculatedOvertime = 0;
-            }
+        if (att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
+        {
+            DateTime referenceEntry = GetReferenceEntry(att) ?? att.ActualCheckIn.Value;
+            var workedDuration = (att.ActualCheckOut.Value - referenceEntry).TotalMinutes;
+            calculatedOvertime = workedDuration - goal;
+            if (calculatedOvertime < 0) calculatedOvertime = 0;
         }
         else
         {
-            // Fallback to stored value if schedule is missing or incomplete data
-            calculatedOvertime = att.OvertimeMinutes;
+             calculatedOvertime = att.OvertimeMinutes;
         }
 
         if (emp.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Daily && emp.OvertimeCapMinutes.HasValue)
@@ -323,13 +314,49 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         return calculatedOvertime;
     }
 
-    private double ApplyOvertimeRounding(double minutes, Domain.Enumerations.OvertimeCalculationMethod method)
+    private DateTime? GetReferenceEntry(DailyAttendance att)
+    {
+        if (!att.ActualCheckIn.HasValue) return null;
+        
+        DateTime referenceEntry = att.ActualCheckIn.Value;
+        
+        if (att.ShiftType != ShiftType.Continuo && att.ScheduledCheckIn.HasValue)
+        {
+            var sIn = att.Date.Add(att.ScheduledCheckIn.Value);
+            var delayMinutes = (att.ActualCheckIn.Value - sIn).TotalMinutes;
+            
+            if (delayMinutes > att.ToleranceMinutes)
+            {
+                // Lateness exceeding tolerance -> round up to next 30-minute block from scheduled start, giving tolerance in each block
+                double rawK = (delayMinutes - att.ToleranceMinutes) / 30.0;
+                int k = (int)Math.Ceiling(rawK);
+                if (k < 0) k = 0;
+                
+                referenceEntry = sIn.AddMinutes(k * 30);
+            }
+            else
+            {
+                if (att.CalculateOvertimeBeforeEntry)
+                {
+                    referenceEntry = att.ActualCheckIn.Value;
+                }
+                else
+                {
+                    referenceEntry = sIn;
+                }
+            }
+        }
+        
+        return referenceEntry;
+    }
+
+    private double ApplyOvertimeRounding(double minutes, OvertimeCalculationMethod method)
     {
         switch (method)
         {
-            case Domain.Enumerations.OvertimeCalculationMethod.RoundByHalfHour:
+            case OvertimeCalculationMethod.RoundByHalfHour:
                 return Math.Floor(minutes / 30.0) * 30.0;
-            case Domain.Enumerations.OvertimeCalculationMethod.RoundByHour:
+            case OvertimeCalculationMethod.RoundByHour:
                 return Math.Floor(minutes / 60.0) * 60.0;
             default:
                 return minutes;

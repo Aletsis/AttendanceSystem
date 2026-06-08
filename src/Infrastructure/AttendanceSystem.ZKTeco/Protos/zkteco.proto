@@ -21,6 +21,9 @@ service ZKTecoService {
   
   // Eliminar un empleado del dispositivo
   rpc DeleteEmployee (DeleteEmployeeRequest) returns (DeleteEmployeeResponse);
+
+  // Obtener un empleado por ID
+  rpc GetEmployee (GetEmployeeRequest) returns (GetEmployeeResponse);
   
   // Obtener información del dispositivo
   rpc GetDeviceInfo (GetDeviceInfoRequest) returns (GetDeviceInfoResponse);
@@ -36,6 +39,9 @@ service ZKTecoService {
 
   // Configurar fecha y hora del dispositivo
   rpc SetDeviceTime (SetDeviceTimeRequest) returns (SetDeviceTimeResponse);
+
+  // Buscar dispositivos en la red local (Discovery)
+  rpc DiscoverDevices (DiscoverDevicesRequest) returns (DiscoverDevicesResponse);
 }
 
 // ========== Mensajes de Conexión ==========
@@ -87,6 +93,8 @@ message AttendanceRecord {
 
 message ClearDeviceLogsRequest {
   string device_id = 1;
+  string from_date = 2; // Formato ISO 8601: "2026-01-01T00:00:00Z"
+  string to_date = 3;   // Formato ISO 8601: "2026-01-31T23:59:59Z"
 }
 
 message ClearDeviceLogsResponse {
@@ -128,6 +136,17 @@ message DeleteEmployeeRequest {
 message DeleteEmployeeResponse {
   bool success = 1;
   string message = 2;
+}
+
+message GetEmployeeRequest {
+  string device_id = 1;
+  string employee_id = 2;
+}
+
+message GetEmployeeResponse {
+  bool success = 1;
+  string message = 2;
+  DeviceUser employee = 3;
 }
 
 // ========== Mensajes de Información del Dispositivo ==========
@@ -210,4 +229,25 @@ message SetDeviceTimeRequest {
 message SetDeviceTimeResponse {
   bool success = 1;
   string message = 2;
+}
+
+// ========== Mensajes de Descubrimiento ==========
+
+message DiscoverDevicesRequest {
+  int32 timeout_seconds = 1;
+}
+
+message DiscoverDevicesResponse {
+  bool success = 1;
+  string message = 2;
+  repeated DiscoveredDevice devices = 3;
+}
+
+message DiscoveredDevice {
+  string ip_address = 1;
+  string serial_number = 2;
+  string device_name = 3;
+  string mac_address = 4;
+  string firmware_version = 5;
+  int32 port = 6;
 }

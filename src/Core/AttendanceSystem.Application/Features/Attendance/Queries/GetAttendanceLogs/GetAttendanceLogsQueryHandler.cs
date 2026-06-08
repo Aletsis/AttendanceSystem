@@ -42,11 +42,11 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
             cancellationToken);
 
         // 2. Fetch Processed Attendance (to check assignments)
-        // Note: DailyAttendanceRepository usually accepts DateTime for range, need to check if it accepts DateOnly or DateTime.
-        // Based on previous refactor, it likely takes DateTime.
+        // We extend the range to Date-1 and Date+1 to catch cross-day assignments 
+        // (e.g. Monday's exit occurring on Tuesday morning).
         var processed = await _dailyAttendanceRepository.GetByDateRangeAsync(
-            request.Date.Date,
-            request.Date.Date,
+            request.Date.Date.AddDays(-1),
+            request.Date.Date.AddDays(1),
             null, // Branch
             empId,
             cancellationToken);
@@ -59,20 +59,23 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
         var devDict = devices.ToDictionary(d => d.Id, d => d.Name);
 
         // 4. Map Entry Types by Record ID
-        var assignmentMap = new Dictionary<AttendanceRecordId, string>();
+        var assignmentMap = new Dictionary<AttendanceRecordId, (string Type, DateTime Date)>();
         foreach (var da in processed)
         {
-            if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = "Entrada";
-            if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = "Salida";
+            if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada", da.Date);
+            if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida", da.Date);
         }
 
         // 5. Map to DTO
         var dtos = rawRecords.Select(r => 
         {
             string entryType = "No Válida";
-            if (assignmentMap.TryGetValue(r.Id, out var assignedType))
+            DateTime? assignedDate = null;
+
+            if (assignmentMap.TryGetValue(r.Id, out var assignment))
             {
-                entryType = assignedType;
+                entryType = assignment.Type;
+                assignedDate = assignment.Date;
             }
 
             string empName = empDict.TryGetValue(r.EmployeeId, out var name) ? name : r.EmployeeId.Value;
@@ -87,7 +90,8 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
                 EntryType = entryType,
                 VerifyMethod = r.VerifyMethod.Name,
                 DeviceName = devName,
-                Status = r.Status.ToString()
+                Status = r.Status.ToString(),
+                AssignedDate = assignedDate
             };
         });
 

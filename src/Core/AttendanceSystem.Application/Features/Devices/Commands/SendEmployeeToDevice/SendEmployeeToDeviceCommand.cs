@@ -64,9 +64,9 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
 
                 var userDto = new DeviceUserDto(
                     deviceUserId,
-                    employee.GetFullName(),
+                    employee.FirstName,
                     employee.DevicePassword ?? "",
-                    0, // Privilege default, maybe add property to Employee?
+                    (int)employee.DevicePrivilege,
                     employee.Status == Domain.Enumerations.EmployeeStatus.Alta,
                     employee.CardNumber,
                     employee.Fingerprints?.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.Template)).ToList(),

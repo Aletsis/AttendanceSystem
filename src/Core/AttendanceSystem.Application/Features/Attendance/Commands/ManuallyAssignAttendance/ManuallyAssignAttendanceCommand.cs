@@ -34,17 +34,57 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         var employeeId = EmployeeId.From(request.EmployeeId);
         var recordId = AttendanceRecordId.From(request.RecordId);
 
-        // 1. Get Daily Attendance
+        // 1. Smart Assignment Logic for Cross-Day Shifts
+        DateOnly targetDate = request.Date;
+        
+        // If assigning an Exit, check if it belongs to the previous day
+        if (request.AssignmentType == "Salida")
+        {
+            var yesterday = request.Date.AddDays(-1);
+            var yesterdayDA = await _dailyRepo.GetByEmployeeAndDateAsync(
+                employeeId, 
+                yesterday.ToDateTime(TimeOnly.MinValue), 
+                cancellationToken);
+
+            // If yesterday has a cross-day shift and this log is in the morning
+            // OR if yesterday has an entry and no exit, while today is just starting
+            if (yesterdayDA != null && yesterdayDA.ActualCheckIn.HasValue)
+            {
+                var attendanceRecord = await _attendanceRepo.GetByIdAsync(recordId, cancellationToken);
+                if (attendanceRecord != null)
+                {
+                    // If the log is before today's scheduled entry (or early morning)
+                    // and yesterday was a night shift, it almost certainly belongs to yesterday.
+                    bool belongsToYesterday = false;
+                    
+                    if (yesterdayDA.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo || 
+                        yesterdayDA.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Jornada24h ||
+                        (yesterdayDA.ScheduledCheckOut.HasValue && yesterdayDA.ScheduledCheckOut < yesterdayDA.ScheduledCheckIn))
+                    {
+                        // It's a cross-day shift. If the log is within 16 hours of yesterday's entry, it's a candidate.
+                        var diffHours = (attendanceRecord.CheckTime - yesterdayDA.ActualCheckIn.Value).TotalHours;
+                        if (diffHours > 0 && diffHours < 18) 
+                        {
+                            belongsToYesterday = true;
+                        }
+                    }
+
+                    if (belongsToYesterday)
+                    {
+                        targetDate = yesterday;
+                    }
+                }
+            }
+        }
+
         var daily = await _dailyRepo.GetByEmployeeAndDateAsync(
             employeeId, 
-            request.Date.ToDateTime(TimeOnly.MinValue), 
+            targetDate.ToDateTime(TimeOnly.MinValue), 
             cancellationToken);
 
-        // If not found, we cannot assign manual override because we need the context (shift, etc)
-        // User should "Process" first. 
         if (daily == null)
         {
-            return Result.Failure("Debe procesar la asistencia del día antes de realizar asignaciones manuales.");
+            return Result.Failure($"Debe procesar la asistencia del día {targetDate:dd/MM/yyyy} antes de realizar asignaciones manuales.");
         }
 
         // 2. Get the specific Record

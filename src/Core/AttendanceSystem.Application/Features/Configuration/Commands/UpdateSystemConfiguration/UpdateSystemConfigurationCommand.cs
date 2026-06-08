@@ -13,10 +13,7 @@ public sealed record UpdateSystemConfigurationCommand(
     TimeSpan LateTolerance,
     TimeSpan StandardWorkHours,
     bool AutoClearDevicesAfterDownload,
-    bool SendEmailAlerts,
-    string? AlertEmailRecipient,
     bool IsAutoDownloadEnabled,
-
     TimeSpan? AutoDownloadTime,
     bool AutoDownloadOnlyToday = false,
     int AdmsPort = 16373,
@@ -26,7 +23,22 @@ public sealed record UpdateSystemConfigurationCommand(
     DayOfWeek WeeklyStartDay = DayOfWeek.Monday,
     int FortnightFirstDay = 1,
     int FortnightSecondDay = 16,
-    int MonthlyStartDay = 1) : IRequest<Result<Guid>>;
+    int MonthlyStartDay = 1,
+    bool AreAlertsEnabled = false,
+    string? AbsenceAlertEmails = null,
+    string? LateAlertEmails = null,
+    string? SystemFailureAlertEmails = null,
+    string? SmtpHost = null,
+    int SmtpPort = 587,
+    string? SmtpUser = null,
+    string? SmtpPassword = null,
+    bool SmtpEnableSsl = true,
+    bool IsAutoBackupEnabled = false,
+    TimeSpan? AutoBackupTime = null,
+    bool IsAutoReportEnabled = false,
+    TimeSpan? AutoReportTime = null,
+    string? AutoReportEmails = null,
+    bool AutoReportForToday = false) : IRequest<Result<Guid>>;
 
 public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<UpdateSystemConfigurationCommand, Result<Guid>>
 {
@@ -61,12 +73,26 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.StandardWorkHours,
             command.AutoClearDevicesAfterDownload,
             command.IsAutoDownloadEnabled,
-
             command.AutoDownloadTime,
             command.AutoDownloadOnlyToday,
             command.AdmsPort,
             command.BackupDirectory,
-            command.BackupTimeoutMinutes);
+            command.BackupTimeoutMinutes,
+            command.AreAlertsEnabled,
+            command.AbsenceAlertEmails,
+            command.LateAlertEmails,
+            command.SystemFailureAlertEmails,
+            command.SmtpHost,
+            command.SmtpPort,
+            command.SmtpUser,
+            command.SmtpPassword,
+            command.SmtpEnableSsl,
+            command.IsAutoBackupEnabled,
+            command.AutoBackupTime,
+            command.IsAutoReportEnabled,
+            command.AutoReportTime,
+            command.AutoReportEmails,
+            command.AutoReportForToday);
 
         config.UpdateWorkPeriodSettings(
             command.WorkPeriodMode,
@@ -75,7 +101,7 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.FortnightSecondDay,
             command.MonthlyStartDay);
 
-        // Update Job
+        // Update Jobs
         if (config.IsAutoDownloadEnabled && config.AutoDownloadTime.HasValue)
         {
             _jobScheduler.ScheduleAutoDownload(config.AutoDownloadTime.Value);
@@ -83,6 +109,24 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
         else
         {
             _jobScheduler.DisableAutoDownload();
+        }
+
+        if (config.IsAutoBackupEnabled && config.AutoBackupTime.HasValue)
+        {
+            _jobScheduler.ScheduleAutoBackup(config.AutoBackupTime.Value);
+        }
+        else
+        {
+            _jobScheduler.DisableAutoBackup();
+        }
+
+        if (config.IsAutoReportEnabled && config.AutoReportTime.HasValue)
+        {
+            _jobScheduler.ScheduleAutoReport(config.AutoReportTime.Value);
+        }
+        else
+        {
+            _jobScheduler.DisableAutoReport();
         }
 
         // Add call to repository Update if tracking is not automatic 
