@@ -183,12 +183,7 @@
         else
         {
             <MudItem xs="12" sm="2">
-                <MudSelect T="int" Label="Año" Value="SelectedYear" ValueChanged="OnYearChanged">
-                    @for (int y = DateTime.Today.Year - 1; y <= DateTime.Today.Year + 1; y++)
-                    {
-                        <MudSelectItem Value="@y">@y</MudSelectItem>
-                    }
-                </MudSelect>
+                <MudNumericField T="int" Label="Año" Value="SelectedYear" ValueChanged="OnYearChanged" Min="2000" Max="2100" Immediate="true" />
             </MudItem>
             <MudItem xs="12" sm="3">
                  <MudSelect T="WorkPeriodMode" Label="Tipo de Periodo" Value="SelectedPeriodMode" ValueChanged="OnPeriodModeChanged">

@@ -142,9 +142,10 @@ builder.Services.AddScoped<AdmsDeviceClient>();
 
 // Fábrica de clientes para resolver por marca
 builder.Services.AddScoped<IDeviceClientFactory, DeviceClientFactory>();
+builder.Services.AddScoped<IDeviceDiscoveryService, GrpcZKTecoDiscoveryService>();
 
 // Servicios de infraestructura
-builder.Services.AddScoped<IEmailService, SendGridEmailService>();
+builder.Services.AddScoped<IEmailService, SmtpEmailService>();
 builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
 builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
 builder.Services.AddScoped<IBackupService, BackupService>();
@@ -167,6 +168,7 @@ builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
 builder.Services.AddScoped<IDailyAttendanceRepository, DailyAttendanceRepository>();
 builder.Services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
 builder.Services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
+builder.Services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
 
 // ===== IDENTITY & AUTHENTICATION =====
 builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -296,6 +298,14 @@ app.UseAuthorization();
 
 // Hangfire
 app.UseHangfireDashboard("/hangfire");
+
+// Programar alertas de puestos críticos al inicio
+using (var scope = app.Services.CreateScope())
+{
+    var scheduler = scope.ServiceProvider.GetRequiredService<IAttendanceJobScheduler>();
+    scheduler.ScheduleCriticalAbsenceCheck();
+    scheduler.ScheduleDeviceHeartbeat();
+}
 
 app.UseAntiforgery();
 

@@ -15,45 +15,47 @@
 
 <PageTitle>Departamentos</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Large" Class="mt-4">
-    <MudText Typo="Typo.h3" GutterBottom="true">Departamentos</MudText>
-    <MudText Typo="Typo.subtitle1" Class="mb-4">Gestiona los departamentos.</MudText>
+<MudText Typo="Typo.h5" Class="mb-4">Departamentos</MudText>
 
-    <MudTable Items="@_departments" Hover="true" Loading="@_loading" Filter="new Func<DepartmentDto,bool>(FilterFunc)">
-        <ToolBarContent>
-            <MudText Typo="Typo.h6">Lista de Departamentos</MudText>
-            <MudSpacer />
-            <MudTextField @bind-Value="_searchString" Placeholder="Buscar" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog" Class="ml-4">Nuevo Departamento</MudButton>
-             <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportDepartments" Class="ml-2">Importar</MudButton>
-             <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel" Class="ml-2">Exportar</MudButton>
-        </ToolBarContent>
-        <HeaderContent>
-            <MudTh>Nombre</MudTh>
-            <MudTh>Descripción</MudTh>
-            <AuthorizeView Roles="Administrador" Context="authContext">
-                <MudTh>Acciones</MudTh>
-            </AuthorizeView>
-        </HeaderContent>
-        <RowTemplate>
-            <MudTd DataLabel="Nombre">@context.Name</MudTd>
-            <MudTd DataLabel="Descripción">@context.Description</MudTd>
-            <AuthorizeView Roles="Administrador" Context="authContext">
-                <MudTd DataLabel="Acciones">
-                    <MudTooltip Text="Editar">
-                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
-                    </MudTooltip>
-                    <MudTooltip Text="Eliminar">
-                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDepartment(context))" Size="Size.Small" />
-                    </MudTooltip>
-                </MudTd>
-            </AuthorizeView>
-        </RowTemplate>
-        <PagerContent>
-            <MudTablePager />
-        </PagerContent>
-    </MudTable>
-</MudContainer>
+<MudGrid Spacing="2" Class="mb-4">
+    <MudItem xs="12" sm="6" md="4">
+        <MudTextField @bind-Value="_searchString" Label="Buscar" Placeholder="Buscar departamentos..." 
+                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary"
+                      Clearable="true" Immediate="true" />
+    </MudItem>
+    <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
+        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportDepartments">Importar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Departamento</MudButton>
+    </MudItem>
+</MudGrid>
+
+<MudTable Items="@_departments" Hover="true" Dense="true" Breakpoint="Breakpoint.Sm" Loading="@_loading" Filter="new Func<DepartmentDto,bool>(FilterFunc)" Class="mt-2">
+    <HeaderContent>
+        <MudTh>Nombre</MudTh>
+        <MudTh>Descripción</MudTh>
+        <AuthorizeView Roles="Administrador" Context="authContext">
+            <MudTh>Acciones</MudTh>
+        </AuthorizeView>
+    </HeaderContent>
+    <RowTemplate>
+        <MudTd DataLabel="Nombre">@context.Name</MudTd>
+        <MudTd DataLabel="Descripción">@context.Description</MudTd>
+        <AuthorizeView Roles="Administrador" Context="authContext">
+            <MudTd DataLabel="Acciones">
+                <MudTooltip Text="Editar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+                <MudTooltip Text="Eliminar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteDepartment(context))" Size="Size.Small" />
+                </MudTooltip>
+            </MudTd>
+        </AuthorizeView>
+    </RowTemplate>
+    <PagerContent>
+        <MudTablePager />
+    </PagerContent>
+</MudTable>
 
 @code {
     private IEnumerable<DepartmentDto> _departments = new List<DepartmentDto>();

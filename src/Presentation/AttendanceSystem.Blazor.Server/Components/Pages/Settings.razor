@@ -5,9 +5,11 @@
 @using AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 @using AttendanceSystem.Domain.Enumerations
-@attribute [Authorize(Roles = "Administrador")]
+@using AttendanceSystem.Application.Abstractions
+@using MediatR
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
+@inject IEmailService EmailService
 
 <PageTitle>Configuración del Sistema</PageTitle>
 
@@ -20,10 +22,10 @@
     }
     else
     {
-        <MudCard>
-            <MudCardContent>
+        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6" Color="Color.Primary">
+            <MudTabPanel Text="General" Icon="@Icons.Material.Filled.Settings">
                 <MudForm @ref="_form" @bind-IsValid="_success">
-                    <MudText Typo="Typo.h6" Class="mb-2">Identidad Corporativa</MudText>
+                    <MudText Typo="Typo.h6" Class="mb-4">Identidad Corporativa</MudText>
                     <MudGrid>
                         <MudItem xs="12" sm="6">
                             <MudTextField Label="Nombre de la Empresa" @bind-Value="_companyName" Variant="Variant.Outlined" Margin="Margin.Dense" />
@@ -36,94 +38,24 @@
                             }
                             <MudFileUpload T="IBrowserFile" FilesChanged="UploadLogo" Accept=".png, .jpg, .jpeg">
                                 <ActivatorContent>
-                                    <MudButton Variant="Variant.Filled"
-                                               Color="Color.Primary"
-                                               StartIcon="@Icons.Material.Filled.CloudUpload">
-                                        Subir Logo
-                                    </MudButton>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">Subir Logo</MudButton>
                                 </ActivatorContent>
                             </MudFileUpload>
                         </MudItem>
                     </MudGrid>
                     
-                    <MudDivider Class="my-4" />
+                    <MudDivider Class="my-6" />
 
-                    <MudText Typo="Typo.h6" Class="mb-2">General</MudText>
-                    
+                    <MudText Typo="Typo.h6" Class="mb-4">Tiempos y Periodos</MudText>
                     <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField Label="Tolerancia de Retardo (Minutos)" 
-                                             @bind-Value="_lateToleranceMinutes" 
-                                             Min="0" Max="60" />
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Tolerancia de Retardo (Min)" @bind-Value="_lateToleranceMinutes" Min="0" Max="60" Variant="Variant.Outlined" />
                         </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField Label="Jornada Laboral Estándar (Horas)" 
-                                             @bind-Value="_standardWorkHours" 
-                                             Min="1" Max="24" />
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Jornada Estándar (Hrs)" @bind-Value="_standardWorkHours" Min="1" Max="24" Variant="Variant.Outlined" />
                         </MudItem>
-                    </MudGrid>
-                    
-                    <MudDivider Class="my-4" />
-
-                    <MudText Typo="Typo.h6" Class="mb-2">Configuración ADMS</MudText>
-                    <MudText Typo="Typo.body2" Class="mb-3" Color="Color.Secondary">
-                        Configure el puerto dedicado para la comunicación con dispositivos ADMS. 
-                        Los dispositivos deben configurarse con: <code>http://[IP_SERVIDOR]:[PUERTO]</code>
-                    </MudText>
-                    
-                    <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField Label="Puerto ADMS" 
-                                             @bind-Value="_admsPort" 
-                                             Min="1024" Max="65535"
-                                             HelperText="Puerto dedicado para dispositivos ADMS (1024-65535)" />
-                        </MudItem>
-                        <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudAlert Severity="Severity.Info" Dense="true" Class="mt-2">
-                                <MudText Typo="Typo.body2">
-                                    <strong>Nota:</strong> Cambiar el puerto requiere reiniciar la aplicación y reconfigurar los dispositivos ADMS.
-                                </MudText>
-                            </MudAlert>
-                        </MudItem>
-                    </MudGrid>
-                    
-                    <MudDivider Class="my-4" />
-
-                    <MudText Typo="Typo.h6" Class="mb-2">Configuración de Respaldos</MudText>
-                    <MudText Typo="Typo.body2" Class="mb-3" Color="Color.Secondary">
-                        Configure el directorio donde se almacenarán los respaldos del sistema.
-                    </MudText>
-                    
-                    <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <MudTextField Label="Directorio de Respaldos" 
-                                         @bind-Value="_backupDirectory" 
-                                         Variant="Variant.Outlined"
-                                         HelperText="Ruta absoluta o relativa donde se guardarán los archivos de respaldo" />
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudNumericField Label="Timeout de Respaldo (Minutos)" 
-                                            @bind-Value="_backupTimeoutMinutes" 
-                                            Min="1" Max="60"
-                                            HelperText="Tiempo máximo de espera para pg_dump (1-60 minutos)" />
-                        </MudItem>
-                        <MudItem xs="12">
-                            <MudAlert Severity="Severity.Info" Dense="true">
-                                <MudText Typo="Typo.body2">
-                                    <strong>Ejemplos:</strong><br/>
-                                    • Ruta relativa: <code>Backups</code> (se creará en el directorio de la aplicación)<br/>
-                                    • Ruta absoluta: <code>C:\Respaldos\AttendanceSystem</code>
-                                </MudText>
-                            </MudAlert>
-                        </MudItem>
-                    </MudGrid>
-                    
-                    <MudDivider Class="my-4" />
-
-                    <MudText Typo="Typo.h6" Class="mb-2">Periodos Laborales</MudText>
-                    <MudGrid>
-                        <MudItem xs="12" sm="6">
-                            <MudSelect T="WorkPeriodMode" Label="Modo de Periodo" @bind-Value="_workPeriodMode">
+                        <MudItem xs="12" sm="4">
+                            <MudSelect T="WorkPeriodMode" Label="Modo de Periodo" @bind-Value="_workPeriodMode" Variant="Variant.Outlined">
                                 <MudSelectItem Value="WorkPeriodMode.Weekly">Semanal</MudSelectItem>
                                 <MudSelectItem Value="WorkPeriodMode.Fortnightly">Quincenal</MudSelectItem>
                                 <MudSelectItem Value="WorkPeriodMode.Monthly">Mensual</MudSelectItem>
@@ -133,76 +65,185 @@
                         @if (_workPeriodMode == WorkPeriodMode.Weekly)
                         {
                             <MudItem xs="12" sm="6">
-                                <MudSelect T="DayOfWeek" Label="Día de Inicio (Semanal)" @bind-Value="_weeklyStartDay">
-                                    <MudSelectItem Value="DayOfWeek.Monday">Monday</MudSelectItem>
-                                    <MudSelectItem Value="DayOfWeek.Tuesday">Tuesday</MudSelectItem>
-                                    <MudSelectItem Value="DayOfWeek.Wednesday">Wednesday</MudSelectItem>
-                                    <MudSelectItem Value="DayOfWeek.Thursday">Thursday</MudSelectItem>
-                                    <MudSelectItem Value="DayOfWeek.Friday">Friday</MudSelectItem>
-                                    <MudSelectItem Value="DayOfWeek.Saturday">Saturday</MudSelectItem>
-                                    <MudSelectItem Value="DayOfWeek.Sunday">Sunday</MudSelectItem>
+                                <MudSelect T="DayOfWeek" Label="Día de Inicio de Semana" @bind-Value="_weeklyStartDay" Variant="Variant.Outlined">
+                                    <MudSelectItem Value="DayOfWeek.Sunday">Domingo</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Monday">Lunes</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Tuesday">Martes</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Wednesday">Miercoles</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Thursday">Jueves</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Friday">Viernes</MudSelectItem>
+                                    <MudSelectItem Value="DayOfWeek.Saturday">Sabado</MudSelectItem>
                                 </MudSelect>
                             </MudItem>
                         }
                         else if (_workPeriodMode == WorkPeriodMode.Fortnightly)
                         {
-                            <MudItem xs="12" sm="3">
-                                <MudNumericField Label="Inicio 1er Periodo (Día)" @bind-Value="_fortnightFirstDay" Min="1" Max="28" />
+                            <MudItem xs="6" sm="3">
+                                <MudNumericField Label="Inicio 1er Per." @bind-Value="_fortnightFirstDay" Min="1" Max="28" Variant="Variant.Outlined" />
                             </MudItem>
-                            <MudItem xs="12" sm="3">
-                                <MudNumericField Label="Inicio 2do Periodo (Día)" @bind-Value="_fortnightSecondDay" Min="1" Max="28" />
-                            </MudItem>
-                        }
-                        else if (_workPeriodMode == WorkPeriodMode.Monthly)
-                        {
-                            <MudItem xs="12" sm="6">
-                                <MudNumericField Label="Día de Inicio del Mes" @bind-Value="_monthlyStartDay" Min="1" Max="28" />
+                            <MudItem xs="6" sm="3">
+                                <MudNumericField Label="Inicio 2do Per." @bind-Value="_fortnightSecondDay" Min="1" Max="28" Variant="Variant.Outlined" />
                             </MudItem>
                         }
                     </MudGrid>
-
-                    <MudDivider Class="my-4" />
-                    
-                    <MudText Typo="Typo.h6" Class="mb-2">Automatización</MudText>
-                    
-                    <MudSwitch T="bool" @bind-Value="_autoClearAfterDownload" Color="Color.Primary" Label="Limpiar dispositivos automáticamente tras descarga exitosa" />
-
-                    <MudGrid Class="mt-2">
-                        <MudItem xs="12" sm="6">
-                            <MudSwitch T="bool" @bind-Value="_isAutoDownloadEnabled" Color="Color.Primary" Label="Descarga Automática Diaria" />
-                            <MudSwitch T="bool" @bind-Value="_autoDownloadOnlyToday" Color="Color.Primary" Label="Solo procesar día actual" Class="ml-4" Disabled="@(!_isAutoDownloadEnabled)" />
-                        </MudItem>
-                        
-                        @if (_isAutoDownloadEnabled)
-                        {
-                            <MudItem xs="12" sm="6">
-                                <MudTimePicker Label="Hora de Ejecución" @bind-Time="_autoDownloadTime" AmPm="true" />
-                            </MudItem>
-                        }
-                    </MudGrid>
-
                 </MudForm>
-            </MudCardContent>
-            <MudCardActions>
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Disabled="@(!_success || _isSaving)">
-                    @if (_isSaving)
-                    {
-                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
-                        <MudText Class="ms-2">Guardando</MudText>
-                    }
-                    else
-                    {
-                        <MudText>Guardar Cambios</MudText>
-                    }
-                </MudButton>
-            </MudCardActions>
-        </MudCard>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Automatización" Icon="@Icons.Material.Filled.Bolt">
+                <MudGrid>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.h6" Class="mb-4">Descargas ADMS</MudText>
+                        <MudStack Spacing="3">
+                            <MudNumericField Label="Puerto ADMS" @bind-Value="_admsPort" Min="1024" Max="65535" Variant="Variant.Outlined" />
+                            <MudSwitch T="bool" @bind-Value="_isAutoDownloadEnabled" Color="Color.Primary" Label="Descarga Automática Diaria" />
+                            @if (_isAutoDownloadEnabled)
+                            {
+                                <MudTimePicker Label="Hora de Ejecución" @bind-Time="_autoDownloadTime" AmPm="true" Variant="Variant.Outlined" />
+                                <MudSwitch T="bool" @bind-Value="_autoDownloadOnlyToday" Color="Color.Primary" Label="Solo procesar día actual" />
+                            }
+                            <MudSwitch T="bool" @bind-Value="_autoClearAfterDownload" Color="Color.Primary" Label="Limpiar dispositivos tras descarga" />
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.h6" Class="mb-4">Respaldos Automáticos</MudText>
+                        <MudStack Spacing="3">
+                            <MudSwitch T="bool" @bind-Value="_isAutoBackupEnabled" Color="Color.Primary" Label="Habilitar Respaldos Automáticos" />
+                            @if (_isAutoBackupEnabled)
+                            {
+                                <MudTimePicker Label="Hora de Ejecución" @bind-Time="_autoBackupTime" AmPm="true" Variant="Variant.Outlined" />
+                                <MudAlert Severity="Severity.Info" Dense="true">
+                                    Los respaldos se guardarán en la ruta indicada en la pestaña de Respaldos.
+                                </MudAlert>
+                            }
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" md="4">
+                        <MudText Typo="Typo.h6" Class="mb-4">Envío de Reportes</MudText>
+                        <MudStack Spacing="3">
+                            <MudSwitch T="bool" @bind-Value="_isAutoReportEnabled" Color="Color.Primary" Label="Enviar Reporte Diario" />
+                            @if (_isAutoReportEnabled)
+                            {
+                                <MudTimePicker Label="Hora de Envío" @bind-Time="_autoReportTime" AmPm="true" Variant="Variant.Outlined" />
+                                <MudTextField Label="Correos Destinatarios" @bind-Value="_autoReportEmails" Variant="Variant.Outlined" Placeholder="gerencia@empresa.com" HelperText="Múltiples correos separados por coma." />
+                                <MudSwitch T="bool" @bind-Value="_autoReportForToday" Color="Color.Primary" Label="Enviar reporte del día actual" />
+                            }
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Respaldos" Icon="@Icons.Material.Filled.Backup">
+                <MudText Typo="Typo.h6" Class="mb-4">Respaldos (Backups)</MudText>
+                <MudGrid>
+                    <MudItem xs="12" md="8">
+                        <MudStack Spacing="3">
+                            <MudTextField Label="Directorio de Respaldos" @bind-Value="_backupDirectory" Variant="Variant.Outlined" Placeholder="C:\Backups" />
+                            <MudNumericField Label="Timeout de ejecución (Minutos)" @bind-Value="_backupTimeoutMinutes" Min="1" Max="60" Variant="Variant.Outlined" />
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                El sistema realizará respaldos automáticos de la base de datos en la ruta especificada. Asegúrese de que el servicio tenga permisos de escritura.
+                            </MudAlert>
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+            <MudTabPanel Text="Alertas" Icon="@Icons.Material.Filled.NotificationsActive">
+                <MudGrid>
+                    <MudItem xs="12" md="8">
+                        <MudText Typo="Typo.h6" Class="mb-4">Configuración de Alertas</MudText>
+                        <MudStack Spacing="4">
+                            <MudSwitch T="bool" @bind-Value="_areAlertsEnabled" Color="Color.Primary" Label="Activar Sistema de Notificaciones" />
+                            
+                            <MudPaper Outlined="true" Class="pa-4">
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">Nivel 1: Ausencias</MudText>
+                                <MudTextField Label="Correos para Ausencias" @bind-Value="_absenceAlertEmails" 
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="email1@ejemplo.com, email2@ejemplo.com"
+                                             Disabled="@(!_areAlertsEnabled)" HelperText="Notifica cuando un empleado no registra entrada." />
+                            </MudPaper>
+
+                            <MudPaper Outlined="true" Class="pa-4">
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">Nivel 2: Retardos</MudText>
+                                <MudTextField Label="Correos para Retardos" @bind-Value="_lateAlertEmails" 
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="email1@ejemplo.com"
+                                             Disabled="@(!_areAlertsEnabled)" HelperText="Notifica cuando se excede la tolerancia de tiempo." />
+                            </MudPaper>
+
+                            <MudPaper Outlined="true" Class="pa-4">
+                                <MudText Typo="Typo.subtitle2" Class="mb-2">Nivel 3: Fallas de Sistema</MudText>
+                                <MudTextField Label="Correos para Fallas Técnicas" @bind-Value="_systemFailureAlertEmails" 
+                                             Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="soporte@empresa.com"
+                                             Disabled="@(!_areAlertsEnabled)" HelperText="Notifica desconexiones de dispositivos o errores de base de datos." />
+                            </MudPaper>
+                        </MudStack>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+
+            <MudTabPanel Text="Configuración SMTP" Icon="@Icons.Material.Filled.Email">
+                <MudGrid>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.h6" Class="mb-4">Servidor SMTP</MudText>
+                        <MudGrid Spacing="2">
+                            <MudItem xs="8">
+                                <MudTextField Label="Servidor Host" @bind-Value="_smtpHost" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="4">
+                                <MudNumericField Label="Puerto" @bind-Value="_smtpPort" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudTextField Label="Usuario / Email" @bind-Value="_smtpUser" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudTextField Label="Contraseña" @bind-Value="_smtpPassword" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                            </MudItem>
+                            <MudItem xs="12">
+                                <MudSwitch T="bool" @bind-Value="_smtpEnableSsl" Color="Color.Primary" Label="Usar SSL/TLS" />
+                            </MudItem>
+                        </MudGrid>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudText Typo="Typo.h6" Class="mb-4">Prueba de Conexión</MudText>
+                        <MudPaper Outlined="true" Class="pa-4">
+                            <MudText Typo="Typo.body2" Class="mb-4">
+                                Utilice este botón para enviar un correo electrónico de prueba. El correo se enviará a los destinatarios configurados en el <b>Nivel 3: Fallas de Sistema</b>.<br/><br/>
+                                <MudText Color="Color.Warning"><b>Importante:</b> Asegúrese de <i>Guardar Configuración</i> antes de enviar la prueba para utilizar los valores más recientes.</MudText>
+                            </MudText>
+                            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Send" OnClick="SendTestEmail" Disabled="@(_isSendingTest)">
+                                @if (_isSendingTest)
+                                {
+                                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                                    <MudText Class="ms-2">Enviando...</MudText>
+                                }
+                                else
+                                {
+                                    <MudText>Enviar Correo de Prueba</MudText>
+                                }
+                            </MudButton>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
+        </MudTabs>
+
+        <MudPaper Elevation="4" Class="pa-4 mt-4 d-flex justify-end" Style="border-radius: 0 0 12px 12px;">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveSettings" Size="Size.Large" Disabled="@(_isSaving)">
+                @if (_isSaving)
+                {
+                    <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                    <MudText Class="ms-2">Guardando...</MudText>
+                }
+                else
+                {
+                    <MudText>Guardar Configuración</MudText>
+                }
+            </MudButton>
+        </MudPaper>
     }
 </MudContainer>
 
 @code {
     private bool _isLoading = true;
     private bool _isSaving = false;
+    private bool _isSendingTest = false;
     private bool _success;
     private MudForm _form = default!;
 
@@ -219,6 +260,25 @@
     private string _backupDirectory = "Backups";
     private int _backupTimeoutMinutes = 10;
     
+    // Auto Backup & Report Fields
+    private bool _isAutoBackupEnabled;
+    private TimeSpan? _autoBackupTime;
+    private bool _isAutoReportEnabled;
+    private TimeSpan? _autoReportTime;
+    private string? _autoReportEmails;
+    private bool _autoReportForToday;
+    
+    // Alert & SMTP
+    private bool _areAlertsEnabled;
+    private string? _absenceAlertEmails;
+    private string? _lateAlertEmails;
+    private string? _systemFailureAlertEmails;
+    private string? _smtpHost;
+    private int _smtpPort = 587;
+    private string? _smtpUser;
+    private string? _smtpPassword;
+    private bool _smtpEnableSsl = true;
+
     // Work Period Fields
     private WorkPeriodMode _workPeriodMode;
     private DayOfWeek _weeklyStartDay;
@@ -273,6 +333,25 @@
                 _backupDirectory = config.BackupDirectory;
                 _backupTimeoutMinutes = config.BackupTimeoutMinutes;
                 
+                // Backup & Report Automation
+                _isAutoBackupEnabled = config.IsAutoBackupEnabled;
+                _autoBackupTime = config.AutoBackupTime;
+                _isAutoReportEnabled = config.IsAutoReportEnabled;
+                _autoReportTime = config.AutoReportTime;
+                _autoReportEmails = config.AutoReportEmails;
+                _autoReportForToday = config.AutoReportForToday;
+                
+                // Alerts & SMTP
+                _areAlertsEnabled = config.AreAlertsEnabled;
+                _absenceAlertEmails = config.AbsenceAlertEmails;
+                _lateAlertEmails = config.LateAlertEmails;
+                _systemFailureAlertEmails = config.SystemFailureAlertEmails;
+                _smtpHost = config.SmtpHost;
+                _smtpPort = config.SmtpPort;
+                _smtpUser = config.SmtpUser;
+                _smtpPassword = config.SmtpPassword;
+                _smtpEnableSsl = config.SmtpEnableSsl;
+                
                 // Work Period
                 _workPeriodMode = config.WorkPeriodMode;
                 _weeklyStartDay = config.WeeklyStartDay;
@@ -306,8 +385,6 @@
                 TimeSpan.FromMinutes(_lateToleranceMinutes),
                 TimeSpan.FromHours(_standardWorkHours),
                 _autoClearAfterDownload,
-                false, 
-                null, 
                 _isAutoDownloadEnabled,
                 _autoDownloadTime,
                 _autoDownloadOnlyToday,
@@ -318,7 +395,22 @@
                 _weeklyStartDay,
                 _fortnightFirstDay,
                 _fortnightSecondDay,
-                _monthlyStartDay
+                _monthlyStartDay,
+                _areAlertsEnabled,
+                _absenceAlertEmails,
+                _lateAlertEmails,
+                _systemFailureAlertEmails,
+                _smtpHost,
+                _smtpPort,
+                _smtpUser,
+                _smtpPassword,
+                _smtpEnableSsl,
+                _isAutoBackupEnabled,
+                _autoBackupTime,
+                _isAutoReportEnabled,
+                _autoReportTime,
+                _autoReportEmails,
+                _autoReportForToday
             );
 
             var result = await Mediator.Send(command);
@@ -339,6 +431,28 @@
         finally
         {
             _isSaving = false;
+        }
+    }
+
+    private async Task SendTestEmail()
+    {
+        _isSendingTest = true;
+        try
+        {
+            await EmailService.SendAlertAsync(
+                "Correo de Prueba - Sistema de Asistencia",
+                "<h3>Prueba de Conexión Exitosa</h3><p>Este es un correo generado automáticamente para comprobar la configuración del servidor SMTP en el Sistema de Asistencia.</p>",
+                AlertLevel.SystemFailure
+            );
+            Snackbar.Add("Se ha solicitado el envío de prueba. Verifique los correos del 'Nivel 3'. Si hay un error, revise los logs del sistema.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al enviar correo de prueba: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSendingTest = false;
         }
     }
 }

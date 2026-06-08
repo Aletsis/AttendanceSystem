@@ -24,7 +24,9 @@
             <div class="d-flex flex-column align-center pa-4 mb-2">
                 @if (!string.IsNullOrEmpty(_employee.Photo))
                 {
-                    <MudAvatar Image="@($"data:image/jpeg;base64,{_employee.Photo}")" Style="height:120px; width:120px;" Elevation="4" />
+                    <MudAvatar Style="height:120px; width:120px;" Elevation="4">
+                        <MudImage Src="@($"data:image/jpeg;base64,{_employee.Photo}")" />
+                    </MudAvatar>
                 }
                 else
                 {
@@ -86,6 +88,19 @@
                             <MudChip T="string" Color="@(_employee.HasFace ? Color.Success : Color.Default)" Size="Size.Small">
                                 @(_employee.HasFace ? "Sí" : "No")
                             </MudChip>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.subtitle2">Privilegio en Checador</MudText>
+                            <MudText>
+                                @(_employee.DevicePrivilege switch
+                                {
+                                    DevicePrivilege.User => "Usuario Normal",
+                                    DevicePrivilege.Registrar => "Registrador",
+                                    DevicePrivilege.Admin => "Administrador",
+                                    DevicePrivilege.SuperAdmin => "Super Administrador",
+                                    _ => _employee.DevicePrivilege.ToString()
+                                })
+                            </MudText>
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>

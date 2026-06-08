@@ -6,6 +6,7 @@
 @using AttendanceSystem.Application.Features.Devices.Commands.DeleteDeviceUserFingerprints
 @using AttendanceSystem.Application.Features.Devices.Commands.SetDeviceTime
 @using AttendanceSystem.Application.Features.Devices.Commands.ResetDeviceToFactory
+@using AttendanceSystem.Application.Features.Devices.Commands.ClearDeviceLogs
 @inject ISender Sender
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
@@ -87,8 +88,17 @@
 
             <MudTabPanel Text="Usuarios" Icon="@Icons.Material.Filled.People">
                 <MudGrid>
-                    <MudItem xs="12" Class="d-flex justify-space-between align-center">
-                        <MudText Typo="Typo.h6">Gestión de Usuarios</MudText>
+                    <MudItem xs="12" Class="d-flex align-center gap-4 flex-wrap">
+                        <MudText Typo="Typo.h6" Class="mr-auto">Gestión de Usuarios</MudText>
+                        
+                        <MudSelect T="int?" Label="Filtrar por Rol" @bind-Value="_selectedPrivilegeFilter" Style="max-width: 200px;" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
+                            <MudSelectItem T="int?" Value="@((int?)null)">Todos</MudSelectItem>
+                            <MudSelectItem T="int?" Value="@((int?)0)">Usuario</MudSelectItem>
+                            <MudSelectItem T="int?" Value="@((int?)1)">Registrador</MudSelectItem>
+                            <MudSelectItem T="int?" Value="@((int?)2)">Admin</MudSelectItem>
+                            <MudSelectItem T="int?" Value="@((int?)3)">Super Admin</MudSelectItem>
+                        </MudSelect>
+
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadUsers" Disabled="@_loadingUsers">
                             @if (_loadingUsers)
                             {
@@ -97,12 +107,12 @@
                             }
                             else
                             {
-                                <MudText>Cargar Usuarios del Dispositivo</MudText>
+                                <MudText>Cargar Usuarios</MudText>
                             }
                         </MudButton>
                     </MudItem>
                     <MudItem xs="12">
-                         <MudTable Items="@_users" Hover="true" Loading="@_loadingUsers" Dense="true" Striped="true" FixedHeader="true" Height="400px">
+                         <MudTable Items="@FilteredUsers" Hover="true" Loading="@_loadingUsers" Dense="true" Striped="true" FixedHeader="true" Height="400px">
                              <HeaderContent>
                                  <MudTh>ID</MudTh>
                                  <MudTh>Nombre</MudTh>
@@ -114,7 +124,14 @@
                                  <MudTd DataLabel="ID">@context.UserId</MudTd>
                                  <MudTd DataLabel="Nombre">@context.Name</MudTd>
                                  <MudTd DataLabel="Privilegio">
-                                     @(context.Privilege == 14 ? "Admin" : "Usuario")
+                                     @(context.Privilege switch
+                                     {
+                                         3 => "Super Admin",
+                                         2 => "Admin",
+                                         14 => "Admin",
+                                         1 => "Registrador",
+                                         _ => "Usuario"
+                                     })
                                  </MudTd>
                                  <MudTd DataLabel="Habilitado">
                                      <MudCheckBox T="bool" Value="@context.Enabled" ReadOnly="true" Dense="true" Size="Size.Small"></MudCheckBox>
@@ -143,45 +160,66 @@
                          <MudAlert Severity="Severity.Warning" Class="mb-4">Estas acciones afectan directamente al dispositivo físico. Úselas con precaución.</MudAlert>
                      </MudItem>
 
-                     <MudItem xs="12" md="6">
-                         <MudCard Elevation="3">
-                             <MudCardHeader>
-                                 <CardHeaderContent>
-                                     <MudText Typo="Typo.h6">Sincronización de Hora</MudText>
-                                 </CardHeaderContent>
-                                 <CardHeaderActions>
-                                     <MudIcon Icon="@Icons.Material.Filled.AccessTime" />
-                                 </CardHeaderActions>
-                             </MudCardHeader>
-                             <MudCardContent>
-                                 <MudText>Configura la fecha y hora del dispositivo a la hora actual del servidor.</MudText>
-                                 <MudText Class="mt-2" Typo="Typo.caption">Hora del Servidor: @DateTime.Now.ToString("g")</MudText>
-                             </MudCardContent>
-                             <MudCardActions>
-                                 <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="SyncTime" Disabled="@_processingAction">Sincronizar Hora</MudButton>
-                             </MudCardActions>
-                         </MudCard>
-                     </MudItem>
+                     <MudItem xs="12" md="4">
+                          <MudCard Elevation="3">
+                              <MudCardHeader>
+                                  <CardHeaderContent>
+                                      <MudText Typo="Typo.h6">Sincronización de Hora</MudText>
+                                  </CardHeaderContent>
+                                  <CardHeaderActions>
+                                      <MudIcon Icon="@Icons.Material.Filled.AccessTime" />
+                                  </CardHeaderActions>
+                              </MudCardHeader>
+                              <MudCardContent>
+                                  <MudText>Configura la fecha y hora del dispositivo a la hora actual del servidor.</MudText>
+                                  <MudText Class="mt-2" Typo="Typo.caption">Hora del Servidor: @DateTime.Now.ToString("g")</MudText>
+                              </MudCardContent>
+                              <MudCardActions>
+                                  <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="SyncTime" Disabled="@_processingAction">Sincronizar Hora</MudButton>
+                              </MudCardActions>
+                          </MudCard>
+                      </MudItem>
 
-                      <MudItem xs="12" md="6">
-                         <MudCard Elevation="3">
-                             <MudCardHeader>
-                                 <CardHeaderContent>
-                                     <MudText Typo="Typo.h6" Color="Color.Error">Restablecimiento de Fábrica</MudText>
-                                 </CardHeaderContent>
-                                 <CardHeaderActions>
-                                     <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error"/>
-                                 </CardHeaderActions>
-                             </MudCardHeader>
-                             <MudCardContent>
-                                 <MudText>Borra <b>TODOS</b> los datos del dispositivo (Usuarios, Huellas, Registros, Logs).</MudText>
-                                 <MudText Color="Color.Error" Class="mt-2 font-weight-bold">Esta acción no se puede deshacer.</MudText>
-                             </MudCardContent>
-                             <MudCardActions>
-                                 <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="FactoryReset" Disabled="@_processingAction">Restablecer Datos</MudButton>
-                             </MudCardActions>
-                         </MudCard>
-                     </MudItem>
+                      <MudItem xs="12" md="4">
+                          <MudCard Elevation="3">
+                              <MudCardHeader>
+                                  <CardHeaderContent>
+                                      <MudText Typo="Typo.h6" Color="Color.Warning">Borrar Logs de Asistencia</MudText>
+                                  </CardHeaderContent>
+                                  <CardHeaderActions>
+                                      <MudIcon Icon="@Icons.Material.Filled.DeleteSweep" Color="Color.Warning"/>
+                                  </CardHeaderActions>
+                              </MudCardHeader>
+                              <MudCardContent>
+                                  <MudText Class="mb-3">Borra los registros de asistencia almacenados en el reloj checador.</MudText>
+                                  <MudDateRangePicker Label="Rango de Fechas (Opcional)" @bind-DateRange="_dateRange" Margin="Margin.Dense" Variant="Variant.Outlined" Clearable="true" Class="mb-3"/>
+                                  <MudText Color="Color.Warning" Class="font-weight-bold">Si no selecciona un rango, se borrarán TODOS los registros.</MudText>
+                              </MudCardContent>
+                              <MudCardActions>
+                                  <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="ClearLogs" Disabled="@_processingAction">Borrar Logs</MudButton>
+                              </MudCardActions>
+                          </MudCard>
+                      </MudItem>
+
+                       <MudItem xs="12" md="4">
+                          <MudCard Elevation="3">
+                              <MudCardHeader>
+                                  <CardHeaderContent>
+                                      <MudText Typo="Typo.h6" Color="Color.Error">Restablecimiento de Fábrica</MudText>
+                                  </CardHeaderContent>
+                                  <CardHeaderActions>
+                                      <MudIcon Icon="@Icons.Material.Filled.Warning" Color="Color.Error"/>
+                                  </CardHeaderActions>
+                              </MudCardHeader>
+                              <MudCardContent>
+                                  <MudText>Borra <b>TODOS</b> los datos del dispositivo (Usuarios, Huellas, Registros, Logs).</MudText>
+                                  <MudText Color="Color.Error" Class="mt-2 font-weight-bold">Esta acción no se puede deshacer.</MudText>
+                              </MudCardContent>
+                              <MudCardActions>
+                                  <MudButton Variant="Variant.Filled" Color="Color.Error" OnClick="FactoryReset" Disabled="@_processingAction">Restablecer Datos</MudButton>
+                              </MudCardActions>
+                          </MudCard>
+                      </MudItem>
                  </MudGrid>
             </MudTabPanel>
         </MudTabs>
@@ -201,6 +239,26 @@
     private List<DeviceUserDto> _users = new();
     private bool _loadingUsers = false;
     private bool _processingAction = false;
+    private DateRange? _dateRange;
+    private int? _selectedPrivilegeFilter = null;
+
+    private IEnumerable<DeviceUserDto> FilteredUsers
+    {
+        get
+        {
+            if (!_selectedPrivilegeFilter.HasValue)
+                return _users;
+
+            return _users.Where(u => _selectedPrivilegeFilter.Value switch
+            {
+                0 => u.Privilege == 0,
+                1 => u.Privilege == 1,
+                2 => u.Privilege == 2 || u.Privilege == 14,
+                3 => u.Privilege == 3,
+                _ => true
+            });
+        }
+    }
 
     void Cancel()
     {
@@ -215,7 +273,10 @@
         
         if (result.IsSuccess)
         {
-            _users = result.Value.ToList();
+            _users = result.Value
+                .OrderBy(u => int.TryParse(u.UserId, out var id) ? id : int.MaxValue)
+                .ThenBy(u => u.UserId)
+                .ToList();
             Snackbar.Add($"{_users.Count} usuarios obtenidos", Severity.Success);
         }
         else
@@ -290,6 +351,32 @@
              
              if (result.IsSuccess) Snackbar.Add("Dispositivo restablecido (Datos borrados)", Severity.Success);
              else Snackbar.Add($"Error al restablecer: {result.Error}", Severity.Error);
+             
+             _processingAction = false;
+        }
+    }
+
+    private async Task ClearLogs()
+    {
+        string rangeMsg = _dateRange != null && _dateRange.Start.HasValue && _dateRange.End.HasValue
+            ? $"en el rango del {_dateRange.Start.Value:dd/MM/yyyy} al {_dateRange.End.Value:dd/MM/yyyy}"
+            : "TODOS los logs de asistencia (borrado completo)";
+
+        var confirm = await DialogService.ShowMessageBox(
+            "Confirmar Eliminación de Logs", 
+            $"¿Está seguro de que desea borrar {rangeMsg} de este dispositivo? Esta acción eliminará los registros del reloj checador y no se puede deshacer.",
+            yesText: "Sí, Borrar Logs", cancelText: "Cancelar");
+
+        if (confirm == true)
+        {
+             _processingAction = true;
+             var result = await Sender.Send(new ClearDeviceLogsCommand(
+                 Device.DeviceId, 
+                 _dateRange?.Start, 
+                 _dateRange?.End?.Date.AddDays(1).AddSeconds(-1)));
+             
+             if (result.IsSuccess) Snackbar.Add("Logs del dispositivo borrados correctamente", Severity.Success);
+             else Snackbar.Add($"Error al borrar logs: {result.Error}", Severity.Error);
              
              _processingAction = false;
         }

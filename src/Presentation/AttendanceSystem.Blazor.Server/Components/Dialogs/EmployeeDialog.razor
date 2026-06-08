@@ -12,6 +12,7 @@
 @using GenderEnum = AttendanceSystem.Domain.Enumerations.Gender
 @using OvertimeEnum = AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod
 @using OvertimeCapEnum = AttendanceSystem.Domain.Enumerations.OvertimeCapType
+@using DevicePrivilegeEnum = AttendanceSystem.Domain.Enumerations.DevicePrivilege
 @using Microsoft.AspNetCore.Components.Authorization
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ISender Sender
@@ -28,7 +29,9 @@
             <div class="d-flex flex-column align-center pa-4 mb-2">
                 @if (!string.IsNullOrEmpty(Photo))
                 {
-                    <MudAvatar Image="@($"data:image/jpeg;base64,{Photo}")" Style="height:100px; width:100px;" Elevation="4" />
+                    <MudAvatar Style="height:100px; width:100px;" Elevation="4">
+                        <MudImage Src="@($"data:image/jpeg;base64,{Photo}")" />
+                    </MudAvatar>
                 }
                 else
                 {
@@ -72,7 +75,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true" Disabled="@(string.IsNullOrEmpty(EmployeeId) || !_canEditAll)">
+                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true">
                                 @foreach (var status in Enum.GetValues<StatusEnum>())
                                 {
                                     <MudSelectItem T="StatusEnum" Value="@status">@status.ToString()</MudSelectItem>
@@ -84,6 +87,23 @@
                         </MudItem>
                         <MudItem xs="12" sm="6">
                             <MudTextField @bind-Value="DevicePassword" Label="Contraseña PIN" HelperText="Máximo 8 dígitos" InputType="InputType.Password" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Lock" />
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudSelect T="DevicePrivilegeEnum" @bind-Value="DevicePrivilege" Label="Privilegio en Checador" Required="true" RequiredError="El privilegio es requerido">
+                                @foreach (var privilege in Enum.GetValues<DevicePrivilegeEnum>())
+                                {
+                                    <MudSelectItem T="DevicePrivilegeEnum" Value="@privilege">
+                                        @(privilege switch
+                                        {
+                                            DevicePrivilegeEnum.User => "Usuario Normal",
+                                            DevicePrivilegeEnum.Registrar => "Registrador",
+                                            DevicePrivilegeEnum.Admin => "Administrador",
+                                            DevicePrivilegeEnum.SuperAdmin => "Super Administrador",
+                                            _ => privilege.ToString()
+                                        })
+                                    </MudSelectItem>
+                                }
+                            </MudSelect>
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
@@ -223,6 +243,7 @@
     [Parameter] public string? CardNumber { get; set; }
     [Parameter] public string? DevicePassword { get; set; }
     [Parameter] public string? Photo { get; set; }
+    [Parameter] public DevicePrivilegeEnum DevicePrivilege { get; set; } = DevicePrivilegeEnum.User;
 
     private DateTime? _hireDate;
     private bool _loading = true;
@@ -241,7 +262,7 @@
         get
         {
             if (!_selectedShiftType.HasValue) return Enumerable.Empty<ShiftDto>();
-            return _shifts.Where(s => s.ShiftType == _selectedShiftType.Value).ToList();
+            return _shifts.Where(s => s.ShiftType == _selectedShiftType.Value).OrderBy(s => s.StartTime).ToList();
         }
     }
 
@@ -320,7 +341,7 @@
             if (selectedDepartment != null && selectedDepartment.PositionIds != null)
             {
                 var validPositionIds = new HashSet<Guid>(selectedDepartment.PositionIds);
-                _filteredPositions = _positions.Where(p => validPositionIds.Contains(p.Id)).ToList();
+                _filteredPositions = _positions.Where(p => validPositionIds.Contains(p.Id)).OrderBy(p => p.Name).ToList();
             }
             else
             {
@@ -345,17 +366,17 @@
             Snackbar.Add("Error al cargar sucursales", Severity.Error);
 
         if (departmentsResult.IsSuccess)
-            _departments = departmentsResult.Value.ToList();
+            _departments = departmentsResult.Value.OrderBy(d => d.Name).ToList();
         else
             Snackbar.Add("Error al cargar departamentos", Severity.Error);
 
         if (positionsResult.IsSuccess)
-            _positions = positionsResult.Value.ToList();
+            _positions = positionsResult.Value.OrderBy(p => p.Name).ToList();
         else
             Snackbar.Add("Error al cargar puestos", Severity.Error);
 
         if (shiftsResult.IsSuccess)
-            _shifts = shiftsResult.Value.ToList();
+            _shifts = shiftsResult.Value.OrderBy(s => s.StartTime).ToList();
         else
             Snackbar.Add("Error al cargar turnos", Severity.Error);
             
@@ -417,7 +438,8 @@
                 CalculateOvertimeBeforeEntry,
                 CardNumber,
                 DevicePassword,
-                Photo)));
+                Photo,
+                DevicePrivilege)));
         }
         else
         {
@@ -442,7 +464,8 @@
                 CalculateOvertimeBeforeEntry,
                 CardNumber,
                 DevicePassword,
-                Photo)));
+                Photo,
+                DevicePrivilege)));
         }
     }
 }

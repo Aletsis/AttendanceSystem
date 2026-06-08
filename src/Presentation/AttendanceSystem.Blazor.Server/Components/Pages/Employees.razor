@@ -16,33 +16,65 @@
 @using Microsoft.JSInterop
 
 <PageTitle>Empleados</PageTitle>
+<MudText Typo="Typo.h5" Class="mb-4">Empleados</MudText>
 
-<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
-    <MudText Typo="Typo.h3" GutterBottom="true">Empleados</MudText>
-    <MudText Typo="Typo.subtitle1" Class="mb-4">Gestiona los empleados de la empresa.</MudText>
+@if (!_isLoaded)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mt-16 mx-auto d-block" />
+}
+else
+{
+    <MudGrid Spacing="2" Class="mb-4">
+        <MudItem xs="12" sm="6" md="3">
+            <MudTextField T="string" Value="_searchString" ValueChanged="OnSearch" Label="Buscar" 
+                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary"
+                          Clearable="true" Immediate="false" />
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string" Label="Sucursal" MultiSelection="true" @bind-SelectedValues="_selectedBranches" 
+                       Clearable="true" AnchorOrigin="Origin.BottomCenter" MultiSelectionTextFunc="@(x => string.Join(", ", x))">
+                @foreach (var branch in _availableBranches)
+                {
+                    <MudSelectItem T="string" Value="@branch">@branch</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string" Label="Departamento" MultiSelection="true" @bind-SelectedValues="_selectedDepts" 
+                       Clearable="true" AnchorOrigin="Origin.BottomCenter" MultiSelectionTextFunc="@(x => string.Join(", ", x))">
+                @foreach (var dept in _availableDepts)
+                {
+                    <MudSelectItem T="string" Value="@dept">@dept</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudSelect T="string" Label="Estado" MultiSelection="true" @bind-SelectedValues="_selectedStatuses" 
+                       Clearable="true" AnchorOrigin="Origin.BottomCenter">
+                @foreach (var status in _availableStatuses)
+                {
+                    <MudSelectItem T="string" Value="@status.ToString()">@status.ToString()</MudSelectItem>
+                }
+            </MudSelect>
+        </MudItem>
+        
+        <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportEmployees">Importar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Empleado</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="LoadEmployees">Filtrar</MudButton>
+        </MudItem>
+    </MudGrid>
 
-    @if (!_isLoaded)
-    {
-        <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mt-16 mx-auto d-block" />
-    }
-    else
-    {
-        <MudDataGrid T="EmployeeDto" ServerData="ServerReload" @ref="_dataGrid" Filterable="true" FilterMode="@DataGridFilterMode.ColumnFilterRow" Hideable="true">
-        <ToolBarContent>
-            <MudText Typo="Typo.h6">Lista de Empleados</MudText>
-            <MudSpacer />
-            <MudTextField T="string" ValueChanged="@(s=>OnSearch(s))" Placeholder="Buscar" Adornment="Adornment.Start"
-                          AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog" Class="ml-4">Nuevo Empleado</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportEmployees" Class="ml-2">Importar</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel" Class="ml-2">Exportar</MudButton>
-        </ToolBarContent>
+    <MudDataGrid T="EmployeeDto" ServerData="ServerReload" @ref="_dataGrid" Filterable="false" Hideable="true" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
         <Columns>
             <TemplateColumn Title="Foto" Sortable="false" Filterable="false">
                 <CellTemplate>
                     @if (!string.IsNullOrEmpty(context.Item.Photo))
                     {
-                        <MudAvatar Image="@($"data:image/jpeg;base64,{context.Item.Photo}")" Size="Size.Medium" />
+                        <MudAvatar Size="Size.Medium">
+                            <MudImage Src="@($"data:image/jpeg;base64,{context.Item.Photo}")" />
+                        </MudAvatar>
                     }
                     else
                     {
@@ -52,82 +84,13 @@
                     }
                 </CellTemplate>
             </TemplateColumn>
-            <PropertyColumn Property="x => x.Id" Title="ID" Filterable="false" />
+            <PropertyColumn Property="x => x.Id" Title="ID" />
             <PropertyColumn Property="x => x.FullName" Title="Nombre Completo" />
-            <PropertyColumn Property="x => x.BranchName" Title="Sucursal" Sortable="false" Filterable="true" >
-                <FilterTemplate>
-                    <MudBadge Overlap="true" Color="Color.Primary" Visible="@(_selectedBranches.Any())" Dot="true">
-                         <MudIconButton OnClick="@OpenBranchFilter" Icon="@(_branchFilterOpen ? Icons.Material.Filled.FilterListOff : Icons.Material.Filled.FilterList)" Size="@Size.Small" />
-                    </MudBadge>
-                    <MudOverlay Visible="@_branchFilterOpen" OnClick="@(() => _branchFilterOpen = false)" />
-                    <MudPopover Open="@_branchFilterOpen" AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter" Style="width:250px" Class="pa-2">
-                        <MudStack Spacing="2">
-                            <MudCheckBox T="bool" Label="Seleccionar Todo" Size="@Size.Small" Value="@_selectAllBranches" ValueChanged="@SelectAllBranches" />
-                            <MudDivider />
-                            <MudStack Spacing="0" Style="overflow-y:auto;max-height:250px">
-                                @foreach (var branch in _availableBranches)
-                                {
-                                    <MudCheckBox T="bool" Label="@branch" Size="@Size.Small" Value="@(_selectedBranches.Contains(branch))"
-                                                 ValueChanged="@((value) => BranchSelectionChanged(value, branch))" />
-                                }
-                            </MudStack>
-                            <MudStack Row="true" Justify="Justify.FlexEnd">
-                                <MudButton OnClick="@ClearBranchFilter" Variant="Variant.Text" Color="Color.Default" Size="Size.Small">Limpiar</MudButton>
-                                <MudButton OnClick="@ApplyBranchFilter" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">Filtrar</MudButton>
-                            </MudStack>
-                        </MudStack>
-                    </MudPopover>
-                </FilterTemplate>
-            </PropertyColumn>
-            <PropertyColumn Property="x => x.DepartmentName" Title="Departamento" Sortable="false" Filterable="true" >
-                <FilterTemplate>
-                    <MudBadge Overlap="true" Color="Color.Primary" Visible="@(_selectedDepts.Any())" Dot="true">
-                         <MudIconButton OnClick="@OpenDeptFilter" Icon="@(_deptFilterOpen ? Icons.Material.Filled.FilterListOff : Icons.Material.Filled.FilterList)" Size="@Size.Small" />
-                    </MudBadge>
-                    <MudOverlay Visible="@_deptFilterOpen" OnClick="@(() => _deptFilterOpen = false)" />
-                    <MudPopover Open="@_deptFilterOpen" AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter" Style="width:250px" Class="pa-2">
-                        <MudStack Spacing="2">
-                            <MudCheckBox T="bool" Label="Seleccionar Todo" Size="@Size.Small" Value="@_selectAllDepts" ValueChanged="@SelectAllDepts" />
-                            <MudDivider />
-                            <MudStack Spacing="0" Style="overflow-y:auto;max-height:250px">
-                                @foreach (var dept in _availableDepts)
-                                {
-                                    <MudCheckBox T="bool" Label="@dept" Size="@Size.Small" Value="@(_selectedDepts.Contains(dept))"
-                                                 ValueChanged="@((value) => DeptSelectionChanged(value, dept))" />
-                                }
-                            </MudStack>
-                            <MudStack Row="true" Justify="Justify.FlexEnd">
-                                <MudButton OnClick="@ClearDeptFilter" Variant="Variant.Text" Color="Color.Default" Size="Size.Small">Limpiar</MudButton>
-                                <MudButton OnClick="@ApplyDeptFilter" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">Filtrar</MudButton>
-                            </MudStack>
-                        </MudStack>
-                    </MudPopover>
-                </FilterTemplate>
-            </PropertyColumn>
-            <PropertyColumn Property="x => x.ScheduleName" Title="Horario" Sortable="false" Filterable="false" />
-            <PropertyColumn Property="x => x.RestDayName" Title="Descanso" Sortable="false" Filterable="false" />
-            <PropertyColumn Property="x => x.Status" Title="Estado" Sortable="false" Filterable="true" >
-                <FilterTemplate>
-                    <MudBadge Overlap="true" Color="Color.Primary" Visible="@(_selectedStatuses.Any())" Dot="true">
-                         <MudIconButton OnClick="@OpenStatusFilter" Icon="@(_statusFilterOpen ? Icons.Material.Filled.FilterListOff : Icons.Material.Filled.FilterList)" Size="@Size.Small" />
-                    </MudBadge>
-                    <MudOverlay Visible="@_statusFilterOpen" OnClick="@(() => _statusFilterOpen = false)" />
-                    <MudPopover Open="@_statusFilterOpen" AnchorOrigin="Origin.BottomCenter" TransformOrigin="Origin.TopCenter" Style="width:250px" Class="pa-2">
-                         <MudStack Spacing="2">
-                              <MudCheckBox T="bool" Label="Seleccionar Todo" Size="@Size.Small" Value="@_selectAllStatuses" ValueChanged="@SelectAllStatuses" />
-                              <MudDivider />
-                              @foreach (var status in _availableStatuses)
-                              {
-                                   <MudCheckBox T="bool" Label="@status.ToString()" Size="@Size.Small" Value="@(_selectedStatuses.Contains(status.ToString()))"
-                                                ValueChanged="@((value) => StatusSelectionChanged(value, status.ToString()))" />
-                              }
-                              <MudStack Row="true" Justify="Justify.FlexEnd">
-                                   <MudButton OnClick="@ClearStatusFilter" Variant="Variant.Text" Color="Color.Default" Size="Size.Small">Limpiar</MudButton>
-                                   <MudButton OnClick="@ApplyStatusFilter" Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small">Filtrar</MudButton>
-                              </MudStack>
-                         </MudStack>
-                    </MudPopover>
-                </FilterTemplate>
+            <PropertyColumn Property="x => x.BranchName" Title="Sucursal" />
+            <PropertyColumn Property="x => x.DepartmentName" Title="Departamento" />
+            <PropertyColumn Property="x => x.ScheduleName" Title="Horario" />
+            <PropertyColumn Property="x => x.RestDayName" Title="Descanso" />
+            <PropertyColumn Property="x => x.Status" Title="Estado">
                 <CellTemplate>
                     <MudChip T="string" Color="@(context.Item.Status == EmployeeStatus.Alta ? Color.Success : context.Item.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">
                         @(context.Item.Status.ToString())
@@ -156,31 +119,19 @@
     </MudDataGrid>
     }
 
-</MudContainer>
-
 @code {
     private MudDataGrid<EmployeeDto> _dataGrid = default!;
     private bool _isLoaded = false;
+    private string _searchString = string.Empty;
 
-    // Custom Filters Logic
-    
-    // Branch
-    private bool _branchFilterOpen;
-    private bool _selectAllBranches;
-    private HashSet<string> _selectedBranches = new();
+    // Filter values
+    private IEnumerable<string> _selectedBranches = new HashSet<string>();
+    private IEnumerable<string> _selectedDepts = new HashSet<string>();
+    private IEnumerable<string> _selectedStatuses = new HashSet<string>();
+
+    // Available options
     private List<string> _availableBranches = new();
-
-    // Department
-    private bool _deptFilterOpen;
-    private bool _selectAllDepts;
-    private HashSet<string> _selectedDepts = new();
     private List<string> _availableDepts = new();
-
-
-    // Status
-    private bool _statusFilterOpen;
-    private bool _selectAllStatuses;
-    private HashSet<string> _selectedStatuses = new();
     private List<EmployeeStatus> _availableStatuses = Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>().ToList();
 
     protected override async Task OnInitializedAsync()
@@ -191,102 +142,18 @@
 
     private async Task LoadFilterOptions()
     {
-        // Load Branches
         var branchResult = await Sender.Send(new GetBranchesQuery());
         if (branchResult.IsSuccess)
         {
             _availableBranches = branchResult.Value.Select(b => b.Name).Distinct().OrderBy(n => n).ToList();
         }
 
-        // Load Departments
         var deptResult = await Sender.Send(new GetDepartmentsQuery());
         if (deptResult.IsSuccess)
         {
             _availableDepts = deptResult.Value.Select(d => d.Name).Distinct().OrderBy(n => n).ToList();
         }
-
     }
-
-    // Branch Filter Methods
-    private void OpenBranchFilter() => _branchFilterOpen = true;
-    private void SelectAllBranches(bool value)
-    {
-        _selectAllBranches = value;
-        if (value) _selectedBranches = _availableBranches.ToHashSet(); else _selectedBranches.Clear();
-    }
-    private void BranchSelectionChanged(bool isSelected, string branch)
-    {
-        if (isSelected) _selectedBranches.Add(branch); else _selectedBranches.Remove(branch);
-        _selectAllBranches = _selectedBranches.Count == _availableBranches.Count;
-    }
-    private void ClearBranchFilter()
-    {
-        _selectedBranches.Clear();
-        _selectAllBranches = false;
-        _branchFilterOpen = false;
-        _dataGrid.ReloadServerData();
-    }
-    private void ApplyBranchFilter()
-    {
-        _branchFilterOpen = false;
-        _dataGrid.ReloadServerData();
-    }
-
-    // Department Filter Methods
-    private void OpenDeptFilter() => _deptFilterOpen = true;
-    private void SelectAllDepts(bool value)
-    {
-        _selectAllDepts = value;
-        if (value) _selectedDepts = _availableDepts.ToHashSet(); else _selectedDepts.Clear();
-    }
-    private void DeptSelectionChanged(bool isSelected, string dept)
-    {
-        if (isSelected) _selectedDepts.Add(dept); else _selectedDepts.Remove(dept);
-        _selectAllDepts = _selectedDepts.Count == _availableDepts.Count;
-    }
-    private void ClearDeptFilter()
-    {
-        _selectedDepts.Clear();
-        _selectAllDepts = false;
-        _deptFilterOpen = false;
-        _dataGrid.ReloadServerData();
-    }
-    private void ApplyDeptFilter()
-    {
-        _deptFilterOpen = false;
-        _dataGrid.ReloadServerData();
-    }
-
-
-    // Status Filter Methods
-    private void OpenStatusFilter() => _statusFilterOpen = true;
-    private void SelectAllStatuses(bool value)
-    {
-         _selectAllStatuses = value;
-         if (value) _selectedStatuses = _availableStatuses.Select(s => s.ToString()).ToHashSet(); 
-         else _selectedStatuses.Clear();
-    }
-    private void StatusSelectionChanged(bool isSelected, string status)
-    {
-         if (isSelected) _selectedStatuses.Add(status);
-         else _selectedStatuses.Remove(status);
-         _selectAllStatuses = _selectedStatuses.Count == _availableStatuses.Count;
-    }
-    private void ClearStatusFilter()
-    {
-         _selectedStatuses.Clear();
-         _selectAllStatuses = false;
-         _statusFilterOpen = false;
-         _dataGrid.ReloadServerData();
-    }
-    private void ApplyStatusFilter()
-    {
-         _statusFilterOpen = false;
-         _dataGrid.ReloadServerData();
-    }
-
-
-    private string _searchString = string.Empty;
 
     private void OnSearch(string text)
     {
@@ -297,28 +164,23 @@
     private async Task<GridData<EmployeeDto>> ServerReload(GridState<EmployeeDto> state)
     {
         var sortDefinition = state.SortDefinitions.FirstOrDefault();
-        var sortLabel = sortDefinition?.SortBy; // Property name
+        var sortLabel = sortDefinition?.SortBy;
         var sortDirection = sortDefinition?.Descending == true ? 2 : (sortDefinition?.Descending == false ? 1 : 0);
 
         string? GetFilter(string field) => state.FilterDefinitions.FirstOrDefault(f => f.Column?.PropertyName == field)?.Value?.ToString();
 
-        // Use selected items if any, otherwise null (means all)
-        var branchesToFilter = _selectedBranches.Any() ? _selectedBranches : null;
-        var deptsToFilter = _selectedDepts.Any() ? _selectedDepts : null;
-        var statusToFilter = _selectedStatuses.Any() ? _selectedStatuses : null;
-
         var query = new GetEmployeesWithPaginationQuery(
             state.Page,
             state.PageSize,
-            _searchString, // Global search
+            _searchString,
             sortLabel,
             sortDirection,
             GetFilter(nameof(EmployeeDto.Id)),
             GetFilter(nameof(EmployeeDto.FullName)),
-            branchesToFilter, // Use custom filter list
-            deptsToFilter, // Custom list
-            null, // Custom list
-            statusToFilter // Custom list
+            _selectedBranches.Any() ? _selectedBranches : null,
+            _selectedDepts.Any() ? _selectedDepts : null,
+            null,
+            _selectedStatuses.Any() ? _selectedStatuses : null
         );
 
         var result = await Sender.Send(query);
@@ -394,7 +256,8 @@
             { "CalculateOvertimeBeforeEntry", employee.CalculateOvertimeBeforeEntry },
             { "CardNumber", employee.CardNumber },
             { "DevicePassword", employee.DevicePassword },
-            { "Photo", employee.Photo }
+            { "Photo", employee.Photo },
+            { "DevicePrivilege", employee.DevicePrivilege }
         };
         
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };

@@ -3,7 +3,7 @@
 @using MudBlazor
 @inherits LayoutComponentBase
 
-<MudThemeProvider />
+<MudThemeProvider @ref="@_mudThemeProvider" @bind-IsDarkMode="@_isDarkMode" Theme="_currentTheme" />
 <MudDialogProvider />
 <MudSnackbarProvider />
 <MudPopoverProvider />
@@ -11,20 +11,43 @@
 <MudLayout>
     <MudAppBar Elevation="1">
         <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start" OnClick="@((e) => DrawerToggle())" />
-        <MudText Typo="Typo.h6">Sistema de Asistencia</MudText>
+        <MudHidden Breakpoint="Breakpoint.Xs">
+            <MudText Typo="Typo.h6" Class="ml-3">Sistema de Asistencia</MudText>
+        </MudHidden>
+        <MudHidden Breakpoint="Breakpoint.Xs" Invert="true">
+            <MudText Typo="Typo.subtitle1" Class="ml-2">Asistencia</MudText>
+        </MudHidden>
+        
         <MudSpacer />
+        
+        <MudToggleIconButton @bind-Toggled="@_isDarkMode"
+                             Icon="@Icons.Material.Filled.LightMode" 
+                             Color="Color.Inherit" 
+                             ToggledIcon="@Icons.Material.Filled.DarkMode" 
+                             ToggledColor="Color.Inherit" />
+
         <AuthorizeView>
             <Authorized>
-                <MudText Typo="Typo.body2" Class="mr-4">
-                    <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1" />
-                    @context.User.Identity?.Name
-                </MudText>
-                <MudIconButton Icon="@Icons.Material.Filled.Logout" 
-                               Color="Color.Inherit" 
-                               Href="/logout"
-                               title="Cerrar Sesión" />
+                <MudHidden Breakpoint="Breakpoint.SmAndUp">
+                    <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                        <MudMenuItem Disabled="true">@context.User.Identity?.Name</MudMenuItem>
+                        <MudDivider />
+                        <MudMenuItem Icon="@Icons.Material.Filled.Logout" href="/logout">Cerrar Sesión</MudMenuItem>
+                    </MudMenu>
+                </MudHidden>
+                <MudHidden Breakpoint="Breakpoint.Xs">
+                    <MudText Typo="Typo.body2" Class="mr-4 ml-2">
+                        <MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1" />
+                        @context.User.Identity?.Name
+                    </MudText>
+                    <MudIconButton Icon="@Icons.Material.Filled.Logout" 
+                                   Color="Color.Inherit" 
+                                   Href="/logout"
+                                   title="Cerrar Sesión" />
+                </MudHidden>
             </Authorized>
         </AuthorizeView>
+        
         <AuthorizeView Roles="Administrador">
             <Authorized Context="authContext">
                 <MudIconButton Icon="@Icons.Material.Filled.Settings" Color="Color.Inherit" Href="/settings" />
@@ -32,7 +55,7 @@
         </AuthorizeView>
     </MudAppBar>
     
-    <MudDrawer @bind-Open="@_drawerOpen" Elevation="2">
+    <MudDrawer @bind-Open="@_drawerOpen" Elevation="2" Breakpoint="Breakpoint.Md" ClipMode="DrawerClipMode.Always">
         <MudDrawerHeader>
             <div class="d-flex flex-column">
                 <MudText Typo="Typo.h6">Menú</MudText>
@@ -43,17 +66,64 @@
     </MudDrawer>
     
     <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.Large" Class="my-4">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-4">
             @Body
         </MudContainer>
     </MudMainContent>
 </MudLayout>
 
 @code {
-    bool _drawerOpen = true;
+    private bool _drawerOpen = true;
+    private bool _isDarkMode;
+    private MudThemeProvider _mudThemeProvider = default!;
+
+    private MudTheme _currentTheme = new MudTheme()
+    {
+        PaletteLight = new PaletteLight()
+        {
+            Primary = "#1976D2",
+            Secondary = "#424242",
+            AppbarBackground = "#1976D2",
+            Background = "#F5F5F5",
+            DrawerBackground = "#FFFFFF",
+            Surface = "#FFFFFF"
+        },
+        PaletteDark = new PaletteDark()
+        {
+            Primary = "#2196F3",
+            Secondary = "#BDBDBD",
+            AppbarBackground = "#1A1A1A",
+            Background = "#121212",
+            DrawerBackground = "#1E1E1E",
+            Surface = "#1E1E1E",
+            TextPrimary = "#E0E0E0",
+            TextSecondary = "#B0B0B0"
+        },
+        LayoutProperties = new LayoutProperties()
+        {
+            DefaultBorderRadius = "8px"
+        }
+    };
 
     void DrawerToggle()
     {
         _drawerOpen = !_drawerOpen;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _isDarkMode = await _mudThemeProvider.GetSystemDarkModeAsync();
+            await _mudThemeProvider.WatchSystemDarkModeAsync(OnSystemPreferenceChanged);
+            StateHasChanged();
+        }
+    }
+
+    private Task OnSystemPreferenceChanged(bool newValue)
+    {
+        _isDarkMode = newValue;
+        StateHasChanged();
+        return Task.CompletedTask;
     }
 }

@@ -7,6 +7,7 @@
 @using AttendanceSystem.Domain.ValueObjects
 @using AttendanceSystem.Application.Features.Employees
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
+@using AttendanceSystem.Domain.Enumerations
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IReportExportService ExportService
@@ -16,11 +17,11 @@
 
 <MudText Typo="Typo.h5" Class="mb-4">Reporte de Asistencia</MudText>
 
-<MudGrid>
-    <MudItem xs="12" sm="3">
+<MudGrid Spacing="2">
+    <MudItem xs="6" sm="3">
         <MudDatePicker Label="Desde" @bind-Date="StartDate" />
     </MudItem>
-    <MudItem xs="12" sm="3">
+    <MudItem xs="6" sm="3">
         <MudDatePicker Label="Hasta" @bind-Date="EndDate" />
     </MudItem>
     <MudItem xs="12" sm="3">
@@ -34,7 +35,7 @@
     </MudItem>
     <MudItem xs="12" sm="3">
         <MudAutocomplete T="EmployeeDto" 
-                        Label="Empleado (Busque por ID o Nombre)"
+                        Label="Empleado"
                         @bind-Value="SelectedEmployeeObj" 
                         SearchFunc="@SearchEmployees"
                         ToStringFunc="@(e => e == null ? null : $"{e.Id} - {e.FullName}")"
@@ -43,24 +44,39 @@
                         ResetValueOnEmptyText="true" />
     </MudItem>
     
-    <MudItem xs="12" Class="d-flex align-center justify-end">
-        <MudButton Variant="Variant.Filled" Color="Color.Surface" OnClick="ExportPdf" Class="mr-2" StartIcon="@Icons.Material.Filled.PictureAsPdf">PDF</MudButton>
-        @if (StartDate.HasValue && EndDate.HasValue && StartDate.Value.Date == EndDate.Value.Date)
-        {
-             <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="@(() => ExportExcel(false))" Class="mr-2" StartIcon="@Icons.Material.Filled.TableView">Excel</MudButton>
-        }
-        else
-        {
-            <MudMenu Label="Excel" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.TableView" Class="mr-2" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
-                <MudMenuItem OnClick="@(() => ExportExcel(false))">Resumido</MudMenuItem>
-                <MudMenuItem OnClick="@(() => ExportExcel(true))">Detallado</MudMenuItem>
+    <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
+        <MudHidden Breakpoint="Breakpoint.Xs">
+            <MudButton Variant="Variant.Filled" Color="Color.Surface" OnClick="ExportPdf" StartIcon="@Icons.Material.Filled.PictureAsPdf">PDF</MudButton>
+            @if (StartDate.HasValue && EndDate.HasValue && StartDate.Value.Date == EndDate.Value.Date)
+            {
+                 <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="@(() => ExportExcel(false))" StartIcon="@Icons.Material.Filled.TableView">Excel</MudButton>
+            }
+            else
+            {
+                <MudMenu Label="Excel" Variant="Variant.Filled" Color="Color.Success" StartIcon="@Icons.Material.Filled.TableView" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
+                    <MudMenuItem OnClick="@(() => ExportExcel(false))">Resumido</MudMenuItem>
+                    <MudMenuItem OnClick="@(() => ExportExcel(true))">Detallado</MudMenuItem>
+                </MudMenu>
+            }
+            <MudMenu Label="Nómina" Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Payments" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
+                <MudMenuItem OnClick="ExportContpaqi">CONTPAQi Nóminas (.csv)</MudMenuItem>
+                <MudMenuItem OnClick="ExportAspelNoi">Aspel NOI (.txt)</MudMenuItem>
             </MudMenu>
-        }
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData" Class="mr-2">Ver Reporte</MudButton>
+        </MudHidden>
+        <MudHidden Breakpoint="Breakpoint.Xs" Invert="true">
+            <MudMenu Icon="@Icons.Material.Filled.FileDownload" Label="Exportar" Variant="Variant.Filled" Color="Color.Info">
+                <MudMenuItem OnClick="ExportPdf">PDF</MudMenuItem>
+                <MudMenuItem OnClick="@(() => ExportExcel(false))">Excel Resumido</MudMenuItem>
+                <MudMenuItem OnClick="@(() => ExportExcel(true))">Excel Detallado</MudMenuItem>
+                <MudMenuItem OnClick="ExportContpaqi">CONTPAQi</MudMenuItem>
+                <MudMenuItem OnClick="ExportAspelNoi">Aspel NOI</MudMenuItem>
+            </MudMenu>
+        </MudHidden>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData">Ver Reporte</MudButton>
     </MudItem>
 </MudGrid>
 
-<MudDataGrid @ref="_dataGrid" Items="@AttendanceList" Filterable="true" Class="mt-4">
+<MudDataGrid @ref="_dataGrid" Items="@AttendanceList" Filterable="true" Class="mt-4" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
     <Columns>
         <PropertyColumn T="AttendanceReportViewDto" TProperty="string" Property="x => x.EmployeeId" Title="ID" SortBy="@SortByEmployeeId" />
         <PropertyColumn Property="x => x.EmployeeName" Title="Empleado" />
@@ -118,7 +134,7 @@
         var empResult = await Mediator.Send(new GetAllEmployeesQuery());
         if (empResult.IsSuccess)
         {
-            _allEmployees = empResult.Value.ToList();
+            _allEmployees = empResult.Value.Where(e => e.Status == EmployeeStatus.Alta).ToList();
         }
 
         var branchResult = await Mediator.Send(new GetBranchesQuery());
@@ -233,6 +249,56 @@
         catch (Exception ex)
         {
             Snackbar.Add($"Error al exportar PDF: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ExportContpaqi()
+    {
+        if (!AttendanceList.Any())
+        {
+            Snackbar.Add("No hay datos para exportar", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var data = _dataGrid?.FilteredItems != null && _dataGrid.FilteredItems.Any() 
+                 ? _dataGrid.FilteredItems 
+                 : AttendanceList;
+
+            var bytes = ExportService.GenerateContpaqiNominaExport(data);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", $"Layout_CONTPAQi_{DateTime.Now:yyyyMMdd}.csv", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar CONTPAQi: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ExportAspelNoi()
+    {
+        if (!AttendanceList.Any())
+        {
+            Snackbar.Add("No hay datos para exportar", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            var data = _dataGrid?.FilteredItems != null && _dataGrid.FilteredItems.Any() 
+                 ? _dataGrid.FilteredItems 
+                 : AttendanceList;
+
+            var bytes = ExportService.GenerateAspelNoiExport(data);
+            using var stream = new MemoryStream(bytes);
+            using var streamRef = new DotNetStreamReference(stream);
+            await JS.InvokeVoidAsync("downloadFileFromStream", $"Layout_AspelNOI_{DateTime.Now:yyyyMMdd}.txt", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al exportar Aspel NOI: {ex.Message}", Severity.Error);
         }
     }
 

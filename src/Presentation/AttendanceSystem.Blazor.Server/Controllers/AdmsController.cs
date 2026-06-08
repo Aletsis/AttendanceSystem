@@ -25,6 +25,7 @@ public class AdmsController : ControllerBase
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IBranchRepository _branchRepository;
     private readonly ILogTransferService _logTransferService;
+    private readonly IAttendanceJobScheduler _jobScheduler;
 
     public AdmsController(
         ILogger<AdmsController> logger, 
@@ -35,7 +36,8 @@ public class AdmsController : ControllerBase
         IEmployeeRepository employeeRepository,
         IDownloadLogRepository downloadLogRepository,
         IBranchRepository branchRepository,
-        ILogTransferService logTransferService)
+        ILogTransferService logTransferService,
+        IAttendanceJobScheduler jobScheduler)
     {
         _logger = logger;
         _mediator = mediator;
@@ -46,6 +48,7 @@ public class AdmsController : ControllerBase
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
         _logTransferService = logTransferService;
+        _jobScheduler = jobScheduler;
     }
 
     // 1. GET /iclock/cdata — solo dice si está registrado o no
@@ -421,11 +424,13 @@ public class AdmsController : ControllerBase
             {
                 try
                 {
-                    await _mediator.Send(new ProcessDailyAttendanceCommand(date, date, EmployeeId: EmployeeId.From(pin)));
+                    // Expand range by 1 day back to ensure night shifts are caught correctly
+                    var processStartDate = date.AddDays(-1);
+                    _jobScheduler.EnqueueAttendanceProcessing(processStartDate, date, pin);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error calculando asistencia para empleado {Pin} en fecha {Date}", pin, date);
+                    _logger.LogError(ex, "Error encolando cálculo de asistencia para empleado {Pin} en fecha {Date}", pin, date);
                 }
             }
         }

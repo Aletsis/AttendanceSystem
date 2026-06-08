@@ -6,6 +6,7 @@
         <MudTextField @bind-Value="Name" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
         <MudTextField @bind-Value="Description" Label="Descripción" Lines="3" />
         <MudNumericField @bind-Value="BaseSalary" Label="Salario Base" Min="0" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.AttachMoney" />
+        <MudCheckBox @bind-Value="IsCritical" Label="Puesto Crítico" Color="Color.Error" />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancelar</MudButton>
@@ -20,6 +21,7 @@
     [Parameter] public string Name { get; set; } = string.Empty;
     [Parameter] public string Description { get; set; } = string.Empty;
     [Parameter] public decimal BaseSalary { get; set; }
+    [Parameter] public bool IsCritical { get; set; }
 
     private void Cancel() => MudDialog.Cancel();
 
@@ -32,11 +34,11 @@
 
         if (PositionId.HasValue)
         {
-            MudDialog.Close(DialogResult.Ok(new UpdatePositionCommand(PositionId.Value, Name, Description, BaseSalary)));
+            MudDialog.Close(DialogResult.Ok(new UpdatePositionCommand(PositionId.Value, Name, Description, BaseSalary, IsCritical)));
         }
         else
         {
-            MudDialog.Close(DialogResult.Ok(new CreatePositionCommand(Name, Description, BaseSalary)));
+            MudDialog.Close(DialogResult.Ok(new CreatePositionCommand(Name, Description, BaseSalary, IsCritical)));
         }
     }
 }

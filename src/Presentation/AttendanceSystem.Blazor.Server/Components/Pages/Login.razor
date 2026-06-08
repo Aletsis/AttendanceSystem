@@ -7,33 +7,95 @@
 
 <PageTitle>Iniciar Sesión - Sistema de Asistencia</PageTitle>
 
-<MudContainer MaxWidth="MaxWidth.Small" Class="d-flex align-center justify-center" Style="min-height: 100vh;">
-    <MudPaper Elevation="8" Class="pa-8" Style="width: 100%; max-width: 450px;">
-        <MudStack Spacing="4">
-            <MudStack AlignItems="AlignItems.Center" Spacing="2">
-                <MudAvatar Color="Color.Primary" Size="Size.Large" Style="width: 80px; height: 80px;">
-                    <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Large" Class="mr-2" />
-                </MudAvatar>
-                <MudText Typo="Typo.h4" Align="Align.Center">Iniciar Sesión</MudText>
-                <MudText Typo="Typo.body1" Align="Align.Center" Color="Color.Secondary">
-                    Ingrese sus credenciales para continuar
+<style>
+    .login-container {
+        background-image: linear-gradient(135deg, rgba(25, 118, 210, 0.4) 0%, rgba(18, 18, 18, 0.9) 100%), url('login_background_office_1777247753261.png');
+        background-size: cover;
+        background-position: center;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+    }
+
+    .glass-card {
+        background: rgba(30, 30, 30, 0.7) !important;
+        backdrop-filter: blur(20px) !important;
+        -webkit-backdrop-filter: blur(20px) !important;
+        border: 1px solid rgba(25, 118, 210, 0.3) !important;
+        border-radius: 28px !important;
+        overflow: hidden;
+        animation: slideUp 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5) !important;
+    }
+
+    .mud-input-control .mud-input {
+        background: rgba(255, 255, 255, 0.05) !important;
+        border-radius: 12px !important;
+        color: white !important;
+    }
+
+    .mud-input-label {
+        color: rgba(255, 255, 255, 0.8) !important;
+    }
+
+    .mud-input-control.mud-input-focused .mud-input-label {
+        color: #1976D2 !important;
+    }
+
+    .mud-input-adornment .mud-icon-root {
+        color: rgba(255, 255, 255, 0.5) !important;
+    }
+
+    .login-title {
+        background: linear-gradient(90deg, #FFFFFF 0%, #1976D2 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        font-weight: 900 !important;
+        letter-spacing: -1px;
+    }
+
+    @@keyframes slideUp {
+        from { opacity: 0; transform: translateY(40px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+
+    .logo-container {
+        background: linear-gradient(135deg, #1976D2 0%, #1565C0 100%);
+        padding: 20px;
+        border-radius: 22px;
+        margin-bottom: 24px;
+        box-shadow: 0 10px 25px -5px rgba(25, 118, 210, 0.4);
+    }
+</style>
+
+<div class="login-container">
+    <MudPaper Elevation="0" Class="glass-card pa-10" Style="width: 100%; max-width: 480px;">
+        <MudStack Spacing="6">
+            <MudStack AlignItems="AlignItems.Center" Spacing="0">
+                <div class="logo-container">
+                    <MudIcon Icon="@Icons.Material.Filled.Security" Size="Size.Large" Style="font-size: 3rem !important; color: white;" />
+                </div>
+                <MudText Typo="Typo.h3" Class="login-title mb-2">BIENVENIDO</MudText>
+                <MudText Typo="Typo.body1" Align="Align.Center" Style="color: rgba(255,255,255,0.6);">
+                    Sistema de Gestión de Asistencia v2.0
                 </MudText>
             </MudStack>
 
             @if (!string.IsNullOrEmpty(errorMessage))
             {
-                <MudAlert Severity="Severity.Error" Dense="true">@errorMessage</MudAlert>
+                <MudAlert Severity="Severity.Error" Variant="Variant.Filled" Class="rounded-lg">@errorMessage</MudAlert>
             }
 
-            <!-- Formulario HTML tradicional para POST al controlador -->
             <form method="post" action="Account/Login">
                 <AntiforgeryToken />
                 <input type="hidden" name="ReturnUrl" value="/" />
 
-                <MudStack Spacing="3">
+                <MudStack Spacing="4">
                     <MudTextField @bind-Value="model.Username"
                                   Label="Usuario"
-                                  Variant="Variant.Outlined"
+                                  Variant="Variant.Filled"
                                   For="@(() => model.Username)"
                                   Adornment="Adornment.Start"
                                   AdornmentIcon="@Icons.Material.Filled.Person"
@@ -42,7 +104,7 @@
 
                     <MudTextField @bind-Value="model.Password"
                                   Label="Contraseña"
-                                  Variant="Variant.Outlined"
+                                  Variant="Variant.Filled"
                                   For="@(() => model.Password)"
                                   InputType="@PasswordInput"
                                   Adornment="Adornment.End"
@@ -56,15 +118,19 @@
                                Color="Color.Primary"
                                FullWidth="true"
                                Size="Size.Large"
-                               HtmlTag="button"
+                               Style="height: 56px; font-weight: 700; border-radius: 12px; font-size: 1.1rem; box-shadow: 0 10px 20px -5px rgba(25, 118, 210, 0.4);"
                                type="submit">
-                        <MudText>Iniciar Sesión</MudText>
+                        INGRESAR
                     </MudButton>
                 </MudStack>
             </form>
+
+            <MudText Align="Align.Center" Style="color: rgba(255,255,255,0.4); font-size: 0.8rem;">
+                © @DateTime.Now.Year Aletsis Tech. Todos los derechos reservados.
+            </MudText>
         </MudStack>
     </MudPaper>
-</MudContainer>
+</div>
 
 @code {
     private LoginModel model = new();
@@ -76,7 +142,6 @@
 
     protected override void OnInitialized()
     {
-        // Leer mensaje de error de query string si existe
         var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
         if (Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(uri.Query).TryGetValue("error", out var error))
         {

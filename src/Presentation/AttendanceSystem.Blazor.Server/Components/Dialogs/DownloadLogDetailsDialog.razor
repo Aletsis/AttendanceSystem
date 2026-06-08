@@ -10,11 +10,11 @@
         <MudGrid>
             <MudItem xs="12" md="6">
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Fecha/Hora Inicio</MudText>
-                <MudText Typo="Typo.body1">@Log.StartedAt.ToString("dd/MM/yyyy HH:mm:ss")</MudText>
+                <MudText Typo="Typo.body1">@Log.StartedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudText>
             </MudItem>
             <MudItem xs="12" md="6">
                 <MudText Typo="Typo.subtitle2" Color="Color.Secondary">Fecha/Hora Fin</MudText>
-                <MudText Typo="Typo.body1">@(Log.CompletedAt?.ToString("dd/MM/yyyy HH:mm:ss") ?? "En curso")</MudText>
+                <MudText Typo="Typo.body1">@(Log.CompletedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss") ?? "En curso")</MudText>
             </MudItem>
             
             <MudItem xs="12" md="6">
@@ -94,7 +94,7 @@
                     }
                     else if (_newRecords != null)
                     {
-                        <MudTable Items="@_newRecords" Dense="true" Hover="true" Striped="true" MaxHeight="300px" FixedHeader="true">
+                        <MudTable Items="@_newRecords" Dense="true" Hover="true" Striped="true" Height="300px" FixedHeader="true">
                             <HeaderContent>
                                 <MudTh>Empleado</MudTh>
                                 <MudTh>Hora</MudTh>

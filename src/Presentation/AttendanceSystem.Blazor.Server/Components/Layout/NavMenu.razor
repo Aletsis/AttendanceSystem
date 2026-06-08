@@ -18,12 +18,14 @@
         <MudNavLink Href="/attendance/download" Icon="@Icons.Material.Filled.Download">Descargas e Historial</MudNavLink>
         <AuthorizeView Roles="Administrador">
         <MudNavLink Href="/attendance/manual-logs" Icon="@Icons.Material.Filled.EditNote">Registros manuales</MudNavLink>
-        <MudNavLink Href="/attendance/calculation" Icon="@Icons.Material.Filled.Calculate">Cálculo de asistencia</MudNavLink>
         </AuthorizeView>
+        <MudNavLink Href="/attendance/calculation" Icon="@Icons.Material.Filled.Calculate">Cálculo de asistencia</MudNavLink>
     </MudNavGroup>
     
     <MudNavGroup Title="Reportes y análisis" Expanded="false" Icon="@Icons.Material.Filled.Assessment" >
         <MudNavLink Href="/attendance/reports" Icon="@Icons.Material.Filled.TableChart">Reporte de Asistencia</MudNavLink>
+        <MudNavLink Href="/attendance/absenteeism-analysis" Icon="@Icons.Material.Filled.Insights">Análisis de Ausentismo</MudNavLink>
+        <MudNavLink Href="/attendance/tardiness-analysis" Icon="@Icons.Material.Filled.AccessTime">Análisis de Retardos</MudNavLink>
         <MudNavLink Href="/attendance/cards" Icon="@Icons.Material.Filled.Badge">Impresión de Checadores</MudNavLink>
         <MudNavLink Href="/attendance/advanced-reports" Icon="@Icons.Material.Filled.Analytics">Reportes avanzados</MudNavLink>
         <MudNavLink Href="/attendance/logs" Icon="@Icons.Material.Filled.ListAlt">Logs de Asistencia</MudNavLink>

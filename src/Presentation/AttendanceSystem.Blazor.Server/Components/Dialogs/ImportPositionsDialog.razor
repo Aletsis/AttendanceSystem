@@ -130,7 +130,7 @@
         }
 
         // 2. Map to Commands
-        var commands = result.ValidEntries.Select(dto => new CreatePositionCommand(dto.Name, dto.Description, dto.BaseSalary)).ToList();
+        var commands = result.ValidEntries.Select(dto => new CreatePositionCommand(dto.Name, dto.Description, dto.BaseSalary, false)).ToList();
 
         _progressText = $"Importando {commands.Count} registros...";
         await InvokeAsync(StateHasChanged);

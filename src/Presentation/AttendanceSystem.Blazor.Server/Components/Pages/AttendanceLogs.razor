@@ -61,6 +61,10 @@
                 <div class="d-flex align-center gap-2">
                     <MudChip Size="Size.Small" Color="@GetEntryTypeColor(context.Item.EntryType)" Variant="Variant.Text">
                         @context.Item.EntryType
+                        @if (context.Item.AssignedDate.HasValue)
+                        {
+                            <span class="ml-1" style="font-size: 0.8rem; opacity: 0.8;">(@context.Item.AssignedDate.Value.ToString("dd/MM"))</span>
+                        }
                     </MudChip>
                     <MudMenu Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Dense="true">
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada</MudMenuItem>
