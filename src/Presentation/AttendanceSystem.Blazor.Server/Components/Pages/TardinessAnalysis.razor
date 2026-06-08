@@ -1,0 +1,330 @@
+@page "/attendance/tardiness-analysis"
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Attendance.Queries.GetTardinessAnalysis
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Domain.ValueObjects
+@using MediatR
+@using MudBlazor
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<PageTitle>Análisis de Retardos</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-6">
+        <MudIcon Icon="@Icons.Material.Filled.AccessTime" Size="Size.Large" Color="Color.Warning" />
+        <MudText Typo="Typo.h4">Análisis de Retardos</MudText>
+        <MudSpacer />
+        <MudBreadcrumbs Items="_breadcrumbs" />
+    </MudStack>
+
+    <!-- Filtros -->
+    <MudPaper Elevation="4" Class="pa-4 mb-6" Style="border-radius: 12px; background: rgba(255,255,255,0.8); backdrop-filter: blur(10px);">
+        <MudGrid>
+            <MudItem xs="12" sm="4">
+                <MudDateRangePicker Label="Rango de Fechas" @bind-DateRange="_dateRange" PlaceholderStart="Fecha Inicio" PlaceholderEnd="Fecha Fin" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="Guid?" Label="Sucursal" @bind-Value="_selectedBranchId" Clearable="true">
+                    @foreach (var branch in _branches)
+                    {
+                        <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadData" FullWidth="true" Class="py-3">
+                    Analizar Datos
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Color="Color.Warning" Indeterminate="true" Class="my-7" />
+    }
+    else if (_data != null)
+    {
+        <div class="analysis-results">
+            <!-- Resumen General -->
+            <MudGrid Class="mb-6">
+                <MudItem xs="12" sm="6" md="3">
+                    <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #6200EA 0%, #311B92 100%); color: white;">
+                        <MudText Typo="Typo.h3">@_data.TardinessRate.ToString("N1")%</MudText>
+                        <MudText Typo="Typo.subtitle1">Tasa de Retardos</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #FF6D00 0%, #E65100 100%); color: white;">
+                        <MudText Typo="Typo.h3">@_data.TotalTardies</MudText>
+                        <MudText Typo="Typo.subtitle1">Retardos Totales</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #FFAB00 0%, #FF6F00 100%); color: white;">
+                        <MudText Typo="Typo.h3">@_data.TotalTardinessMinutes</MudText>
+                        <MudText Typo="Typo.subtitle1">Minutos Totales de Retardo</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    @if (_data.TardinessByDayOfWeek.Any())
+                    {
+                        var worstDay = _data.TardinessByDayOfWeek.OrderByDescending(d => d.TardyCount).First();
+                        <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #D50000 0%, #B71C1C 100%); color: white;">
+                            <MudText Typo="Typo.h4">@worstDay.DayName</MudText>
+                            <MudText Typo="Typo.subtitle1">Peor Día</MudText>
+                        </MudPaper>
+                    }
+                </MudItem>
+            </MudGrid>
+
+            <MudGrid>
+                <!-- Gráfico por Día de la Semana -->
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="4" Style="border-radius: 16px;">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Patrón Semanal</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudChart ChartType="ChartType.Bar" 
+                                      ChartSeries="@_series" 
+                                      XAxisLabels="@_xAxisLabels" 
+                                      Width="100%" 
+                                      Height="350px" />
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+
+                <!-- Tabla por Departamento -->
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="4" Style="border-radius: 16px;">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Retardos por Departamento</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudTable Items="@_data.TardinessByDepartment" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" T="DepartmentTardinessDto">
+                                <HeaderContent>
+                                    <MudTh>Departamento</MudTh>
+                                    <MudTh>Empleados</MudTh>
+                                    <MudTh>Retardos</MudTh>
+                                    <MudTh>Minutos</MudTh>
+                                    <MudTh>Tasa %</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Departamento">@context.DepartmentName</MudTd>
+                                    <MudTd DataLabel="Empleados">@context.TotalEmployees</MudTd>
+                                    <MudTd DataLabel="Retardos">@context.TardyCount</MudTd>
+                                    <MudTd DataLabel="Minutos">@context.TotalMinutes min</MudTd>
+                                    <MudTd DataLabel="Tasa %">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                                            <MudProgressLinear Color="@GetRateColor(context.Rate)" Value="@context.Rate" Size="Size.Large" Style="width: 100px; border-radius: 4px;" />
+                                            <MudText Typo="Typo.body2" Color="@GetRateColor(context.Rate)">@context.Rate.ToString("N1")%</MudText>
+                                        </MudStack>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+
+                @if (_branches.Count > 1)
+                {
+                    <!-- Tabla por Sucursal -->
+                    <MudItem xs="12" md="6">
+                        <MudCard Elevation="4" Style="border-radius: 16px;">
+                            <MudCardHeader>
+                                <CardHeaderContent>
+                                    <MudText Typo="Typo.h6">Retardos por Sucursal</MudText>
+                                </CardHeaderContent>
+                            </MudCardHeader>
+                            <MudCardContent>
+                                <MudTable Items="@_data.TardinessByBranch" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" T="BranchTardinessDto">
+                                    <HeaderContent>
+                                        <MudTh>Sucursal</MudTh>
+                                        <MudTh>Empleados</MudTh>
+                                        <MudTh>Retardos</MudTh>
+                                        <MudTh>Minutos</MudTh>
+                                        <MudTh>Tasa %</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Sucursal">@context.BranchName</MudTd>
+                                        <MudTd DataLabel="Empleados">@context.TotalEmployees</MudTd>
+                                        <MudTd DataLabel="Retardos">@context.TardyCount</MudTd>
+                                        <MudTd DataLabel="Minutos">@context.TotalMinutes min</MudTd>
+                                        <MudTd DataLabel="Tasa %">
+                                            <MudStack Row="true" AlignItems="AlignItems.Center">
+                                                <MudProgressLinear Color="@GetRateColor(context.Rate)" Value="@context.Rate" Size="Size.Large" Style="width: 100px; border-radius: 4px;" />
+                                                <MudText Typo="Typo.body2" Color="@GetRateColor(context.Rate)">@context.Rate.ToString("N1")%</MudText>
+                                            </MudStack>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+
+                    <!-- Matriz Sucursal / Departamento -->
+                    <MudItem xs="12">
+                        <MudCard Elevation="4" Style="border-radius: 16px;">
+                            <MudCardHeader>
+                                <CardHeaderContent>
+                                    <MudText Typo="Typo.h6">Matriz de Retardos (Sucursal / Departamento)</MudText>
+                                </CardHeaderContent>
+                            </MudCardHeader>
+                            <MudCardContent>
+                                <MudTable Items="@_data.TardinessByBranchDepartment" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" T="BranchDepartmentTardinessDto">
+                                    <HeaderContent>
+                                        <MudTh>Sucursal</MudTh>
+                                        <MudTh>Departamento</MudTh>
+                                        <MudTh>Retardos</MudTh>
+                                        <MudTh>Minutos</MudTh>
+                                        <MudTh>Tasa %</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Sucursal">@context.BranchName</MudTd>
+                                        <MudTd DataLabel="Departamento">@context.DepartmentName</MudTd>
+                                        <MudTd DataLabel="Retardos">@context.TardyCount</MudTd>
+                                        <MudTd DataLabel="Minutos">@context.TotalMinutes min</MudTd>
+                                        <MudTd DataLabel="Tasa %">
+                                            <MudStack Row="true" AlignItems="AlignItems.Center">
+                                                <MudProgressLinear Color="@GetRateColor(context.Rate)" Value="@context.Rate" Size="Size.Large" Style="width: 100%" />
+                                                <MudText Typo="Typo.body2" Color="@GetRateColor(context.Rate)">@context.Rate.ToString("N1")%</MudText>
+                                            </MudStack>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+
+                <!-- Top Empleados -->
+                <MudItem xs="12">
+                    <MudCard Elevation="4" Style="border-radius: 16px;">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Top 10 Empleados con Más Retardos</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudGrid>
+                                @foreach (var emp in _data.TopTardyEmployees)
+                                {
+                                    <MudItem xs="12" sm="6" md="4" lg="3">
+                                        <MudPaper Class="pa-3 d-flex align-center" Elevation="1" Style="border-radius: 12px; border-left: 6px solid var(--mud-palette-warning);">
+                                            <MudAvatar Color="Color.Warning" Variant="Variant.Filled" Class="mr-3">@emp.EmployeeName[0]</MudAvatar>
+                                            <div style="overflow: hidden;">
+                                                <MudText Typo="Typo.subtitle2" Style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@emp.EmployeeName</MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@emp.Department</MudText>
+                                                <div>
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Text">@emp.TardyCount Retardos</MudChip>
+                                                    <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">@emp.TotalMinutes min</MudChip>
+                                                </div>
+                                            </div>
+                                        </MudPaper>
+                                    </MudItem>
+                                }
+                            </MudGrid>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            </MudGrid>
+        </div>
+    }
+</MudContainer>
+
+<style>
+    .hover-card {
+        transition: transform 0.2s ease-in-out;
+    }
+    .hover-card:hover {
+        transform: translateY(-5px);
+    }
+</style>
+
+@code {
+    private bool _isLoading = false;
+    private DateRange _dateRange = new DateRange(DateTime.Today.AddMonths(-1), DateTime.Today);
+    private Guid? _selectedBranchId;
+    private List<BranchDto> _branches = new();
+    private TardinessAnalysisDto? _data;
+    private List<ChartSeries> _series = new();
+    private string[] _xAxisLabels = Array.Empty<string>();
+
+    private List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Inicio", href: "/"),
+        new BreadcrumbItem("Análisis de Retardos", href: null, disabled: true)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBranches();
+        await LoadData();
+    }
+
+    private async Task LoadBranches()
+    {
+        var result = await Mediator.Send(new GetBranchesQuery());
+        if (result.IsSuccess)
+        {
+            _branches = result.Value.ToList();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _isLoading = true;
+        try
+        {
+            var query = new GetTardinessAnalysisQuery(
+                _dateRange.Start ?? DateTime.Today.AddMonths(-1),
+                _dateRange.End ?? DateTime.Today,
+                _selectedBranchId.HasValue ? BranchId.From(_selectedBranchId.Value) : null);
+
+            var result = await Mediator.Send(query);
+            if (result.IsSuccess)
+            {
+                _data = result.Value;
+                PrepareChart();
+            }
+            else
+            {
+                Snackbar.Add(result.Error, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar datos: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void PrepareChart()
+    {
+        if (_data == null) return;
+
+        _xAxisLabels = _data.TardinessByDayOfWeek.Select(d => d.DayName).ToArray();
+        _series = new List<ChartSeries>
+        {
+            new ChartSeries { Name = "Retardos", Data = _data.TardinessByDayOfWeek.Select(d => (double)d.TardyCount).ToArray() },
+            new ChartSeries { Name = "Minutos", Data = _data.TardinessByDayOfWeek.Select(d => (double)d.TotalMinutes).ToArray() }
+        };
+    }
+
+    private Color GetRateColor(double rate)
+    {
+        if (rate < 5) return Color.Success;
+        if (rate < 10) return Color.Info;
+        if (rate < 20) return Color.Warning;
+        return Color.Error;
+    }
+}

@@ -1,0 +1,320 @@
+@page "/attendance/absenteeism-analysis"
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Attendance.Queries.GetAbsenteeismAnalysis
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Domain.ValueObjects
+@using MediatR
+@using MudBlazor
+@inject IMediator Mediator
+@inject ISnackbar Snackbar
+
+<PageTitle>Análisis de Ausentismo</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+    <MudStack Row="true" AlignItems="AlignItems.Center" Class="mb-6">
+        <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Large" Color="Color.Primary" />
+        <MudText Typo="Typo.h4">Análisis de Ausentismo</MudText>
+        <MudSpacer />
+        <MudBreadcrumbs Items="_breadcrumbs" />
+    </MudStack>
+
+    <!-- Filtros -->
+    <MudPaper Elevation="4" Class="pa-4 mb-6" Style="border-radius: 12px; background: rgba(255,255,255,0.8); backdrop-filter: blur(10px);">
+        <MudGrid>
+            <MudItem xs="12" sm="4">
+                <MudDateRangePicker Label="Rango de Fechas" @bind-DateRange="_dateRange" PlaceholderStart="Fecha Inicio" PlaceholderEnd="Fecha Fin" />
+            </MudItem>
+            <MudItem xs="12" sm="4">
+                <MudSelect T="Guid?" Label="Sucursal" @bind-Value="_selectedBranchId" Clearable="true">
+                    @foreach (var branch in _branches)
+                    {
+                        <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="4" Class="d-flex align-end">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadData" FullWidth="true" Class="py-3">
+                    Analizar Datos
+                </MudButton>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_isLoading)
+    {
+        <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-7" />
+    }
+    else if (_data != null)
+    {
+        <div class="analysis-results">
+            <!-- Resumen General -->
+            <MudGrid Class="mb-6">
+                <MudItem xs="12" sm="6" md="3">
+                    <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #6200EA 0%, #311B92 100%); color: white;">
+                        <MudText Typo="Typo.h3">@_data.AbsenteeismRate.ToString("N1")%</MudText>
+                        <MudText Typo="Typo.subtitle1">Tasa de Ausentismo</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #00C853 0%, #1B5E20 100%); color: white;">
+                        <MudText Typo="Typo.h3">@_data.TotalAbsences</MudText>
+                        <MudText Typo="Typo.subtitle1">Faltas Totales</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #FFAB00 0%, #FF6F00 100%); color: white;">
+                        <MudText Typo="Typo.h3">@_data.TotalPossibleWorkDays</MudText>
+                        <MudText Typo="Typo.subtitle1">Días Laborales Totales</MudText>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    @if (_data.AbsencesByDayOfWeek.Any())
+                    {
+                        var worstDay = _data.AbsencesByDayOfWeek.OrderByDescending(d => d.AbsenceCount).First();
+                        <MudPaper Class="pa-4 text-center d-flex flex-column align-center justify-center" Style="height: 140px; border-radius: 16px; background: linear-gradient(135deg, #D50000 0%, #B71C1C 100%); color: white;">
+                            <MudText Typo="Typo.h4">@worstDay.DayName</MudText>
+                            <MudText Typo="Typo.subtitle1">Peor Día</MudText>
+                        </MudPaper>
+                    }
+                </MudItem>
+            </MudGrid>
+
+            <MudGrid>
+                <!-- Gráfico por Día de la Semana -->
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="4" Style="border-radius: 16px;">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Patrón Semanal</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudChart ChartType="ChartType.Bar" 
+                                      ChartSeries="@_series" 
+                                      XAxisLabels="@_xAxisLabels" 
+                                      Width="100%" 
+                                      Height="350px" />
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+
+                <!-- Mapa de Calor por Departamento -->
+                <MudItem xs="12" md="6">
+                    <MudCard Elevation="4" Style="border-radius: 16px;">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Ausentismo por Departamento</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudTable Items="@_data.AbsencesByDepartment" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" T="DepartmentAbsenteeismDto">
+                                <HeaderContent>
+                                    <MudTh>Departamento</MudTh>
+                                    <MudTh>Empleados</MudTh>
+                                    <MudTh>Faltas</MudTh>
+                                    <MudTh>Tasa %</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd DataLabel="Departamento">@context.DepartmentName</MudTd>
+                                    <MudTd DataLabel="Empleados">@context.TotalEmployees</MudTd>
+                                    <MudTd DataLabel="Faltas">@context.AbsenceCount</MudTd>
+                                    <MudTd DataLabel="Tasa %">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center">
+                                            <MudProgressLinear Color="@GetRateColor(context.Rate)" Value="@context.Rate" Size="Size.Large" Style="width: 100px; border-radius: 4px;" />
+                                            <MudText Typo="Typo.body2" Color="@GetRateColor(context.Rate)">@context.Rate.ToString("N1")%</MudText>
+                                        </MudStack>
+                                    </MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+
+                @if (_branches.Count > 1)
+                {
+                    <!-- Mapa de Calor por Sucursal -->
+                    <MudItem xs="12" md="6">
+                        <MudCard Elevation="4" Style="border-radius: 16px;">
+                            <MudCardHeader>
+                                <CardHeaderContent>
+                                    <MudText Typo="Typo.h6">Ausentismo por Sucursal</MudText>
+                                </CardHeaderContent>
+                            </MudCardHeader>
+                            <MudCardContent>
+                                <MudTable Items="@_data.AbsencesByBranch" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" T="BranchAbsenteeismDto">
+                                    <HeaderContent>
+                                        <MudTh>Sucursal</MudTh>
+                                        <MudTh>Empleados</MudTh>
+                                        <MudTh>Faltas</MudTh>
+                                        <MudTh>Tasa %</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Sucursal">@context.BranchName</MudTd>
+                                        <MudTd DataLabel="Empleados">@context.TotalEmployees</MudTd>
+                                        <MudTd DataLabel="Faltas">@context.AbsenceCount</MudTd>
+                                        <MudTd DataLabel="Tasa %">
+                                            <MudStack Row="true" AlignItems="AlignItems.Center">
+                                                <MudProgressLinear Color="@GetRateColor(context.Rate)" Value="@context.Rate" Size="Size.Large" Style="width: 100px; border-radius: 4px;" />
+                                                <MudText Typo="Typo.body2" Color="@GetRateColor(context.Rate)">@context.Rate.ToString("N1")%</MudText>
+                                            </MudStack>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+
+                    <!-- Matriz Sucursal / Departamento -->
+                    <MudItem xs="12">
+                        <MudCard Elevation="4" Style="border-radius: 16px;">
+                            <MudCardHeader>
+                                <CardHeaderContent>
+                                    <MudText Typo="Typo.h6">Matriz de Ausentismo (Sucursal / Departamento)</MudText>
+                                </CardHeaderContent>
+                            </MudCardHeader>
+                            <MudCardContent>
+                                <MudTable Items="@_data.AbsencesByBranchDepartment" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0" T="BranchDepartmentAbsenteeismDto">
+                                    <HeaderContent>
+                                        <MudTh>Sucursal</MudTh>
+                                        <MudTh>Departamento</MudTh>
+                                        <MudTh>Faltas</MudTh>
+                                        <MudTh>Tasa %</MudTh>
+                                    </HeaderContent>
+                                    <RowTemplate>
+                                        <MudTd DataLabel="Sucursal">@context.BranchName</MudTd>
+                                        <MudTd DataLabel="Departamento">@context.DepartmentName</MudTd>
+                                        <MudTd DataLabel="Faltas">@context.AbsenceCount</MudTd>
+                                        <MudTd DataLabel="Tasa %">
+                                            <MudStack Row="true" AlignItems="AlignItems.Center">
+                                                <MudProgressLinear Color="@GetRateColor(context.Rate)" Value="@context.Rate" Size="Size.Large" Style="width: 100%" />
+                                                <MudText Typo="Typo.body2" Color="@GetRateColor(context.Rate)">@context.Rate.ToString("N1")%</MudText>
+                                            </MudStack>
+                                        </MudTd>
+                                    </RowTemplate>
+                                </MudTable>
+                            </MudCardContent>
+                        </MudCard>
+                    </MudItem>
+                }
+
+                <!-- Top Empleados -->
+                <MudItem xs="12">
+                    <MudCard Elevation="4" Style="border-radius: 16px;">
+                        <MudCardHeader>
+                            <CardHeaderContent>
+                                <MudText Typo="Typo.h6">Top 10 Empleados con Mayor Ausentismo</MudText>
+                            </CardHeaderContent>
+                        </MudCardHeader>
+                        <MudCardContent>
+                            <MudGrid>
+                                @foreach (var emp in _data.TopAbsentEmployees)
+                                {
+                                    <MudItem xs="12" sm="6" md="4" lg="3">
+                                        <MudPaper Class="pa-3 d-flex align-center" Elevation="1" Style="border-radius: 12px; border-left: 6px solid var(--mud-palette-error);">
+                                            <MudAvatar Color="Color.Error" Variant="Variant.Filled" Class="mr-3">@emp.EmployeeName[0]</MudAvatar>
+                                            <div style="overflow: hidden;">
+                                                <MudText Typo="Typo.subtitle2" Style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">@emp.EmployeeName</MudText>
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">@emp.Department</MudText>
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Text">@emp.AbsenceCount Faltas</MudChip>
+                                            </div>
+                                        </MudPaper>
+                                    </MudItem>
+                                }
+                            </MudGrid>
+                        </MudCardContent>
+                    </MudCard>
+                </MudItem>
+            </MudGrid>
+        </div>
+    }
+</MudContainer>
+
+<style>
+    .hover-card {
+        transition: transform 0.2s ease-in-out;
+    }
+    .hover-card:hover {
+        transform: translateY(-5px);
+    }
+</style>
+
+@code {
+    private bool _isLoading = false;
+    private DateRange _dateRange = new DateRange(DateTime.Today.AddMonths(-1), DateTime.Today);
+    private Guid? _selectedBranchId;
+    private List<BranchDto> _branches = new();
+    private AbsenteeismAnalysisDto? _data;
+    private List<ChartSeries> _series = new();
+    private string[] _xAxisLabels = Array.Empty<string>();
+
+    private List<BreadcrumbItem> _breadcrumbs = new()
+    {
+        new BreadcrumbItem("Inicio", href: "/"),
+        new BreadcrumbItem("Análisis de Ausentismo", href: null, disabled: true)
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBranches();
+        await LoadData();
+    }
+
+    private async Task LoadBranches()
+    {
+        var result = await Mediator.Send(new GetBranchesQuery());
+        if (result.IsSuccess)
+        {
+            _branches = result.Value.ToList();
+        }
+    }
+
+    private async Task LoadData()
+    {
+        _isLoading = true;
+        try
+        {
+            var query = new GetAbsenteeismAnalysisQuery(
+                _dateRange.Start ?? DateTime.Today.AddMonths(-1),
+                _dateRange.End ?? DateTime.Today,
+                _selectedBranchId.HasValue ? BranchId.From(_selectedBranchId.Value) : null);
+
+            var result = await Mediator.Send(query);
+            if (result.IsSuccess)
+            {
+                _data = result.Value;
+                PrepareChart();
+            }
+            else
+            {
+                Snackbar.Add(result.Error, Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar datos: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void PrepareChart()
+    {
+        if (_data == null) return;
+
+        _xAxisLabels = _data.AbsencesByDayOfWeek.Select(d => d.DayName).ToArray();
+        _series = new List<ChartSeries>
+        {
+            new ChartSeries { Name = "Faltas", Data = _data.AbsencesByDayOfWeek.Select(d => (double)d.AbsenceCount).ToArray() }
+        };
+    }
+
+    private Color GetRateColor(double rate)
+    {
+        if (rate < 5) return Color.Success;
+        if (rate < 10) return Color.Info;
+        if (rate < 20) return Color.Warning;
+        return Color.Error;
+    }
+}
