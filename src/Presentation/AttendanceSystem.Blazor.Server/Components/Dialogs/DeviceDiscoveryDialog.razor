@@ -1,0 +1,94 @@
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Application.DTOs
+@inject IDeviceDiscoveryService DiscoveryService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">
+            <MudIcon Icon="@Icons.Material.Filled.Search" Class="mr-3 mb-n1" />
+            Buscar Dispositivos ZKTeco
+        </MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Class="mb-4">Buscando dispositivos en la red local (Broadcast UDP)...</MudText>
+        
+        @if (_searching)
+        {
+            <div class="d-flex flex-column align-center justify-center my-8">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" Size="Size.Large" />
+                <MudText Class="mt-4">Escaneando red local...</MudText>
+            </div>
+        }
+        else if (!_discoveredDevices.Any())
+        {
+            <MudAlert Severity="Severity.Info" Class="my-4">No se encontraron dispositivos. Asegúrese de que el servicio ZKTeco esté corriendo y los equipos estén en la misma red.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="@_discoveredDevices" Hover="true" Dense="true" FixedHeader="true" Height="300px" SelectionChangeable="true" T="DiscoveredDeviceDto" @bind-SelectedItem="_selectedDevice">
+                <HeaderContent>
+                    <MudTh>Nombre</MudTh>
+                    <MudTh>IP</MudTh>
+                    <MudTh>Puerto</MudTh>
+                    <MudTh>S/N</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Nombre">@context.DeviceName</MudTd>
+                    <MudTd DataLabel="IP">@context.IpAddress</MudTd>
+                    <MudTd DataLabel="Puerto">@context.Port</MudTd>
+                    <MudTd DataLabel="S/N">@context.SerialNumber</MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cerrar</MudButton>
+        <MudButton Color="Color.Info" Variant="Variant.Outlined" OnClick="Scan" Disabled="@_searching">Volver a Escanear</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Select" Disabled="@(_selectedDevice == null || _searching)">Seleccionar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private List<DiscoveredDeviceDto> _discoveredDevices = new();
+    private DiscoveredDeviceDto? _selectedDevice;
+    private bool _searching = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Scan();
+    }
+
+    private async Task Scan()
+    {
+        _searching = true;
+        _discoveredDevices.Clear();
+        _selectedDevice = null;
+        
+        try
+        {
+            var results = await DiscoveryService.DiscoverDevicesAsync();
+            _discoveredDevices = results.ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al buscar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _searching = false;
+        }
+    }
+
+    private void Select()
+    {
+        MudDialog.Close(DialogResult.Ok(_selectedDevice));
+    }
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+}

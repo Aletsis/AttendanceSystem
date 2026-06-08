@@ -13,6 +13,9 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        // Registrar proveedores de codificación para soportar ANSI/CodePages (necesario para ZKTeco SDK en .NET Core)
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
         // ===== BOOTSTRAP LOGGER =====
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
@@ -58,6 +61,7 @@ public class Program
         
         // ZKTeco SDK Service registration
         builder.Services.AddSingleton<IDeviceClient, ZKTecoDeviceClient>(); 
+        builder.Services.AddSingleton<IDeviceDiscoveryService, ZKTecoDiscoveryService>(); 
 
         // Configurar Kestrel explícitamente si es necesario, o usar appsettings
         builder.WebHost.ConfigureKestrel(options =>

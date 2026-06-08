@@ -11,13 +11,16 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
     // We instantiate the client directly or via DI if possible, but since ZKTecoDeviceClient lives in Infrastructure.ZKTeco...
     // Let's assume DI is set up in Program.cs to inject IDeviceClient implementation.
     private readonly IDeviceClient _zkClient;
+    private readonly IDeviceDiscoveryService _discoveryService;
 
     public ZKTecoGrpcService(
         ILogger<ZKTecoGrpcService> logger,
-        IDeviceClient zkClient)
+        IDeviceClient zkClient,
+        IDeviceDiscoveryService discoveryService)
     {
         _logger = logger;
         _zkClient = zkClient;
+        _discoveryService = discoveryService;
     }
 
     public override async Task<ConnectDeviceResponse> ConnectDevice(ConnectDeviceRequest request, ServerCallContext context)
@@ -26,7 +29,7 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         
         try
         {
-            var connected = await _zkClient.ConnectAsync(request.IpAddress, request.Port, context.CancellationToken);
+            var connected = await _zkClient.ConnectAsync(request.IpAddress, request.Port, cancellationToken: context.CancellationToken);
             
             return new ConnectDeviceResponse
             {
@@ -105,7 +108,19 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         
         try
         {
-            var success = await _zkClient.ClearLogsAsync(request.DeviceId, context.CancellationToken);
+            DateTime? fromDate = null;
+            if (!string.IsNullOrEmpty(request.FromDate) && DateTime.TryParse(request.FromDate, out var fDate))
+            {
+                fromDate = fDate;
+            }
+
+            DateTime? toDate = null;
+            if (!string.IsNullOrEmpty(request.ToDate) && DateTime.TryParse(request.ToDate, out var tDate))
+            {
+                toDate = tDate;
+            }
+
+            var success = await _zkClient.ClearLogsAsync(request.DeviceId, fromDate, toDate, context.CancellationToken);
             return new ClearDeviceLogsResponse
             {
                 Success = success,
@@ -201,6 +216,53 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         {
             _logger.LogError(ex, "Error eliminando empleado");
             return new DeleteEmployeeResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public override async Task<GetEmployeeResponse> GetEmployee(GetEmployeeRequest request, ServerCallContext context)
+    {
+        _logger.LogInformation("Obteniendo empleado {EmployeeId} de {DeviceId}...", request.EmployeeId, request.DeviceId);
+        try
+        {
+            var user = await _zkClient.GetUserAsync(request.EmployeeId, context.CancellationToken);
+            
+            if (user == null)
+            {
+                return new GetEmployeeResponse { Success = false, Message = "Empleado no encontrado" };
+            }
+
+            var protoUser = new AttendanceSystem.ZKTeco.Grpc.DeviceUser
+            {
+                UserId = user.UserId,
+                Name = user.Name,
+                Password = user.Password,
+                Privilege = user.Privilege,
+                Enabled = user.Enabled,
+                CardNumber = user.CardNumber ?? "",
+                FaceTemplate = user.FaceTemplate ?? "",
+                Photo = user.Photo ?? ""
+            };
+
+            if (user.Fingerprints != null)
+            {
+                protoUser.Fingerprints.AddRange(user.Fingerprints.Select(f => new UserFingerprint
+                {
+                    FingerIndex = f.Index,
+                    TemplateData = f.Template
+                }));
+            }
+
+            return new GetEmployeeResponse
+            {
+                Success = true,
+                Message = "Empleado obtenido exitosamente",
+                Employee = protoUser
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al obtener empleado");
+            return new GetEmployeeResponse { Success = false, Message = ex.Message };
         }
     }
 
@@ -338,6 +400,45 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         {
             _logger.LogError(ex, "Error registrando usuario {UserId}", request.EmployeeId);
             return new RegisterEmployeeResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public override async Task<DiscoverDevicesResponse> DiscoverDevices(DiscoverDevicesRequest request, ServerCallContext context)
+    {
+        _logger.LogInformation("Recibida petición de descubrimiento de dispositivos...");
+        try
+        {
+            var devices = await _discoveryService.DiscoverDevicesAsync(context.CancellationToken);
+            
+            var response = new DiscoverDevicesResponse
+            {
+                Success = true,
+                Message = $"Se encontraron {devices.Count} dispositivos"
+            };
+
+            foreach (var d in devices)
+            {
+                response.Devices.Add(new DiscoveredDevice
+                {
+                    IpAddress = d.IpAddress,
+                    SerialNumber = d.SerialNumber,
+                    DeviceName = d.DeviceName,
+                    MacAddress = d.MacAddress,
+                    FirmwareVersion = d.FirmwareVersion,
+                    Port = d.Port
+                });
+            }
+
+            return response;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error durante el descubrimiento de dispositivos");
+            return new DiscoverDevicesResponse
+            {
+                Success = false,
+                Message = ex.Message
+            };
         }
     }
 }
