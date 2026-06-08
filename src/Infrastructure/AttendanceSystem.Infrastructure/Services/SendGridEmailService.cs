@@ -22,6 +22,7 @@ public class SendGridEmailService : IEmailService
     public async Task SendAlertAsync(
         string subject, 
         string body, 
+        AlertLevel level = AlertLevel.SystemFailure,
         CancellationToken cancellationToken = default)
     {
         try
@@ -51,25 +52,27 @@ public class SendGridEmailService : IEmailService
 
             if (response.IsSuccessStatusCode)
             {
-                _logger.LogInformation("Email enviado exitosamente: {Subject}", subject);
+                _logger.LogInformation("Email de alerta ({Level}) enviado exitosamente: {Subject}", level, subject);
             }
             else
             {
                 _logger.LogError(
-                    "Error al enviar email. Status: {StatusCode}", 
+                    "Error al enviar email de alerta ({Level}). Status: {StatusCode}", 
+                    level,
                     response.StatusCode);
             }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Excepción al enviar email");
+            _logger.LogError(ex, "Excepción al enviar email de alerta ({Level})", level);
         }
     }
 
-    public async Task SendAttendanceReportAsync(
-        string recipientEmail,
-        byte[] reportPdf,
-        string reportName,
+    public async Task SendReportAsync(
+        string subject, 
+        string body, 
+        string recipients, 
+        IEnumerable<(string Name, byte[] Content)> attachments, 
         CancellationToken cancellationToken = default)
     {
         try
@@ -77,23 +80,51 @@ public class SendGridEmailService : IEmailService
             var apiKey = _configuration["SendGrid:ApiKey"];
             var fromEmail = _configuration["SendGrid:FromEmail"];
 
+            if (string.IsNullOrEmpty(apiKey))
+            {
+                _logger.LogWarning("SendGrid API Key no configurada. Reporte no enviado.");
+                return;
+            }
+
             var client = new SendGridClient(apiKey);
             var from = new EmailAddress(fromEmail, "Sistema de Asistencia");
-            var to = new EmailAddress(recipientEmail);
             
-            var msg = MailHelper.CreateSingleEmail(
-                from, 
-                to, 
-                $"Reporte de Asistencia - {reportName}",
-                "Adjunto encontrarás el reporte de asistencia solicitado.",
-                "<html><body><p>Adjunto encontrarás el reporte de asistencia solicitado.</p></body></html>");
+            var msg = new SendGridMessage
+            {
+                From = from,
+                Subject = subject,
+                PlainTextContent = body,
+                HtmlContent = $"<html><body>{body}</body></html>"
+            };
 
-            var file = Convert.ToBase64String(reportPdf);
-            msg.AddAttachment(reportName, file, "application/pdf");
+            foreach (var recipient in recipients.Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                msg.AddTo(new EmailAddress(recipient.Trim()));
+            }
+            
+            if (attachments != null)
+            {
+                foreach (var attachment in attachments)
+                {
+                    var file = Convert.ToBase64String(attachment.Content);
+                    string mimeType = "application/octet-stream";
+                    if (attachment.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) mimeType = "application/pdf";
+                    else if (attachment.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)) mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+                    
+                    msg.AddAttachment(attachment.Name, file, mimeType);
+                }
+            }
 
-            await client.SendEmailAsync(msg, cancellationToken);
+            var response = await client.SendEmailAsync(msg, cancellationToken);
 
-            _logger.LogInformation("Reporte enviado a {Email}", recipientEmail);
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation("Reporte enviado exitosamente a {Recipients}", recipients);
+            }
+            else
+            {
+                _logger.LogError("Error al enviar reporte ({StatusCode})", response.StatusCode);
+            }
         }
         catch (Exception ex)
         {
