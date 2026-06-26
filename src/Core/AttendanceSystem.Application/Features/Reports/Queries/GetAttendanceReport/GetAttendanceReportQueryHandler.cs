@@ -128,7 +128,12 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     WorkedOnRestDay = att.WorkedOnRestDay,
                     MissingCheckIn = att.MissingCheckIn,
                     MissingCheckOut = att.MissingCheckOut,
-                    OvertimeCalculationMethod = emp?.OvertimeCalculationMethod ?? Domain.Enumerations.OvertimeCalculationMethod.NoRounding
+                    OvertimeCalculationMethod = emp?.OvertimeCalculationMethod ?? Domain.Enumerations.OvertimeCalculationMethod.NoRounding,
+                    // --- Salidas Temporales ---
+                    HasTemporaryExits = att.HasTemporaryExits,
+                    TemporaryExitMinutes = att.TemporaryExitMinutes,
+                    TemporaryExitStatus = (int)att.TemporaryExitStatus,
+                    AttendanceNote = att.AttendanceNote
                 });
             }
         }

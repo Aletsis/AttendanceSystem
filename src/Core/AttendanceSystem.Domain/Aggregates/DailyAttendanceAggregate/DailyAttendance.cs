@@ -4,6 +4,19 @@ using AttendanceSystem.Domain.Primitives;
 
 namespace AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
+/// <summary>Estado de clasificación de las salidas temporales detectadas por el sistema.</summary>
+public enum TemporaryExitStatus
+{
+    /// <summary>Detectada automáticamente, pendiente de revisión del administrador.</summary>
+    Pending = 0,
+    /// <summary>Clasificada como permiso con goce de sueldo. Sin deducción.</summary>
+    ApprovedPaid = 1,
+    /// <summary>Clasificada como permiso sin goce. Se deduce <see cref="DailyAttendance.TemporaryExitMinutes"/> del tiempo laborado.</summary>
+    ApprovedUnpaid = 2,
+    /// <summary>Clasificada como error de doble checada. Se ignora sin deducción.</summary>
+    Dismissed = 3
+}
+
 public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 {
     public EmployeeId EmployeeId { get; private set; } = null!;
@@ -30,12 +43,37 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public int OvertimeMinutes { get; private set; } // Based on shift end or simple work hours?
     
     // Flags
-    public bool MissingCheckIn { get; private set; } // Omitio entrada
-    public bool MissingCheckOut { get; private set; } // Omitio salida
+    public bool MissingCheckIn { get; private set; }
+    public bool MissingCheckOut { get; private set; }
     public bool IsRestDay { get; private set; }
     public bool WorkedOnRestDay { get; private set; }
     public bool CalculateOvertimeBeforeEntry { get; private set; }
     public bool OvertimeAuthorized { get; private set; }
+
+    // --- Salidas Temporales Detectadas ---
+    /// <summary>Indica si se detectaron salidas intermedias que requieren clasificación.</summary>
+    public bool HasTemporaryExits { get; private set; }
+    /// <summary>Minutos totales de ausencias intermedias no clasificadas como comida formal.</summary>
+    public int TemporaryExitMinutes { get; private set; }
+    /// <summary>Estado de clasificación de las salidas temporales detectadas.</summary>
+    public TemporaryExitStatus TemporaryExitStatus { get; private set; } = TemporaryExitStatus.Pending;
+    /// <summary>Nota de auditoría: quién clasificó y cuándo.</summary>
+    public string? TemporaryExitNote { get; private set; }
+    /// <summary>Minutos de comida deducidos automáticamente al calcular la jornada.</summary>
+    public int LunchBreakMinutesApplied { get; private set; }
+
+    /// <summary>
+    /// Texto dinámico para mostrar en reportes y exportaciones.
+    /// Devuelve null si el día no tiene incidencias de salida temporal.
+    /// </summary>
+    public string? AttendanceNote => (HasTemporaryExits, TemporaryExitStatus) switch
+    {
+        (true, TemporaryExitStatus.Pending)        => $"⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
+        (true, TemporaryExitStatus.ApprovedPaid)   => $"✅ Permiso con goce — {TemporaryExitNote}",
+        (true, TemporaryExitStatus.ApprovedUnpaid) => $"✂️ Permiso sin goce — {TemporaryExitMinutes} min descontados",
+        (true, TemporaryExitStatus.Dismissed)      => $"ℹ️ Error de checada — ignorado",
+        _                                          => null
+    };
 
     private DailyAttendance() { }
 
@@ -167,6 +205,38 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     {
         OvertimeAuthorized = overtimeAuthorized;
         CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry;
+        CalculateStatus();
+    }
+
+    /// <summary>
+    /// Aplica los resultados del análisis de registros intermedios realizado por
+    /// <c>ProcessDailyAttendanceCommandHandler</c> y recalcula el estado del día.
+    /// </summary>
+    public void ApplyIntermediateAnalysis(
+        int lunchMinutesDeducted,
+        bool hasTemporaryExits,
+        int temporaryExitMinutes)
+    {
+        LunchBreakMinutesApplied = lunchMinutesDeducted < 0 ? 0 : lunchMinutesDeducted;
+        HasTemporaryExits = hasTemporaryExits;
+        TemporaryExitMinutes = temporaryExitMinutes < 0 ? 0 : temporaryExitMinutes;
+        // Si hay salidas temporales nuevas, forzar estado Pending
+        if (hasTemporaryExits)
+            TemporaryExitStatus = TemporaryExitStatus.Pending;
+        CalculateStatus();
+    }
+
+    /// <summary>
+    /// El administrador clasifica manualmente las salidas temporales detectadas.
+    /// Si se clasifica como <see cref="TemporaryExitStatus.ApprovedUnpaid"/>,
+    /// los minutos de la salida se descuentan automáticamente del tiempo laborado.
+    /// </summary>
+    public void ClassifyTemporaryExit(TemporaryExitStatus status, string classifiedByUserName)
+    {
+        TemporaryExitStatus = status;
+        TemporaryExitNote = status == TemporaryExitStatus.Dismissed
+            ? $"Ignorado por {classifiedByUserName} el {DateTime.Now:dd/MM/yyyy HH:mm}"
+            : $"Autorizado por {classifiedByUserName} el {DateTime.Now:dd/MM/yyyy HH:mm}";
         CalculateStatus();
     }
 
@@ -305,7 +375,16 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
                 // 2. Calculate Worked Duration (Tiempo Laborado)
                 var totalWorkedMinutes = (ActualCheckOut.Value - referenceEntry).TotalMinutes;
-                
+
+                // Deducir minutos de comida formal (turno con LunchBreakMinutes configurado)
+                totalWorkedMinutes -= LunchBreakMinutesApplied;
+
+                // Deducir minutos de permiso sin goce clasificado por el administrador
+                if (TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
+                    totalWorkedMinutes -= TemporaryExitMinutes;
+
+                if (totalWorkedMinutes < 0) totalWorkedMinutes = 0;
+
                 // 3. Calculate Overtime (Tiempo Extra)
                 // Overtime = Worked Duration - Scheduled Duration
                 double overtime = totalWorkedMinutes - scheduledMinutes;

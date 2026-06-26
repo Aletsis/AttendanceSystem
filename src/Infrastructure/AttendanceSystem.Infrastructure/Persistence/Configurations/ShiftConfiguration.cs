@@ -38,6 +38,10 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
         builder.Property(s => s.EndTime)
             .IsRequired();
 
+        builder.Property(s => s.LunchBreakMinutes)
+            .IsRequired()
+            .HasDefaultValue(0);
+
         builder.OwnsMany(s => s.Days, d =>
         {
             d.ToTable("ShiftDays");

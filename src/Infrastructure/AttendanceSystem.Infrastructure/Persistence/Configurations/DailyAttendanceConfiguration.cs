@@ -68,6 +68,32 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.CalculateOvertimeBeforeEntry);
         builder.Property(x => x.OvertimeAuthorized);
 
+        // --- Salidas Temporales ---
+        builder.Property(x => x.HasTemporaryExits)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(x => x.TemporaryExitMinutes)
+            .IsRequired()
+            .HasDefaultValue(0);
+
+        builder.Property(x => x.TemporaryExitStatus)
+            .IsRequired()
+            .HasConversion<int>()
+            .HasDefaultValue(TemporaryExitStatus.Pending);
+
+
+        builder.Property(x => x.TemporaryExitNote)
+            .HasMaxLength(500)
+            .IsRequired(false);
+
+        builder.Property(x => x.LunchBreakMinutesApplied)
+            .IsRequired()
+            .HasDefaultValue(0);
+
+        // AttendanceNote es una propiedad calculada en memoria — no persistir
+        builder.Ignore(x => x.AttendanceNote);
+
         builder.Ignore(x => x.DomainEvents);
 
         // Indexes for performance (Reporting by Date/Employee)

@@ -7,10 +7,12 @@ public class Shift : AggregateRoot<ShiftId>
 {
     public string Name { get; private set; } = null!;
     public TimeSpan StartTime { get; private set; }
-    public TimeSpan EndTime { get; private set; } // Calculated or explicit? Usually Start + WorkHours.
+    public TimeSpan EndTime { get; private set; }
     public int ToleranceMinutes { get; private set; }
     public TimeSpan WorkHours { get; private set; }
     public ShiftType ShiftType { get; private set; }
+    /// <summary>Minutos de descanso de comida a deducir del tiempo laborado (0 = sin deducción automática).</summary>
+    public int LunchBreakMinutes { get; private set; }
 
     private readonly List<ShiftDay> _days = new();
     public IReadOnlyCollection<ShiftDay> Days => _days.AsReadOnly();
@@ -23,7 +25,8 @@ public class Shift : AggregateRoot<ShiftId>
         int toleranceMinutes,
         TimeSpan workHours,
         ShiftType shiftType,
-        IEnumerable<ShiftDay>? days = null)
+        IEnumerable<ShiftDay>? days = null,
+        int lunchBreakMinutes = 0)
     {
         var shift = new Shift
         {
@@ -33,7 +36,7 @@ public class Shift : AggregateRoot<ShiftId>
             ToleranceMinutes = toleranceMinutes,
             WorkHours = workHours,
             ShiftType = shiftType,
-            // Calculate EndTime logic: normalize to 24h day
+            LunchBreakMinutes = lunchBreakMinutes < 0 ? 0 : lunchBreakMinutes,
             EndTime = NormalizeTime(startTime.Add(workHours))
         };
 
@@ -42,7 +45,6 @@ public class Shift : AggregateRoot<ShiftId>
             shift._days.AddRange(days);
         }
 
-        // validations?
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del turno es requerido.");
         if (toleranceMinutes < 0)
@@ -57,11 +59,12 @@ public class Shift : AggregateRoot<ShiftId>
         int toleranceMinutes,
         TimeSpan workHours,
         ShiftType shiftType,
-        IEnumerable<ShiftDay>? days = null)
+        IEnumerable<ShiftDay>? days = null,
+        int lunchBreakMinutes = 0)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del turno es requerido.");
-         if (toleranceMinutes < 0)
+        if (toleranceMinutes < 0)
             throw new DomainException("El tiempo de tolerancia no puede ser negativo.");
 
         Name = name;
@@ -69,6 +72,7 @@ public class Shift : AggregateRoot<ShiftId>
         ToleranceMinutes = toleranceMinutes;
         WorkHours = workHours;
         ShiftType = shiftType;
+        LunchBreakMinutes = lunchBreakMinutes < 0 ? 0 : lunchBreakMinutes;
         EndTime = NormalizeTime(startTime.Add(workHours));
 
         _days.Clear();

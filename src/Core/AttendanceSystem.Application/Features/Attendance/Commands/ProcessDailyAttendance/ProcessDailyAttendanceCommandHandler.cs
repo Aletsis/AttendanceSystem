@@ -69,6 +69,61 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             "Procesando asistencia para {EmployeeCount} empleados durante {DayCount} días",
             employees.Count,
             totalDays);
+
+        // 1.1 Bulk load all shifts
+        var shifts = (await _shiftRepo.GetAllAsync(cancellationToken))
+            .ToDictionary(s => s.Id);
+        _logger.LogDebug("Obtenidos {ShiftCount} turnos para mapeo en memoria", shifts.Count);
+
+        // 1.2 Bulk load all existing DailyAttendance records for the date range
+        var existingDailyAttendances = await _dailyRepo.GetByDateRangeAsync(
+            request.StartDate, 
+            request.EndDate, 
+            request.BranchId, 
+            request.EmployeeId, 
+            cancellationToken);
+
+        var existingDaLookup = existingDailyAttendances
+            .GroupBy(da => (da.EmployeeId.Value, da.Date.Date))
+            .ToDictionary(g => g.Key, g => g.First());
+        _logger.LogDebug("Obtenidos {DaCount} registros de asistencia diaria existentes para reprogramación", existingDailyAttendances.Count);
+
+        // 1.3 Bulk load all attendance records for the date range (including a buffer day before and after for cross-day shifts)
+        var startQueryDate = DateOnly.FromDateTime(request.StartDate.Date.AddDays(-1));
+        var endQueryDate = DateOnly.FromDateTime(request.EndDate.Date.AddDays(2));
+
+        var processedEmployeeIds = employees.Select(e => e.Id).ToHashSet();
+        
+        IReadOnlyList<AttendanceRecord> allRecords;
+        if (request.EmployeeId != null)
+        {
+            allRecords = await _attendanceRepo.GetByDateRangeAsync(
+                startQueryDate, 
+                endQueryDate, 
+                request.EmployeeId, 
+                cancellationToken);
+        }
+        else
+        {
+            allRecords = await _attendanceRepo.GetByDateRangeAsync(
+                startQueryDate, 
+                endQueryDate, 
+                null, 
+                cancellationToken);
+        }
+
+        var filteredRecords = allRecords
+            .Where(r => processedEmployeeIds.Contains(r.EmployeeId))
+            .ToList();
+
+        var recordsByEmployee = filteredRecords
+            .GroupBy(r => r.EmployeeId.Value)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
+        var recordsById = filteredRecords
+            .ToDictionary(r => r.Id.Value);
+        
+        _logger.LogDebug("Obtenidos {RecordCount} registros biométricos filtrados", filteredRecords.Count);
         
         // 2. Iterate dates
         for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
@@ -80,26 +135,18 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
                 // 2.1 Clean up existing processing for this day (Re-processing Logic)
                 // We must free up the AttendanceRecords so they can be re-evaluated or picked up by correct logic.
-                var existingDA = await _dailyRepo.GetByEmployeeAndDateAsync(employee.Id, date, cancellationToken);
-                if (existingDA != null)
+                var lookupKey = (employee.Id.Value, date.Date);
+                if (existingDaLookup.TryGetValue(lookupKey, out var existingDA))
                 {
-                    if (existingDA.CheckInRecordId != null)
+                    if (existingDA.CheckInRecordId != null && recordsById.TryGetValue(existingDA.CheckInRecordId.Value, out var checkInRec))
                     {
-                        var r = await _attendanceRepo.GetByIdAsync(existingDA.CheckInRecordId, cancellationToken);
-                        if (r != null)
-                        {
-                            r.ResetStatus();
-                            await _attendanceRepo.UpdateAsync(r, cancellationToken);
-                        }
+                        checkInRec.ResetStatus();
+                        await _attendanceRepo.UpdateAsync(checkInRec, cancellationToken);
                     }
-                    if (existingDA.CheckOutRecordId != null)
+                    if (existingDA.CheckOutRecordId != null && recordsById.TryGetValue(existingDA.CheckOutRecordId.Value, out var checkOutRec))
                     {
-                        var r = await _attendanceRepo.GetByIdAsync(existingDA.CheckOutRecordId, cancellationToken);
-                        if (r != null)
-                        {
-                            r.ResetStatus();
-                            await _attendanceRepo.UpdateAsync(r, cancellationToken);
-                        }
+                        checkOutRec.ResetStatus();
+                        await _attendanceRepo.UpdateAsync(checkOutRec, cancellationToken);
                     }
                     _dailyRepo.Remove(existingDA);
                 }
@@ -110,9 +157,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 var searchStartDate = DateOnly.FromDateTime(date);
                 var searchEndDate = searchStartDate; // Default to single day
 
-                if (employee.ScheduleId != null)
+                if (employee.ScheduleId != null && shifts.TryGetValue(employee.ScheduleId, out var matchedShift))
                 {
-                    shift = await _shiftRepo.GetByIdAsync(employee.ScheduleId, cancellationToken);
+                    shift = matchedShift;
                 }
 
                 // Check for Night Shift or 24h Shift (Cross-Day)
@@ -143,16 +190,16 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     }
                 }
 
-                // 4. Fetch Records
-                var recordsEnumerable = await _attendanceRepo.GetByDateRangeAsync(searchStartDate, searchEndDate, employee.Id, cancellationToken);
-                // Important: If night shift, we might have many records. Use List to process.
-                // Filter out records that are already processed (claimed by other runs/days), EXCEPT those we just reset? 
-                // Since we reset ours above, they are Pending. Records from OTHER days that overlap are Processed.
-                // Filter out records that are already processed? 
-                // NO. For Night Shifts and correction scenarios, we must be able to "steal" or "re-claim" 
-                // a record that was incorrectly claimed by another day (e.g. Day 2 claiming Day 1's Exit as its Entry).
-                // We rely on the Stricter Tolerances (Asymmetric) to ensure we only claim what truly fits.
-                var records = recordsEnumerable
+                // 4. Fetch Records in memory
+                var employeeRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var empRecs)
+                    ? empRecs
+                    : new List<AttendanceRecord>();
+
+                var startDateTime = searchStartDate.ToDateTime(TimeOnly.MinValue);
+                var endDateTime = searchEndDate.ToDateTime(TimeOnly.MaxValue);
+
+                var records = employeeRecords
+                    .Where(r => r.CheckTime >= startDateTime && r.CheckTime <= endDateTime)
                     .OrderBy(r => r.CheckTime)
                     .ToList();
 
@@ -161,31 +208,26 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 DateTime? checkOut = null;
                 AttendanceRecord? checkInRecord = null;
                 AttendanceRecord? checkOutRecord = null;
+                // Resultado del análisis de registros intermedios (comida y permisos temporales)
+                (int Lunch, bool HasTempExits, int TempMinutes)? intermediateAnalysis = null;
 
                 if (shift != null && records.Any())
                 {
-                    // "Best Fit" Logic using Scheduled Times
-                    var scheduledIn = date.Add(dayStartTime);
-                    var scheduledOut = date.Add(dayEndTime);
-                    if (isCrossDay) 
-                    { 
-                        scheduledOut = scheduledOut.AddDays(1); 
-                    }
-
-                    // Define tolerance windows
-                    double maxInDistance = 300;   // 5 hours max early/late for CheckIn
-                    double maxOutDistance = 960;  // 16 hours max for CheckOut (allows double shifts)
-
-                    // For Cross-Day Shifts, use RELATIVE TIME WINDOWS to prevent mismatching
-                    IEnumerable<AttendanceRecord> entryRecords = records;
-                    IEnumerable<AttendanceRecord> exitRecords = records;
-
                     if (isCrossDay)
                     {
+                        // --- TURNOS NOCTURNOS / 24H: lógica de ventanas de tiempo (sin cambios) ---
+                        var scheduledIn = date.Add(dayStartTime);
+                        var scheduledOut = date.Add(dayEndTime);
+                        scheduledOut = scheduledOut.AddDays(1);
+
+                        double maxInDistance = 300;
+                        double maxOutDistance = 960;
+
+                        IEnumerable<AttendanceRecord> entryRecords = records;
+                        IEnumerable<AttendanceRecord> exitRecords = records;
+
                         if (shift.ShiftType == ShiftType.Continuo)
                         {
-                            // FLEXIBLE Logic: First of the day -> Next available within 24h
-                            // Note: we only look for the entry on the 'date' being processed
                             var potentialIn = records
                                 .Where(r => r.CheckTime.Date == date.Date && r.Status == AttendanceStatus.Pending)
                                 .OrderBy(r => r.CheckTime)
@@ -196,39 +238,32 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                                 checkInRecord = potentialIn;
                                 checkIn = potentialIn.CheckTime;
 
-                                // Search for ANY next record of this employee within 24 hours
                                 checkOutRecord = records
                                     .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 24)
                                     .OrderBy(r => r.CheckTime)
                                     .FirstOrDefault();
-                                
+
                                 if (checkOutRecord != null)
-                                {
                                     checkOut = checkOutRecord.CheckTime;
-                                }
                             }
                         }
                         else
                         {
-                            // RELATIVE WINDOWS Logic for Cross-Day / Night Shifts
-                            // Entry Window: +/- 6 hours around scheduled In
                             var entryWindowStart = scheduledIn.AddHours(-6);
                             var entryWindowEnd = scheduledIn.AddHours(6);
-                            
-                            entryRecords = records.Where(r => 
-                                r.CheckTime >= entryWindowStart && 
-                                r.CheckTime <= entryWindowEnd &&
-                                r.Status == AttendanceStatus.Pending); // Only use unprocessed records for entry
 
-                            // Exit Window: +/- 10 hours around scheduled Out
+                            entryRecords = records.Where(r =>
+                                r.CheckTime >= entryWindowStart &&
+                                r.CheckTime <= entryWindowEnd &&
+                                r.Status == AttendanceStatus.Pending);
+
                             var exitWindowStart = scheduledOut.AddHours(-10);
                             var exitWindowEnd = scheduledOut.AddHours(10);
-                            
-                            exitRecords = records.Where(r => 
-                                r.CheckTime >= exitWindowStart && 
+
+                            exitRecords = records.Where(r =>
+                                r.CheckTime >= exitWindowStart &&
                                 r.CheckTime <= exitWindowEnd);
-                            
-                            // Find best candidate for IN
+
                             var matchIn = entryRecords
                                 .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
                                 .Where(x => x.Diff <= maxInDistance)
@@ -241,7 +276,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                                 checkIn = matchIn.Record.CheckTime;
                             }
 
-                            // Find best candidate for OUT
                             var matchOut = exitRecords
                                 .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
                                 .Where(x => x.Diff <= maxOutDistance)
@@ -250,10 +284,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
                             if (matchOut != null)
                             {
-                                // Check for overlap (same record matched as both IN and OUT)
                                 if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
                                 {
-                                    // Decide based on which is closer
                                     if (matchOut.Diff < matchIn!.Diff)
                                     {
                                         checkOutRecord = matchOut.Record;
@@ -269,63 +301,134 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                                 }
                             }
                         }
+
+                        // Sanity check: salida después de entrada
+                        if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
+                        {
+                            var scheduledIn2 = date.Add(dayStartTime);
+                            var scheduledOut2 = date.Add(dayEndTime).AddDays(1);
+                            double diffIn = Math.Abs((checkIn.Value - scheduledIn2).TotalMinutes);
+                            double diffOut = Math.Abs((checkOut.Value - scheduledOut2).TotalMinutes);
+                            if (diffIn <= diffOut) { checkOut = null; checkOutRecord = null; }
+                            else { checkIn = null; checkInRecord = null; }
+                        }
                     }
                     else
                     {
-                        // For regular shifts, only use pending records to avoid stealing from other days
-                        entryRecords = records.Where(r => r.Status == AttendanceStatus.Pending);
-                        exitRecords = records.Where(r => r.Status == AttendanceStatus.Pending);
-                        
-                         // Find best candidate for IN
-                        var matchIn = entryRecords
-                            .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
-                            .Where(x => x.Diff <= maxInDistance)
-                            .OrderBy(x => x.Diff)
-                            .FirstOrDefault();
+                        // ---------------------------------------------------------------
+                        // TURNOS REGULARES: Algoritmo First-In / Last-Out
+                        // ---------------------------------------------------------------
+                        // Solo usar registros Pending del día actual
+                        var pendingDayRecords = records
+                            .Where(r => r.Status == AttendanceStatus.Pending && r.CheckTime.Date == date.Date)
+                            .OrderBy(r => r.CheckTime)
+                            .ToList();
 
-                        if (matchIn != null)
+                        if (pendingDayRecords.Count >= 1)
                         {
-                            checkInRecord = matchIn.Record;
-                            checkIn = matchIn.Record.CheckTime;
-                        }
+                            // PASO 1: Primer registro = Entrada oficial, Último = Salida oficial
+                            checkInRecord = pendingDayRecords.First();
+                            checkIn = checkInRecord.CheckTime;
 
-                        // Find best candidate for OUT
-                        var matchOut = exitRecords
-                            .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
-                            .Where(x => x.Diff <= maxOutDistance)
-                            .OrderBy(x => x.Diff)
-                            .FirstOrDefault();
-
-                        if (matchOut != null)
-                        {
-                            if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+                            if (pendingDayRecords.Count >= 2)
                             {
-                                if (matchOut.Diff < matchIn!.Diff) { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; checkIn = null; checkInRecord = null; }
+                                checkOutRecord = pendingDayRecords.Last();
+                                checkOut = checkOutRecord.CheckTime;
                             }
-                            else
+
+                            // PASO 2: Registros intermedios (entre entrada y salida)
+                            var middleRecords = pendingDayRecords.Count >= 3
+                                ? pendingDayRecords.Skip(1).SkipLast(1).ToList()
+                                : new List<AttendanceRecord>();
+
+                            if (middleRecords.Any())
                             {
-                                checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime;
+                                // PASO 2A: Pre-filtro — descartar dobles toques por proximidad a los extremos
+                                const int doubleTapThresholdMinutes = 15;
+
+                                var entryDoubleTaps = middleRecords
+                                    .Where(r => (r.CheckTime - checkIn!.Value).TotalMinutes <= doubleTapThresholdMinutes)
+                                    .ToList();
+
+                                var exitDoubleTaps = checkOut.HasValue
+                                    ? middleRecords
+                                        .Where(r => (checkOut.Value - r.CheckTime).TotalMinutes <= doubleTapThresholdMinutes)
+                                        .ToList()
+                                    : new List<AttendanceRecord>();
+
+                                var recordsToAnalyze = middleRecords
+                                    .Except(entryDoubleTaps)
+                                    .Except(exitDoubleTaps)
+                                    .OrderBy(r => r.CheckTime)
+                                    .ToList();
+
+                                _logger.LogDebug(
+                                    "Empleado {EmpId} - {Date}: {Total} intermedios. DoubleTap entrada={DTIn}, salida={DTOut}. Para analizar={ToAnalyze}",
+                                    employee.Id.Value, date.ToString("dd/MM/yyyy"),
+                                    middleRecords.Count, entryDoubleTaps.Count, exitDoubleTaps.Count, recordsToAnalyze.Count);
+
+                                // PASO 2B: Análisis de pares de ausencia
+                                int lunchMinutesDeducted = 0;
+                                bool hasTemporaryExits = false;
+                                int temporaryExitMinutes = 0;
+
+                                // Iterar en pares (salida intermedia, regreso)
+                                for (int i = 0; i < recordsToAnalyze.Count; i += 2)
+                                {
+                                    var exitRecord = recordsToAnalyze[i];
+
+                                    if (i + 1 < recordsToAnalyze.Count)
+                                    {
+                                        // Par completo: calcular duración de ausencia
+                                        var returnRecord = recordsToAnalyze[i + 1];
+                                        double absenceMinutes = (returnRecord.CheckTime - exitRecord.CheckTime).TotalMinutes;
+
+                                        if (absenceMinutes <= 15)
+                                        {
+                                            // Error de doble checada intermedia — ignorar
+                                            _logger.LogDebug("Par intermedio ({Exit}-{Return}): {Min} min → doble toque intermedio, ignorado.",
+                                                exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes);
+                                        }
+                                        else if (absenceMinutes <= 90)
+                                        {
+                                            // Posible permiso temporal o comida corta
+                                            hasTemporaryExits = true;
+                                            temporaryExitMinutes += (int)absenceMinutes;
+                                            _logger.LogInformation("Par intermedio ({Exit}-{Return}): {Min} min → posible permiso temporal detectado.",
+                                                exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes);
+                                        }
+                                        else
+                                        {
+                                            // Comida formal: aplicar deducción configurada en el turno
+                                            if (shift.LunchBreakMinutes > 0)
+                                            {
+                                                lunchMinutesDeducted += shift.LunchBreakMinutes;
+                                                _logger.LogDebug("Par intermedio ({Exit}-{Return}): {Min} min → comida formal. Deduciendo {Lunch} min.",
+                                                    exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes, shift.LunchBreakMinutes);
+                                            }
+                                        }
+                                    }
+                                    else
+                                    {
+                                        // Checada sin par (número impar de intermedios)
+                                        hasTemporaryExits = true;
+                                        _logger.LogWarning("Checada intermedia huérfana ({Exit}) sin regreso registrado — posible salida sin retorno.",
+                                            exitRecord.CheckTime);
+                                    }
+                                }
+
+                                // Guardar resultados del análisis para aplicar después de crear el DailyAttendance
+                                // (se usa una tupla local para pasar al aggregate)
+                                intermediateAnalysis = (lunchMinutesDeducted, hasTemporaryExits, temporaryExitMinutes);
+
+                                // PASO 3: Marcar TODOS los intermedios como Processed
+                                foreach (var middle in middleRecords)
+                                {
+                                    middle.MarkAsProcessed();
+                                    await _attendanceRepo.UpdateAsync(middle, cancellationToken);
+                                }
                             }
                         }
-                    }
-
-                    // Logic Check: Ensure Out is after In
-                    if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
-                    {
-                         // Discard the one that has the larger deviation from its target
-                         double diffIn = Math.Abs((checkIn.Value - scheduledIn).TotalMinutes);
-                         double diffOut = Math.Abs((checkOut.Value - scheduledOut).TotalMinutes);
-
-                         if (diffIn <= diffOut)
-                         {
-                             checkOut = null;
-                             checkOutRecord = null;
-                         }
-                         else
-                         {
-                             checkIn = null;
-                             checkInRecord = null;
-                         }
                     }
                 }
                 else if (records.Any())
@@ -389,9 +492,16 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     employee.CalculateOvertimeBeforeEntry,
                     employee.OvertimeAuthorized);
 
-                // 7. Save or Update
+                // 6b. Aplicar resultados del análisis de registros intermedios al aggregate
+                if (intermediateAnalysis.HasValue)
+                {
+                    dailyAttendance.ApplyIntermediateAnalysis(
+                        intermediateAnalysis.Value.Lunch,
+                        intermediateAnalysis.Value.HasTempExits,
+                        intermediateAnalysis.Value.TempMinutes);
+                }
+
                 // 7. Save
-                // existingDA was already removed at the start of loop if present.
                 _dailyRepo.Add(dailyAttendance);
                 processedCount++;
             }
