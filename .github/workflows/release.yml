@@ -35,8 +35,8 @@ jobs:
         shell: powershell
         run: |
           Write-Host "Downloading .NET 9.0 Hosting Bundle..."
-          # URL para el Hosting Bundle de .NET 9.0
-          Invoke-WebRequest -Uri "https://download.visualstudio.microsoft.com/download/pr/8f946461-460d-45bf-a602-0e2ff406fb76/e939a3f295b95a8d46df3c965e648c69/dotnet-hosting-9.0.0-win.exe" -OutFile "Deploy/dotnet-hosting.exe"
+          # Usamos la redirección oficial aka.ms que siempre apunta a la última versión de .NET 9.0
+          Invoke-WebRequest -Uri "https://aka.ms/dotnet/9.0/dotnet-hosting-win.exe" -OutFile "Deploy/dotnet-hosting.exe"
           Write-Host ".NET Hosting Bundle downloaded successfully."
 
       - name: Prepare Release Artifacts

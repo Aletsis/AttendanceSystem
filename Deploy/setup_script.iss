@@ -240,35 +240,122 @@ begin
   end;
 end;
 
+// --- Helpers to find system binaries bypassing WOW64 redirection ---
+function GetAppCmdPath: String;
+begin
+  if FileExists(ExpandConstant('{sysnative}\inetsrv\appcmd.exe')) then
+    Result := ExpandConstant('{sysnative}\inetsrv\appcmd.exe')
+  else if FileExists(ExpandConstant('{sys}\inetsrv\appcmd.exe')) then
+    Result := ExpandConstant('{sys}\inetsrv\appcmd.exe')
+  else
+    Result := '';
+end;
+
+function GetNetPath: String;
+begin
+  if FileExists(ExpandConstant('{sysnative}\net.exe')) then
+    Result := ExpandConstant('{sysnative}\net.exe')
+  else if FileExists(ExpandConstant('{sys}\net.exe')) then
+    Result := ExpandConstant('{sys}\net.exe')
+  else
+    Result := '';
+end;
+
+function GetTaskKillPath: String;
+begin
+  if FileExists(ExpandConstant('{sysnative}\taskkill.exe')) then
+    Result := ExpandConstant('{sysnative}\taskkill.exe')
+  else if FileExists(ExpandConstant('{sys}\taskkill.exe')) then
+    Result := ExpandConstant('{sys}\taskkill.exe')
+  else
+    Result := '';
+end;
+
+// --- Force kill a process if it is holding a lock ---
+procedure TaskKillProcess(ProcessName: String);
+var
+  ResultCode: Integer;
+  TaskKillPath: String;
+begin
+  TaskKillPath := GetTaskKillPath;
+  if TaskKillPath <> '' then
+  begin
+    Exec(TaskKillPath, '/f /im "' + ProcessName + '"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+end;
+
+// --- Dynamic wait loop for locked files ---
+procedure WaitForFileUnlock(FileName: String);
+var
+  Limit: Integer;
+  TempName: String;
+begin
+  if not FileExists(FileName) then Exit;
+
+  Limit := 0;
+  TempName := FileName + '.tmp_test_lock';
+  
+  // Attempt to rename the file. If it fails, it is locked.
+  while (Limit < 20) do
+  begin
+    if RenameFile(FileName, TempName) then
+    begin
+      // If we successfully renamed it, it is not locked.
+      // Rename it back to its original name.
+      RenameFile(TempName, FileName);
+      Exit;
+    end;
+    Sleep(500);
+    Limit := Limit + 1;
+  end;
+
+  // If still locked after 10 seconds (20 * 500ms), force kill the processes
+  if Limit >= 20 then
+  begin
+    TaskKillProcess('w3wp.exe');
+    TaskKillProcess('AttendanceSystem.Blazor.Server.exe');
+    Sleep(1000); // Give the system a second to release locks
+  end;
+end;
+
 // --- DETENER/INICIAR SERVICIOS AL ACTUALIZAR ---
 procedure CurStepChanged(CurStep: TSetupStep);
 var
   ResultCode: Integer;
+  AppCmdPath: String;
+  NetPath: String;
+  WebDllPath: String;
 begin
   if CurStep = ssInstall then
   begin
-    // 1. Detener Servicio Windows
-    Exec(ExpandConstant('{sys}\sc.exe'), 'stop AttendanceSystem.ZKTeco.Service', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    NetPath := GetNetPath;
     
-    // Esperar un poco a que libere archivos
-    Sleep(1000);
-
-    // 2. Detener Sitio IIS (si existe y el appcmd está disponible)
-    if FileExists(ExpandConstant('{sys}\inetsrv\appcmd.exe')) then
+    // 1. Detener Servicio Windows
+    if NetPath <> '' then
+      Exec(NetPath, 'stop AttendanceSystem.ZKTeco.Service', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
+    else
+      Exec(ExpandConstant('{sys}\sc.exe'), 'stop AttendanceSystem.ZKTeco.Service', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    
+    // 2. Detener Sitio IIS y AppPool
+    AppCmdPath := GetAppCmdPath;
+    if AppCmdPath <> '' then
     begin
-      Exec(ExpandConstant('{sys}\inetsrv\appcmd.exe'), 'stop site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-      Exec(ExpandConstant('{sys}\inetsrv\appcmd.exe'), 'stop apppool "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(AppCmdPath, 'stop site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(AppCmdPath, 'stop apppool "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
     
-    Sleep(1000);
+    // 3. Esperar dinámicamente a que se libere el DLL principal
+    WebDllPath := ExpandConstant('{app}\Web\asnetcorev2_inprocess.dll');
+    WaitForFileUnlock(WebDllPath);
   end
   else if CurStep = ssPostInstall then
   begin
     // Iniciar sitio IIS y AppPool automáticamente si ya están configurados
-    if FileExists(ExpandConstant('{sys}\inetsrv\appcmd.exe')) then
+    AppCmdPath := GetAppCmdPath;
+    if AppCmdPath <> '' then
     begin
-      Exec(ExpandConstant('{sys}\inetsrv\appcmd.exe'), 'start apppool "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-      Exec(ExpandConstant('{sys}\inetsrv\appcmd.exe'), 'start site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(AppCmdPath, 'start apppool "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Exec(AppCmdPath, 'start site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
   end;
 end;
