@@ -93,9 +93,17 @@ _Pvt_Extensions
 **/appsettings.Development.json
 **/appsettings.Production.json
 !**/appsettings.example.json
-Deploy/*.*
-Output/*.*
-Prepare-Release.ps1
+# Deployment scripts (allow tracking of code/scripts, exclude heavy binaries)
+Deploy/*
+!Deploy/setup_script.iss
+!Deploy/configure_iis.bat
+!Deploy/enable_iis.ps1
+!Deploy/configure_db.bat
+!Deploy/init_db.sql
+!Deploy/README_INSTALLER.md
+Deploy/*.exe
+Output/*
+!Prepare-Release.ps1
 
 # Artifacts
 artifacts/*.*

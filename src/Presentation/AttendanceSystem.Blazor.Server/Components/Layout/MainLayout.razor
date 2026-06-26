@@ -1,7 +1,9 @@
 @using Microsoft.AspNetCore.Components.Routing
 @using Microsoft.AspNetCore.Components.Authorization
 @using MudBlazor
+@using AttendanceSystem.Blazor.Server.Services
 @inherits LayoutComponentBase
+@inject UpdateCheckerService UpdateChecker
 
 <MudThemeProvider @ref="@_mudThemeProvider" @bind-IsDarkMode="@_isDarkMode" Theme="_currentTheme" />
 <MudDialogProvider />
@@ -67,6 +69,38 @@
     
     <MudMainContent>
         <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="my-4">
+            <AuthorizeView Roles="Administrador">
+                <Authorized>
+                    @if (_updateResult?.IsUpdateAvailable == true)
+                    {
+                        <MudAlert Severity="Severity.Info" 
+                                  Variant="Variant.Filled" 
+                                  Square="false" 
+                                  Class="mb-4"
+                                  Icon="@Icons.Material.Filled.SystemUpdate"
+                                  ShowCloseIcon="true"
+                                  CloseIconClicked="DismissBanner">
+                            <div class="d-flex align-center flex-wrap justify-space-between w-100">
+                                <div>
+                                    <MudText Typo="Typo.subtitle2"><b>¡Actualización Disponible (v@_updateResult.LatestVersion)!</b></MudText>
+                                    <MudText Typo="Typo.body2">Hay una nueva versión de AttendanceSystem lista para instalar (Versión actual: v@_updateResult.CurrentVersion).</MudText>
+                                </div>
+                                <div class="mt-2 mt-sm-0">
+                                    <MudButton Variant="Variant.Text" 
+                                               Color="Color.Inherit" 
+                                               StartIcon="@Icons.Material.Filled.Download" 
+                                               Href="@_updateResult.DownloadUrl" 
+                                               Target="_blank"
+                                               Size="Size.Small"
+                                               Class="ml-4">
+                                        Descargar Actualización
+                                    </MudButton>
+                                </div>
+                            </div>
+                        </MudAlert>
+                    }
+                </Authorized>
+            </AuthorizeView>
             @Body
         </MudContainer>
     </MudMainContent>
@@ -76,6 +110,7 @@
     private bool _drawerOpen = true;
     private bool _isDarkMode;
     private MudThemeProvider _mudThemeProvider = default!;
+    private UpdateCheckResult? _updateResult;
 
     private MudTheme _currentTheme = new MudTheme()
     {
@@ -116,7 +151,28 @@
         {
             _isDarkMode = await _mudThemeProvider.GetSystemDarkModeAsync();
             await _mudThemeProvider.WatchSystemDarkModeAsync(OnSystemPreferenceChanged);
+            
+            // Verificación de actualizaciones en segundo plano
+            _ = Task.Run(async () => {
+                try {
+                    _updateResult = await UpdateChecker.CheckForUpdatesAsync();
+                    if (_updateResult.IsUpdateAvailable) {
+                        await InvokeAsync(StateHasChanged);
+                    }
+                } catch (Exception) {
+                    // Ignorar errores silenciosamente
+                }
+            });
+
             StateHasChanged();
+        }
+    }
+
+    private void DismissBanner()
+    {
+        if (_updateResult != null)
+        {
+            _updateResult.IsUpdateAvailable = false;
         }
     }
 

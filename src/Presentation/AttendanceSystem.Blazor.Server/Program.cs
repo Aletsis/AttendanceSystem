@@ -81,6 +81,10 @@ builder.Services.AddScoped<IImportService, ImportService>();
 // ===== GRACEFUL SHUTDOWN SERVICE =====
 builder.Services.AddHostedService<GracefulShutdownService>();
 
+// ===== VERIFICADOR DE ACTUALIZACIONES =====
+builder.Services.AddHttpClient();
+builder.Services.AddSingleton<UpdateCheckerService>();
+
 // ===== DOMAIN LAYER =====
 // Servicios de dominio
 builder.Services.AddScoped<AttendanceDeduplicationService>();
@@ -118,6 +122,12 @@ builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
 builder.Services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
 {
     options.Address = new Uri(builder.Configuration["ZKTecoService:Url"]!);
+})
+.ConfigureHttpClient((sp, client) =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var apiKey = config["ZKTecoService:ApiKey"] ?? "AttendanceSystemSecretApiKey123!";
+    client.DefaultRequestHeaders.Add("x-api-key", apiKey);
 })
 .ConfigurePrimaryHttpMessageHandler(() =>
 {
