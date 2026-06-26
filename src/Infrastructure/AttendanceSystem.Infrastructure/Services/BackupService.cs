@@ -31,8 +31,9 @@ public class BackupService : IBackupService
         _systemConfigRepository = systemConfigRepository;
 
         // Parsear connection string de PostgreSQL
-        var connectionString = configuration.GetConnectionString("DefaultConnection") 
-            ?? throw new InvalidOperationException("Connection string 'DefaultConnection' no encontrada");
+        var connectionString = configuration.GetConnectionString("AttendanceDb") 
+            ?? throw new InvalidOperationException("Connection string 'AttendanceDb' no encontrada en la configuración.");
+
 
         var connParams = ParseConnectionString(connectionString);
         _postgresHost = GetValueWithAliases(connParams, "Host", "Server", "Data Source") ?? "";

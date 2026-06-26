@@ -9,6 +9,7 @@
 @using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
 @using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
+@using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport
 @inject IMediator Mediator
 
 <PageTitle>Sistema de Asistencia</PageTitle>
@@ -134,7 +135,49 @@
                 </MudPaper>
             </MudItem>
         </MudGrid>
-        
+
+        <!-- ⚠️ Alertas de Permisos Temporales Pendientes -->
+        @if (_pendingExitAlerts.Any())
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-4" Icon="@Icons.Material.Filled.Warning">
+                <strong>@_totalPendingExits permiso(s) temporal(es) pendiente(s) de clasificar hoy.</strong>
+                Revisa el reporte de asistencia para clasificarlos como con/sin goce de sueldo.
+            </MudAlert>
+            <MudCard Elevation="3" Style="border-left: 4px solid var(--mud-palette-warning); border-radius: 12px;" Class="mb-6">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.HourglassEmpty" Class="mr-2" Color="Color.Warning" />
+                            Permisos Temporales — Pendientes de Clasificar
+                        </MudText>
+                        <MudText Typo="Typo.caption">Salidas intermedias detectadas hoy que requieren atención del administrador</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Warning" Href="/attendance/reports"
+                                   StartIcon="@Icons.Material.Filled.OpenInNew">Ver Reporte</MudButton>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    <MudTable Items="@_pendingExitAlerts" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                        <HeaderContent>
+                            <MudTh>Empleado</MudTh>
+                            <MudTh>Fecha</MudTh>
+                            <MudTh>Minutos Fuera</MudTh>
+                            <MudTh>Nota del Sistema</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.EmployeeName</MudTd>
+                            <MudTd>@context.Date.ToString("dd/MM/yyyy")</MudTd>
+                            <MudTd>
+                                <MudChip T="string" Color="Color.Warning" Size="Size.Small">@($"{context.TemporaryExitMinutes} min")</MudChip>
+                            </MudTd>
+                            <MudTd>@context.AttendanceNote</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudCardContent>
+            </MudCard>
+        }
+
         <!-- Gestión de Personal -->
         <MudText Typo="Typo.h5" Class="mb-3">
             <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
@@ -395,6 +438,10 @@
     private int _onlineDevices;
     private int _storageOkDevices;
 
+    // Alertas de permisos temporales
+    private List<AttendanceReportViewDto> _pendingExitAlerts = new();
+    private int _totalPendingExits;
+
     private SystemConfigurationDto? _config;
 
     private double GetComplianceRate()
@@ -454,10 +501,20 @@
             var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
             _config = configResult.Value;
 
-            // Mock today's stats for now (Ideally would come from a DashboardQuery)
-            _todayOnTime = (int)(_totalEmployees * 0.7);
-            _todayLates = (int)(_totalEmployees * 0.1);
-            _todayAbsents = _totalEmployees - _todayOnTime - _todayLates;
+            // --- Permisos temporales pendientes de hoy ---
+            var todayReport = await Mediator.Send(new GetAttendanceReportQuery(
+                DateTime.Today, DateTime.Today, null, null));
+            _pendingExitAlerts = todayReport
+                .Where(r => r.HasTemporaryExits && r.TemporaryExitStatus == 0)
+                .OrderBy(r => r.EmployeeName)
+                .ToList();
+            _totalPendingExits = _pendingExitAlerts.Count;
+
+            // Stats del día (aproximación mientras no haya DashboardQuery dedicado)
+            var todayAll = todayReport.ToList();
+            _todayOnTime  = todayAll.Count(r => !r.IsAbsent && r.LateMinutes == 0 && !r.MissingCheckIn);
+            _todayLates   = todayAll.Count(r => r.LateMinutes > 0);
+            _todayAbsents = todayAll.Count(r => r.IsAbsent);
         }
         catch (Exception)
         {

@@ -1,4 +1,5 @@
 @page "/backup"
+@attribute [Authorize(Roles = "Administrador")]
 @using Microsoft.AspNetCore.Components.Web
 @using AttendanceSystem.Application.Features.Backup.Commands
 @using AttendanceSystem.Application.Features.Backup.Queries

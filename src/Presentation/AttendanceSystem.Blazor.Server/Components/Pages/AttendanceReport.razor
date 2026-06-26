@@ -97,7 +97,32 @@
                 @if (context.Item.MissingCheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Entrada</MudChip> }
                 @if (context.Item.MissingCheckOut) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Salida</MudChip> }
                 @if (context.Item.LateMinutes > 0) { <MudChip Color="Color.Warning" Size="Size.Small">Tarde</MudChip> }
+                @if (context.Item.HasTemporaryExits && context.Item.TemporaryExitStatus == 0)
+                {
+                    <MudTooltip Text="@context.Item.AttendanceNote">
+                        <MudChip Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.Warning">Permiso Pend.</MudChip>
+                    </MudTooltip>
+                }
                 </div>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Notas" Sortable="false">
+            <CellTemplate>
+                @if (context.Item.HasTemporaryExits)
+                {
+                    var (color, icon) = context.Item.TemporaryExitStatus switch
+                    {
+                        0 => (Color.Warning,  Icons.Material.Filled.HourglassEmpty),  // Pending
+                        1 => (Color.Success,  Icons.Material.Filled.CheckCircle),      // ApprovedPaid
+                        2 => (Color.Error,    Icons.Material.Filled.MoneyOff),          // ApprovedUnpaid
+                        _ => (Color.Default,  Icons.Material.Filled.Info)              // Dismissed
+                    };
+                    <MudTooltip Text="@context.Item.AttendanceNote" Placement="Placement.Left">
+                        <MudChip Color="@color" Size="Size.Small" Icon="@icon">
+                            @($"{context.Item.TemporaryExitMinutes} min")
+                        </MudChip>
+                    </MudTooltip>
+                }
             </CellTemplate>
         </TemplateColumn>
     </Columns>
