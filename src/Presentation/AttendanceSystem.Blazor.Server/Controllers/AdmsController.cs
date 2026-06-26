@@ -306,6 +306,7 @@ public class AdmsController : ControllerBase
         int processed = 0;
         DateTime? lastCheckTime = null;
         var uniqueCalculations = new HashSet<(string Pin, DateTime Date)>();
+        var localLogs = new List<AttendanceLogDto>();
 
         foreach (var line in lines)
         {
@@ -386,10 +387,7 @@ public class AdmsController : ControllerBase
 
                     if (!isExternal)
                     {
-                        await _mediator.Send(new RecordAttendanceCommand(
-                            pin, device.Id.Value.ToString(),
-                            checkTime, verifyMethod, checkType));
-
+                        localLogs.Add(new AttendanceLogDto(pin, checkTime, verifyMethod, checkType));
                         processed++;
                         
                         // Collect for calculation
@@ -404,6 +402,18 @@ public class AdmsController : ControllerBase
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error línea: {Line}", line);
+            }
+        }
+
+        if (localLogs.Count > 0)
+        {
+            var batchResult = await _mediator.Send(new RecordAttendanceBatchCommand(
+                device.Id.Value.ToString(),
+                localLogs));
+
+            if (!batchResult.IsSuccess)
+            {
+                _logger.LogError("Error al procesar lote de asistencia ADMS: {Error}", batchResult.Error);
             }
         }
 

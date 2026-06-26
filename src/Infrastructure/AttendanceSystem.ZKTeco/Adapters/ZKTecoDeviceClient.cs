@@ -99,6 +99,22 @@ public class ZKTecoDeviceClient : IDeviceClient
 
             try
             {
+                // El SDK de ZKTeco devuelve fechas en hora LOCAL del dispositivo.
+                // fromDate/toDate llegan en UTC desde la capa de aplicación.
+                // Convertimos a hora local antes de filtrar para evitar descartar
+                // registros válidos por el desfase de zona horaria.
+                var localFromDate = fromDate.HasValue
+                    ? fromDate.Value.Kind == DateTimeKind.Utc
+                        ? fromDate.Value.ToLocalTime()
+                        : fromDate.Value
+                    : (DateTime?)null;
+
+                var localToDate = toDate.HasValue
+                    ? toDate.Value.Kind == DateTimeKind.Utc
+                        ? toDate.Value.ToLocalTime()
+                        : toDate.Value
+                    : (DateTime?)null;
+
                 _logger.LogInformation("Leyendo datos del dispositivo (ReadAllGLogData)...");
                 if (_device.ReadAllGLogData(1))
                 {
@@ -123,10 +139,10 @@ public class ZKTecoDeviceClient : IDeviceClient
                         if (minDeviceDate == null || checkTime < minDeviceDate) minDeviceDate = checkTime;
                         if (maxDeviceDate == null || checkTime > maxDeviceDate) maxDeviceDate = checkTime;
 
-                        if (fromDate.HasValue && checkTime < fromDate.Value)
+                        if (localFromDate.HasValue && checkTime < localFromDate.Value)
                             continue;
 
-                        if (toDate.HasValue && checkTime > toDate.Value)
+                        if (localToDate.HasValue && checkTime > localToDate.Value)
                             continue;
 
                         records.Add(new RawAttendanceRecord(
@@ -137,8 +153,9 @@ public class ZKTecoDeviceClient : IDeviceClient
                             WorkCode: workCode));
                         addedCount++;
                     }
-                    _logger.LogInformation("Lectura completada. Leídos: {TotalRead}, Agregados: {AddedCount}. Rango en Dispositivo: {Min} - {Max}. Filtros: From={From}, To={To}", 
-                        totalRead, addedCount, minDeviceDate, maxDeviceDate, fromDate, toDate);
+                    _logger.LogInformation("Lectura completada. Leídos: {TotalRead}, Agregados: {AddedCount}. Rango en Dispositivo: {Min} - {Max}. Filtros (hora local): From={From}, To={To}",
+                        totalRead, addedCount, minDeviceDate, maxDeviceDate, localFromDate, localToDate);
+
                 }
                 else
                 {

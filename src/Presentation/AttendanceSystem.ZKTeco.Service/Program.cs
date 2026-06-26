@@ -7,6 +7,8 @@ using AttendanceSystem.ZKTeco.Adapters;
 using Serilog;
 using Serilog.Events;
 
+using AttendanceSystem.ZKTeco.Service.Interceptors;
+
 namespace AttendanceSystem.ZKTeco.Service;
 
 public class Program
@@ -56,8 +58,11 @@ public class Program
         // Agregar el worker (necesario para que funcione como servicio de Windows)
         builder.Services.AddHostedService<Worker>();
 
-        // Configurar gRPC Server
-        builder.Services.AddGrpc();
+        // Configurar gRPC Server con Interceptor de Autenticación
+        builder.Services.AddGrpc(options =>
+        {
+            options.Interceptors.Add<ApiKeyAuthInterceptor>();
+        });
         
         // ZKTeco SDK Service registration
         builder.Services.AddSingleton<IDeviceClient, ZKTecoDeviceClient>(); 
