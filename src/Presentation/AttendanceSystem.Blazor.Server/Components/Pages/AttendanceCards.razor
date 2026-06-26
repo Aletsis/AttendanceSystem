@@ -218,6 +218,9 @@
                 <MudSelectItem Value="@("Specific")">Empleado Específico</MudSelectItem>
             </MudSelect>
         </MudItem>
+        <MudItem xs="12" sm="3" Class="d-flex align-center">
+            <MudCheckBox T="bool" @bind-Value="IncludeOvertime" Label="Incluir Horas Extra" Color="Color.Primary" />
+        </MudItem>
 
         @if (FilterType == "Range")
         {
@@ -280,7 +283,10 @@
                             <th>Horario Entrada</th>
                             <th>Entrada</th>
                             <th>Salida</th>
-                            <th>Hrs. Extra</th>
+                            @if (IncludeOvertime)
+                            {
+                                <th>Hrs. Extra</th>
+                            }
                         </tr>
                     </thead>
                     <tbody>
@@ -292,16 +298,22 @@
                                 <td>@(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</td>
                                 <td>@(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</td>
                                 <td>@(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</td>
-                                <td>@(FormatMinuteString(day.RoundedOvertimeMinutes))</td>
+                                @if (IncludeOvertime)
+                                {
+                                    <td>@(FormatMinuteString(day.RoundedOvertimeMinutes))</td>
+                                }
                             </tr>
                         }
                     </tbody>
-                    <tfoot>
-                         <tr class="total-row">
-                            <td colspan="5" style="text-align: right;">Total Horas Extra:</td>
-                            <td>@FormatMinuteString(group.Value.Sum(x => x.RoundedOvertimeMinutes))</td>
-                        </tr>
-                    </tfoot>
+                    @if (IncludeOvertime)
+                    {
+                        <tfoot>
+                             <tr class="total-row">
+                                <td colspan="5" style="text-align: right;">Total Horas Extra:</td>
+                                <td>@FormatMinuteString(group.Value.Sum(x => x.RoundedOvertimeMinutes))</td>
+                            </tr>
+                        </tfoot>
+                    }
                 </table>
 
                 <div class="signature-section">
@@ -333,6 +345,7 @@ else if (HasSearched)
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 
 @code {
+    private bool IncludeOvertime = true;
     private string DateSelectionMode = "Range"; // "Range" or "Period"
     private int SelectedYear = DateTime.Today.Year;
     private WorkPeriodMode SelectedPeriodMode;
@@ -557,7 +570,7 @@ else if (HasSearched)
         
         try
         {
-            var pdfBytes = ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo);
+            var pdfBytes = ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo, IncludeOvertime);
             var fileName = $"Tarjetas_Asistencia_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             
             using var stream = new MemoryStream(pdfBytes);

@@ -649,7 +649,8 @@ public class ReportExportService : IReportExportService
         DateTime startDate, 
         DateTime endDate,
         string companyName,
-        byte[]? companyLogo)
+        byte[]? companyLogo,
+        bool includeOvertime = true)
     {
         var durationDays = (endDate.Date - startDate.Date).TotalDays + 1;
         bool useHalfPage = durationDays <= 7;
@@ -676,7 +677,7 @@ public class ReportExportService : IReportExportService
                             // Card 1
                             // Use Height to constrain it to half page (Letter height ~28cm, margin 2cm = 26cm. Half ~13cm).
                             // We use 12.5cm to be safe.
-                            col.Item().Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item1, startDate, endDate, companyName, companyLogo));
+                            col.Item().Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item1, startDate, endDate, companyName, companyLogo, includeOvertime));
                             
                             if (item2.HasValue)
                             {
@@ -685,7 +686,7 @@ public class ReportExportService : IReportExportService
                                    .BorderBottom(1).BorderColor(Colors.Grey.Medium);
                                 
                                 // Card 2
-                                col.Item().PaddingTop(0.2f, Unit.Centimetre).Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item2.Value, startDate, endDate, companyName, companyLogo));
+                                col.Item().PaddingTop(0.2f, Unit.Centimetre).Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item2.Value, startDate, endDate, companyName, companyLogo, includeOvertime));
                             }
                         });
                     });
@@ -703,14 +704,14 @@ public class ReportExportService : IReportExportService
                         page.PageColor(Colors.White);
                         page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
 
-                        page.Content().Element(c => ComposeAttendanceCard(c, group, startDate, endDate, companyName, companyLogo));
+                        page.Content().Element(c => ComposeAttendanceCard(c, group, startDate, endDate, companyName, companyLogo, includeOvertime));
                     });
                 }
             }
         }).GeneratePdf();
     }
 
-    private void ComposeAttendanceCard(IContainer container, KeyValuePair<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> group, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
+    private void ComposeAttendanceCard(IContainer container, KeyValuePair<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> group, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo, bool includeOvertime)
     {
          var employeeInfo = group.Key;
          var records = group.Value.OrderBy(x => x.Date).ToList();
@@ -753,7 +754,10 @@ public class ReportExportService : IReportExportService
                     columns.RelativeColumn(); // Scheduled In
                     columns.RelativeColumn(); // In
                     columns.RelativeColumn(); // Out
-                    columns.RelativeColumn(); // Overtime
+                    if (includeOvertime)
+                    {
+                        columns.RelativeColumn(); // Overtime
+                    }
                 });
 
                 // Table Header
@@ -764,7 +768,10 @@ public class ReportExportService : IReportExportService
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("H. Entrada").Bold();
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Entrada").Bold();
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Salida").Bold();
-                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Hrs. Extra").Bold();
+                    if (includeOvertime)
+                    {
+                        header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Hrs. Extra").Bold();
+                    }
                 });
 
                 // Table Body
@@ -781,15 +788,21 @@ public class ReportExportService : IReportExportService
 
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(inStr);
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(outStr);
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(record.RoundedOvertimeMinutes));
+                    if (includeOvertime)
+                    {
+                        table.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(record.RoundedOvertimeMinutes));
+                    }
                 }
 
                 // Table Footer (Total)
-                table.Footer(footer =>
+                if (includeOvertime)
                 {
-                    footer.Cell().ColumnSpan(5).Border(1).AlignRight().Padding(2).Text("Total Horas Extra:").Bold();
-                    footer.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(totalOvertimeMinutes)).Bold();
-                });
+                    table.Footer(footer =>
+                    {
+                        footer.Cell().ColumnSpan(5).Border(1).AlignRight().Padding(2).Text("Total Horas Extra:").Bold();
+                        footer.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(totalOvertimeMinutes)).Bold();
+                    });
+                }
             });
             
             // Signature Section 
@@ -1420,7 +1433,7 @@ public class ReportExportService : IReportExportService
 
                 foreach (var summary in data)
                 {
-                    var totalMins = summary.Details.Sum(d => d.OvertimeMinutes);
+                    var totalMins = summary.TotalMetric;
                     if (totalMins > 0)
                     {
                         worksheet.Cell(currentRow, 1).Value = $"'{summary.EmployeeId}";

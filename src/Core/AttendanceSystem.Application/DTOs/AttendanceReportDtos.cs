@@ -23,7 +23,14 @@ public sealed record AttendanceReportViewDto
     public bool WorkedOnRestDay { get; init; }
     public bool MissingCheckIn { get; init; }
     public bool MissingCheckOut { get; init; }
-    
+
+    // --- Salidas Temporales Detectadas ---
+    public bool HasTemporaryExits { get; init; }
+    public int TemporaryExitMinutes { get; init; }
+    /// <summary>0=Pending, 1=ApprovedPaid, 2=ApprovedUnpaid, 3=Dismissed</summary>
+    public int TemporaryExitStatus { get; init; }
+    public string? AttendanceNote { get; init; }
+
     public AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod OvertimeCalculationMethod { get; init; }
 
     public int RoundedOvertimeMinutes
