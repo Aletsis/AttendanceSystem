@@ -23,6 +23,8 @@ using AttendanceSystem.Application.Features.Branches.Queries;
 using AttendanceSystem.Application.Features.Shifts.Queries;
 using AttendanceSystem.Application.Features.Devices.Queries;
 using AttendanceSystem.Infrastructure.Persistence.Queries;
+using Microsoft.AspNetCore.Identity;
+using AttendanceSystem.Domain.Entities;
 
 namespace AttendanceSystem.WPF
 {
@@ -117,6 +119,17 @@ namespace AttendanceSystem.WPF
             // Add JobScheduler implementation for WPF Client (No-Op)
             services.AddSingleton<IAttendanceJobScheduler, WpfAttendanceJobScheduler>();
 
+            // Add Identity Core (UserManager only — sin cookies, SignInManager ni HTTP context)
+            // Necesario para validar contraseñas contra la misma tabla AspNetUsers que usa Blazor
+            services.AddIdentityCore<ApplicationUser>(options =>
+            {
+                options.Password.RequireDigit = false;
+                options.Password.RequireNonAlphanumeric = false;
+                options.Password.RequiredLength = 4;
+            })
+            .AddRoles<IdentityRole>()
+            .AddEntityFrameworkStores<AttendanceDbContext>();
+
             _serviceProvider = services.BuildServiceProvider();
             
             // Register services in Prism container
@@ -129,7 +142,10 @@ namespace AttendanceSystem.WPF
                 () => _serviceProvider.CreateScope().ServiceProvider.GetRequiredService<AttendanceDbContext>());
             
             // WPF Services
-            containerRegistry.RegisterSingleton<IAuthenticationStateService, AuthenticationStateService>();
+            // AuthenticationStateService necesita UserManager<ApplicationUser> del ServiceProvider
+            containerRegistry.RegisterSingleton<IAuthenticationStateService>(() =>
+                new AuthenticationStateService(
+                    _serviceProvider!.GetRequiredService<UserManager<ApplicationUser>>()));
             containerRegistry.RegisterSingleton<IFrameNavigationService, FrameNavigationService>();
             containerRegistry.RegisterSingleton<IMessageService, MessageService>();
             

@@ -13,6 +13,8 @@ using AttendanceSystem.Domain.Enumerations;
 using Microsoft.Win32;
 using System.IO;
 
+using Microsoft.Extensions.Configuration;
+
 namespace AttendanceSystem.WPF.ViewModels.Settings
 {
     public class SettingsViewModel : ViewModelBase
@@ -20,6 +22,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IConfiguration _configuration;
 
         private SystemConfigurationDto? _currentConfig;
 
@@ -92,11 +95,13 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         public SettingsViewModel(
             IFrameNavigationService navigationService, 
             IMessageService messageService,
-            IMediator mediator)
+            IMediator mediator,
+            IConfiguration configuration)
         {
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
+            _configuration = configuration;
 
             SaveSettingsCommand = new DelegateCommand(async () => await ExecuteSaveSettingsAsync());
             BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
@@ -200,6 +205,22 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
 
                 if (result.IsSuccess)
                 {
+                    // Notificar al backend Blazor Server para recargar las tareas Hangfire en segundo plano
+                    try
+                    {
+                        var backendUrl = _configuration["BackendUrl"] ?? "http://localhost:18372";
+                        using var httpClient = new System.Net.Http.HttpClient();
+                        var reloadResponse = await httpClient.PostAsync($"{backendUrl}/api/configuration/reload-jobs", null);
+                        if (!reloadResponse.IsSuccessStatusCode)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"Error notifying backend of configuration change: {reloadResponse.StatusCode}");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Error notifying backend: {ex.Message}");
+                    }
+
                     await _messageService.ShowSuccessAsync("Configuración guardada correctamente");
                     await LoadSettingsAsync();
                 }

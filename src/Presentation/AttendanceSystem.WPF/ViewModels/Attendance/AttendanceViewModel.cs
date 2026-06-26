@@ -5,7 +5,12 @@ using AttendanceSystem.WPF.Services;
 using MediatR;
 using AttendanceSystem.Application.Features.Attendance.Queries.GetDailyAttendance;
 using AttendanceSystem.Application.Features.Employees.Queries;
-using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate; 
+using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
+using Microsoft.Extensions.Configuration;
+using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
+using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration;
+using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport; 
 
 namespace AttendanceSystem.WPF.ViewModels.Attendance
 {
@@ -14,6 +19,8 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IReportExportService _reportExportService;
+        private readonly IConfiguration _configuration;
 
         private ObservableCollection<AttendanceLogItem> _attendanceLogs = new();
         private AttendanceLogItem? _selectedLog;
@@ -52,11 +59,15 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
         public AttendanceViewModel(
             IFrameNavigationService navigationService, 
             IMessageService messageService,
-            IMediator mediator)
+            IMediator mediator,
+            IReportExportService reportExportService,
+            IConfiguration configuration)
         {
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
+            _reportExportService = reportExportService;
+            _configuration = configuration;
 
             ManualEntryCommand = new DelegateCommand(ExecuteManualEntry);
             CalculateAttendanceCommand = new DelegateCommand(async () => await ExecuteCalculateAttendanceAsync());
@@ -116,7 +127,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                             ExitTime = daily.ActualCheckOut?.ToString("HH:mm") ?? "--:--",
                             WorkedHours = CalculateWorkedHours(daily.ActualCheckIn, daily.ActualCheckOut),
                             Status = status,
-                            Notes = ""
+                            Notes = daily.AttendanceNote
                         };
                         
                         _allLogsData.Add(item);
@@ -173,13 +184,20 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             SetBusy(true, "Calculando asistencia...");
             try
             {
-                // TODO: Call ProcessAttendanceCommand
-                await Task.Delay(1000); 
-                await _messageService.ShowSuccessAsync("Cálculo de asistencia simulado completado");
+                var command = new ProcessDailyAttendanceCommand(StartDate, EndDate);
+                var processedCount = await _mediator.Send(command);
+                
+                await _messageService.ShowSuccessAsync($"Cálculo de asistencia completado. Días procesados: {processedCount}");
                 await LoadAttendanceLogsAsync();
             }
-            catch (Exception ex) { await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
-            finally { SetBusy(false); }
+            catch (Exception ex) 
+            { 
+                await _messageService.ShowErrorAsync($"Error al calcular la asistencia: {ex.Message}"); 
+            }
+            finally 
+            { 
+                SetBusy(false); 
+            }
         }
 
         private async Task ExecuteExportAsync()
@@ -187,11 +205,47 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             SetBusy(true, "Exportando registros...");
             try
             {
-                await Task.Delay(1000);
-                await _messageService.ShowSuccessAsync("Exportación simulada completada");
+                var query = new GetAttendanceReportQuery(StartDate, EndDate);
+                var data = await _mediator.Send(query);
+
+                if (data == null || !data.Any())
+                {
+                    await _messageService.ShowErrorAsync("No hay datos para exportar en el rango de fechas seleccionado.");
+                    return;
+                }
+
+                var configResult = await _mediator.Send(new GetSystemConfigurationQuery());
+                string companyName = "Sistema de Asistencia";
+                byte[]? companyLogo = null;
+                if (configResult.IsSuccess && configResult.Value != null)
+                {
+                    companyName = configResult.Value.CompanyName;
+                    companyLogo = configResult.Value.CompanyLogo;
+                }
+
+                var excelBytes = _reportExportService.GenerateExcel(data, StartDate, EndDate, companyName, companyLogo, detailed: true);
+
+                var saveFileDialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Filter = "Excel Files (*.xlsx)|*.xlsx",
+                    FileName = $"Reporte_Asistencia_{StartDate:yyyyMMdd}_a_{EndDate:yyyyMMdd}.xlsx",
+                    Title = "Guardar Reporte de Asistencia"
+                };
+
+                if (saveFileDialog.ShowDialog() == true)
+                {
+                    await System.IO.File.WriteAllBytesAsync(saveFileDialog.FileName, excelBytes);
+                    await _messageService.ShowSuccessAsync("Reporte exportado correctamente");
+                }
             }
-            catch (Exception ex) { await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
-            finally { SetBusy(false); }
+            catch (Exception ex) 
+            { 
+                await _messageService.ShowErrorAsync($"Error al exportar: {ex.Message}"); 
+            }
+            finally 
+            { 
+                SetBusy(false); 
+            }
         }
     }
 
