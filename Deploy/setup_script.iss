@@ -2,7 +2,7 @@
 ; Este script crea un instalador "Todo en Uno" para AttendanceSystem + PostgreSQL
 
 #define MyAppName "AttendanceSystem"
-#define MyAppVersion "2.1.4"
+#define MyAppVersion "2.1.5"
 #define MyAppPublisher "Tu Empresa"
 #define MyAppURL "http://www.tuempresa.com/"
 #define MyAppExeName "AttendanceSystem.Blazor.Server.exe"

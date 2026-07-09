@@ -330,7 +330,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         private async Task ExecuteExportEmployeesAsync()
         {
-            if (!_allEmployeesData.Any())
+            if (!Employees.Any())
             {
                 await _messageService.ShowWarningAsync("No hay datos para exportar.");
                 return;
@@ -348,7 +348,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 SetBusy(true, "Generando archivo...");
                 try
                 {
-                    var bytes = _exportService.GenerateEmployeesExcel(_allEmployeesData);
+                    var filteredIds = Employees.Select(e => e.Id).ToHashSet();
+                    var filteredEmployees = _allEmployeesData.Where(e => filteredIds.Contains(e.Id)).ToList();
+                    var bytes = _exportService.GenerateEmployeesExcel(filteredEmployees);
                     await File.WriteAllBytesAsync(saveFileDialog.FileName, bytes);
                     await _messageService.ShowSuccessAsync("Archivo exportado correctamente.");
                 }

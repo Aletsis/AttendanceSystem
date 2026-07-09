@@ -752,6 +752,7 @@ public class ReportExportService : IReportExportService
                     columns.RelativeColumn(); // Date
                     columns.RelativeColumn(); // Day
                     columns.RelativeColumn(); // Scheduled In
+                    columns.RelativeColumn(); // Scheduled Out
                     columns.RelativeColumn(); // In
                     columns.RelativeColumn(); // Out
                     if (includeOvertime)
@@ -766,6 +767,7 @@ public class ReportExportService : IReportExportService
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Fecha").Bold();
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Día").Bold();
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("H. Entrada").Bold();
+                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("H. Salida").Bold();
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Entrada").Bold();
                     header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Salida").Bold();
                     if (includeOvertime)
@@ -780,6 +782,7 @@ public class ReportExportService : IReportExportService
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("dd/MM/yyyy"));
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd"));
                     table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
+                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
                     var inStr = FormatDateTime(record.ActualCheckIn, record.Date);
                     if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
 
@@ -799,7 +802,7 @@ public class ReportExportService : IReportExportService
                 {
                     table.Footer(footer =>
                     {
-                        footer.Cell().ColumnSpan(5).Border(1).AlignRight().Padding(2).Text("Total Horas Extra:").Bold();
+                        footer.Cell().ColumnSpan(6).Border(1).AlignRight().Padding(2).Text("Total Horas Extra:").Bold();
                         footer.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(totalOvertimeMinutes)).Bold();
                     });
                 }

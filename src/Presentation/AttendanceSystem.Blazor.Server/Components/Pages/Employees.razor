@@ -129,6 +129,12 @@ else
     private IEnumerable<string> _selectedDepts = new HashSet<string>();
     private IEnumerable<string> _selectedStatuses = new HashSet<string>();
 
+    // Current grid state for export
+    private string? _currentIdFilter;
+    private string? _currentNameFilter;
+    private string? _currentSortLabel;
+    private int? _currentSortDirection;
+
     // Available options
     private List<string> _availableBranches = new();
     private List<string> _availableDepts = new();
@@ -169,14 +175,19 @@ else
 
         string? GetFilter(string field) => state.FilterDefinitions.FirstOrDefault(f => f.Column?.PropertyName == field)?.Value?.ToString();
 
+        _currentIdFilter = GetFilter(nameof(EmployeeDto.Id));
+        _currentNameFilter = GetFilter(nameof(EmployeeDto.FullName));
+        _currentSortLabel = sortLabel;
+        _currentSortDirection = sortDirection;
+
         var query = new GetEmployeesWithPaginationQuery(
             state.Page,
             state.PageSize,
             _searchString,
             sortLabel,
             sortDirection,
-            GetFilter(nameof(EmployeeDto.Id)),
-            GetFilter(nameof(EmployeeDto.FullName)),
+            _currentIdFilter,
+            _currentNameFilter,
             _selectedBranches.Any() ? _selectedBranches : null,
             _selectedDepts.Any() ? _selectedDepts : null,
             null,
@@ -306,13 +317,27 @@ else
     {
         try
         {
-            var result = await Sender.Send(new GetAllEmployeesQuery());
+            var query = new GetEmployeesWithPaginationQuery(
+                0,
+                int.MaxValue,
+                _searchString,
+                _currentSortLabel,
+                _currentSortDirection,
+                _currentIdFilter,
+                _currentNameFilter,
+                _selectedBranches.Any() ? _selectedBranches : null,
+                _selectedDepts.Any() ? _selectedDepts : null,
+                null,
+                _selectedStatuses.Any() ? _selectedStatuses : null
+            );
+
+            var result = await Sender.Send(query);
             if (!result.IsSuccess)
             {
                 Snackbar.Add($"Error al cargar datos para exportar: {result.Error}", Severity.Error);
                 return;
             }
-            var employees = result.Value;
+            var employees = result.Value.Items;
 
             var bytes = ExportService.GenerateEmployeesExcel(employees);
             using var stream = new MemoryStream(bytes);
