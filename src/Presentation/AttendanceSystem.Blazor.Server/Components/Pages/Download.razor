@@ -33,7 +33,7 @@
                             <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_downloadToDate" HelperText="Si vacío: hasta hoy" />
                         </MudItem>
                     </MudGrid>
-
+                    <AuthorizeView Roles="Administrador" Context="authContext">
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="DownloadFromAllDevices" Disabled="@IsBusy">
                         @if (_isDownloadingAll)
                         {
@@ -46,7 +46,7 @@
                             <MudText Class="ml-2">Descargar Todo</MudText>
                         }
                     </MudButton>
-
+                    </AuthorizeView>
                     @if (_devices.Any())
                     {
                         <MudDivider Class="my-4" />
