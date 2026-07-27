@@ -58,7 +58,6 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
                     bool belongsToYesterday = false;
                     
                     if (yesterdayDA.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo || 
-                        yesterdayDA.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Jornada24h ||
                         (yesterdayDA.ScheduledCheckOut.HasValue && yesterdayDA.ScheduledCheckOut < yesterdayDA.ScheduledCheckIn))
                     {
                         // It's a cross-day shift. If the log is within 16 hours of yesterday's entry, it's a candidate.

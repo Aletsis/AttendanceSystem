@@ -47,8 +47,15 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Vespertino, "Vespertino" },
             { ShiftType.Nocturno, "Nocturno" },
             { ShiftType.Mixto, "Mixto" },
-            { ShiftType.Continuo, "Continuo" },
-            { ShiftType.Jornada24h, "Jornada 24 Horas" }
+            { ShiftType.Continuo, "Continuo" }
+        };
+
+        public Dictionary<ShiftType, string> DayShiftTypes { get; } = new()
+        {
+            { ShiftType.Matutino, "Matutino" },
+            { ShiftType.Vespertino, "Vespertino" },
+            { ShiftType.Nocturno, "Nocturno" },
+            { ShiftType.Continuo, "Continuo" }
         };
 
         public KeyValuePair<ShiftType, string> SelectedShiftType
@@ -165,7 +172,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var dEnd = d.EndDateTime?.TimeOfDay ?? TimeSpan.Zero;
                     var dDur = dEnd <= dStart ? dEnd.Add(TimeSpan.FromHours(24)) : dEnd;
                     
-                    dayDtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart));
+                    dayDtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart, d.ShiftType));
                 }
             }
 
@@ -229,6 +236,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                             var dEnd = day.StartTime.Add(day.WorkHours);
                             if (dEnd.TotalDays >= 1) dEnd = dEnd.Subtract(TimeSpan.FromDays(1));
                             vm.EndDateTime = DateTime.Today.Add(dEnd);
+                            vm.ShiftType = day.ShiftType;
                         }
                     }
                 }
@@ -242,6 +250,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
     {
         private DateTime? _startDateTime;
         private DateTime? _endDateTime;
+        private ShiftType _shiftType = ShiftType.Matutino;
 
         public DayOfWeek DayOfWeek { get; set; }
         public string DayName { get; set; } = string.Empty;
@@ -256,6 +265,12 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         {
             get => _endDateTime;
             set => SetProperty(ref _endDateTime, value);
+        }
+
+        public ShiftType ShiftType
+        {
+            get => _shiftType;
+            set => SetProperty(ref _shiftType, value);
         }
     }
 }

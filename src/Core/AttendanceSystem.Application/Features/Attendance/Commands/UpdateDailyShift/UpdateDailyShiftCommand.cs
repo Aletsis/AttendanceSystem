@@ -71,7 +71,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             }
         }
 
-        bool isCrossDay = dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Jornada24h || shift.ShiftType == ShiftType.Continuo;
+        bool isCrossDay = dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Continuo;
         if (isCrossDay)
         {
             searchEndDate = searchStartDate.AddDays(1);

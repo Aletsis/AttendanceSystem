@@ -55,6 +55,11 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             d.Property(x => x.StartTime).IsRequired();
             d.Property(x => x.EndTime).IsRequired();
             d.Property(x => x.WorkHours).IsRequired();
+            
+            d.Property(x => x.ShiftType)
+                .IsRequired()
+                .HasDefaultValue(AttendanceSystem.Domain.Enumerations.ShiftType.Matutino)
+                .HasConversion<int>();
         });
     }
 }

@@ -4,6 +4,9 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
+using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
+using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
@@ -16,6 +19,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IEmployeeRepository _employeeRepo;
     private readonly IShiftRepository _shiftRepo;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly ISender _sender;
     private readonly ILogger<ProcessDailyAttendanceCommandHandler> _logger;
 
     public ProcessDailyAttendanceCommandHandler(
@@ -24,6 +28,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IEmployeeRepository employeeRepo,
         IShiftRepository shiftRepo,
         IUnitOfWork unitOfWork,
+        ISender sender,
         ILogger<ProcessDailyAttendanceCommandHandler> logger)
     {
         _dailyRepo = dailyRepo;
@@ -31,6 +36,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         _employeeRepo = employeeRepo;
         _shiftRepo = shiftRepo;
         _unitOfWork = unitOfWork;
+        _sender = sender;
         _logger = logger;
     }
 
@@ -162,7 +168,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     shift = matchedShift;
                 }
 
-                // Check for Night Shift or 24h Shift (Cross-Day)
+                // Check for Night Shift or Continuous (Cross-Day)
                 // If it's a cross-day shift, we extend search to the next day to catch the exit
                 bool isCrossDay = false;
                 TimeSpan dayStartTime = TimeSpan.Zero;
@@ -180,12 +186,21 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         {
                             dayStartTime = dayConfig.StartTime;
                             dayEndTime = dayConfig.EndTime;
+
+                            // If dayConfig is Nocturno or Continuo, or if endTime <= startTime, it crosses day
+                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo)
+                            {
+                                isCrossDay = true;
+                            }
                         }
                     }
-
-                    if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Jornada24h || shift.ShiftType == ShiftType.Continuo)
+                    else if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo)
                     {
                         isCrossDay = true;
+                    }
+
+                    if (isCrossDay)
+                    {
                         searchEndDate = searchStartDate.AddDays(1);
                     }
                 }
@@ -203,275 +218,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     .OrderBy(r => r.CheckTime)
                     .ToList();
 
-                // 5. Determine Actual In/Out
-                DateTime? checkIn = null;
-                DateTime? checkOut = null;
-                AttendanceRecord? checkInRecord = null;
-                AttendanceRecord? checkOutRecord = null;
-                // Resultado del análisis de registros intermedios (comida y permisos temporales)
-                (int Lunch, bool HasTempExits, int TempMinutes)? intermediateAnalysis = null;
-
-                if (shift != null && records.Any())
-                {
-                    if (isCrossDay)
-                    {
-                        // --- TURNOS NOCTURNOS / 24H: lógica de ventanas de tiempo (sin cambios) ---
-                        var scheduledIn = date.Add(dayStartTime);
-                        var scheduledOut = date.Add(dayEndTime);
-                        scheduledOut = scheduledOut.AddDays(1);
-
-                        double maxInDistance = 300;
-                        double maxOutDistance = 960;
-
-                        IEnumerable<AttendanceRecord> entryRecords = records;
-                        IEnumerable<AttendanceRecord> exitRecords = records;
-
-                        if (shift.ShiftType == ShiftType.Continuo)
-                        {
-                            var potentialIn = records
-                                .Where(r => r.CheckTime.Date == date.Date && r.Status == AttendanceStatus.Pending)
-                                .OrderBy(r => r.CheckTime)
-                                .FirstOrDefault();
-
-                            if (potentialIn != null)
-                            {
-                                checkInRecord = potentialIn;
-                                checkIn = potentialIn.CheckTime;
-
-                                checkOutRecord = records
-                                    .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 24)
-                                    .OrderBy(r => r.CheckTime)
-                                    .FirstOrDefault();
-
-                                if (checkOutRecord != null)
-                                    checkOut = checkOutRecord.CheckTime;
-                            }
-                        }
-                        else
-                        {
-                            var entryWindowStart = scheduledIn.AddHours(-6);
-                            var entryWindowEnd = scheduledIn.AddHours(6);
-
-                            entryRecords = records.Where(r =>
-                                r.CheckTime >= entryWindowStart &&
-                                r.CheckTime <= entryWindowEnd &&
-                                r.Status == AttendanceStatus.Pending);
-
-                            var exitWindowStart = scheduledOut.AddHours(-10);
-                            var exitWindowEnd = scheduledOut.AddHours(10);
-
-                            exitRecords = records.Where(r =>
-                                r.CheckTime >= exitWindowStart &&
-                                r.CheckTime <= exitWindowEnd);
-
-                            var matchIn = entryRecords
-                                .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
-                                .Where(x => x.Diff <= maxInDistance)
-                                .OrderBy(x => x.Diff)
-                                .FirstOrDefault();
-
-                            if (matchIn != null)
-                            {
-                                checkInRecord = matchIn.Record;
-                                checkIn = matchIn.Record.CheckTime;
-                            }
-
-                            var matchOut = exitRecords
-                                .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
-                                .Where(x => x.Diff <= maxOutDistance)
-                                .OrderBy(x => x.Diff)
-                                .FirstOrDefault();
-
-                            if (matchOut != null)
-                            {
-                                if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
-                                {
-                                    if (matchOut.Diff < matchIn!.Diff)
-                                    {
-                                        checkOutRecord = matchOut.Record;
-                                        checkOut = matchOut.Record.CheckTime;
-                                        checkIn = null;
-                                        checkInRecord = null;
-                                    }
-                                }
-                                else
-                                {
-                                    checkOutRecord = matchOut.Record;
-                                    checkOut = matchOut.Record.CheckTime;
-                                }
-                            }
-                        }
-
-                        // Sanity check: salida después de entrada
-                        if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
-                        {
-                            var scheduledIn2 = date.Add(dayStartTime);
-                            var scheduledOut2 = date.Add(dayEndTime).AddDays(1);
-                            double diffIn = Math.Abs((checkIn.Value - scheduledIn2).TotalMinutes);
-                            double diffOut = Math.Abs((checkOut.Value - scheduledOut2).TotalMinutes);
-                            if (diffIn <= diffOut) { checkOut = null; checkOutRecord = null; }
-                            else { checkIn = null; checkInRecord = null; }
-                        }
-                    }
-                    else
-                    {
-                        // ---------------------------------------------------------------
-                        // TURNOS REGULARES: Algoritmo First-In / Last-Out
-                        // ---------------------------------------------------------------
-                        // Solo usar registros Pending del día actual
-                        var pendingDayRecords = records
-                            .Where(r => r.Status == AttendanceStatus.Pending && r.CheckTime.Date == date.Date)
-                            .OrderBy(r => r.CheckTime)
-                            .ToList();
-
-                        if (pendingDayRecords.Count >= 1)
-                        {
-                            // PASO 1: Primer registro = Entrada oficial, Último = Salida oficial
-                            checkInRecord = pendingDayRecords.First();
-                            checkIn = checkInRecord.CheckTime;
-
-                            if (pendingDayRecords.Count >= 2)
-                            {
-                                checkOutRecord = pendingDayRecords.Last();
-                                checkOut = checkOutRecord.CheckTime;
-                            }
-
-                            // PASO 2: Registros intermedios (entre entrada y salida)
-                            var middleRecords = pendingDayRecords.Count >= 3
-                                ? pendingDayRecords.Skip(1).SkipLast(1).ToList()
-                                : new List<AttendanceRecord>();
-
-                            if (middleRecords.Any())
-                            {
-                                // PASO 2A: Pre-filtro — descartar dobles toques por proximidad a los extremos
-                                const int doubleTapThresholdMinutes = 15;
-
-                                var entryDoubleTaps = middleRecords
-                                    .Where(r => (r.CheckTime - checkIn!.Value).TotalMinutes <= doubleTapThresholdMinutes)
-                                    .ToList();
-
-                                var exitDoubleTaps = checkOut.HasValue
-                                    ? middleRecords
-                                        .Where(r => (checkOut.Value - r.CheckTime).TotalMinutes <= doubleTapThresholdMinutes)
-                                        .ToList()
-                                    : new List<AttendanceRecord>();
-
-                                var recordsToAnalyze = middleRecords
-                                    .Except(entryDoubleTaps)
-                                    .Except(exitDoubleTaps)
-                                    .OrderBy(r => r.CheckTime)
-                                    .ToList();
-
-                                _logger.LogDebug(
-                                    "Empleado {EmpId} - {Date}: {Total} intermedios. DoubleTap entrada={DTIn}, salida={DTOut}. Para analizar={ToAnalyze}",
-                                    employee.Id.Value, date.ToString("dd/MM/yyyy"),
-                                    middleRecords.Count, entryDoubleTaps.Count, exitDoubleTaps.Count, recordsToAnalyze.Count);
-
-                                // PASO 2B: Análisis de pares de ausencia
-                                int lunchMinutesDeducted = 0;
-                                bool hasTemporaryExits = false;
-                                int temporaryExitMinutes = 0;
-
-                                // Iterar en pares (salida intermedia, regreso)
-                                for (int i = 0; i < recordsToAnalyze.Count; i += 2)
-                                {
-                                    var exitRecord = recordsToAnalyze[i];
-
-                                    if (i + 1 < recordsToAnalyze.Count)
-                                    {
-                                        // Par completo: calcular duración de ausencia
-                                        var returnRecord = recordsToAnalyze[i + 1];
-                                        double absenceMinutes = (returnRecord.CheckTime - exitRecord.CheckTime).TotalMinutes;
-
-                                        if (absenceMinutes <= 15)
-                                        {
-                                            // Error de doble checada intermedia — ignorar
-                                            _logger.LogDebug("Par intermedio ({Exit}-{Return}): {Min} min → doble toque intermedio, ignorado.",
-                                                exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes);
-                                        }
-                                        else if (absenceMinutes <= 90)
-                                        {
-                                            // Posible permiso temporal o comida corta
-                                            hasTemporaryExits = true;
-                                            temporaryExitMinutes += (int)absenceMinutes;
-                                            _logger.LogInformation("Par intermedio ({Exit}-{Return}): {Min} min → posible permiso temporal detectado.",
-                                                exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes);
-                                        }
-                                        else
-                                        {
-                                            // Comida formal: aplicar deducción configurada en el turno
-                                            if (shift.LunchBreakMinutes > 0)
-                                            {
-                                                lunchMinutesDeducted += shift.LunchBreakMinutes;
-                                                _logger.LogDebug("Par intermedio ({Exit}-{Return}): {Min} min → comida formal. Deduciendo {Lunch} min.",
-                                                    exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes, shift.LunchBreakMinutes);
-                                            }
-                                        }
-                                    }
-                                    else
-                                    {
-                                        // Checada sin par (número impar de intermedios)
-                                        hasTemporaryExits = true;
-                                        _logger.LogWarning("Checada intermedia huérfana ({Exit}) sin regreso registrado — posible salida sin retorno.",
-                                            exitRecord.CheckTime);
-                                    }
-                                }
-
-                                // Guardar resultados del análisis para aplicar después de crear el DailyAttendance
-                                // (se usa una tupla local para pasar al aggregate)
-                                intermediateAnalysis = (lunchMinutesDeducted, hasTemporaryExits, temporaryExitMinutes);
-
-                                // PASO 3: Marcar TODOS los intermedios como Processed
-                                foreach (var middle in middleRecords)
-                                {
-                                    middle.MarkAsProcessed();
-                                    await _attendanceRepo.UpdateAsync(middle, cancellationToken);
-                                }
-                            }
-                        }
-                    }
-                }
-                else if (records.Any())
-                {
-                    // Fallback for No-Shift / Rest Day: use simple First/Last of the *first* day (searchStartDate)
-                    // Filter to date only to behave like calendar day
-                    var dayRecords = records.Where(r => r.CheckTime.Date == date.Date).ToList();
-
-                    if (dayRecords.Any())
-                    {
-                        var first = dayRecords.First();
-                        checkIn = first.CheckTime;
-                        checkInRecord = first;
-
-                        if (dayRecords.Count > 1)
-                        {
-                            var last = dayRecords.Last();
-                            checkOut = last.CheckTime;
-                            checkOutRecord = last;
-                        }
-                    }
-                }
-
-                // Marcar registros como procesados y asignar tipo
-                if (checkInRecord != null) // Status check removed as we filtered or reset them
-                {
-                    // If it was already processed (rare race cond), we might overwrite or fail.
-                    // But we filtered Processed out. So it is Pending.
-                    checkInRecord.MarkAsProcessed();
-                    checkInRecord.SetInferredType(AttendanceSystem.Domain.Enumerations.CheckType.CheckIn);
-                    await _attendanceRepo.UpdateAsync(checkInRecord, cancellationToken);
-                }
-
-                if (checkOutRecord != null)
-                {
-                    checkOutRecord.MarkAsProcessed();
-                    checkOutRecord.SetInferredType(AttendanceSystem.Domain.Enumerations.CheckType.CheckOut);
-                    await _attendanceRepo.UpdateAsync(checkOutRecord, cancellationToken);
-                }
-
+                // Determine if today is a rest day
                 if (employee.RestDay.HasValue)
                 {
-                    // Map DayOfWeek
                     var dayOfWeek = (AttendanceSystem.Domain.Enumerations.WeekDay)(int)date.DayOfWeek; 
                     if (employee.RestDay == dayOfWeek)
                     {
@@ -479,30 +228,55 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     }
                 }
 
-                // 6. Create DailyAttendance
-                var dailyAttendance = DailyAttendance.Create(
-                    employee.Id,
-                    date,
-                    shift,
-                    checkIn,
-                    checkOut,
-                    isRestDay,
-                    checkInRecord?.Id,
-                    checkOutRecord?.Id,
-                    employee.CalculateOvertimeBeforeEntry,
-                    employee.OvertimeAuthorized);
-
-                // 6b. Aplicar resultados del análisis de registros intermedios al aggregate
-                if (intermediateAnalysis.HasValue)
+                // 5. Delegate calculation to specific sub-command
+                if (shift == null)
                 {
-                    dailyAttendance.ApplyIntermediateAnalysis(
-                        intermediateAnalysis.Value.Lunch,
-                        intermediateAnalysis.Value.HasTempExits,
-                        intermediateAnalysis.Value.TempMinutes);
+                    await _sender.Send(new ProcessNoShiftAttendanceCommand(
+                        employee,
+                        date,
+                        records,
+                        isRestDay), cancellationToken);
+                }
+                else if (shift.ShiftType == ShiftType.Mixto)
+                {
+                    await _sender.Send(new ProcessMixAttendanceCommand(
+                        employee,
+                        date,
+                        shift,
+                        records,
+                        isRestDay), cancellationToken);
+                }
+                else if (shift.ShiftType == ShiftType.Continuo)
+                {
+                    await _sender.Send(new ProcessContinuousAttendanceCommand(
+                        employee,
+                        date,
+                        shift,
+                        records,
+                        isRestDay), cancellationToken);
+                }
+                else if (shift.ShiftType == ShiftType.Nocturno)
+                {
+                    await _sender.Send(new ProcessNightlyAttendanceCommand(
+                        employee,
+                        date,
+                        shift,
+                        records,
+                        isRestDay,
+                        dayStartTime,
+                        dayEndTime), cancellationToken);
+                }
+                else
+                {
+                    // Matutino o Vespertino
+                    await _sender.Send(new ProcessRegularAttendanceCommand(
+                        employee,
+                        date,
+                        shift,
+                        records,
+                        isRestDay), cancellationToken);
                 }
 
-                // 7. Save
-                _dailyRepo.Add(dailyAttendance);
                 processedCount++;
             }
         }

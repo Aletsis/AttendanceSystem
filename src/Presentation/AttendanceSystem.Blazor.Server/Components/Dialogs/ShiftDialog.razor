@@ -22,11 +22,23 @@
             <MudTable Items="_days" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
                 <HeaderContent>
                     <MudTh>Día</MudTh>
+                    <MudTh>Tipo de Turno</MudTh>
                     <MudTh>Hora Inicio</MudTh>
                     <MudTh>Hora Fin</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Día">@context.DayName</MudTd>
+                    <MudTd DataLabel="Tipo de Turno">
+                        <MudSelect @bind-Value="context.ShiftType" Margin="Margin.Dense">
+                            @foreach (ShiftType type in Enum.GetValues(typeof(ShiftType)))
+                            {
+                                @if (type != ShiftType.Mixto)
+                                {
+                                    <MudSelectItem Value="@type">@GetShiftTypeName(type)</MudSelectItem>
+                                }
+                            }
+                        </MudSelect>
+                    </MudTd>
                     <MudTd DataLabel="Hora Inicio">
                         <MudTimePicker @bind-Time="context.StartTime" Required="true" Editable="true" />
                     </MudTd>
@@ -78,6 +90,7 @@
         public string DayName { get; set; } = "";
         public TimeSpan? StartTime { get; set; }
         public TimeSpan? EndTime { get; set; }
+        public ShiftType ShiftType { get; set; } = ShiftType.Matutino;
     }
 
     protected override void OnInitialized()
@@ -129,7 +142,8 @@
                     DayOfWeek = kvp.Key,
                     DayName = kvp.Value,
                     StartTime = existing.StartTime,
-                    EndTime = end
+                    EndTime = end,
+                    ShiftType = existing.ShiftType
                 });
             }
             else
@@ -139,7 +153,8 @@
                     DayOfWeek = kvp.Key,
                     DayName = kvp.Value,
                     StartTime = new TimeSpan(9, 0, 0),
-                    EndTime = new TimeSpan(18, 0, 0)
+                    EndTime = new TimeSpan(18, 0, 0),
+                    ShiftType = ShiftType.Matutino
                 });
             }
         }
@@ -183,7 +198,7 @@
                     var dEnd = d.EndTime.Value;
                     var dDur = dEnd <= dStart ? dEnd.Add(TimeSpan.FromHours(24)) : dEnd;
                     
-                    dtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart));
+                    dtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart, d.ShiftType));
                 }
             }
         }
@@ -207,7 +222,6 @@
         ShiftType.Nocturno => "Nocturno",
         ShiftType.Mixto => "Mixto",
         ShiftType.Continuo => "Continuo",
-        ShiftType.Jornada24h => "Jornada 24 Horas",
         _ => type.ToString()
     };
 }

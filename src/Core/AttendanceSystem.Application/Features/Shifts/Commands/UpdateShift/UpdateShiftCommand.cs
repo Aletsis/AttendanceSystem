@@ -42,7 +42,8 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
             var days = request.Days?.Select(d => new AttendanceSystem.Domain.Aggregates.ShiftAggregate.ShiftDay(
                 d.DayOfWeek,
                 d.StartTime,
-                d.WorkHours // Or derive it if DTO changed
+                d.WorkHours,
+                d.ShiftType
             )).ToList();
 
             shift.Update(

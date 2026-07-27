@@ -27,14 +27,20 @@
             <Grid Margin="0,5">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="80"/>
+                    <ColumnDefinition Width="90"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding DayName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#4E5D78"/>
-                <mah:TimePicker Grid.Column="1" SelectedDateTime="{Binding StartDateTime}" 
+                <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.DayShiftTypes, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                          SelectedValue="{Binding ShiftType}"
+                          SelectedValuePath="Key"
+                          DisplayMemberPath="Value"
+                          Margin="5,0"/>
+                <mah:TimePicker Grid.Column="2" SelectedDateTime="{Binding StartDateTime}" 
                                 mah:TextBoxHelper.Watermark="Entrada" Margin="5,0"
                                 Culture="es-MX" IsClockVisible="False"/>
-                <mah:TimePicker Grid.Column="2" SelectedDateTime="{Binding EndDateTime}" 
+                <mah:TimePicker Grid.Column="3" SelectedDateTime="{Binding EndDateTime}" 
                                 mah:TextBoxHelper.Watermark="Salida" Margin="5,0"
                                 Culture="es-MX" IsClockVisible="False"/>
             </Grid>
@@ -92,7 +98,7 @@
 
                     <!-- Conditional Fields based on Shift Type -->
                     
-                    <!-- Standard Shift (Matutino, Vespertino, Nocturno, Jornada24h) -->
+                    <!-- Standard Shift (Matutino, Vespertino, Nocturno) -->
                     <StackPanel Visibility="{Binding IsStandardShift, Converter={StaticResource BoolToVis}}">
                         <Grid Margin="0,5,0,15">
                             <Grid.ColumnDefinitions>

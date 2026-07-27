@@ -34,7 +34,8 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
             var days = request.Days?.Select(d => new ShiftDay(
                 d.DayOfWeek,
                 d.StartTime,
-                d.WorkHours
+                d.WorkHours,
+                d.ShiftType
             )).ToList();
 
             var shift = Shift.Create(

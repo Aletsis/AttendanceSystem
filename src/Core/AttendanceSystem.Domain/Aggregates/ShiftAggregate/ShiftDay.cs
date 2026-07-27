@@ -1,5 +1,7 @@
 using System;
 
+using AttendanceSystem.Domain.Enumerations;
+
 namespace AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 
 public record ShiftDay
@@ -8,14 +10,16 @@ public record ShiftDay
     public TimeSpan StartTime { get; private set; }
     public TimeSpan EndTime { get; private set; }
     public TimeSpan WorkHours { get; private set; }
+    public ShiftType ShiftType { get; private set; }
 
     private ShiftDay() { } // Para EF Core
 
-    public ShiftDay(DayOfWeek dayOfWeek, TimeSpan startTime, TimeSpan workHours)
+    public ShiftDay(DayOfWeek dayOfWeek, TimeSpan startTime, TimeSpan workHours, ShiftType shiftType = ShiftType.Matutino)
     {
         DayOfWeek = dayOfWeek;
         StartTime = startTime;
         WorkHours = workHours;
+        ShiftType = shiftType;
         EndTime = NormalizeTime(startTime.Add(workHours));
     }
 
