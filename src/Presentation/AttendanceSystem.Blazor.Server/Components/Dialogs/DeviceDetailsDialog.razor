@@ -289,7 +289,7 @@
 
     private async Task DeleteUser(DeviceUserDto user)
     {
-        var confirm = await DialogService.ShowMessageBox(
+        var confirm = await DialogService.ShowMessageBoxAsync(
             "Confirmar Eliminación", 
             $"¿Está seguro de eliminar al usuario {user.Name} ({user.UserId}) del dispositivo? Esta acción borrará sus huellas y datos.", 
             yesText: "Eliminar", cancelText: "Cancelar");
@@ -312,7 +312,7 @@
 
     private async Task DeleteFingerprints(DeviceUserDto user)
     {
-         var confirm = await DialogService.ShowMessageBox(
+         var confirm = await DialogService.ShowMessageBoxAsync(
             "Confirmar Eliminación de Huellas", 
             $"¿Borrar todas las huellas de {user.Name} ({user.UserId})?",
             yesText: "Borrar", cancelText: "Cancelar");
@@ -339,7 +339,7 @@
 
     private async Task FactoryReset()
     {
-        var confirm = await DialogService.ShowMessageBox(
+        var confirm = await DialogService.ShowMessageBoxAsync(
             "PELIGRO: RESTABLECIMIENTO DE FÁBRICA", 
             "¿ESTÁ ABSOLUTAMENTE SEGURO? Se borrarán TODOS los usuarios y registros del dispositivo.",
             yesText: "SÍ, BORRAR TODO", cancelText: "Cancelar");
@@ -362,7 +362,7 @@
             ? $"en el rango del {_dateRange.Start.Value:dd/MM/yyyy} al {_dateRange.End.Value:dd/MM/yyyy}"
             : "TODOS los logs de asistencia (borrado completo)";
 
-        var confirm = await DialogService.ShowMessageBox(
+        var confirm = await DialogService.ShowMessageBoxAsync(
             "Confirmar Eliminación de Logs", 
             $"¿Está seguro de que desea borrar {rangeMsg} de este dispositivo? Esta acción eliminará los registros del reloj checador y no se puede deshacer.",
             yesText: "Sí, Borrar Logs", cancelText: "Cancelar");

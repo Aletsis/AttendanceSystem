@@ -253,7 +253,7 @@
     private Guid? _selectedBranchId;
     private List<BranchDto> _branches = new();
     private TardinessAnalysisDto? _data;
-    private List<ChartSeries> _series = new();
+    private List<ChartSeries<double>> _series = new();
     private string[] _xAxisLabels = Array.Empty<string>();
 
     private List<BreadcrumbItem> _breadcrumbs = new()
@@ -313,10 +313,10 @@
         if (_data == null) return;
 
         _xAxisLabels = _data.TardinessByDayOfWeek.Select(d => d.DayName).ToArray();
-        _series = new List<ChartSeries>
+        _series = new List<ChartSeries<double>>
         {
-            new ChartSeries { Name = "Retardos", Data = _data.TardinessByDayOfWeek.Select(d => (double)d.TardyCount).ToArray() },
-            new ChartSeries { Name = "Minutos", Data = _data.TardinessByDayOfWeek.Select(d => (double)d.TotalMinutes).ToArray() }
+            new ChartSeries<double> { Name = "Retardos", Data = _data.TardinessByDayOfWeek.Select(d => (double)d.TardyCount).ToArray() },
+            new ChartSeries<double> { Name = "Minutos", Data = _data.TardinessByDayOfWeek.Select(d => (double)d.TotalMinutes).ToArray() }
         };
     }
 

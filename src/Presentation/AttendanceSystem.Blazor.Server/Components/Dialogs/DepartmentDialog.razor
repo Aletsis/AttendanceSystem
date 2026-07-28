@@ -30,7 +30,7 @@
     [Parameter] public string Description { get; set; } = string.Empty;
 
     private IEnumerable<PositionDto> _positions = new List<PositionDto>();
-    private IEnumerable<Guid> _selectedPositionIds = new HashSet<Guid>();
+    private IReadOnlyCollection<Guid> _selectedPositionIds = new HashSet<Guid>();
 
     protected override async Task OnInitializedAsync()
     {
@@ -51,7 +51,7 @@
                 
                 if (department.PositionIds != null)
                 {
-                    _selectedPositionIds = department.PositionIds;
+                    _selectedPositionIds = department.PositionIds.ToList();
                 }
             }
         }

@@ -7,7 +7,7 @@ using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices;
 using MediatR;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Devices
 {
@@ -19,7 +19,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
 
         public string Title => "Seleccionar Dispositivo";
 
-        public event Action<IDialogResult> RequestClose;
+        public DialogCloseListener RequestClose { get; }
 
         public ObservableCollection<DeviceDto> Devices
         {
@@ -69,12 +69,12 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private void ExecuteSelect()
         {
             var parameters = new DialogParameters { { "DeviceId", SelectedDevice.DeviceId }, { "DeviceName", SelectedDevice.Name } };
-            RequestClose?.Invoke(new DialogResult(ButtonResult.OK, parameters));
+            RequestClose.Invoke(parameters, ButtonResult.OK);
         }
 
         private void ExecuteCancel()
         {
-            RequestClose?.Invoke(new DialogResult(ButtonResult.Cancel));
+            RequestClose.Invoke(ButtonResult.Cancel);
         }
 
         public bool CanCloseDialog() => true;

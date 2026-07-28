@@ -244,7 +244,7 @@
     private Guid? _selectedBranchId;
     private List<BranchDto> _branches = new();
     private AbsenteeismAnalysisDto? _data;
-    private List<ChartSeries> _series = new();
+    private List<ChartSeries<double>> _series = new();
     private string[] _xAxisLabels = Array.Empty<string>();
 
     private List<BreadcrumbItem> _breadcrumbs = new()
@@ -304,9 +304,9 @@
         if (_data == null) return;
 
         _xAxisLabels = _data.AbsencesByDayOfWeek.Select(d => d.DayName).ToArray();
-        _series = new List<ChartSeries>
+        _series = new List<ChartSeries<double>>
         {
-            new ChartSeries { Name = "Faltas", Data = _data.AbsencesByDayOfWeek.Select(d => (double)d.AbsenceCount).ToArray() }
+            new ChartSeries<double> { Name = "Faltas", Data = _data.AbsencesByDayOfWeek.Select(d => (double)d.AbsenceCount).ToArray() }
         };
     }
 

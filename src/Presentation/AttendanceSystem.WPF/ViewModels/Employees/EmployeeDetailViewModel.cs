@@ -1,7 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Prism.Commands;
-using Prism.Regions;
+using Prism.Navigation.Regions;
 using AttendanceSystem.WPF.Services;
 using MediatR;
 using AttendanceSystem.Application.Features.Employees.Commands;

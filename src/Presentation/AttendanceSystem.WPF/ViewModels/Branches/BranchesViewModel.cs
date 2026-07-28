@@ -16,7 +16,7 @@ using System;
 using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Branches
 {

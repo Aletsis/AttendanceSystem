@@ -2,7 +2,7 @@ using System;
 using System.Windows.Input;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Branches
 {
@@ -55,7 +55,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
 
-        public event Action<IDialogResult> RequestClose;
+        public DialogCloseListener RequestClose { get; }
 
         public BranchDetailViewModel()
         {
@@ -91,12 +91,12 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
                 { "ExternalHost", ExternalHost }
             };
 
-            RequestClose?.Invoke(new DialogResult(ButtonResult.OK, parameters));
+            RequestClose.Invoke(parameters, ButtonResult.OK);
         }
 
         private void ExecuteCancel()
         {
-            RequestClose?.Invoke(new DialogResult(ButtonResult.Cancel));
+            RequestClose.Invoke(ButtonResult.Cancel);
         }
 
         public bool CanCloseDialog() => true;

@@ -7,7 +7,7 @@ using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Enumerations;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Shifts
 {
@@ -117,7 +117,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
 
-        public event Action<IDialogResult> RequestClose;
+        public DialogCloseListener RequestClose { get; }
 
         public ShiftDetailViewModel()
         {
@@ -203,12 +203,12 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "RoundingInterval", RoundingInterval }
             };
 
-            RequestClose?.Invoke(new DialogResult(ButtonResult.OK, parameters));
+            RequestClose.Invoke(parameters, ButtonResult.OK);
         }
 
         private void ExecuteCancel()
         {
-            RequestClose?.Invoke(new DialogResult(ButtonResult.Cancel));
+            RequestClose.Invoke(ButtonResult.Cancel);
         }
 
         public bool CanCloseDialog() => true;

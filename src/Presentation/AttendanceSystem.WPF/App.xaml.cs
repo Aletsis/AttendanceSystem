@@ -3,7 +3,7 @@ using AttendanceSystem.WPF.Views;
 using AttendanceSystem.WPF.Services;
 using Prism.Ioc;
 using Prism.Unity;
-using Prism.Regions;
+using Prism.Navigation.Regions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;

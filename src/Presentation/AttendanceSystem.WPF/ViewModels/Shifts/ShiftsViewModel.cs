@@ -15,7 +15,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Shifts
 {

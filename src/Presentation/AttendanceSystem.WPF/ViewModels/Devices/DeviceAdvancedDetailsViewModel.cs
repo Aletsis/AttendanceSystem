@@ -15,7 +15,7 @@ using AttendanceSystem.Domain.Enumerations;
 using MediatR;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 using AttendanceSystem.WPF.Services;
 
 namespace AttendanceSystem.WPF.ViewModels.Devices
@@ -71,7 +71,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public ICommand ClearLogsCommand { get; }
         public ICommand CancelCommand { get; }
 
-        public event Action<IDialogResult>? RequestClose;
+        public DialogCloseListener RequestClose { get; }
 
         public DeviceAdvancedDetailsViewModel(
             IMediator mediator, 
@@ -88,7 +88,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             SetTimeCommand = new DelegateCommand(async () => await ExecuteSetTimeAsync());
             ResetToFactoryCommand = new DelegateCommand(async () => await ExecuteResetToFactoryAsync());
             ClearLogsCommand = new DelegateCommand(async () => await ExecuteClearLogsAsync());
-            CancelCommand = new DelegateCommand(() => RequestClose?.Invoke(new DialogResult(ButtonResult.OK)));
+            CancelCommand = new DelegateCommand(() => RequestClose.Invoke(ButtonResult.OK));
         }
 
         private async Task LoadHistoryAsync()
@@ -173,7 +173,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 { "Log", log },
                 { "DeviceName", Name }
             };
-            _dialogService.ShowDialog("DownloadLogDetailsDialog", parameters, null);
+            _dialogService.ShowDialog("DownloadLogDetailsDialog", parameters);
         }
 
         public bool CanCloseDialog() => true;

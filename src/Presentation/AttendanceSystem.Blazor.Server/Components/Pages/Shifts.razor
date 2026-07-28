@@ -156,7 +156,7 @@
 
     private async Task DeleteShift(ShiftDto shift)
     {
-        var confirmed = await DialogService.ShowMessageBox(
+        var confirmed = await DialogService.ShowMessageBoxAsync(
             "Eliminar Turno", 
             $"¿Estás seguro que deseas eliminar el turno '{shift.Name}'?", 
             yesText: "Eliminar", cancelText: "Cancelar", noText: null,

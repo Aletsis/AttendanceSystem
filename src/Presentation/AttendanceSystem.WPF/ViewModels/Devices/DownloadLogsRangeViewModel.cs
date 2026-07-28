@@ -2,7 +2,7 @@ using System;
 using System.Windows.Input;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Devices
 {
@@ -19,7 +19,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
 
         public string Title => "Descargar Registros";
 
-        public event Action<IDialogResult>? RequestClose;
+        public DialogCloseListener RequestClose { get; }
 
         public DownloadLogsRangeViewModel()
         {
@@ -34,12 +34,12 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 { "FromDate", FromDate },
                 { "ToDate", ToDate }
             };
-            RequestClose?.Invoke(new DialogResult(ButtonResult.OK, parameters));
+            RequestClose.Invoke(parameters, ButtonResult.OK);
         }
 
         private void ExecuteCancel()
         {
-            RequestClose?.Invoke(new DialogResult(ButtonResult.Cancel));
+            RequestClose.Invoke(ButtonResult.Cancel);
         }
 
         public bool CanCloseDialog() => true;

@@ -16,7 +16,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 using System.Windows.Media;
 using System.Collections.ObjectModel;
 using Prism.Mvvm;
@@ -339,7 +339,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             if (deviceData == null) return;
 
             var parameters = new DialogParameters { { "Device", deviceData } };
-            _dialogService.ShowDialog("DeviceAdvancedDetailsDialog", parameters, null);
+            _dialogService.ShowDialog("DeviceAdvancedDetailsDialog", parameters);
         }
 
         private bool CanExecuteEdit()
