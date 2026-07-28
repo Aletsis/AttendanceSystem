@@ -10,5 +10,7 @@ public record ShiftDto(
     int ToleranceMinutes,
     TimeSpan WorkHours,
     ShiftType ShiftType,
-    IEnumerable<ShiftDayDto> Days
+    IEnumerable<ShiftDayDto> Days,
+    bool RoundingsEnabled,
+    int RoundingInterval
 );

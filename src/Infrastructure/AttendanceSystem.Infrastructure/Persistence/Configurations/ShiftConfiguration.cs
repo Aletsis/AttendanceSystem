@@ -42,6 +42,14 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             .IsRequired()
             .HasDefaultValue(0);
 
+        builder.Property(s => s.RoundingsEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+
+        builder.Property(s => s.RoundingInterval)
+            .IsRequired()
+            .HasDefaultValue(0);
+
         builder.OwnsMany(s => s.Days, d =>
         {
             d.ToTable("ShiftDays");

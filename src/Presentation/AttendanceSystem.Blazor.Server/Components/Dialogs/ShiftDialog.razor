@@ -50,7 +50,16 @@
         }
         else if (_shiftType == ShiftType.Continuo)
         {
-            <MudNumericField @bind-Value="_targetHours" Label="Horas de Jornada Objetivo" Min="1" Max="24" Step="1" HelperText="Horas que el empleado debe cumplir para no contar como salida anticipada" />
+            <MudNumericField @bind-Value="_targetHours" Label="Horas de Jornada Objetivo" Min="1" Max="24" Step="1" HelperText="Horas que el empleado debe cumplir para no contar como salida anticipada" Class="mb-4" />
+            <MudCheckBox @bind-Value="_roundingsEnabled" Label="Habilitar Redondeos" Color="Color.Primary" Class="mb-2" />
+            @if (_roundingsEnabled)
+            {
+                <MudSelect @bind-Value="_roundingInterval" Label="Intervalo de Redondeo" Class="mb-4">
+                    <MudSelectItem Value="15">15 minutos</MudSelectItem>
+                    <MudSelectItem Value="30">30 minutos</MudSelectItem>
+                    <MudSelectItem Value="60">1 hora (60 minutos)</MudSelectItem>
+                </MudSelect>
+            }
         }
         else
         {
@@ -74,6 +83,8 @@
     [Parameter] public int ToleranceMinutes { get; set; }
     [Parameter] public ShiftType ShiftType { get; set; }
     [Parameter] public IEnumerable<ShiftDayDto>? Days { get; set; }
+    [Parameter] public bool RoundingsEnabled { get; set; }
+    [Parameter] public int RoundingInterval { get; set; }
 
     private string _name = "";
     private TimeSpan? _startTime;
@@ -81,6 +92,8 @@
     private int _toleranceMinutes;
     private int _targetHours = 8;
     private ShiftType _shiftType;
+    private bool _roundingsEnabled;
+    private int _roundingInterval = 15;
     
     private List<DayConfig> _days = new();
 
@@ -99,6 +112,8 @@
         _startTime = StartTime ?? new TimeSpan(9, 0, 0); // Default 9 AM
         _toleranceMinutes = ToleranceMinutes;
         _shiftType = ShiftType;
+        _roundingsEnabled = RoundingsEnabled;
+        _roundingInterval = RoundingInterval == 0 ? 15 : RoundingInterval;
         
         if (WorkHours.HasValue)
         {
@@ -205,12 +220,12 @@
 
         if (ShiftId.HasValue)
         {
-            var command = new UpdateShiftCommand(ShiftId.Value, _name, start, _toleranceMinutes, workHours, _shiftType, dtos);
+            var command = new UpdateShiftCommand(ShiftId.Value, _name, start, _toleranceMinutes, workHours, _shiftType, dtos, _roundingsEnabled, _roundingInterval);
             MudDialog.Close(DialogResult.Ok(command));
         }
         else
         {
-            var command = new CreateShiftCommand(_name, start, _toleranceMinutes, workHours, _shiftType, dtos);
+            var command = new CreateShiftCommand(_name, start, _toleranceMinutes, workHours, _shiftType, dtos, _roundingsEnabled, _roundingInterval);
             MudDialog.Close(DialogResult.Ok(command));
         }
     }

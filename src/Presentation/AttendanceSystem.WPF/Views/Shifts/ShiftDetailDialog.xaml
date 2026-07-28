@@ -6,6 +6,7 @@
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:sys="clr-namespace:System;assembly=System.Runtime"
              mc:Ignorable="d"
              Width="500">
     
@@ -123,9 +124,32 @@
                     <!-- Continuous Shift -->
                     <StackPanel Visibility="{Binding IsContinuousShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
                         <TextBlock Text="Horas de Jornada Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                        <mah:NumericUpDown Value="{Binding TargetHours}" Minimum="1" Maximum="24" Interval="1" />
+                        <mah:NumericUpDown Value="{Binding TargetHours}" Minimum="1" Maximum="24" Interval="1" Margin="0,0,0,5" />
                         <TextBlock Text="Horas mínimas que el empleado debe cumplir para evitar falta." 
-                                   FontSize="11" Foreground="#858796" Margin="0,5,0,0" FontStyle="Italic"/>
+                                   FontSize="11" Foreground="#858796" Margin="0,0,0,15" FontStyle="Italic"/>
+                        
+                        <CheckBox Content="Habilitar Redondeos" IsChecked="{Binding RoundingsEnabled}" Foreground="#4E5D78" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        
+                        <StackPanel Visibility="{Binding RoundingsEnabled, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Intervalo de Redondeo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <ComboBox SelectedValue="{Binding RoundingInterval}" SelectedValuePath="Tag" Height="30" VerticalContentAlignment="Center">
+                                <ComboBoxItem Content="15 minutos">
+                                    <ComboBoxItem.Tag>
+                                        <sys:Int32>15</sys:Int32>
+                                    </ComboBoxItem.Tag>
+                                </ComboBoxItem>
+                                <ComboBoxItem Content="30 minutos">
+                                    <ComboBoxItem.Tag>
+                                        <sys:Int32>30</sys:Int32>
+                                    </ComboBoxItem.Tag>
+                                </ComboBoxItem>
+                                <ComboBoxItem Content="1 hora (60 minutos)">
+                                    <ComboBoxItem.Tag>
+                                        <sys:Int32>60</sys:Int32>
+                                    </ComboBoxItem.Tag>
+                                </ComboBoxItem>
+                            </ComboBox>
+                        </StackPanel>
                     </StackPanel>
 
                     <!-- Mixto Shift -->

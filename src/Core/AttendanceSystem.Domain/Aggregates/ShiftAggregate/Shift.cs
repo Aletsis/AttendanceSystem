@@ -13,6 +13,8 @@ public class Shift : AggregateRoot<ShiftId>
     public ShiftType ShiftType { get; private set; }
     /// <summary>Minutos de descanso de comida a deducir del tiempo laborado (0 = sin deducción automática).</summary>
     public int LunchBreakMinutes { get; private set; }
+    public bool RoundingsEnabled { get; private set; }
+    public int RoundingInterval { get; private set; }
 
     private readonly List<ShiftDay> _days = new();
     public IReadOnlyCollection<ShiftDay> Days => _days.AsReadOnly();
@@ -26,7 +28,9 @@ public class Shift : AggregateRoot<ShiftId>
         TimeSpan workHours,
         ShiftType shiftType,
         IEnumerable<ShiftDay>? days = null,
-        int lunchBreakMinutes = 0)
+        int lunchBreakMinutes = 0,
+        bool roundingsEnabled = false,
+        int roundingInterval = 0)
     {
         var shift = new Shift
         {
@@ -37,7 +41,9 @@ public class Shift : AggregateRoot<ShiftId>
             WorkHours = workHours,
             ShiftType = shiftType,
             LunchBreakMinutes = lunchBreakMinutes < 0 ? 0 : lunchBreakMinutes,
-            EndTime = NormalizeTime(startTime.Add(workHours))
+            EndTime = NormalizeTime(startTime.Add(workHours)),
+            RoundingsEnabled = roundingsEnabled,
+            RoundingInterval = roundingInterval
         };
 
         if (days != null && days.Any())
@@ -60,7 +66,9 @@ public class Shift : AggregateRoot<ShiftId>
         TimeSpan workHours,
         ShiftType shiftType,
         IEnumerable<ShiftDay>? days = null,
-        int lunchBreakMinutes = 0)
+        int lunchBreakMinutes = 0,
+        bool roundingsEnabled = false,
+        int roundingInterval = 0)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del turno es requerido.");
@@ -74,6 +82,8 @@ public class Shift : AggregateRoot<ShiftId>
         ShiftType = shiftType;
         LunchBreakMinutes = lunchBreakMinutes < 0 ? 0 : lunchBreakMinutes;
         EndTime = NormalizeTime(startTime.Add(workHours));
+        RoundingsEnabled = roundingsEnabled;
+        RoundingInterval = roundingInterval;
 
         _days.Clear();
         if (days != null && days.Any())

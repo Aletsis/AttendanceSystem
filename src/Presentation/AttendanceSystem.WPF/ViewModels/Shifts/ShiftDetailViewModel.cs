@@ -22,6 +22,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         private int _targetHours = 8;
         private string _title = "Nuevo Turno";
         private ObservableCollection<DayConfigViewModel> _days = new();
+        private bool _roundingsEnabled;
+        private int _roundingInterval = 15;
 
         public string Title
         {
@@ -94,6 +96,18 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         {
             get => _days;
             set => SetProperty(ref _days, value);
+        }
+
+        public bool RoundingsEnabled
+        {
+            get => _roundingsEnabled;
+            set => SetProperty(ref _roundingsEnabled, value);
+        }
+
+        public int RoundingInterval
+        {
+            get => _roundingInterval;
+            set => SetProperty(ref _roundingInterval, value);
         }
 
         public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Continuo;
@@ -184,7 +198,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "ToleranceMinutes", ToleranceMinutes },
                 { "WorkHours", workHours },
                 { "ShiftType", SelectedShiftType.Key },
-                { "Days", dayDtos }
+                { "Days", dayDtos },
+                { "RoundingsEnabled", RoundingsEnabled },
+                { "RoundingInterval", RoundingInterval }
             };
 
             RequestClose?.Invoke(new DialogResult(ButtonResult.OK, parameters));
@@ -222,6 +238,17 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 if (type == ShiftType.Continuo)
                 {
                     TargetHours = (int)workHours.TotalHours;
+                }
+
+                if (parameters.ContainsKey("RoundingsEnabled"))
+                {
+                    RoundingsEnabled = parameters.GetValue<bool>("RoundingsEnabled");
+                }
+                if (parameters.ContainsKey("RoundingInterval"))
+                {
+                    var interval = parameters.GetValue<int>("RoundingInterval");
+                    if (interval > 0)
+                        RoundingInterval = interval;
                 }
 
                 var days = parameters.GetValue<IEnumerable<ShiftDayDto>>("Days");
