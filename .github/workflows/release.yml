@@ -31,12 +31,12 @@ jobs:
           Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-16.1-1-windows-x64.exe" -OutFile "Deploy/postgresql-installer.exe"
           Write-Host "PostgreSQL downloaded successfully."
 
-      - name: Download .NET 9.0 Hosting Bundle
+      - name: Download .NET 10.0 Hosting Bundle
         shell: powershell
         run: |
-          Write-Host "Downloading .NET 9.0 Hosting Bundle..."
-          # Usamos la redirección oficial aka.ms que siempre apunta a la última versión de .NET 9.0
-          Invoke-WebRequest -Uri "https://aka.ms/dotnet/9.0/dotnet-hosting-win.exe" -OutFile "Deploy/dotnet-hosting.exe"
+          Write-Host "Downloading .NET 10.0 Hosting Bundle..."
+          # Usamos la redirección oficial aka.ms que siempre apunta a la última versión de .NET 10.0
+          Invoke-WebRequest -Uri "https://aka.ms/dotnet/10.0/dotnet-hosting-win.exe" -OutFile "Deploy/dotnet-hosting.exe"
           Write-Host ".NET Hosting Bundle downloaded successfully."
 
       - name: Prepare Release Artifacts

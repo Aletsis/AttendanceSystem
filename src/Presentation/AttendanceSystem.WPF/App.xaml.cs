@@ -60,7 +60,7 @@ namespace AttendanceSystem.WPF
                 .CreateLogger();
 
             // Build a ServiceProvider for MediatR and EF Core
-            var connectionString = Configuration.GetConnectionString("DefaultConnection");
+            var connectionString = Configuration.GetConnectionString("AttendanceDb");
             var services = new ServiceCollection();
             
             // Add Configuration
