@@ -20,7 +20,7 @@ using AttendanceSystem.Application.Features.Devices.Commands.SendEmployeeToDevic
 using System.Collections.Generic;
 using System;
 using System.Threading.Tasks;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Employees
 {
@@ -191,7 +191,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         private void ExecuteAddEmployee()
         {
-            var parameters = new Prism.Regions.NavigationParameters();
+            var parameters = new Prism.Navigation.NavigationParameters();
             _navigationService.NavigateTo("EmployeeDetailView", parameters);
         }
 
@@ -199,7 +199,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         {
             if (SelectedEmployee == null) return;
             
-            var parameters = new Prism.Regions.NavigationParameters();
+            var parameters = new Prism.Navigation.NavigationParameters();
             parameters.Add("EmployeeId", SelectedEmployee.Id);
             
             _navigationService.NavigateTo("EmployeeDetailView", parameters);

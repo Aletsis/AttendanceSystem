@@ -29,6 +29,8 @@ public class ShiftQueries : IShiftQueries
                 s.ToleranceMinutes,
                 s.WorkHours,
                 s.ShiftType,
-                s.Days.Select(d => new ShiftDayDto(d.DayOfWeek, d.StartTime, d.EndTime, d.WorkHours, d.ShiftType)).ToList()));
+                s.Days.Select(d => new ShiftDayDto(d.DayOfWeek, d.StartTime, d.EndTime, d.WorkHours, d.ShiftType)).ToList(),
+                s.RoundingsEnabled,
+                s.RoundingInterval));
     }
 }

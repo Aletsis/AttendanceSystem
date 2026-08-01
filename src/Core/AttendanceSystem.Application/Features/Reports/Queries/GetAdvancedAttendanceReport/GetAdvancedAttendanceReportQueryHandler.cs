@@ -173,15 +173,17 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                  // Calculate daily effective overtime first (handles Daily Cap)
                  double totalOvertime = details.Sum(d => GetEffectiveOvertime(d, empRef));
 
-                 // Calculate total worked hours
-                 double totalWorkedHours = 0;
-                 foreach(var d in details)
-                 {
-                    if (d.ActualCheckIn.HasValue && d.ActualCheckOut.HasValue)
-                    {
-                        totalWorkedHours += (d.ActualCheckOut.Value - d.ActualCheckIn.Value).TotalHours;
-                    }
-                 }
+                  // Calculate total worked hours
+                  double totalWorkedHours = 0;
+                  foreach(var d in details)
+                  {
+                     var refIn = GetReferenceEntry(d);
+                     var refOut = GetReferenceExit(d);
+                     if (refIn.HasValue && refOut.HasValue)
+                     {
+                         totalWorkedHours += (refOut.Value - refIn.Value).TotalHours;
+                     }
+                  }
 
                  // Handle Period Cap
                  if (empRef.OvertimeCapType == OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
@@ -221,11 +223,11 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
     {
         // 1. Determine Reference Entry (Entrada de Referencia)
         DateTime? referenceEntry = GetReferenceEntry(att);
-
+        DateTime? referenceExit = GetReferenceExit(att);
 
         // 2. Worked Duration based on the user's rule
-        TimeSpan? workedVal = (att.ActualCheckOut.HasValue && referenceEntry.HasValue) 
-            ? (att.ActualCheckOut.Value - referenceEntry.Value) 
+        TimeSpan? workedVal = (referenceExit.HasValue && referenceEntry.HasValue) 
+            ? (referenceExit.Value - referenceEntry.Value) 
             : null;
             
         string workedStr = workedVal.HasValue ? $"{(int)workedVal.Value.TotalHours:00}:{workedVal.Value.Minutes:00}" : "--:--";
@@ -296,7 +298,8 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             if (att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
             {
                 DateTime referenceEntry = GetReferenceEntry(att) ?? att.ActualCheckIn.Value;
-                var workedDuration = (att.ActualCheckOut.Value - referenceEntry).TotalMinutes;
+                DateTime referenceExit = GetReferenceExit(att) ?? att.ActualCheckOut.Value;
+                var workedDuration = (referenceExit - referenceEntry).TotalMinutes;
                 calculatedOvertime = workedDuration - goal;
                 if (calculatedOvertime < 0) calculatedOvertime = 0;
             }
@@ -319,38 +322,12 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
     private DateTime? GetReferenceEntry(DailyAttendance att)
     {
-        if (!att.ActualCheckIn.HasValue) return null;
-        
-        DateTime referenceEntry = att.ActualCheckIn.Value;
-        
-        if (att.ShiftType != ShiftType.Continuo && att.ScheduledCheckIn.HasValue)
-        {
-            var sIn = att.Date.Add(att.ScheduledCheckIn.Value);
-            var delayMinutes = (att.ActualCheckIn.Value - sIn).TotalMinutes;
-            
-            if (delayMinutes > att.ToleranceMinutes)
-            {
-                // Lateness exceeding tolerance -> round up to next 30-minute block from scheduled start, giving tolerance in each block
-                double rawK = (delayMinutes - att.ToleranceMinutes) / 30.0;
-                int k = (int)Math.Ceiling(rawK);
-                if (k < 0) k = 0;
-                
-                referenceEntry = sIn.AddMinutes(k * 30);
-            }
-            else
-            {
-                if (att.CalculateOvertimeBeforeEntry)
-                {
-                    referenceEntry = att.ActualCheckIn.Value;
-                }
-                else
-                {
-                    referenceEntry = sIn;
-                }
-            }
-        }
-        
-        return referenceEntry;
+        return att.GetReferenceEntry();
+    }
+
+    private DateTime? GetReferenceExit(DailyAttendance att)
+    {
+        return att.GetReferenceExit();
     }
 
     private double ApplyOvertimeRounding(double minutes, OvertimeCalculationMethod method)

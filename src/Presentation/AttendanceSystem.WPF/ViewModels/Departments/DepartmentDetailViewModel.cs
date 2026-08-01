@@ -8,7 +8,7 @@ using AttendanceSystem.Application.Features.Positions.Queries.GetPositions;
 using MediatR;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Departments
 {
@@ -48,7 +48,7 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
 
-        public event Action<IDialogResult> RequestClose;
+        public DialogCloseListener RequestClose { get; }
 
         public DepartmentDetailViewModel(IMediator mediator)
         {
@@ -79,12 +79,12 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
                 { "PositionIds", selectedPositionIds }
             };
 
-            RequestClose?.Invoke(new DialogResult(ButtonResult.OK, parameters));
+            RequestClose.Invoke(parameters, ButtonResult.OK);
         }
 
         private void ExecuteCancel()
         {
-            RequestClose?.Invoke(new DialogResult(ButtonResult.Cancel));
+            RequestClose.Invoke(ButtonResult.Cancel);
         }
 
         public bool CanCloseDialog() => true;

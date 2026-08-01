@@ -102,7 +102,7 @@
     private TimeSpan? _time = new TimeSpan(8, 0, 0); // Default 8:00 AM
     private string _type = "Entrada";
     private Guid? _selectedBranchId;
-    private IEnumerable<string> _selectedEmployeeIds = new HashSet<string>();
+    private IReadOnlyCollection<string> _selectedEmployeeIds = new HashSet<string>();
     
     private List<BranchDto> _branches = new();
     private List<EmployeeDto> _allEmployees = new();

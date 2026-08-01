@@ -125,9 +125,9 @@ else
     private string _searchString = string.Empty;
 
     // Filter values
-    private IEnumerable<string> _selectedBranches = new HashSet<string>();
-    private IEnumerable<string> _selectedDepts = new HashSet<string>();
-    private IEnumerable<string> _selectedStatuses = new HashSet<string>();
+    private IReadOnlyCollection<string> _selectedBranches = new HashSet<string>();
+    private IReadOnlyCollection<string> _selectedDepts = new HashSet<string>();
+    private IReadOnlyCollection<string> _selectedStatuses = new HashSet<string>();
 
     // Current grid state for export
     private string? _currentIdFilter;
@@ -167,7 +167,7 @@ else
         _dataGrid.ReloadServerData();
     }
 
-    private async Task<GridData<EmployeeDto>> ServerReload(GridState<EmployeeDto> state)
+    private async Task<GridData<EmployeeDto>> ServerReload(GridState<EmployeeDto> state, CancellationToken cancellationToken)
     {
         var sortDefinition = state.SortDefinitions.FirstOrDefault();
         var sortLabel = sortDefinition?.SortBy;
@@ -293,7 +293,7 @@ else
 
     private async Task DeleteEmployee(string employeeId)
     {
-        bool? confirm = await DialogService.ShowMessageBox(
+        bool? confirm = await DialogService.ShowMessageBoxAsync(
             "Confirmar eliminación",
             $"¿Está seguro de eliminar el empleado con ID {employeeId}?",
             yesText: "Eliminar", cancelText: "Cancelar");

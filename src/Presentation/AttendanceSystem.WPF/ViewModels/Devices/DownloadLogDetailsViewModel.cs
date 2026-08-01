@@ -10,7 +10,7 @@ using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
 using MediatR;
 using Prism.Commands;
 using Prism.Mvvm;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Devices
 {
@@ -51,12 +51,12 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
 
         public ICommand CancelCommand { get; }
 
-        public event Action<IDialogResult>? RequestClose;
+        public DialogCloseListener RequestClose { get; }
 
         public DownloadLogDetailsViewModel(IMediator mediator)
         {
             _mediator = mediator;
-            CancelCommand = new DelegateCommand(() => RequestClose?.Invoke(new DialogResult(ButtonResult.OK)));
+            CancelCommand = new DelegateCommand(() => RequestClose.Invoke(ButtonResult.OK));
         }
 
         private async Task LoadRecordsAsync()

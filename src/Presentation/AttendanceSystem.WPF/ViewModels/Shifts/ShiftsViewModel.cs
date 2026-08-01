@@ -15,7 +15,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using System;
-using Prism.Services.Dialogs;
+using Prism.Dialogs;
 
 namespace AttendanceSystem.WPF.ViewModels.Shifts
 {
@@ -165,8 +165,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var workHours = result.Parameters.GetValue<TimeSpan>("WorkHours");
                     var type = result.Parameters.GetValue<ShiftType>("ShiftType");
                     var days = result.Parameters.GetValue<List<ShiftDayDto>>("Days");
+                    var roundingsEnabled = result.Parameters.GetValue<bool>("RoundingsEnabled");
+                    var roundingInterval = result.Parameters.GetValue<int>("RoundingInterval");
 
-                    var command = new CreateShiftCommand(name, start, tolerance, workHours, type, days);
+                    var command = new CreateShiftCommand(name, start, tolerance, workHours, type, days, roundingsEnabled, roundingInterval);
                     var createResult = await _mediator.Send(command);
 
                     if (createResult.IsSuccess)
@@ -197,7 +199,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "ToleranceMinutes", shiftData.ToleranceMinutes },
                 { "WorkHours", shiftData.WorkHours },
                 { "ShiftType", shiftData.ShiftType },
-                { "Days", shiftData.Days }
+                { "Days", shiftData.Days },
+                { "RoundingsEnabled", shiftData.RoundingsEnabled },
+                { "RoundingInterval", shiftData.RoundingInterval }
             };
 
             _dialogService.ShowDialog("ShiftDetailDialog", parameters, async result =>
@@ -210,8 +214,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var workHours = result.Parameters.GetValue<TimeSpan>("WorkHours");
                     var type = result.Parameters.GetValue<ShiftType>("ShiftType");
                     var days = result.Parameters.GetValue<List<ShiftDayDto>>("Days");
+                    var roundingsEnabled = result.Parameters.GetValue<bool>("RoundingsEnabled");
+                    var roundingInterval = result.Parameters.GetValue<int>("RoundingInterval");
 
-                    var command = new UpdateShiftCommand(shiftData.Id, name, start, tolerance, workHours, type, days);
+                    var command = new UpdateShiftCommand(shiftData.Id, name, start, tolerance, workHours, type, days, roundingsEnabled, roundingInterval);
                     var updateResult = await _mediator.Send(command);
 
                     if (updateResult.IsSuccess)

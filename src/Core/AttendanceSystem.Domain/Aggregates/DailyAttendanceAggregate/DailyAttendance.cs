@@ -1,6 +1,7 @@
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 using AttendanceSystem.Domain.Primitives;
+using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
@@ -29,6 +30,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public TimeSpan? ScheduledCheckIn { get; private set; }
     public TimeSpan? ScheduledCheckOut { get; private set; }
     public int ToleranceMinutes { get; private set; }
+    public bool RoundingsEnabled { get; private set; }
+    public int RoundingInterval { get; private set; }
 
     // Actual Data
     public DateTime? ActualCheckIn { get; private set; }
@@ -122,6 +125,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             attendance.ScheduledCheckIn = dayStartTime;
             attendance.ScheduledCheckOut = dayEndTime;
             attendance.ToleranceMinutes = shift.ToleranceMinutes;
+            attendance.RoundingsEnabled = shift.RoundingsEnabled;
+            attendance.RoundingInterval = shift.RoundingInterval;
         }
 
         // 2. Set Actual Times
@@ -188,6 +193,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         ScheduledCheckIn = dayStartTime;
         ScheduledCheckOut = dayEndTime;
         ToleranceMinutes = shift.ToleranceMinutes;
+        RoundingsEnabled = shift.RoundingsEnabled;
+        RoundingInterval = shift.RoundingInterval;
         
         // If updating shift, it's likely not a Rest Day anymore unless strict override, but usually shift implies work day.
         IsRestDay = false; 
@@ -345,36 +352,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 // Calculate scheduled work duration
                 var scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
 
-                // 1. Determine Reference Entry (Entrada de Referencia)
-                DateTime referenceEntry = ActualCheckIn.Value;
-                
-                if (ShiftType != AttendanceSystem.Domain.Enumerations.ShiftType.Continuo && ScheduledCheckIn.HasValue)
-                {
-                    var delayMinutes = (ActualCheckIn.Value - scheduledInDateTime).TotalMinutes;
-                    if (delayMinutes > ToleranceMinutes)
-                    {
-                        // Lateness exceeding tolerance -> round up to next 30-minute block from scheduled start, giving tolerance in each block
-                        double rawK = (delayMinutes - ToleranceMinutes) / 30.0;
-                        int k = (int)Math.Ceiling(rawK);
-                        if (k < 0) k = 0;
-                        
-                        referenceEntry = scheduledInDateTime.AddMinutes(k * 30);
-                    }
-                    else
-                    {
-                        if (CalculateOvertimeBeforeEntry)
-                        {
-                            referenceEntry = ActualCheckIn.Value;
-                        }
-                        else
-                        {
-                            referenceEntry = scheduledInDateTime;
-                        }
-                    }
-                }
+                // 1. Determine Reference Entry & Exit
+                DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
+                DateTime referenceExit = GetReferenceExit() ?? ActualCheckOut.Value;
 
                 // 2. Calculate Worked Duration (Tiempo Laborado)
-                var totalWorkedMinutes = (ActualCheckOut.Value - referenceEntry).TotalMinutes;
+                var totalWorkedMinutes = (referenceExit - referenceEntry).TotalMinutes;
 
                 // Deducir minutos de comida formal (turno con LunchBreakMinutes configurado)
                 totalWorkedMinutes -= LunchBreakMinutesApplied;
@@ -395,5 +378,71 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 }
             }
         }
+    }
+
+    public static DateTime RoundEntry(DateTime checkIn, int roundingIntervalMinutes, int toleranceMinutes)
+    {
+        if (roundingIntervalMinutes <= 0) return checkIn;
+        var prevBlock = new DateTime(checkIn.Year, checkIn.Month, checkIn.Day, checkIn.Hour, (checkIn.Minute / roundingIntervalMinutes) * roundingIntervalMinutes, 0, checkIn.Kind);
+        var diff = (checkIn - prevBlock).TotalMinutes;
+        if (diff <= toleranceMinutes)
+        {
+            return prevBlock;
+        }
+        else
+        {
+            return prevBlock.AddMinutes(roundingIntervalMinutes);
+        }
+    }
+
+    public static DateTime RoundExit(DateTime checkOut, int roundingIntervalMinutes)
+    {
+        if (roundingIntervalMinutes <= 0) return checkOut;
+        return new DateTime(checkOut.Year, checkOut.Month, checkOut.Day, checkOut.Hour, (checkOut.Minute / roundingIntervalMinutes) * roundingIntervalMinutes, 0, checkOut.Kind);
+    }
+
+    public DateTime? GetReferenceEntry()
+    {
+        if (!ActualCheckIn.HasValue) return null;
+        if (ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo)
+        {
+            if (RoundingsEnabled && RoundingInterval > 0)
+            {
+                return RoundEntry(ActualCheckIn.Value, RoundingInterval, ToleranceMinutes);
+            }
+            return ActualCheckIn.Value;
+        }
+        
+        if (ScheduledCheckIn.HasValue)
+        {
+            var scheduledInDateTime = Date.Add(ScheduledCheckIn.Value);
+            var delayMinutes = (ActualCheckIn.Value - scheduledInDateTime).TotalMinutes;
+            if (delayMinutes > ToleranceMinutes)
+            {
+                double rawK = (delayMinutes - ToleranceMinutes) / 30.0;
+                int k = (int)Math.Ceiling(rawK);
+                if (k < 0) k = 0;
+                return scheduledInDateTime.AddMinutes(k * 30);
+            }
+            else
+            {
+                return CalculateOvertimeBeforeEntry ? ActualCheckIn.Value : scheduledInDateTime;
+            }
+        }
+        return ActualCheckIn.Value;
+    }
+
+    public DateTime? GetReferenceExit()
+    {
+        if (!ActualCheckOut.HasValue) return null;
+        if (ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo)
+        {
+            if (RoundingsEnabled && RoundingInterval > 0)
+            {
+                return RoundExit(ActualCheckOut.Value, RoundingInterval);
+            }
+            return ActualCheckOut.Value;
+        }
+        return ActualCheckOut.Value;
     }
 }

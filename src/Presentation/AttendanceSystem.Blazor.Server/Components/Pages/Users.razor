@@ -98,7 +98,7 @@
 
     private async Task DeleteUser(UserDto user)
     {
-         bool? result = await DialogService.ShowMessageBox(
+         bool? result = await DialogService.ShowMessageBoxAsync(
             "Eliminar Usuario", 
             $"¿Está seguro que desea eliminar al usuario '{user.UserName}'?", 
             yesText: "Eliminar", cancelText: "Cancelar");

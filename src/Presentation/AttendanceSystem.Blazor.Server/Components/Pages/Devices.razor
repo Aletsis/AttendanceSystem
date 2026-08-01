@@ -171,7 +171,7 @@ else
 
     private async Task SyncEmployees(DeviceDto device)
     {
-        bool? result = await DialogService.ShowMessageBox(
+        bool? result = await DialogService.ShowMessageBoxAsync(
             "Confirmar Sincronización", 
             $"¿Está seguro de que desea IMPORTAR los usuarios y datos biométricos del dispositivo '{device.Name}' a la Base de Datos?\nEsto puede tomar unos momentos.", 
             yesText: "Importar", cancelText: "Cancelar");

@@ -14,7 +14,9 @@ public sealed record CreateShiftCommand(
     int ToleranceMinutes,
     TimeSpan WorkHours,
     ShiftType ShiftType,
-    IEnumerable<AttendanceSystem.Application.DTOs.ShiftDayDto>? Days = null) : IRequest<Result<Guid>>;
+    IEnumerable<AttendanceSystem.Application.DTOs.ShiftDayDto>? Days = null,
+    bool RoundingsEnabled = false,
+    int RoundingInterval = 0) : IRequest<Result<Guid>>;
 
 public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftCommand, Result<Guid>>
 {
@@ -44,7 +46,10 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
                 request.ToleranceMinutes,
                 request.WorkHours,
                 request.ShiftType,
-                days);
+                days,
+                lunchBreakMinutes: 0,
+                roundingsEnabled: request.RoundingsEnabled,
+                roundingInterval: request.RoundingInterval);
 
             await _shiftRepository.AddAsync(shift, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
