@@ -1,4 +1,5 @@
 using System;
+using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Application.DTOs;
 
@@ -31,7 +32,7 @@ public sealed record AttendanceReportViewDto
     public int TemporaryExitStatus { get; init; }
     public string? AttendanceNote { get; init; }
 
-    public AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod OvertimeCalculationMethod { get; init; }
+    public OvertimeCalculationMethod OvertimeCalculationMethod { get; init; }
 
     public int RoundedOvertimeMinutes
     {
@@ -42,10 +43,10 @@ public sealed record AttendanceReportViewDto
             int minutes = OvertimeMinutes;
             switch (OvertimeCalculationMethod)
             {
-                case AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod.RoundByHalfHour:
+                case OvertimeCalculationMethod.RoundByHalfHour:
                     minutes = (minutes / 30) * 30;
                     break;
-                case AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod.RoundByHour:
+                case OvertimeCalculationMethod.RoundByHour:
                     minutes = (minutes / 60) * 60;
                     break;
             }

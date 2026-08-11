@@ -36,7 +36,7 @@ public sealed class DeleteDepartmentCommandHandler : IRequestHandler<DeleteDepar
                 return Result.Failure("Departamento no encontrado.");
             }
 
-            // Check if department is in use by any employee
+            // Revisar si el departamento está en uso por algún empleado
             if (await _employeeRepository.IsDepartmentInUseAsync(departmentId, cancellationToken))
             {
                 return Result.Failure("No se puede eliminar el departamento porque hay empleados asignados a él.");

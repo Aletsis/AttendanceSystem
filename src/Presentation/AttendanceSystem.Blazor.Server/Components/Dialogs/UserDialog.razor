@@ -65,7 +65,7 @@
 
     private async Task Submit()
     {
-        await form.Validate();
+        await form.ValidateAsync();
         if (!success) return;
 
         try 

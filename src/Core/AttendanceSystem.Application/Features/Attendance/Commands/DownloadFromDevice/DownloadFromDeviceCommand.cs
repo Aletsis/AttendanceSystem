@@ -7,8 +7,9 @@ using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
 using MediatR;
 using Microsoft.Extensions.Logging;
-
 using AttendanceSystem.Domain.Services;
+using AttendanceSystem.Domain.Enumerations;
+
 namespace AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
 
 public sealed record DownloadFromDeviceCommand(
@@ -89,7 +90,7 @@ public sealed class DownloadFromDeviceCommandHandler
     {
         var deviceId = DeviceId.From(command.DeviceId);
         
-        // 1. Obtener dispositivo INICIAL (solo para validaciÃ³n y datos bÃ¡sicos)
+        // 1. Obtener dispositivo INICIAL (solo para validación y datos básicos)
         var device = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
         if (device == null)
             return Result<DownloadResultDto>.Failure("Dispositivo no encontrado");
@@ -118,8 +119,8 @@ public sealed class DownloadFromDeviceCommandHandler
         await _downloadLogRepository.AddAsync(downloadLog, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken); // GUARDAR ESTADO INICIAL
 
-        // == CHECK FOR ADMS ==
-        if (device.DownloadMethod == Domain.Enumerations.DeviceDownloadMethod.Adms)
+        // == Checadas ADMS ==
+        if (device.DownloadMethod == DeviceDownloadMethod.Adms)
         {
              try
              {
@@ -128,7 +129,7 @@ public sealed class DownloadFromDeviceCommandHandler
 
                  if (string.IsNullOrEmpty(sn))
                  {
-                     // Attempt reload in case of caching issues
+                     // Intentar recargar en caso de problemas con cache
                      await _deviceRepository.ReloadAsync(device, cancellationToken);
                      sn = device.HardwareInfo?.SerialNumber;
                      _logger.LogInformation("Recargado dispositivo ADMS {Id}. SN tras recarga: '{SerialNumber}'", deviceId, sn);
@@ -196,16 +197,15 @@ public sealed class DownloadFromDeviceCommandHandler
                  }
                  else
                  {
-                     // Si no se encolÃ³ comando (ej. ForceFullSync actuarÃ¡ vÃ­a push), damos por exitoso el log de tracking de inmediato
+                     // Si no se encolá comando (ej. ForceFullSync actuará ví­a push), damos por exitoso el log de tracking de inmediato
                      // para que la UI no se quede esperando un POST /devicecmd
                      downloadLog.MarkAsSuccessful(0, 0);
                      await _unitOfWork.SaveChangesAsync(cancellationToken);
                  }
                  
-                 // NO marcamos el log como exitoso aquÃ­. Lo harÃ¡ AdmsController cuando reciba DeviceCmd.
-                 // Retornamos Ã©xito indicando que se programÃ³.
-                 // Nota: El frontend verÃ¡ "0 registros" pero el log quedarÃ¡ sin fecha de fin.
-                 // Dependiendo del frontend, podrÃ­a mostrarse un spinner o simplemente "Iniciado".
+                 // Retornamos éxito indicando que se programó.
+                 // Nota: El frontend verá "0 registros" pero el log quedará sin fecha de fin.
+                 // Dependiendo del frontend, podría mostrarse un spinner o simplemente "Iniciado".
                  
                  return Result<DownloadResultDto>.Success(new DownloadResultDto(
                      deviceId.Value,
@@ -228,8 +228,6 @@ public sealed class DownloadFromDeviceCommandHandler
         var username = device.Username;
         var password = device.Password;
         var shouldClear = device.ShouldClearAfterDownload;
-        // filterDate ya se definió arriba
-        // requestToDate ya se definió arriba
 
         // LIMPIAR EL TRACKER COMPLETO
         // Esto asegura que no hay entidades "viejas" o "sucias" trackeadas.
@@ -239,10 +237,10 @@ public sealed class DownloadFromDeviceCommandHandler
 
         try 
         {
-            // 3. Obtener el cliente especÃ­fico para la marca del dispositivo
+            // 3. Obtener el cliente especí­fico para la marca del dispositivo
             var deviceClient = _deviceClientFactory.GetClient(deviceBrand);
 
-            // 4. Conectar al dispositivo fÃ­sico (OperaciÃ³n Larga)
+            // 4. Conectar al dispositivo fí­sico (Operación Larga)
             var connected = await deviceClient.ConnectAsync(
                 deviceIp, 
                 devicePort, 
@@ -344,13 +342,13 @@ public sealed class DownloadFromDeviceCommandHandler
                     foreach (var nr in newRecords) nr.DownloadLogId = downloadLogId;
                     
                     await _attendanceRepository.AddRangeAsync(newRecords, cancellationToken);
-                    // Guardar attendance records. No deberÃ­a haber conflictos aquÃ­.
+                    // Guardar attendance records. No deberí­a haber conflictos aquí­.
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
                 }
             }
 
             // 7. Actualizar el dispositivo
-            // RE-OBTENER instancia fresca. Esto es lo mÃ¡s importante para la concurrencia.
+            // RE-OBTENER instancia fresca. Esto es lo más importante para la concurrencia.
             var deviceToUpdate = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
             if (deviceToUpdate != null)
             {
@@ -361,7 +359,7 @@ public sealed class DownloadFromDeviceCommandHandler
                 }
                 else
                 {
-                     // Mantener lÃ³gica de negocio
+                     // Mantener lógica de negocio
                      deviceToUpdate.RecordSuccessfulDownload(0, requestToDate);
                 }
                 
@@ -379,7 +377,7 @@ public sealed class DownloadFromDeviceCommandHandler
             // Guardar actualizaciones finales (Device y Log)
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // 8. Opcional: Limpiar dispositivo fÃ­sico
+            // 8. Opcional: Limpiar dispositivo físico
             if (shouldClear)
             {
                 await deviceClient.ClearLogsAsync(deviceIdValue, cancellationToken: cancellationToken);
@@ -446,7 +444,7 @@ public sealed class DownloadFromDeviceCommandHandler
             }
             catch(Exception saveEx) 
             {
-                 // Si falla esto, ya no podemos hacer nada mÃ¡s que loguear a consola/archivo
+                 // Si falla esto, ya no podemos hacer nada más que loguear a consola/archivo
                  _logger.LogError(saveEx, "Error CRÃTICO guardando el log de fallo en BD.");
             }
             

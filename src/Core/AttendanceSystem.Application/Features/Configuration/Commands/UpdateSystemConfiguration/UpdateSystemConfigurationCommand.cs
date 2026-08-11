@@ -101,7 +101,7 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.FortnightSecondDay,
             command.MonthlyStartDay);
 
-        // Update Jobs
+        // Actualizar la programación de trabajos según la nueva configuración
         if (config.IsAutoDownloadEnabled && config.AutoDownloadTime.HasValue)
         {
             _jobScheduler.ScheduleAutoDownload(config.AutoDownloadTime.Value);
@@ -129,7 +129,7 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             _jobScheduler.DisableAutoReport();
         }
 
-        // Add call to repository Update if tracking is not automatic 
+        // Añadir llamada a Update del repositorio si el seguimiento no es automático
         if (await _repository.GetConfigurationAsync(cancellationToken) != null) 
         {
              _repository.Update(config);

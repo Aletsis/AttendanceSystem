@@ -26,7 +26,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     // Shift Snapshot
     public ShiftId? ShiftId { get; private set; }
     public string? ShiftName { get; private set; }
-    public AttendanceSystem.Domain.Enumerations.ShiftType? ShiftType { get; private set; }
+    public ShiftType? ShiftType { get; private set; }
     public TimeSpan? ScheduledCheckIn { get; private set; }
     public TimeSpan? ScheduledCheckOut { get; private set; }
     public int ToleranceMinutes { get; private set; }
@@ -112,7 +112,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             var dayStartTime = shift.StartTime;
             var dayEndTime = shift.EndTime;
 
-            if (shift.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto)
+            if (shift.ShiftType == Enumerations.ShiftType.Mixto)
             {
                 var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == attendance.Date.DayOfWeek);
                 if (dayConfig != null)
@@ -180,7 +180,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         var dayStartTime = shift.StartTime;
         var dayEndTime = shift.EndTime;
 
-        if (shift.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto)
+        if (shift.ShiftType == Enumerations.ShiftType.Mixto)
         {
             var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == Date.DayOfWeek);
             if (dayConfig != null)
@@ -314,7 +314,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         // Rule: Only late after tolerance. 
         if (ActualCheckIn.HasValue)
         {
-            if (ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo || ScheduledCheckIn == null)
+            if (ShiftType == Enumerations.ShiftType.Continuo || ScheduledCheckIn == null)
             {
                 // In Continuo or No-Shift mode, there are no lates.
                 LateMinutes = 0;
@@ -404,7 +404,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public DateTime? GetReferenceEntry()
     {
         if (!ActualCheckIn.HasValue) return null;
-        if (ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo)
+        if (ShiftType == Enumerations.ShiftType.Continuo)
         {
             if (RoundingsEnabled && RoundingInterval > 0)
             {
@@ -435,7 +435,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public DateTime? GetReferenceExit()
     {
         if (!ActualCheckOut.HasValue) return null;
-        if (ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo)
+        if (ShiftType == Enumerations.ShiftType.Continuo)
         {
             if (RoundingsEnabled && RoundingInterval > 0)
             {

@@ -4,6 +4,7 @@ using AttendanceSystem.Application.Abstractions;
 using MediatR;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Application.Common;
+using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift;
 
@@ -54,14 +55,14 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             date,
             cancellationToken);
 
-        // Get records for that day to re-evaluate
+        // Obtener los registros de ese día para re-evaluar
         var searchStartDate = request.Date;
         var searchEndDate = searchStartDate;
         
         var dayStartTime = shift.StartTime;
         var dayEndTime = shift.EndTime;
 
-        if (shift.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto)
+        if (shift.ShiftType == ShiftType.Mixto)
         {
             var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
             if (dayConfig != null)
@@ -82,7 +83,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             
         var records = recordsEnumerable.OrderBy(r => r.CheckTime).ToList();
 
-        // Release previously assigned logs so they can be re-assigned or kept
+        // Libere los registros asignados previamente para que puedan reasignarse o conservarse.
         if (daily != null)
         {
             if (daily.CheckInRecordId != null)
@@ -99,8 +100,8 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
 
         DateTime? checkIn = null;
         DateTime? checkOut = null;
-        AttendanceSystem.Domain.Aggregates.AttendanceAggregate.AttendanceRecord? checkInRecord = null;
-        AttendanceSystem.Domain.Aggregates.AttendanceAggregate.AttendanceRecord? checkOutRecord = null;
+        AttendanceRecord? checkInRecord = null;
+        AttendanceRecord? checkOutRecord = null;
 
         if (records.Any())
         {
@@ -111,8 +112,8 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             double maxInDistance = 300;
             double maxOutDistance = 960;
 
-            IEnumerable<AttendanceSystem.Domain.Aggregates.AttendanceAggregate.AttendanceRecord> entryRecords = records;
-            IEnumerable<AttendanceSystem.Domain.Aggregates.AttendanceAggregate.AttendanceRecord> exitRecords = records;
+            IEnumerable<AttendanceRecord> entryRecords = records;
+            IEnumerable<AttendanceRecord> exitRecords = records;
 
             if (isCrossDay)
             {
@@ -170,8 +171,8 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             }
             else
             {
-                entryRecords = records.Where(r => r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId));
-                exitRecords = records.Where(r => r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckOutRecordId));
+                entryRecords = records.Where(r => r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId));
+                exitRecords = records.Where(r => r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckOutRecordId));
 
                 var matchIn = entryRecords
                     .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
@@ -205,21 +206,21 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
         if (checkInRecord != null)
         {
             checkInRecord.MarkAsProcessed();
-            checkInRecord.SetInferredType(AttendanceSystem.Domain.Enumerations.CheckType.CheckIn);
+            checkInRecord.SetInferredType(CheckType.CheckIn);
             await _attendanceRepo.UpdateAsync(checkInRecord, cancellationToken);
         }
 
         if (checkOutRecord != null)
         {
             checkOutRecord.MarkAsProcessed();
-            checkOutRecord.SetInferredType(AttendanceSystem.Domain.Enumerations.CheckType.CheckOut);
+            checkOutRecord.SetInferredType(CheckType.CheckOut);
             await _attendanceRepo.UpdateAsync(checkOutRecord, cancellationToken);
         }
 
         var isRestDay = false;
         if (employee.RestDay.HasValue)
         {
-            var dayOfWeek = (AttendanceSystem.Domain.Enumerations.WeekDay)(int)date.DayOfWeek;
+            var dayOfWeek = (WeekDay)(int)date.DayOfWeek;
             if (employee.RestDay == dayOfWeek) isRestDay = true;
         }
 

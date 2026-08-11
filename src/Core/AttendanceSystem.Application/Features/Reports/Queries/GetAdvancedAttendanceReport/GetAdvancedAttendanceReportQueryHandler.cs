@@ -36,7 +36,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
     public async Task<IEnumerable<AdvancedReportSummaryDto>> Handle(GetAdvancedAttendanceReportQuery request, CancellationToken cancellationToken)
     {
-        // 1. Fetch Attendance Data
+        // 1. Obtener datos de asistencia
         var attendanceData = await _dailyAttendanceRepository.GetByDateRangeAsync(
             request.StartDate, 
             request.EndDate, 
@@ -65,11 +65,11 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             employees = employees.Where(e => e.DepartmentId == request.DepartmentId).ToList();
         }
 
-        // Filter only active employees
+        // Filtrar solo empleados activos
         employees = employees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
 
 
-        // 3. Fetch Departments, Positions, Branches for lookup
+        // 3. Obtener Departamentos, Puestos y Sucursales para referencia
         var departments = await _departmentRepository.GetAllAsync(cancellationToken);
         var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
 
@@ -81,7 +81,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
         var processed = new List<(Employee Emp, DailyAttendance Att)>();
 
-        // 4. Filter Logic
+        // 4. Logica de filtrado
         foreach (var item in attendanceData)
         {
             var emp = employees.FirstOrDefault(e => e.Id == item.EmployeeId);
@@ -128,7 +128,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
         }
 
-        // 5. Grouping & Aggregation
+        // 5. Agrupar y resumir por empleado
         var grouped = processed.GroupBy(x => x.Emp.Id);
         var summaries = new List<AdvancedReportSummaryDto>();
 
@@ -137,7 +137,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             var empRef = g.First().Emp;
             var details = g.Select(x => x.Att).OrderBy(d => d.Date).ToList();
 
-            // Descanso Erroneo Filter
+            // Filtro para "DescansoErroneo": Solo incluir empleados que tengan al menos un registro de trabajo en día de descanso y al menos una falta.
             if (request.ReportType == "DescansoErroneo")
             {
                 var empRecords = attendanceData.Where(r => r.EmployeeId == g.Key).ToList();
@@ -162,7 +162,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 Details = details.Select(d => MapToDetail(d, empRef)).ToList()
             };
 
-            // Totals
+            // Totales
             if (request.ReportType == "Retardos")
             {
                 summary.TotalMetric = details.Sum(d => d.LateMinutes);
@@ -170,10 +170,10 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
             else if (request.ReportType == "HorasExtra" || request.ReportType == "HorasExtraPorDepartamento")
             {
-                 // Calculate daily effective overtime first (handles Daily Cap)
+                 // Calcular primero el tiempo extra efectivo diario (maneja el límite diario)
                  double totalOvertime = details.Sum(d => GetEffectiveOvertime(d, empRef));
 
-                  // Calculate total worked hours
+                  // Calcular primero el tiempo trabajado total (para mostrarlo en el resumen)
                   double totalWorkedHours = 0;
                   foreach(var d in details)
                   {
@@ -185,7 +185,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                      }
                   }
 
-                 // Handle Period Cap
+                 // Maneja el límite de tiempo extra por periodo si aplica
                  if (empRef.OvertimeCapType == OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
                  {
                      totalOvertime = Math.Min(totalOvertime, empRef.OvertimeCapMinutes.Value);
@@ -225,7 +225,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         DateTime? referenceEntry = GetReferenceEntry(att);
         DateTime? referenceExit = GetReferenceExit(att);
 
-        // 2. Worked Duration based on the user's rule
+        // 2. Duración trabajada basada en la regla del usuario
         TimeSpan? workedVal = (referenceExit.HasValue && referenceEntry.HasValue) 
             ? (referenceExit.Value - referenceEntry.Value) 
             : null;
@@ -234,7 +234,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
         double effectiveOvertime = GetEffectiveOvertime(att, emp);
 
-        // Logic for CheckIn/CheckOut strings
+        // Logica para las cadenas de CheckIn/CheckOut
         string checkInStr = "--";
         if (att.ActualCheckIn.HasValue)
         {
@@ -271,16 +271,16 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
     {
         double calculatedOvertime = 0;
 
-        // 1. PRIORITIZE STORED DATA: If the record has been processed and has overtime, use it.
-        // This ensures manual modifications and reprocessed data are reflected.
+        // 1. PRIORIDAD A LOS DATOS ALMACENADOS: Si el registro ha sido procesado y tiene tiempo extra, usarlo.
+        // Este paso asegura que las modificaciones manuales y los datos reprocesados se reflejen.
         if (att.OvertimeMinutes > 0)
         {
             calculatedOvertime = att.OvertimeMinutes;
         }
         else
         {
-            // 2. FALLBACK/RECALCULATION: If stored is 0 but we have logs, check if there's extra
-            // (This handles rest days with new logic or records not yet fully reprocessed)
+            // 2. FALLBACK/RECALCULATION: Si el almacenado es 0 pero tenemos registros, verificar si hay tiempo extra
+            // (Este paso maneja días de descanso con nueva lógica o registros que aún no se han reprocesado completamente)
             double goal = 0;
             
             if (!att.IsRestDay && att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue)
@@ -314,7 +314,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             calculatedOvertime = Math.Min(calculatedOvertime, emp.OvertimeCapMinutes.Value);
         }
 
-        // Apply Rounding
+        // Aplicar redondeo según la configuración del empleado
         calculatedOvertime = ApplyOvertimeRounding(calculatedOvertime, emp.OvertimeCalculationMethod);
 
         return calculatedOvertime;

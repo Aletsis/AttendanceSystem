@@ -23,9 +23,6 @@ public sealed class AttendanceRecordedEventHandler
             notification.EmployeeId,
             notification.CheckType.Name,
             notification.CheckTime);
-
-        // Lógica de aplicación: notificar, actualizar reportes, etc.
-        // NO es lógica de negocio (esa va en el dominio)
     }
 }
 

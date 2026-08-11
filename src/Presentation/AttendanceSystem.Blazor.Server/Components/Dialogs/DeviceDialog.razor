@@ -61,9 +61,9 @@
 
     private void Cancel() => MudDialog.Cancel();
 
-    private void Submit()
+    private async Task Submit()
     {
-        form.Validate();
+        await form.ValidateAsync();
 
         if (success)
         {

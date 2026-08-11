@@ -38,7 +38,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
     {
         EmployeeId? empId = !string.IsNullOrEmpty(request.EmployeeId) ? EmployeeId.From(request.EmployeeId) : null;
 
-        // 1. Fetch Processed Attendance
+        // 1. Obtener Asistencia Procesada
         var attendanceData = await _dailyAttendanceRepository.GetByDateRangeAsync(
             request.StartDate, 
             request.EndDate, 
@@ -46,8 +46,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
             empId, 
             cancellationToken);
 
-        // 2. Fetch Metadata
-        // 2. Fetch Metadata
+        // 2. Obtener Empleados, Sucursales, Departamentos y Puestos
         var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
         var employees = allEmployees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
@@ -59,10 +58,10 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
         var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
         var posDict = positions.ToDictionary(p => p.Id, p => p.Name);
 
-        // 3. Map to DTO
+        // 3. Mapear a DTO
         var dtos = new List<AttendanceReportViewDto>();
         
-        // Group by Employee to handle period sorting/caps
+        // Agrupar por empleado para manejar la ordenación y los límites del período
         var attByEmployee = attendanceData.GroupBy(a => a.EmployeeId);
 
         foreach (var group in attByEmployee)
@@ -82,7 +81,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                 branchName = reqBranchName;
             }
 
-            // Calculation Logic for Overtime Cap
+            // Logica de cálculo para el límite de horas extra
             double accumulatedOvertime = 0;
             double? periodCap = (emp?.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Period) ? emp.OvertimeCapMinutes : null;
             double? dailyCap = (emp?.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Daily) ? emp.OvertimeCapMinutes : null;
@@ -93,13 +92,13 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
             {
                 double effectiveOvertime = att.OvertimeMinutes;
 
-                // Daily Cap
+                // Si hay un límite diario, se aplica primero
                 if (dailyCap.HasValue && dailyCap.Value >= 0)
                 {
                     effectiveOvertime = Math.Min(effectiveOvertime, dailyCap.Value);
                 }
 
-                // Period Cap
+                // Si hay un límite de período, se aplica después del límite diario
                 if (periodCap.HasValue && periodCap.Value >= 0)
                 {
                     double remaining = Math.Max(0, periodCap.Value - accumulatedOvertime);
@@ -138,7 +137,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
             }
         }
 
-        // Default Sort
+        // Ordenar por EmployeeId y luego por Date
         return dtos.OrderBy(x => x.EmployeeId)
                    .ThenBy(x => x.Date);
     }

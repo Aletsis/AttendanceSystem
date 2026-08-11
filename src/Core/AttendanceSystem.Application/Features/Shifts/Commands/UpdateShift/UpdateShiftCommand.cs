@@ -3,6 +3,7 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 using MediatR;
 
 namespace AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift;
@@ -41,7 +42,7 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
 
         try
         {
-            var days = request.Days?.Select(d => new AttendanceSystem.Domain.Aggregates.ShiftAggregate.ShiftDay(
+            var days = request.Days?.Select(d => new ShiftDay(
                 d.DayOfWeek,
                 d.StartTime,
                 d.WorkHours,

@@ -1,5 +1,6 @@
-namespace AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Primitives;
+
+namespace AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 
 public class EmployeeFingerprint : Entity<int>
 {

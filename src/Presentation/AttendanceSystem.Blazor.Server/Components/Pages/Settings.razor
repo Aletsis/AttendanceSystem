@@ -22,7 +22,7 @@
     }
     else
     {
-        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pa-6" Color="Color.Primary">
+        <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pa-6" Color="Color.Primary">
             <MudTabPanel Text="General" Icon="@Icons.Material.Filled.Settings">
                 <MudForm @ref="_form" @bind-IsValid="_success">
                     <MudText Typo="Typo.h6" Class="mb-4">Identidad Corporativa</MudText>
@@ -37,9 +37,9 @@
                                 <MudButton Variant="Variant.Text" Color="Color.Error" OnClick="@(() => _companyLogo = null)">Eliminar</MudButton>
                             }
                             <MudFileUpload T="IBrowserFile" FilesChanged="UploadLogo" Accept=".png, .jpg, .jpeg">
-                                <ActivatorContent>
-                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload">Subir Logo</MudButton>
-                                </ActivatorContent>
+                                <CustomContent>
+                                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="@context.OpenFilePickerAsync">Subir Logo</MudButton>
+                                </CustomContent>
                             </MudFileUpload>
                         </MudItem>
                     </MudGrid>

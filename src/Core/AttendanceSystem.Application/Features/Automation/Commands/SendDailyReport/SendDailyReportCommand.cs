@@ -31,7 +31,7 @@ public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportComm
     {
         try
         {
-            // Get config for recipients and company info
+            // Obtener la configuración para los destinatarios y la información de la empresa
             var configResult = await _mediator.Send(new Features.Configuration.Queries.GetSystemConfiguration.GetSystemConfigurationQuery(), cancellationToken);
             if (!configResult.IsSuccess || configResult.Value == null)
             {
@@ -47,7 +47,7 @@ public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportComm
                 return Result<bool>.Success(true);
             }
 
-            // We generate the report for today or yesterday based on the configuration
+            // Determinamos la fecha objetivo para el reporte
             var targetDate = config.AutoReportForToday ? DateTime.Today : DateTime.Today.AddDays(-1);
 
             _logger.LogInformation("Generando reporte diario automatizado para el {Date}", targetDate.ToString("yyyy-MM-dd"));
@@ -75,7 +75,7 @@ public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportComm
                 config.CompanyLogo, 
                 detailed: true);
 
-            // Calculate Statistics
+            // Calcular estadísticas
             var totalAbsences = reportData.Count(x => x.IsAbsent);
             
             var absencesByBranch = reportData.Where(x => x.IsAbsent)

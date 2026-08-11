@@ -1,6 +1,7 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration;
+using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using MediatR;
@@ -71,7 +72,7 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
                         if (deviceInfo != null)
                         {
                             // Actualizar la info de hardware del dispositivo si se recuperó
-                            var hwInfo = new AttendanceSystem.Domain.Aggregates.DeviceAggregate.DeviceHardwareInfo(
+                            var hwInfo = new DeviceHardwareInfo(
                                 deviceInfo.SerialNumber,
                                 deviceInfo.FirmwareVersion,
                                 deviceInfo.Platform,
@@ -110,7 +111,7 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
                         device.MarkAsOffline();
                         
                         // Notificar solo si el dispositivo acaba de desconectarse para no spamear
-                        if (previousStatus != AttendanceSystem.Domain.Aggregates.DeviceAggregate.DeviceStatus.Offline && config != null && !string.IsNullOrWhiteSpace(config.SystemFailureAlertEmails))
+                        if (previousStatus != DeviceStatus.Offline && config != null && !string.IsNullOrWhiteSpace(config.SystemFailureAlertEmails))
                         {
                             var subject = $"🔴 Alerta de Conexión: Dispositivo {device.Name} Offline";
                             var body = $"<p>El dispositivo <b>{device.Name}</b> (IP: {device.IpAddress}) no respondió al monitoreo (Ping) y ha sido marcado como desconectado.</p>" +
@@ -125,7 +126,7 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
                     _logger.LogError(ex, "Error al monitorear dispositivo {DeviceName} ({DeviceIp})", device.Name, device.IpAddress);
                     device.MarkAsOffline();
                     
-                    if (previousStatus != AttendanceSystem.Domain.Aggregates.DeviceAggregate.DeviceStatus.Offline && config != null && !string.IsNullOrWhiteSpace(config.SystemFailureAlertEmails))
+                    if (previousStatus != DeviceStatus.Offline && config != null && !string.IsNullOrWhiteSpace(config.SystemFailureAlertEmails))
                     {
                         await _emailService.SendAlertAsync(
                             $"🔴 Alerta de Conexión: Dispositivo {device.Name} Offline", 

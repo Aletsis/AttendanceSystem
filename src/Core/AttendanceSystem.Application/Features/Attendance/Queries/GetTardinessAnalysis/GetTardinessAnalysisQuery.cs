@@ -59,7 +59,7 @@ public sealed class GetTardinessAnalysisQueryHandler
             var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
             var empDict = employees.ToDictionary(e => e.Id, e => e);
 
-            // Filter out records for employees no longer active or not in branch (if not already filtered)
+            // Filtrar registros de empleados que ya no están activos o que no pertenecen a la sucursal (si no se filtró previamente)
             var validRecords = dailyRecords
                 .Where(r => empDict.ContainsKey(r.EmployeeId))
                 .ToList();
@@ -74,7 +74,7 @@ public sealed class GetTardinessAnalysisQueryHandler
 
             var totalTardinessMinutes = tardies.Sum(t => t.LateMinutes);
 
-            // 1. Tardiness by Day of Week
+            // 1. Retardos por día de la semana
             var culture = new CultureInfo("es-MX");
             var tardinessByDay = tardies
                 .GroupBy(a => a.Date.DayOfWeek)
@@ -86,13 +86,13 @@ public sealed class GetTardinessAnalysisQueryHandler
                 ))
                 .ToList();
             
-            // Re-sort correctly (Lunes a Domingo pattern)
+            // Reordenar correctamente (patrón de lunes a domingo)
             var sortedDays = new List<string> { "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo" };
             tardinessByDay = tardinessByDay
                 .OrderBy(d => sortedDays.IndexOf(d.DayName.ToLower()))
                 .ToList();
 
-            // 2. Tardiness by Department
+            // 2. Retardos por departamento
             var tardinessByDept = tardies
                 .GroupBy(a => empDict[a.EmployeeId].DepartmentId)
                 .Select(g => {
@@ -112,7 +112,7 @@ public sealed class GetTardinessAnalysisQueryHandler
                 .OrderByDescending(d => d.Rate)
                 .ToList();
 
-            // 3. Top Tardy Employees
+            // 3. Empleados con más retardos
             var topEmployees = tardies
                 .GroupBy(a => a.EmployeeId)
                 .Select(g => {
@@ -129,7 +129,7 @@ public sealed class GetTardinessAnalysisQueryHandler
                 .Take(10)
                 .ToList();
 
-            // 4. Tardiness by Branch
+            // 4. Retardos por sucursal
             var tardinessByBranch = tardies
                 .GroupBy(a => empDict[a.EmployeeId].BranchId)
                 .Select(g => {
@@ -149,7 +149,7 @@ public sealed class GetTardinessAnalysisQueryHandler
                 .OrderByDescending(b => b.Rate)
                 .ToList();
 
-            // 5. Tardiness by Branch/Department
+            // 5. Retardos por Sucursal/Departamento
             var tardinessByBranchDept = tardies
                 .GroupBy(a => new { empDict[a.EmployeeId].BranchId, empDict[a.EmployeeId].DepartmentId })
                 .Select(g => {

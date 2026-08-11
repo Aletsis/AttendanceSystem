@@ -27,20 +27,20 @@ public class GetAttendanceByDownloadLogQueryHandler : IRequestHandler<GetAttenda
 
     public async Task<IEnumerable<AttendanceLogViewDto>> Handle(GetAttendanceByDownloadLogQuery request, CancellationToken cancellationToken)
     {
-        // 1. Fetch Records for this Log
+        // 1. Obtener los registros de asistencia asociados al DownloadLogId proporcionado
         var records = await _attendanceRepository.GetByDownloadLogIdAsync(request.DownloadLogId, cancellationToken);
 
         if (!records.Any())
             return Enumerable.Empty<AttendanceLogViewDto>();
 
-        // 2. Metadata Lookups (Optimize by fetching only needed ones if many, but for a single download it should be fine)
+        // 2. Busqueda de empleados y dispositivos para mapear nombres
         var employees = await _employeeRepository.GetAllAsync(cancellationToken);
         var devices = await _deviceRepository.GetAllDevicesAsync(cancellationToken);
 
         var empDict = employees.ToDictionary(e => e.Id, e => e.GetFullName());
         var devDict = devices.ToDictionary(d => d.Id, d => d.Name);
 
-        // 3. Map to DTO
+        // 3. Mapeo a DTO
         var dtos = records.Select(r => 
         {
             string empName = empDict.TryGetValue(r.EmployeeId, out var name) ? name : r.EmployeeId.Value;

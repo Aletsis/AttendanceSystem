@@ -4,6 +4,7 @@ using AttendanceSystem.Application.Abstractions;
 using MediatR;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Application.Common;
+using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance;
 
@@ -34,10 +35,10 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         var employeeId = EmployeeId.From(request.EmployeeId);
         var recordId = AttendanceRecordId.From(request.RecordId);
 
-        // 1. Smart Assignment Logic for Cross-Day Shifts
+        // 1. Logica de asignación inteligente para turnos que cruzan la medianoche
         DateOnly targetDate = request.Date;
         
-        // If assigning an Exit, check if it belongs to the previous day
+        // Si se está asignando una salida, verificar si pertenece al día anterior
         if (request.AssignmentType == "Salida")
         {
             var yesterday = request.Date.AddDays(-1);
@@ -46,21 +47,21 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
                 yesterday.ToDateTime(TimeOnly.MinValue), 
                 cancellationToken);
 
-            // If yesterday has a cross-day shift and this log is in the morning
-            // OR if yesterday has an entry and no exit, while today is just starting
+            // Si ayer tiene un turno que cruza la medianoche y este registro es en la mañana, podría pertenecer a ayer.
+            // O si ayer tiene una entrada y no salida, mientras que hoy apenas comienza
             if (yesterdayDA != null && yesterdayDA.ActualCheckIn.HasValue)
             {
                 var attendanceRecord = await _attendanceRepo.GetByIdAsync(recordId, cancellationToken);
                 if (attendanceRecord != null)
                 {
-                    // If the log is before today's scheduled entry (or early morning)
-                    // and yesterday was a night shift, it almost certainly belongs to yesterday.
+                    // Si el registro es antes de la entrada programada de hoy (o temprano en la mañana)
+                    // y ayer fue un turno nocturno, casi con certeza pertenece a ayer.
                     bool belongsToYesterday = false;
                     
-                    if (yesterdayDA.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Continuo || 
+                    if (yesterdayDA.ShiftType == ShiftType.Continuo || 
                         (yesterdayDA.ScheduledCheckOut.HasValue && yesterdayDA.ScheduledCheckOut < yesterdayDA.ScheduledCheckIn))
                     {
-                        // It's a cross-day shift. If the log is within 16 hours of yesterday's entry, it's a candidate.
+                        // Está dentro de las 16 horas posteriores a la entrada de ayer, es un candidato.
                         var diffHours = (attendanceRecord.CheckTime - yesterdayDA.ActualCheckIn.Value).TotalHours;
                         if (diffHours > 0 && diffHours < 18) 
                         {
@@ -86,7 +87,7 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
             return Result.Failure($"Debe procesar la asistencia del día {targetDate:dd/MM/yyyy} antes de realizar asignaciones manuales.");
         }
 
-        // 2. Get the specific Record
+        // 2. Obtenemos el registro específico
         var record = await _attendanceRepo.GetByIdAsync(recordId, cancellationToken);
         if (record == null)
         {
@@ -94,12 +95,13 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         }
 
         // 3. Update Logic
+        // 3. Actualizar el DailyAttendance según el tipo de asignación
         if (request.AssignmentType == "Entrada") // CheckIn
         {
-            // If the same record was used as CheckOut, remove it from CheckOut first?
-            // "Validating that there are not 2 entries or updates"
-            // If there is already a CheckIn, we replace it.
-            // If the record we are assigning is currently the CheckOut, we must clear CheckOut.
+            // Si el mismo registro se usó como CheckOut, primero elimínelo de CheckOut?
+            // "Validando que no haya 2 entradas o actualizaciones"
+            // Si ya hay un CheckIn, lo reemplazamos.
+            // Si el registro que estamos asignando es actualmente el CheckOut, debemos borrar CheckOut.
             
             if (daily.CheckOutRecordId == recordId)
             {
@@ -108,8 +110,8 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
 
             daily.SetCheckIn(record.CheckTime, record.Id);
             
-            // Mark record as processed
-            if (record.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
+            // Si el registro no está procesado, lo marcamos como procesado
+            if (record.Status != AttendanceStatus.Processed)
             {
                 record.MarkAsProcessed();
                 await _attendanceRepo.UpdateAsync(record, cancellationToken);
@@ -124,8 +126,8 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
 
             daily.SetCheckOut(record.CheckTime, record.Id);
 
-            // Mark record as processed
-            if (record.Status != AttendanceSystem.Domain.Enumerations.AttendanceStatus.Processed)
+            // Si el registro no está procesado, lo marcamos como procesado
+            if (record.Status != AttendanceStatus.Processed)
             {
                 record.MarkAsProcessed();
                 await _attendanceRepo.UpdateAsync(record, cancellationToken);
@@ -141,10 +143,10 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
              return Result.Failure("Tipo de asignación inválido. Use 'Entrada' o 'Salida'.");
         }
         
-        // 4. Update Repo
-        // We need an Update method on IDailyAttendanceRepository? 
-        // The implementation we saw earlier uses Remove + Add or just EF Change Tracking if loaded.
-        // Assuming EF Core tracking is active since we loaded 'daily'.
+        // 4. Actualizamos el DailyAttendance en el repositorio
+        // Necesitamos un método Update en IDailyAttendanceRepository? O solo confiamos en EF Core Change Tracking?
+        // La implementación que vimos antes usa Remove + Add o solo EF Change Tracking si se cargó.
+        // Asumiendo que el seguimiento de EF Core está activo ya que cargamos 'daily'.
         
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

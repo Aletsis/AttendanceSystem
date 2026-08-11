@@ -1,5 +1,4 @@
 using System;
-
 using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Domain.Aggregates.ShiftAggregate;

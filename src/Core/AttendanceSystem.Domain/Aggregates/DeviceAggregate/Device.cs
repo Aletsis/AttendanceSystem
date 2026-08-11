@@ -1,7 +1,6 @@
-namespace AttendanceSystem.Domain.Aggregates.DeviceAggregate;
-
 using AttendanceSystem.Domain.Enumerations;
 
+namespace AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 
 public class Device : AggregateRoot<DeviceId>
 {

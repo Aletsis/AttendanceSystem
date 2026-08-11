@@ -36,7 +36,7 @@ public sealed class DeletePositionCommandHandler : IRequestHandler<DeletePositio
                 return Result.Failure("Puesto no encontrado.");
             }
 
-            // Check if position is in use by any employee
+            // Revisar si el puesto está en uso por algún empleado
             if (await _employeeRepository.IsPositionInUseAsync(positionId, cancellationToken))
             {
                 return Result.Failure("No se puede eliminar el puesto porque hay empleados asignados a él.");

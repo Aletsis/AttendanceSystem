@@ -1,5 +1,6 @@
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Application.DTOs;
 
 namespace AttendanceSystem.Application.Abstractions;
 
@@ -18,5 +19,5 @@ public interface IDeviceClientFactory
     /// <summary>
     /// Obtiene el cliente apropiado basado en el DTO DeviceDto.
     /// </summary>
-    IDeviceClient GetClient(AttendanceSystem.Application.DTOs.DeviceDto device);
+    IDeviceClient GetClient(DeviceDto device);
 }

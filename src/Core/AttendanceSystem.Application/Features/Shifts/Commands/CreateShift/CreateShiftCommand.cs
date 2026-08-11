@@ -58,7 +58,7 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
         }
         catch (Exception ex)
         {
-            // Providing a generic error for now, relying on global exception handling or specific error construction if needed
+            // Proporcionando un error genérico por ahora, confiando en el manejo global de excepciones o en la construcción de errores específicos si es necesario
              return Result<Guid>.Failure(ex.Message);
         }
     }

@@ -59,7 +59,7 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
             var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
             var empDict = employees.ToDictionary(e => e.Id, e => e);
 
-            // Filter out records for employees no longer active or not in branch (if not already filtered)
+            // Filtrar registros de empleados que ya no están activos o que no pertenecen a la sucursal (si no se filtró previamente)
             var validRecords = dailyRecords
                 .Where(r => empDict.ContainsKey(r.EmployeeId))
                 .ToList();
@@ -72,7 +72,7 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
                 return Result<AbsenteeismAnalysisDto>.Success(new AbsenteeismAnalysisDto());
             }
 
-            // 1. Absences by Day of Week
+            // 1. Ausentismos por día de la semana
             var culture = new CultureInfo("es-MX");
             var absencesByDay = absences
                 .GroupBy(a => a.Date.DayOfWeek)
@@ -83,13 +83,13 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
                 ))
                 .ToList();
             
-            // 2. Re-sort correctly (Lunes a Domingo pattern)
+            // 2. Reordenar correctamente (patrón Lunes a Domingo)
             var sortedDays = new List<string> { "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo" };
             absencesByDay = absencesByDay
                 .OrderBy(d => sortedDays.IndexOf(d.DayName.ToLower()))
                 .ToList();
 
-            // 2. Absences by Department
+            // 2. Ausentismos por Departamento
             var absencesByDept = absences
                 .GroupBy(a => empDict[a.EmployeeId].DepartmentId)
                 .Select(g => {
@@ -108,7 +108,7 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
                 .OrderByDescending(d => d.Rate)
                 .ToList();
 
-            // 3. Top Absent Employees
+            // 3. Empleados con más ausencias
             var topEmployees = absences
                 .GroupBy(a => a.EmployeeId)
                 .Select(g => {
@@ -124,7 +124,7 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
                 .Take(10)
                 .ToList();
 
-            // 4. Absences by Branch
+            // 4. Ausentismos por Sucursal
             var absencesByBranch = absences
                 .GroupBy(a => empDict[a.EmployeeId].BranchId)
                 .Select(g => {
@@ -143,7 +143,7 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
                 .OrderByDescending(b => b.Rate)
                 .ToList();
 
-            // 5. Absences by Branch/Department
+            // 5. Ausentismos por Sucursal/Departamento
             var absencesByBranchDept = absences
                 .GroupBy(a => new { empDict[a.EmployeeId].BranchId, empDict[a.EmployeeId].DepartmentId })
                 .Select(g => {

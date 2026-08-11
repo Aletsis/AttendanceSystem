@@ -1,10 +1,5 @@
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Application.Features.Employees; // Check if AttendanceReportViewDto is here or DTOs
-// Wait, checking imports in original file:
-// using AttendanceSystem.Application.DTOs;
-// using AttendanceSystem.Application.Features.Employees; 
-// AttendanceReportViewDto is likely in DTOs.
-// Let's include both just in case.
 
 namespace AttendanceSystem.Application.Abstractions;
 

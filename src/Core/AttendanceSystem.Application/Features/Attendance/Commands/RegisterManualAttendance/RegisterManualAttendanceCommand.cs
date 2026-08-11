@@ -37,14 +37,14 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         var employeeId = EmployeeId.From(request.EmployeeId);
         var date = request.CheckTime.Date;
 
-        // 1. Check/Get Daily Attendance to validate duplication
+        // 1. Combrobar/Obtener Asistencia Diaria para validar duplicación
         var daily = await _dailyRepo.GetByEmployeeAndDateAsync(
             employeeId,
             date,
             cancellationToken);
 
-        // Required logic: "No puede haber 2 entradas ni 2 salidas"
-        // This implies validating against *Processed* attendance.
+        // Logica requerida: "No puede haber 2 entradas ni 2 salidas"
+        // Esto implica validar contra la asistencia *procesada*.
         if (daily != null)
         {
             if (request.Type == "Entrada" && daily.ActualCheckIn.HasValue)
@@ -58,17 +58,10 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         }
         else
         {
-            // If checking strict "Processed" existence, if DailyAttendance doesn't exist, we can't violate it. 
-            // BUT, the user might mean "Raw Logs" too? "No puede haber 2 entradas" usually means Processed.
-            // If Daily isn't processed yet, we can add the log safely potentially. 
-            // But if we want to *force* assignment, we might need Daily to exist?
-            // Let's assume we proceed to Create Log.
+            
         }
 
-        // 2. Create AttendanceRecord
-        // We need a DeviceId. We can use a special "Manual" device or just a GUID zeros.
-        // For now, let's use a zero GUID to indicate "System/Manual". 
-        // Or wait, DeviceId is strongly typed. 
+        // 2. Crear AttendanceRecord
         var manualDeviceId = DeviceId.From("MANUAL");
 
         var checkType = request.Type == "Entrada" ? CheckType.CheckIn : CheckType.CheckOut;
@@ -80,18 +73,10 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
             VerifyMethod.Manual,
             checkType);
 
-        // Mark as Processed immediately since we are manually registering it for a purpose
-        // checkType logic above is approximate, CheckType enum has StartBreak etc. User only said Entry/Exit options.
-
-        // 3. Save Record
+        // 3. Guardar Registro
         await _attendanceRepo.AddAsync(record, cancellationToken);
         
-        // 4. Update DailyAttendance if it exists
-        // If it doesn't exist, we can't update it. The user will have to "Process" later.
-        // Or should we create it? Usually "Process" command creates it. 
-        // If we only add the log, the user can then "Process" and it will be picked up.
-        // BUT, the validation requirement suggests we want to ensure consistency NOW.
-        // If Daily exists, we can update it.
+        // 4. Actualizar Asistencia Diaria si existe
         if (daily != null)
         {
             if (request.Type == "Entrada")
@@ -103,7 +88,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
                 daily.SetCheckOut(record.CheckTime, record.Id);
             }
             
-            // Mark record as processed
+            // Marcar el registro como procesado
             record.MarkAsProcessed();
         }
 

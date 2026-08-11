@@ -34,16 +34,15 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
         var dateOnly = DateOnly.FromDateTime(request.Date);
         EmployeeId? empId = !string.IsNullOrEmpty(request.EmployeeId) ? EmployeeId.From(request.EmployeeId) : null;
 
-        // 1. Fetch Raw Records
+        // 1. Obtener los registros de asistencia crudos para la fecha y empleado especificados
         var rawRecords = await _attendanceRepository.GetByDateRangeAsync(
             dateOnly,
             dateOnly,
             empId,
             cancellationToken);
 
-        // 2. Fetch Processed Attendance (to check assignments)
-        // We extend the range to Date-1 and Date+1 to catch cross-day assignments 
-        // (e.g. Monday's exit occurring on Tuesday morning).
+        // 2. Obtener los registros de asistencia procesados para la fecha y empleado especificados
+        // Extendemos el rango a Date-1 y Date+1 para capturar asignaciones que cruzan días (por ejemplo, la salida del lunes que ocurre el martes por la mañana).
         var processed = await _dailyAttendanceRepository.GetByDateRangeAsync(
             request.Date.Date.AddDays(-1),
             request.Date.Date.AddDays(1),
@@ -51,14 +50,14 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
             empId,
             cancellationToken);
 
-        // 3. Metadata Lookups
+        // 3. Buscar empleados y dispositivos para mapear nombres
         var employees = await _employeeRepository.GetAllAsync(cancellationToken);
         var devices = await _deviceRepository.GetAllDevicesAsync(cancellationToken);
 
         var empDict = employees.ToDictionary(e => e.Id, e => e.GetFullName());
         var devDict = devices.ToDictionary(d => d.Id, d => d.Name);
 
-        // 4. Map Entry Types by Record ID
+        // 4. Mapear tipos de entrada por ID de registro
         var assignmentMap = new Dictionary<AttendanceRecordId, (string Type, DateTime Date)>();
         foreach (var da in processed)
         {
@@ -66,7 +65,7 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
             if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida", da.Date);
         }
 
-        // 5. Map to DTO
+        // 5. Mapear a DTO
         var dtos = rawRecords.Select(r => 
         {
             string entryType = "No Válida";

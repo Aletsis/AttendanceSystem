@@ -23,7 +23,7 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
 
         if (config == null)
         {
-            // Return default
+            // Devolver configuración predeterminada si no existe
             config = SystemConfiguration.CreateDefault();
         }
 

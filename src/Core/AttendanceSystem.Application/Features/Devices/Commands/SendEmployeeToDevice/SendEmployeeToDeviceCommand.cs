@@ -2,6 +2,7 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
+using AttendanceSystem.Domain.Enumerations;
 using MediatR;
 using Microsoft.Extensions.Logging;
 
@@ -67,7 +68,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                     employee.FirstName,
                     employee.DevicePassword ?? "",
                     (int)employee.DevicePrivilege,
-                    employee.Status == Domain.Enumerations.EmployeeStatus.Alta,
+                    employee.Status == EmployeeStatus.Alta,
                     employee.CardNumber,
                     employee.Fingerprints?.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.Template)).ToList(),
                     employee.FaceTemplate,

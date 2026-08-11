@@ -2,6 +2,7 @@ using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.DepartmentAggregate;
 using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Domain.ValueObjects;
 using MediatR;
 
 namespace AttendanceSystem.Application.Features.Departments.Commands.CreateDepartment;
@@ -38,7 +39,7 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
             {
                 foreach (var positionId in request.PositionIds)
                 {
-                    var position = await _positionRepository.GetByIdAsync(Domain.ValueObjects.PositionId.From(positionId), cancellationToken);
+                    var position = await _positionRepository.GetByIdAsync(PositionId.From(positionId), cancellationToken);
                     if (position != null)
                     {
                         department.AddPosition(position);

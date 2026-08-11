@@ -50,7 +50,7 @@ public sealed class RecordAttendanceBatchCommandHandler
             var minDate = command.Logs.Min(l => l.CheckTime);
             var maxDate = command.Logs.Max(l => l.CheckTime);
 
-            // Fetch existing logs in the batch's time range for this device to prevent duplicates
+            // Recuperar los registros existentes en el rango de tiempo del lote para este dispositivo para evitar duplicados
             var existingRecords = await _attendanceRepository.GetByDeviceAndDateRangeAsync(
                 deviceId,
                 minDate,
@@ -70,7 +70,7 @@ public sealed class RecordAttendanceBatchCommandHandler
                 var employeeIdVal = log.EmployeeId;
                 var checkTime = log.CheckTime;
 
-                // Skip if duplicate in the database or already seen in the current batch
+                // Saltar si es un duplicado en la base de datos o ya visto en el lote actual
                 if (existingKeys.Contains((employeeIdVal, checkTime)) || 
                     processedKeys.Contains((employeeIdVal, checkTime)))
                 {
@@ -99,7 +99,7 @@ public sealed class RecordAttendanceBatchCommandHandler
                 await _attendanceRepository.AddRangeAsync(newRecords, cancellationToken);
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                // Publish domain events for all newly created records
+                // Publicar eventos de dominio para todos los registros recién creados
                 foreach (var record in newRecords)
                 {
                     foreach (var domainEvent in record.DomainEvents)

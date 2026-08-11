@@ -1,6 +1,7 @@
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.DepartmentAggregate;
+using AttendanceSystem.Domain.Aggregates.PositionAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using MediatR;
@@ -40,14 +41,13 @@ public sealed class UpdateDepartmentCommandHandler : IRequestHandler<UpdateDepar
 
             _repository.Update(department);
 
-            // Update Positions
-            // Update Positions
+            // Actualizar puestos asociados al departamento
              if (request.PositionIds != null)
             {
-                var positionsToAssign = new List<AttendanceSystem.Domain.Aggregates.PositionAggregate.Position>();
+                var positionsToAssign = new List<Position>();
                 foreach (var positionId in request.PositionIds)
                 {
-                    var position = await _positionRepository.GetByIdAsync(Domain.ValueObjects.PositionId.From(positionId), cancellationToken);
+                    var position = await _positionRepository.GetByIdAsync(PositionId.From(positionId), cancellationToken);
                      if (position != null)
                     {
                         positionsToAssign.Add(position);

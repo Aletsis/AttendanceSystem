@@ -52,18 +52,18 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         int processedCount = 0;
         
-        // 1. Get all employees
+        // 1. Obtenemos todos los empleados
         var employees = (await _employeeRepo.GetAllAsync(cancellationToken)).ToList();
         _logger.LogDebug("Obtenidos {EmployeeCount} empleados de la base de datos", employees.Count);
 
-        // Filter by Branch if specified
+        // Filtrar por sucursal si se especifica
         if (request.BranchId != null)
         {
             employees = employees.Where(e => e.BranchId == request.BranchId).ToList();
             _logger.LogDebug("Filtrado por sucursal {BranchId}: {EmployeeCount} empleados", request.BranchId.Value, employees.Count);
         }
 
-        // Filter by Employee if specified
+        // Filtrar por empleado si se especifica
         if (request.EmployeeId != null)
         {
             employees = employees.Where(e => e.Id == request.EmployeeId).ToList();
@@ -76,12 +76,12 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             employees.Count,
             totalDays);
 
-        // 1.1 Bulk load all shifts
+        // 1.1 Carga masiva de todos los turnos
         var shifts = (await _shiftRepo.GetAllAsync(cancellationToken))
             .ToDictionary(s => s.Id);
         _logger.LogDebug("Obtenidos {ShiftCount} turnos para mapeo en memoria", shifts.Count);
 
-        // 1.2 Bulk load all existing DailyAttendance records for the date range
+        // 1.2 Carga masiva de todos los registros de asistencia diaria existentes para el rango de fechas
         var existingDailyAttendances = await _dailyRepo.GetByDateRangeAsync(
             request.StartDate, 
             request.EndDate, 
@@ -94,7 +94,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             .ToDictionary(g => g.Key, g => g.First());
         _logger.LogDebug("Obtenidos {DaCount} registros de asistencia diaria existentes para reprogramación", existingDailyAttendances.Count);
 
-        // 1.3 Bulk load all attendance records for the date range (including a buffer day before and after for cross-day shifts)
+        // 1.3 Carga masiva de todos los registros de asistencia para el rango de fechas (incluyendo un día de buffer antes y después para turnos que cruzan el día)
         var startQueryDate = DateOnly.FromDateTime(request.StartDate.Date.AddDays(-1));
         var endQueryDate = DateOnly.FromDateTime(request.EndDate.Date.AddDays(2));
 
@@ -131,16 +131,16 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         
         _logger.LogDebug("Obtenidos {RecordCount} registros biométricos filtrados", filteredRecords.Count);
         
-        // 2. Iterate dates
+        // 2. Iterar sobre cada día en el rango
         for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
         {
             foreach (var employee in employees)
             {
-                // Skip if not active? 
-                if (employee.Status != EmployeeStatus.Alta) continue; // Basic filter
+                // Omitir si no está activo?
+                if (employee.Status != EmployeeStatus.Alta) continue; // Filtrar empleados activos
 
-                // 2.1 Clean up existing processing for this day (Re-processing Logic)
-                // We must free up the AttendanceRecords so they can be re-evaluated or picked up by correct logic.
+                // 2.1 Limpiar el procesamiento existente para este día (Lógica de re-procesamiento)
+                // Debemos liberar los AttendanceRecords para que puedan ser re-evaluados o recogidos por la lógica correcta.
                 var lookupKey = (employee.Id.Value, date.Date);
                 if (existingDaLookup.TryGetValue(lookupKey, out var existingDA))
                 {
@@ -157,19 +157,18 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     _dailyRepo.Remove(existingDA);
                 }
 
-                // 3. Determine Shift & Search Scope Logic
+                // 3. Determinamos el turno y el alcance de búsqueda
                 Shift? shift = null;
                 bool isRestDay = false;
                 var searchStartDate = DateOnly.FromDateTime(date);
-                var searchEndDate = searchStartDate; // Default to single day
+                var searchEndDate = searchStartDate; // Default para un día normal, pero podría extenderse si es un turno nocturno o continuo.
 
                 if (employee.ScheduleId != null && shifts.TryGetValue(employee.ScheduleId, out var matchedShift))
                 {
                     shift = matchedShift;
                 }
 
-                // Check for Night Shift or Continuous (Cross-Day)
-                // If it's a cross-day shift, we extend search to the next day to catch the exit
+                // Si es un turno nocturno o continuo, extendemos la búsqueda al día siguiente para capturar la salida
                 bool isCrossDay = false;
                 TimeSpan dayStartTime = TimeSpan.Zero;
                 TimeSpan dayEndTime = TimeSpan.Zero;
@@ -179,7 +178,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     dayStartTime = shift.StartTime;
                     dayEndTime = shift.EndTime;
 
-                    if (shift.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto)
+                    if (shift.ShiftType == ShiftType.Mixto)
                     {
                         var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
                         if (dayConfig != null)
@@ -187,7 +186,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                             dayStartTime = dayConfig.StartTime;
                             dayEndTime = dayConfig.EndTime;
 
-                            // If dayConfig is Nocturno or Continuo, or if endTime <= startTime, it crosses day
+                            // Si dayConfig es Nocturno o Continuo, o si endTime <= startTime, cruza el día
                             if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo)
                             {
                                 isCrossDay = true;
@@ -205,7 +204,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     }
                 }
 
-                // 4. Fetch Records in memory
+                // 4. Recuperar registros en memoria
                 var employeeRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var empRecs)
                     ? empRecs
                     : new List<AttendanceRecord>();
@@ -218,17 +217,17 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     .OrderBy(r => r.CheckTime)
                     .ToList();
 
-                // Determine if today is a rest day
+                // Determinar si hoy es un día de descanso
                 if (employee.RestDay.HasValue)
                 {
-                    var dayOfWeek = (AttendanceSystem.Domain.Enumerations.WeekDay)(int)date.DayOfWeek; 
+                    var dayOfWeek = (WeekDay)(int)date.DayOfWeek; 
                     if (employee.RestDay == dayOfWeek)
                     {
                         isRestDay = true;
                     }
                 }
 
-                // 5. Delegate calculation to specific sub-command
+                // 5. Delegar el cálculo a un sub-comando específico
                 if (shift == null)
                 {
                     await _sender.Send(new ProcessNoShiftAttendanceCommand(

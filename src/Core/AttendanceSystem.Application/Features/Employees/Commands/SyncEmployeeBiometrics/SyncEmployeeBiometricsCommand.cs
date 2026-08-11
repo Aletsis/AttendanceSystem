@@ -50,7 +50,7 @@ public sealed class SyncEmployeeBiometricsCommandHandler : IRequestHandler<SyncE
         {
             var deviceClient = _deviceClientFactory.GetClient(device.Brand);
             
-            // Connect to device (SDK mode fallback to ADMS command if supported)
+            // Conectar al dispositivo (modo SDK, si falla, usar comando ADMS si es compatible)
             var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
             
             if (!connected)

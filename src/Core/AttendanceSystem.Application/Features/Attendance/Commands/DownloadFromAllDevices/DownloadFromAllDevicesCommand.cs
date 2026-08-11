@@ -1,6 +1,7 @@
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Domain.Enumerations;
 using MediatR;
 using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
 
@@ -34,7 +35,7 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
     public async Task<Result<IEnumerable<DownloadResultDto>>> Handle(DownloadFromAllDevicesCommand request, CancellationToken cancellationToken)
     {
         var allActiveDevices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
-        var devices = allActiveDevices.Where(d => d.DownloadMethod != AttendanceSystem.Domain.Enumerations.DeviceDownloadMethod.Adms).ToList();
+        var devices = allActiveDevices.Where(d => d.DownloadMethod != DeviceDownloadMethod.Adms).ToList();
         var results = new List<DownloadResultDto>();
         
         DateTime? globalMinDate = null;
