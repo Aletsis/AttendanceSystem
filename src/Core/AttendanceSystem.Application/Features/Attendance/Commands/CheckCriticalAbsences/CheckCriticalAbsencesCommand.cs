@@ -61,7 +61,7 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
             // 2. Get Active Employees
             var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
             var employees = allEmployees
-                .Where(e => criticalPositionIds.Contains(e.PositionId) && e.Status == EmployeeStatus.Alta)
+                .Where(e => criticalPositionIds.Contains(e.PositionId) && e.Status == EmployeeStatus.Alta && today >= e.HireDate.Date)
                 .ToList();
 
             int alertsSent = 0;

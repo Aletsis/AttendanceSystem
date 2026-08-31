@@ -157,6 +157,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     _dailyRepo.Remove(existingDA);
                 }
 
+                // Omitir si la fecha es anterior a su fecha de ingreso/alta
+                if (date < employee.HireDate.Date) continue;
+
                 // 3. Determinamos el turno y el alcance de búsqueda
                 Shift? shift = null;
                 bool isRestDay = false;

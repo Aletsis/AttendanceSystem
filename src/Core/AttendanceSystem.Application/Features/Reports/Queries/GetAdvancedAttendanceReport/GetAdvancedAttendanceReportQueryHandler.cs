@@ -87,6 +87,9 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             var emp = employees.FirstOrDefault(e => e.Id == item.EmployeeId);
             if (emp == null) continue;
 
+            // Descartar registros anteriores a la fecha de ingreso/alta
+            if (item.Date.Date < emp.HireDate.Date) continue;
+
             bool include = false;
             switch (request.ReportType)
             {
@@ -140,7 +143,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             // Filtro para "DescansoErroneo": Solo incluir empleados que tengan al menos un registro de trabajo en día de descanso y al menos una falta.
             if (request.ReportType == "DescansoErroneo")
             {
-                var empRecords = attendanceData.Where(r => r.EmployeeId == g.Key).ToList();
+                var empRecords = attendanceData.Where(r => r.EmployeeId == g.Key && r.Date.Date >= empRef.HireDate.Date).ToList();
                 bool hasWorkedRest = empRecords.Any(r => r.WorkedOnRestDay);
                 bool hasAbsence = empRecords.Any(r => r.IsAbsent);
 

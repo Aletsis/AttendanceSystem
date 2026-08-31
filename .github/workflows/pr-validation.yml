@@ -1,0 +1,50 @@
+name: PR Validation & Quality Gate
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+      - develop
+    types: [opened, synchronize, reopened]
+
+jobs:
+  validate:
+    name: Build, Test & Quality Checks
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout Código
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: 1. Restaurar Dependencias
+        run: dotnet restore AttendanceSystem.sln
+
+      - name: 2. Auditoría de Seguridad de Paquetes
+        run: dotnet list package --vulnerable --include-transitive
+
+      - name: 3. Compilar Solución (Release)
+        run: dotnet build AttendanceSystem.sln --configuration Release --no-restore
+
+      - name: 4. Ejecutar Suite Completa de Pruebas y Cobertura
+        run: |
+          dotnet test AttendanceSystem.sln `
+            --configuration Release `
+            --no-build `
+            --collect:"XPlat Code Coverage" `
+            --results-directory ./TestResults `
+            --logger "trx;LogFileName=test_results.trx"
+
+      - name: 5. Publicar Resultados de Pruebas (Artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: ./TestResults

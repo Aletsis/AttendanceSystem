@@ -66,13 +66,12 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
 
         foreach (var group in attByEmployee)
         {
-            var emp = empDict.TryGetValue(group.Key, out var e) ? e : null;
-            if (emp == null) continue;
+            if (!empDict.TryGetValue(group.Key, out var emp) || emp == null) continue;
 
             string empName = emp.GetFullName();
 
             string branchName = "N/A";
-            if (emp != null && emp.BranchId != null && branchDict.TryGetValue(emp.BranchId, out var bName))
+            if (emp.BranchId != null && branchDict.TryGetValue(emp.BranchId, out var bName))
             {
                 branchName = bName;
             }
@@ -83,13 +82,16 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
 
             // Logica de cálculo para el límite de horas extra
             double accumulatedOvertime = 0;
-            double? periodCap = (emp?.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Period) ? emp.OvertimeCapMinutes : null;
-            double? dailyCap = (emp?.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Daily) ? emp.OvertimeCapMinutes : null;
+            double? periodCap = (emp.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Period) ? emp.OvertimeCapMinutes : null;
+            double? dailyCap = (emp.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Daily) ? emp.OvertimeCapMinutes : null;
 
             var sortedRecords = group.OrderBy(x => x.Date).ToList();
 
             foreach (var att in sortedRecords)
             {
+                // Si la fecha del registro es anterior a la fecha de ingreso del empleado, ignorar
+                if (att.Date.Date < emp.HireDate.Date) continue;
+
                 double effectiveOvertime = att.OvertimeMinutes;
 
                 // Si hay un límite diario, se aplica primero
@@ -114,8 +116,8 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     Date = att.Date,
                     ShiftName = att.ShiftName ?? "",
                     BranchName = branchName,
-                    DepartmentName = (emp != null && emp.DepartmentId != null && deptDict.TryGetValue(emp.DepartmentId, out var dName)) ? dName : "N/A",
-                    PositionName = (emp != null && emp.PositionId != null && posDict.TryGetValue(emp.PositionId, out var pName)) ? pName : "N/A",
+                    DepartmentName = (emp.DepartmentId != null && deptDict.TryGetValue(emp.DepartmentId, out var dName)) ? dName : "N/A",
+                    PositionName = (emp.PositionId != null && posDict.TryGetValue(emp.PositionId, out var pName)) ? pName : "N/A",
                     ScheduledCheckIn = att.ScheduledCheckIn,
                     ScheduledCheckOut = att.ScheduledCheckOut,
                     ActualCheckIn = att.ActualCheckIn,
@@ -127,7 +129,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     WorkedOnRestDay = att.WorkedOnRestDay,
                     MissingCheckIn = att.MissingCheckIn,
                     MissingCheckOut = att.MissingCheckOut,
-                    OvertimeCalculationMethod = emp?.OvertimeCalculationMethod ?? Domain.Enumerations.OvertimeCalculationMethod.NoRounding,
+                    OvertimeCalculationMethod = emp.OvertimeCalculationMethod,
                     // --- Salidas Temporales ---
                     HasTemporaryExits = att.HasTemporaryExits,
                     TemporaryExitMinutes = att.TemporaryExitMinutes,
