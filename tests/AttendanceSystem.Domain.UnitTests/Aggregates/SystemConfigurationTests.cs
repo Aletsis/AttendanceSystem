@@ -89,4 +89,17 @@ public class SystemConfigurationTests
         config.FortnightFirstDay.Should().Be(1);
         config.FortnightSecondDay.Should().Be(16);
     }
+
+    [Fact]
+    public void UpdateBackupDirectory_ShouldModifyDirectory()
+    {
+        // Arrange
+        var config = SystemConfiguration.CreateDefault();
+
+        // Act
+        config.UpdateBackupDirectory("/opt/custom_backups");
+
+        // Assert
+        config.BackupDirectory.Should().Be("/opt/custom_backups");
+    }
 }

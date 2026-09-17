@@ -150,6 +150,11 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
 
     public bool AutoDownloadOnlyToday { get; private set; }
 
+    public void UpdateBackupDirectory(string backupDirectory)
+    {
+        BackupDirectory = backupDirectory;
+    }
+
     public void UpdateWorkPeriodSettings(
         WorkPeriodMode mode,
         DayOfWeek weeklyStartDay,

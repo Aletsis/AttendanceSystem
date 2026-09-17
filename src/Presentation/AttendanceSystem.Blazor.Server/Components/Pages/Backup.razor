@@ -4,6 +4,7 @@
 @using Microsoft.AspNetCore.Components.Forms
 @using AttendanceSystem.Application.Features.Backup.Commands
 @using AttendanceSystem.Application.Features.Backup.Queries
+@using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 @using AttendanceSystem.Application.DTOs
 @using MediatR
 @using MudBlazor
@@ -25,6 +26,44 @@
     <MudGrid>
         <!-- Panel de Acciones -->
         <MudItem xs="12" md="4">
+            <!-- Directorio de Respaldos -->
+            <MudCard Elevation="2" Class="mb-4">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">Directorio de Almacenamiento</MudText>
+                    </CardHeaderContent>
+                </MudCardHeader>
+                <MudCardContent>
+                    <MudStack Spacing="3">
+                        <MudTextField @bind-Value="_backupDirectory"
+                                      Label="Directorio en el Servidor"
+                                      Variant="Variant.Outlined"
+                                      Margin="Margin.Dense"
+                                      Placeholder="Backups"
+                                      Disabled="_isSavingDirectory || _isCreatingBackup || _isUploadingBackup || _isRestoring" />
+
+                        <MudAlert Severity="Severity.Info" Dense="true">
+                            Asegúrese de que el servicio tenga permisos de lectura y escritura en esta ruta.
+                        </MudAlert>
+
+                        <MudButton Variant="Variant.Filled"
+                                   Color="Color.Primary"
+                                   StartIcon="@Icons.Material.Filled.Save"
+                                   OnClick="SaveBackupDirectory"
+                                   Disabled="_isSavingDirectory || _isCreatingBackup || _isUploadingBackup || _isRestoring">
+                            @if (_isSavingDirectory)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Class="mr-2" />
+                                <span>Guardando...</span>
+                            }
+                            else
+                            {
+                                <span>Guardar Directorio</span>
+                            }
+                        </MudButton>
+                    </MudStack>
+                </MudCardContent>
+            </MudCard>
             <MudCard Elevation="2">
                 <MudCardHeader>
                     <CardHeaderContent>
@@ -255,10 +294,62 @@
     private bool _isUploadingBackup = false;
     private bool _isRestoring = false;
     private string _backupDescription = string.Empty;
+    private string _backupDirectory = "Backups";
+    private bool _isSavingDirectory = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadBackups();
+        await Task.WhenAll(LoadBackups(), LoadDirectoryConfig());
+    }
+
+    private async Task LoadDirectoryConfig()
+    {
+        try
+        {
+            var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
+            if (configResult.IsSuccess && configResult.Value != null)
+            {
+                _backupDirectory = configResult.Value.BackupDirectory;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar configuración de directorio: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private async Task SaveBackupDirectory()
+    {
+        if (string.IsNullOrWhiteSpace(_backupDirectory))
+        {
+            Snackbar.Add("El directorio de respaldos no puede estar vacío.", Severity.Warning);
+            return;
+        }
+
+        _isSavingDirectory = true;
+        try
+        {
+            var command = new UpdateBackupDirectoryCommand(_backupDirectory);
+            var result = await Mediator.Send(command);
+
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Directorio de respaldos actualizado exitosamente.", Severity.Success);
+                await LoadBackups();
+            }
+            else
+            {
+                Snackbar.Add($"Error al actualizar directorio: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error inesperado: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSavingDirectory = false;
+        }
     }
 
     private async Task LoadBackups()
