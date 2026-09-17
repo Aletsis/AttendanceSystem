@@ -138,9 +138,8 @@
                     <MudItem xs="12" md="8">
                         <MudStack Spacing="3">
                             <MudTextField Label="Directorio de Respaldos" @bind-Value="_backupDirectory" Variant="Variant.Outlined" Placeholder="C:\Backups" />
-                            <MudNumericField Label="Timeout de ejecución (Minutos)" @bind-Value="_backupTimeoutMinutes" Min="1" Max="60" Variant="Variant.Outlined" />
                             <MudAlert Severity="Severity.Info" Dense="true">
-                                El sistema realizará respaldos automáticos de la base de datos en la ruta especificada. Asegúrese de que el servicio tenga permisos de escritura.
+                                El sistema realizará respaldos y restauraciones protegidas con reversión automática en caso de error. Asegúrese de que el servicio tenga permisos de escritura.
                             </MudAlert>
                         </MudStack>
                     </MudItem>

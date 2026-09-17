@@ -297,8 +297,35 @@ public class BackupService : IBackupService
             var isZipFile = backupFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
             _logger.LogInformation("Tipo de respaldo: {BackupType}", isZipFile ? "Completo (ZIP)" : "Solo Base de Datos");
 
+            // 0. Crear Snapshot de Seguridad previo antes de tocar la base de datos
+            string? safetyBackupFile = null;
+            bool safetyBackupCreated = false;
+
             try
             {
+                var backupDirectory = await GetBackupDirectoryAsync();
+                safetyBackupFile = Path.Combine(backupDirectory, $".safety_snapshot_{DateTime.Now:yyyyMMdd_HHmmss}.backup");
+                _logger.LogInformation("Generando snapshot de seguridad previo en: {SafetyBackupFile}", safetyBackupFile);
+                var safetyResult = await CreateDatabaseBackupFileAsync(safetyBackupFile, cancellationToken);
+                if (safetyResult.Success)
+                {
+                    safetyBackupCreated = true;
+                    _logger.LogInformation("Snapshot de seguridad previo creado exitosamente.");
+                }
+                else
+                {
+                    _logger.LogWarning("No se pudo generar el snapshot de seguridad previo: {Message}. Se continuará con precaución.", safetyResult.Message);
+                }
+            }
+            catch (Exception snapEx)
+            {
+                _logger.LogWarning(snapEx, "Excepción al intentar crear snapshot de seguridad previo");
+            }
+
+            try
+            {
+                (bool Success, string Message) dbRestoreResult;
+
                 if (isZipFile)
                 {
                     // Respaldo completo
@@ -328,26 +355,12 @@ public class BackupService : IBackupService
                         var dbFileInfo = new FileInfo(dbBackupFile);
                         _logger.LogInformation("Archivo de BD: {DbBackupFile} ({SizeMB:F2} MB)", dbBackupFile, dbFileInfo.Length / 1024.0 / 1024.0);
 
-                        var dbRestoreResult = await RestoreDatabaseFromFileAsync(dbBackupFile, cancellationToken);
-                        if (!dbRestoreResult.Success)
-                        {
-                            _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
-                            return new RestoreResultDto
-                            {
-                                Success = false,
-                                Message = dbRestoreResult.Message
-                            };
-                        }
-                        _logger.LogInformation("Base de datos restaurada exitosamente");
+                        dbRestoreResult = await RestoreDatabaseFromFileAsync(dbBackupFile, cancellationToken);
                     }
                     else
                     {
                         _logger.LogError("No se encontró el archivo database.backup en el respaldo");
-                        return new RestoreResultDto
-                        {
-                            Success = false,
-                            Message = "El respaldo no contiene un archivo de base de datos válido"
-                        };
+                        dbRestoreResult = (false, "El respaldo no contiene un archivo de base de datos válido");
                     }
 
                     // Restaurar configuración (opcional - requiere confirmación manual)
@@ -362,19 +375,54 @@ public class BackupService : IBackupService
                 {
                     // Respaldo solo de base de datos
                     _logger.LogInformation("[1/1] Restaurando base de datos desde archivo .backup...");
-                    var dbRestoreResult = await RestoreDatabaseFromFileAsync(backupFilePath, cancellationToken);
-                    if (!dbRestoreResult.Success)
-                    {
-                        _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
-                        return new RestoreResultDto
-                        {
-                            Success = false,
-                            Message = dbRestoreResult.Message
-                        };
-                    }
-                    _logger.LogInformation("Base de datos restaurada exitosamente");
+                    dbRestoreResult = await RestoreDatabaseFromFileAsync(backupFilePath, cancellationToken);
                 }
 
+                if (!dbRestoreResult.Success)
+                {
+                    _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
+
+                    // Si falló y tenemos snapshot de seguridad, revertir la base de datos
+                    if (safetyBackupCreated && !string.IsNullOrEmpty(safetyBackupFile) && File.Exists(safetyBackupFile))
+                    {
+                        _logger.LogWarning("Iniciando reversión automática (Rollback) al estado previo usando el snapshot de seguridad...");
+                        try
+                        {
+                            var rollbackResult = await RestoreDatabaseFromFileAsync(safetyBackupFile, cancellationToken);
+                            if (rollbackResult.Success)
+                            {
+                                _logger.LogInformation("Rollback completado con éxito. La base de datos se mantiene en su estado previo original.");
+                                return new RestoreResultDto
+                                {
+                                    Success = false,
+                                    Message = $"La restauración falló: {dbRestoreResult.Message}. La base de datos fue revertida exitosamente a su estado original previo."
+                                };
+                            }
+                            else
+                            {
+                                _logger.LogError("El rollback automático reportó: {Message}", rollbackResult.Message);
+                            }
+                        }
+                        catch (Exception rollEx)
+                        {
+                            _logger.LogError(rollEx, "Error crítico durante el intento de rollback");
+                        }
+                    }
+
+                    return new RestoreResultDto
+                    {
+                        Success = false,
+                        Message = dbRestoreResult.Message
+                    };
+                }
+
+                // Restauración exitosa: limpiar snapshot de seguridad previo
+                if (safetyBackupCreated && !string.IsNullOrEmpty(safetyBackupFile) && File.Exists(safetyBackupFile))
+                {
+                    try { File.Delete(safetyBackupFile); } catch { }
+                }
+
+                _logger.LogInformation("Base de datos restaurada exitosamente");
                 _logger.LogInformation("=== RESTAURACIÓN COMPLETADA EXITOSAMENTE ===");
                 _logger.LogInformation("IMPORTANTE: Debe reiniciar la aplicación para que los cambios surtan efecto");
 
@@ -658,6 +706,86 @@ public class BackupService : IBackupService
 
     #region Private Methods
 
+    private (bool Valid, string Message) ValidateStoragePrerequisites(string directoryPath, long requiredBytes = 100 * 1024 * 1024)
+    {
+        try
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            // 1. Validar permisos de escritura creando y eliminando un archivo temporal
+            var testFilePath = Path.Combine(directoryPath, $".perm_test_{Guid.NewGuid():N}.tmp");
+            try
+            {
+                File.WriteAllText(testFilePath, "test_perm");
+                File.Delete(testFilePath);
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return (false, $"Sin permisos de escritura en el directorio destino: {directoryPath}");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Error al verificar permisos de escritura en {directoryPath}: {ex.Message}");
+            }
+
+            // 2. Validar espacio en disco disponible (si el volumen está disponible)
+            var fullPath = Path.GetFullPath(directoryPath);
+            var root = Path.GetPathRoot(fullPath);
+            if (!string.IsNullOrEmpty(root))
+            {
+                var drive = new DriveInfo(root);
+                if (drive.IsReady && drive.AvailableFreeSpace < requiredBytes)
+                {
+                    var freeMb = drive.AvailableFreeSpace / 1024.0 / 1024.0;
+                    var reqMb = requiredBytes / 1024.0 / 1024.0;
+                    return (false, $"Espacio insuficiente en disco ({root}). Disponible: {freeMb:F1} MB, Requerido mínimo: {reqMb:F1} MB.");
+                }
+            }
+
+            return (true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo validar el espacio de disco para {Path}", directoryPath);
+            return (true, string.Empty);
+        }
+    }
+
+    private string DiagnosePostgreSQLError(string rawError, int exitCode)
+    {
+        if (string.IsNullOrWhiteSpace(rawError))
+        {
+            return $"Proceso finalizó con código de salida {exitCode}.";
+        }
+
+        var lower = rawError.ToLowerInvariant();
+        if (lower.Contains("lock timeout") || lower.Contains("lock_timeout") || lower.Contains("canceling statement due to lock timeout"))
+        {
+            return "Operación cancelada por bloqueo en tabla: Otra transacción activa en PostgreSQL tiene tablas bloqueadas.";
+        }
+        if (lower.Contains("password authentication failed") || lower.Contains("no password was provided") || lower.Contains("fe_sendauth"))
+        {
+            return "Fallo de autenticación: Credenciales de PostgreSQL incorrectas o no reconocidas.";
+        }
+        if (lower.Contains("could not connect to server") || lower.Contains("connection refused") || lower.Contains("timeout expired") || lower.Contains("connection to server was lost"))
+        {
+            return "No se pudo conectar con el servidor PostgreSQL (timeout de conexión o servicio inactivo).";
+        }
+        if (lower.Contains("no space left on device") || lower.Contains("disk full") || lower.Contains("espacio insuficiente"))
+        {
+            return "Espacio en disco insuficiente durante la operación de base de datos.";
+        }
+        if (lower.Contains("permission denied") || lower.Contains("acceso denegado"))
+        {
+            return "Permiso denegado por el sistema de archivos o PostgreSQL.";
+        }
+
+        return rawError.Trim();
+    }
+
     private async Task<(bool Success, string Message)> CreateDatabaseBackupFileAsync(string outputPath, CancellationToken cancellationToken)
     {
         _logger.LogInformation("--- Iniciando respaldo de base de datos con pg_dump ---");
@@ -665,6 +793,17 @@ public class BackupService : IBackupService
 
         try
         {
+            var outputDir = Path.GetDirectoryName(outputPath);
+            if (!string.IsNullOrEmpty(outputDir))
+            {
+                var storageCheck = ValidateStoragePrerequisites(outputDir);
+                if (!storageCheck.Valid)
+                {
+                    _logger.LogError("Validación de almacenamiento fallida: {Message}", storageCheck.Message);
+                    return (false, storageCheck.Message);
+                }
+            }
+
             // Usar pg_dump para crear respaldo
             _logger.LogInformation("Buscando pg_dump...");
             var pgDumpPath = FindPgDumpPath();
@@ -676,12 +815,11 @@ public class BackupService : IBackupService
 
             _logger.LogInformation("pg_dump encontrado en: {PgDumpPath}", pgDumpPath);
 
-            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -F c -b -v -f \"{outputPath}\" \"{_postgresDatabase}\"";
-            _logger.LogInformation("Configuración de conexión:");
-            _logger.LogInformation("  Host: {Host}", _postgresHost);
-            _logger.LogInformation("  Puerto: {Port}", _postgresPort);
-            _logger.LogInformation("  Usuario: {User}", _postgresUser);
-            _logger.LogInformation("  Base de datos: {Database}", _postgresDatabase);
+            // -w: No interactivo (falla si pide pass)
+            // --lock-wait-timeout=30000: Falla en 30s si hay un lock en vez de congelarse
+            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -w --lock-wait-timeout=30000 -F c -b -v -f \"{outputPath}\" \"{_postgresDatabase}\"";
+            _logger.LogInformation("Configuración de conexión: Host={Host}, Port={Port}, User={User}, DB={Database}",
+                _postgresHost, _postgresPort, _postgresUser, _postgresDatabase);
             _logger.LogInformation("Comando: pg_dump {Arguments}", arguments.Replace(_postgresPassword, "***"));
 
             var startInfo = new ProcessStartInfo
@@ -691,26 +829,27 @@ public class BackupService : IBackupService
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
-                RedirectStandardInput = true,  // Importante: evita que pg_dump espere entrada
+                RedirectStandardInput = true,
                 CreateNoWindow = true,
                 WorkingDirectory = Path.GetDirectoryName(pgDumpPath)
             };
 
-            // Configurar password via variable de entorno
             startInfo.EnvironmentVariables["PGPASSWORD"] = _postgresPassword;
-            _logger.LogInformation("Password configurada en variable de entorno PGPASSWORD");
+            startInfo.EnvironmentVariables["PGCONNECT_TIMEOUT"] = "10";
 
-            _logger.LogInformation("Ejecutando pg_dump...");
+            _logger.LogInformation("Ejecutando pg_dump con detección de actividad (stall-watchdog)...");
             using var process = new Process { StartInfo = startInfo };
 
-            // Capturar salida usando eventos para evitar deadlock
             var outputBuilder = new StringBuilder();
             var errorBuilder = new StringBuilder();
+            var lastActivityTime = DateTime.UtcNow;
+            var stallTimeout = TimeSpan.FromSeconds(90); // 90 segundos sin actividad indica proceso colgado
 
             process.OutputDataReceived += (sender, e) =>
             {
                 if (e.Data != null)
                 {
+                    lastActivityTime = DateTime.UtcNow;
                     outputBuilder.AppendLine(e.Data);
                 }
             };
@@ -719,42 +858,52 @@ public class BackupService : IBackupService
             {
                 if (e.Data != null)
                 {
+                    lastActivityTime = DateTime.UtcNow;
                     errorBuilder.AppendLine(e.Data);
                 }
             };
 
             process.Start();
-
-            // Iniciar lectura asíncrona
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-
-            // Cerrar stdin inmediatamente para que pg_dump no espere entrada
             process.StandardInput.Close();
 
             _logger.LogInformation("Proceso pg_dump iniciado con PID: {ProcessId}", process.Id);
 
-            // Obtener timeout configurado
-            var config = await _systemConfigRepository.GetConfigurationAsync(cancellationToken);
-            var timeoutMinutes = config?.BackupTimeoutMinutes ?? 10;
-            if (timeoutMinutes <= 0) timeoutMinutes = 10; // Valor por defecto si es 0 o negativo
-
-            _logger.LogInformation("Esperando finalización de pg_dump (timeout: {Timeout} minutos)...", timeoutMinutes);
-
-            var waitTask = process.WaitForExitAsync(cancellationToken);
-            var timeoutTask = Task.Delay(TimeSpan.FromMinutes(timeoutMinutes), cancellationToken);
-            var completedTask = await Task.WhenAny(waitTask, timeoutTask);
-
-            if (completedTask == timeoutTask)
+            long previousFileSize = 0;
+            while (!process.HasExited)
             {
-                _logger.LogError("pg_dump excedió el tiempo límite de {Timeout} minutos", timeoutMinutes);
-                _logger.LogError("Salida parcial: {Output}", outputBuilder.ToString());
-                _logger.LogError("Error parcial: {Error}", errorBuilder.ToString());
-                return (false, $"pg_dump excedió el tiempo límite de {timeoutMinutes} minutos.");
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    try { process.Kill(true); } catch { }
+                    return (false, "Operación cancelada por el usuario.");
+                }
+
+                if (File.Exists(outputPath))
+                {
+                    try
+                    {
+                        var currentLength = new FileInfo(outputPath).Length;
+                        if (currentLength > previousFileSize)
+                        {
+                            previousFileSize = currentLength;
+                            lastActivityTime = DateTime.UtcNow;
+                        }
+                    }
+                    catch { }
+                }
+
+                if (DateTime.UtcNow - lastActivityTime > stallTimeout)
+                {
+                    _logger.LogError("pg_dump excedió el tiempo límite de inactividad de {Seconds} segundos", stallTimeout.TotalSeconds);
+                    try { process.Kill(true); } catch { }
+                    return (false, $"pg_dump se canceló por inactividad prolongada ({stallTimeout.TotalSeconds} segundos sin progreso).");
+                }
+
+                await Task.Delay(500, cancellationToken);
             }
 
-            // Esperar a que termine de leer toda la salida
-            await Task.Delay(100, cancellationToken); // Pequeña espera para asegurar que se leyó todo
+            await Task.Delay(100, cancellationToken);
 
             var output = outputBuilder.ToString();
             var error = errorBuilder.ToString();
@@ -762,32 +911,26 @@ public class BackupService : IBackupService
 
             if (!string.IsNullOrWhiteSpace(output))
             {
-                _logger.LogInformation("Salida estándar de pg_dump:");
-                _logger.LogInformation(output);
+                _logger.LogInformation("Salida estándar de pg_dump:\n{Output}", output);
             }
 
             if (!string.IsNullOrWhiteSpace(error))
             {
-                _logger.LogInformation("Salida de error de pg_dump (puede contener mensajes informativos):");
-                _logger.LogInformation(error);
+                _logger.LogInformation("Salida de error/progreso de pg_dump:\n{Error}", error);
             }
 
             if (process.ExitCode != 0)
             {
                 _logger.LogError("pg_dump falló con código de salida {ExitCode}", process.ExitCode);
-                _logger.LogError("Error: {Error}", error);
-
-                // Extraer un mensaje corto y limpio para el usuario
-                var cleanError = string.IsNullOrWhiteSpace(error) ? "Error desconocido en pg_dump" : error.Trim();
-                return (false, $"pg_dump falló (Código {process.ExitCode}): {cleanError}");
+                var diagnosis = DiagnosePostgreSQLError(error, process.ExitCode);
+                return (false, $"pg_dump falló: {diagnosis}");
             }
 
-            // Verificar que el archivo se creó
             if (File.Exists(outputPath))
             {
                 var fileInfo = new FileInfo(outputPath);
-                _logger.LogInformation("Archivo de respaldo creado exitosamente");
-                _logger.LogInformation("Tamaño: {SizeBytes} bytes ({SizeMB:F2} MB)", fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
+                _logger.LogInformation("Archivo de respaldo creado exitosamente. Tamaño: {SizeBytes} bytes ({SizeMB:F2} MB)",
+                    fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
             }
             else
             {
@@ -809,20 +952,28 @@ public class BackupService : IBackupService
     {
         try
         {
-            // Usar pg_restore para restaurar respaldo
             var pgRestorePath = FindPgRestorePath();
             if (string.IsNullOrEmpty(pgRestorePath))
             {
                 return (false, "pg_restore no encontrado. Asegúrese de que PostgreSQL esté instalado.");
             }
 
-            // Primero, limpiar la base de datos (drop y recrear)
-            _logger.LogWarning("ADVERTENCIA: Se eliminará y recreará la base de datos {Database}", _postgresDatabase);
+            if (!File.Exists(backupFilePath))
+            {
+                return (false, $"El archivo de respaldo a restaurar no existe: {backupFilePath}");
+            }
+
+            _logger.LogWarning("Iniciando restauración en base de datos {Database} con transacción atómica (--single-transaction)...", _postgresDatabase);
+
+            // -w: no contraseña interactiva
+            // --single-transaction: ejecuta todo en una sola transacción BEGIN ... COMMIT (si falla, hace rollback automático)
+            // --clean --if-exists: elimina objetos antes de recrearlos
+            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -d \"{_postgresDatabase}\" -w --single-transaction --clean --if-exists -v \"{backupFilePath}\"";
 
             var startInfo = new ProcessStartInfo
             {
                 FileName = pgRestorePath,
-                Arguments = $"-h {_postgresHost} -p {_postgresPort} -U {_postgresUser} -d {_postgresDatabase} -c -v \"{backupFilePath}\"",
+                Arguments = arguments,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -831,46 +982,59 @@ public class BackupService : IBackupService
             };
 
             startInfo.EnvironmentVariables["PGPASSWORD"] = _postgresPassword;
+            startInfo.EnvironmentVariables["PGCONNECT_TIMEOUT"] = "10";
 
             _logger.LogInformation("Ejecutando pg_restore...");
             using var process = new Process { StartInfo = startInfo };
 
-            // Capturar salida usando eventos para evitar deadlock
             var outputBuilder = new StringBuilder();
             var errorBuilder = new StringBuilder();
+            var lastActivityTime = DateTime.UtcNow;
+            var stallTimeout = TimeSpan.FromSeconds(120); // 120s de inactividad para restore
 
-            process.OutputDataReceived += (sender, e) => { if (e.Data != null) outputBuilder.AppendLine(e.Data); };
-            process.ErrorDataReceived += (sender, e) => { if (e.Data != null) errorBuilder.AppendLine(e.Data); };
+            process.OutputDataReceived += (sender, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lastActivityTime = DateTime.UtcNow;
+                    outputBuilder.AppendLine(e.Data);
+                }
+            };
+
+            process.ErrorDataReceived += (sender, e) =>
+            {
+                if (e.Data != null)
+                {
+                    lastActivityTime = DateTime.UtcNow;
+                    errorBuilder.AppendLine(e.Data);
+                }
+            };
 
             process.Start();
-
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
-
-            // Cerrar stdin
             process.StandardInput.Close();
 
             _logger.LogInformation("Proceso pg_restore iniciado con PID: {ProcessId}", process.Id);
 
-            // Timeout (usar el mismo que backup o uno mayor, restaurar suele ser más lento)
-            var config = await _systemConfigRepository.GetConfigurationAsync(cancellationToken);
-            var timeoutMinutes = (config?.BackupTimeoutMinutes ?? 10) * 2; // Doble de tiempo para restaurar
-            if (timeoutMinutes <= 0) timeoutMinutes = 20;
-
-            _logger.LogInformation("Esperando finalización de pg_restore (timeout: {Timeout} minutos)...", timeoutMinutes);
-
-            var waitTask = process.WaitForExitAsync(cancellationToken);
-            var timeoutTask = Task.Delay(TimeSpan.FromMinutes(timeoutMinutes), cancellationToken);
-            var completedTask = await Task.WhenAny(waitTask, timeoutTask);
-
-            if (completedTask == timeoutTask)
+            while (!process.HasExited)
             {
-                _logger.LogError("pg_restore excedió el tiempo límite de {Timeout} minutos", timeoutMinutes);
-                try { process.Kill(true); } catch { }
-                return (false, $"pg_restore excedió el tiempo límite de {timeoutMinutes} minutos.");
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    try { process.Kill(true); } catch { }
+                    return (false, "Operación cancelada por el usuario.");
+                }
+
+                if (DateTime.UtcNow - lastActivityTime > stallTimeout)
+                {
+                    _logger.LogError("pg_restore excedió el tiempo de inactividad de {Seconds} segundos", stallTimeout.TotalSeconds);
+                    try { process.Kill(true); } catch { }
+                    return (false, $"pg_restore se canceló por inactividad prolongada ({stallTimeout.TotalSeconds} segundos sin respuesta).");
+                }
+
+                await Task.Delay(500, cancellationToken);
             }
 
-            // Esperar lectura completa
             await Task.Delay(100, cancellationToken);
 
             var error = errorBuilder.ToString();
@@ -880,14 +1044,13 @@ public class BackupService : IBackupService
 
             if (process.ExitCode != 0)
             {
-                // pg_restore puede retornar warnings (código 1) que no son errores fatales
-                _logger.LogWarning("pg_restore finalizó con código {ExitCode}. Revise los logs por posibles advertencias.", process.ExitCode);
+                _logger.LogWarning("pg_restore finalizó con código {ExitCode}. Analizando errores...", process.ExitCode);
 
-                // Considerar fallo si hay errores críticos en el log
                 if (error.Contains("fatal:", StringComparison.OrdinalIgnoreCase) || error.Contains("error:", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger.LogError("Se detectaron errores críticos en la restauración.");
-                    return (false, $"pg_restore falló (Código {process.ExitCode}): {error.Trim()}");
+                    var diagnosis = DiagnosePostgreSQLError(error, process.ExitCode);
+                    return (false, $"pg_restore falló: {diagnosis}");
                 }
             }
 

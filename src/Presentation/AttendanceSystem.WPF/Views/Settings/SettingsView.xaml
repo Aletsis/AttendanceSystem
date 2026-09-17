@@ -237,7 +237,7 @@
                                 <mah:ToggleSwitch Header="Limpieza de Dispositivos" IsOn="{Binding AutoClearDevicesAfterDownload}" OnContent="Limpiar tras descarga" OffContent="No limpiar"/>
                             </StackPanel>
 
-                            <StackPanel Grid.Row="2" Grid.Column="0">
+                            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
                                 <TextBlock Text="Directorio de Respaldos" Style="{StaticResource LabelStyle}"/>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -249,11 +249,6 @@
                                         <iconPacks:PackIconMaterial Kind="FolderOpen" Width="16" Height="16" Foreground="#4E73DF"/>
                                     </Button>
                                 </Grid>
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="2" Grid.Column="2">
-                                <TextBlock Text="Timeout Respaldo (Min)" Style="{StaticResource LabelStyle}"/>
-                                <mah:NumericUpDown Value="{Binding BackupTimeoutMinutes}" Minimum="1" Maximum="60" Padding="12,10" BorderBrush="#EAECF4" Background="#F8F9FC"/>
                             </StackPanel>
                         </Grid>
                     </StackPanel>
