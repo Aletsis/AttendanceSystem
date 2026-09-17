@@ -520,7 +520,7 @@ public class BackupService : IBackupService
             }
 
             // Validar que el archivo no esté corrupto
-            if (backupFilePath.EndsWith(".zip"))
+            if (backupFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
                 using var archive = ZipFile.OpenRead(backupFilePath);
                 // Si puede abrir el archivo, es válido
@@ -528,7 +528,7 @@ public class BackupService : IBackupService
             }
             else
             {
-                // Para archivos .backup, solo verificar que existan y tengan contenido
+                // Para archivos .backup/.bak, solo verificar que existan y tengan contenido
                 var fileInfo = new FileInfo(backupFilePath);
                 return Task.FromResult(fileInfo.Length > 0);
             }
@@ -537,6 +537,122 @@ public class BackupService : IBackupService
         {
             _logger.LogError(ex, "Error al validar respaldo: {FilePath}", backupFilePath);
             return Task.FromResult(false);
+        }
+    }
+
+    public async Task<BackupResultDto> UploadBackupAsync(string fileName, Stream contentStream, CancellationToken cancellationToken = default)
+    {
+        _logger.LogInformation("=== CARGANDO ARCHIVO DE RESPALDO ===");
+        _logger.LogInformation("Nombre recibido: {FileName}", fileName);
+
+        try
+        {
+            var cleanFileName = Path.GetFileName(fileName);
+            if (string.IsNullOrWhiteSpace(cleanFileName))
+            {
+                return new BackupResultDto
+                {
+                    Success = false,
+                    Message = "Nombre de archivo inválido."
+                };
+            }
+
+            var extension = Path.GetExtension(cleanFileName).ToLowerInvariant();
+            if (extension != ".zip" && extension != ".backup" && extension != ".bak")
+            {
+                return new BackupResultDto
+                {
+                    Success = false,
+                    Message = $"Extensión '{extension}' no permitida. Solo se admiten archivos .zip, .backup o .bak."
+                };
+            }
+
+            var backupDirectory = await GetBackupDirectoryAsync();
+            var destinationPath = Path.Combine(backupDirectory, cleanFileName);
+
+            _logger.LogInformation("Guardando respaldo en: {DestinationPath}", destinationPath);
+
+            // Escribir archivo en disco
+            await using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            {
+                await contentStream.CopyToAsync(fileStream, cancellationToken);
+            }
+
+            // Validar integridad del archivo recibido
+            var isValid = await ValidateBackupAsync(destinationPath, cancellationToken);
+            if (!isValid)
+            {
+                _logger.LogWarning("El archivo de respaldo subido no superó la validación de integridad: {DestinationPath}", destinationPath);
+                if (File.Exists(destinationPath))
+                {
+                    try { File.Delete(destinationPath); } catch { }
+                }
+
+                return new BackupResultDto
+                {
+                    Success = false,
+                    Message = "El archivo cargado está dañado o no es un formato de respaldo válido."
+                };
+            }
+
+            var fileInfo = new FileInfo(destinationPath);
+            _logger.LogInformation("Respaldo cargado exitosamente. Tamaño: {SizeBytes} bytes ({SizeMB:F2} MB)", fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
+
+            return new BackupResultDto
+            {
+                Success = true,
+                Message = "Respaldo cargado exitosamente.",
+                BackupFilePath = destinationPath,
+                SizeInBytes = fileInfo.Length,
+                CreatedAt = fileInfo.LastWriteTime
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al guardar el respaldo cargado");
+            return new BackupResultDto
+            {
+                Success = false,
+                Message = $"Error al cargar respaldo: {ex.Message}"
+            };
+        }
+    }
+
+    public async Task<string?> GetBackupFilePathAsync(string fileName, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var cleanFileName = Path.GetFileName(fileName);
+            if (string.IsNullOrWhiteSpace(cleanFileName))
+            {
+                return null;
+            }
+
+            var backupDirectory = await GetBackupDirectoryAsync();
+            var targetPath = Path.Combine(backupDirectory, cleanFileName);
+
+            // Prevenir Path Traversal
+            var fullTargetPath = Path.GetFullPath(targetPath);
+            var fullBackupDir = Path.GetFullPath(backupDirectory);
+
+            if (!fullTargetPath.StartsWith(fullBackupDir, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("Intento de acceso fuera del directorio de respaldos: {Target}", fullTargetPath);
+                return null;
+            }
+
+            if (!File.Exists(fullTargetPath))
+            {
+                _logger.LogWarning("Archivo de respaldo solicitado no encontrado: {Target}", fullTargetPath);
+                return null;
+            }
+
+            return fullTargetPath;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al resolver la ruta del archivo de respaldo: {FileName}", fileName);
+            return null;
         }
     }
 

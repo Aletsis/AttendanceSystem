@@ -36,6 +36,7 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
 
         public ICommand CreateFullBackupCommand { get; }
         public ICommand CreateDatabaseBackupCommand { get; }
+        public ICommand UploadBackupCommand { get; }
         public ICommand RestoreBackupCommand { get; }
         public ICommand DownloadBackupCommand { get; }
         public ICommand DeleteBackupCommand { get; }
@@ -53,6 +54,7 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
 
             CreateFullBackupCommand = new DelegateCommand(async () => await ExecuteCreateBackupAsync("Full"));
             CreateDatabaseBackupCommand = new DelegateCommand(async () => await ExecuteCreateBackupAsync("DatabaseOnly"));
+            UploadBackupCommand = new DelegateCommand(async () => await ExecuteUploadBackupAsync());
             RestoreBackupCommand = new DelegateCommand<BackupDto>(async (b) => await ExecuteRestoreBackupAsync(b));
             DownloadBackupCommand = new DelegateCommand<BackupDto>(async (b) => await ExecuteDownloadBackupAsync(b));
             DeleteBackupCommand = new DelegateCommand<BackupDto>(async (b) => await ExecuteDeleteBackupAsync(b));
@@ -145,6 +147,44 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
                     await _messageService.ShowSuccessAsync("Archivo guardado correctamente.");
                 }
                 catch (Exception ex) { await _messageService.ShowErrorAsync($"Error al guardar archivo: {ex.Message}"); }
+            }
+        }
+
+        private async Task ExecuteUploadBackupAsync()
+        {
+            var openDialog = new OpenFileDialog
+            {
+                Filter = "Archivos de Respaldo (*.zip;*.backup;*.bak)|*.zip;*.backup;*.bak|Todos los archivos (*.*)|*.*",
+                Title = "Seleccionar Archivo de Respaldo para Cargar"
+            };
+
+            if (openDialog.ShowDialog() == true)
+            {
+                SetBusy(true, "Cargando y validando archivo de respaldo...");
+                try
+                {
+                    await using var stream = File.OpenRead(openDialog.FileName);
+                    var command = new UploadBackupCommand(Path.GetFileName(openDialog.FileName), stream);
+                    var result = await _mediator.Send(command);
+
+                    if (result.Success)
+                    {
+                        await _messageService.ShowSuccessAsync($"Respaldo '{Path.GetFileName(openDialog.FileName)}' cargado exitosamente.");
+                        await LoadBackupsAsync();
+                    }
+                    else
+                    {
+                        await _messageService.ShowErrorAsync($"Error al cargar respaldo: {result.Message}");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    await _messageService.ShowErrorAsync($"Error al leer archivo: {ex.Message}");
+                }
+                finally
+                {
+                    SetBusy(false);
+                }
             }
         }
 

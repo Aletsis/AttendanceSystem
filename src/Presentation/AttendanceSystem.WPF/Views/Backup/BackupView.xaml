@@ -129,11 +129,21 @@
 
                         <Button Command="{Binding CreateDatabaseBackupCommand}" 
                                 Style="{StaticResource MahApps.Styles.Button.Flat}"
-                                Foreground="#4E73DF" BorderBrush="#EAECF4" Height="45" Margin="0,0,0,15">
+                                Foreground="#4E73DF" BorderBrush="#EAECF4" Height="45" Margin="0,0,0,10">
                             <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
                             <StackPanel Orientation="Horizontal">
                                 <iconPacks:PackIconMaterial Kind="Database" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
                                 <TextBlock Text="Solo Base de Datos" FontWeight="Bold" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Button Command="{Binding UploadBackupCommand}" 
+                                Style="{StaticResource MahApps.Styles.Button.Flat}"
+                                Foreground="#1CC88A" BorderBrush="#EAECF4" Height="45" Margin="0,0,0,15">
+                            <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="CloudUpload" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
+                                <TextBlock Text="Cargar Respaldo..." FontWeight="Bold" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
