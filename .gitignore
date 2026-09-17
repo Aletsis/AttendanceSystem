@@ -93,18 +93,38 @@ _Pvt_Extensions
 **/appsettings.Development.json
 **/appsettings.Production.json
 !**/appsettings.example.json
-# Deployment scripts (allow tracking of code/scripts, exclude heavy binaries)
-Deploy/*
-!Deploy/setup_script.iss
-!Deploy/configure_iis.bat
-!Deploy/enable_iis.ps1
-!Deploy/configure_db.bat
-!Deploy/init_db.sql
-!Deploy/README_INSTALLER.md
-Deploy/*.exe
-Output/*
-!Prepare-Release.ps1
 
-# Artifacts
-artifacts/*.*
+# Environment / Secrets
+.env
+.env.*
+!.env.example
+
+# Test results and Code Coverage
+[Tt]est[Rr]esults/
+TestResults/
+*.trx
+*.coverage
+*.coveragexml
+coverage.cobertura.xml
+coverage.opencover.xml
+
+# IDE / Editor files
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+# OS generated files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+
+# Deployment and Build Output
+Deploy/*.exe
+Deploy/*.zip
+Deploy/*.msi
+Output/
+[Aa]rtifacts/
+[Pp]ublish/
 scratch/*.*
+

@@ -58,6 +58,7 @@ jobs:
           -c Release
           --no-build
           --verbosity normal
+          --settings tests/coverlet.runsettings
           --collect:"XPlat Code Coverage"
           --results-directory ./TestResults
           --logger "trx;LogFileName=test-results.trx"
