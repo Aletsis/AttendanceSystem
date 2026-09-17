@@ -61,23 +61,23 @@ public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportComm
             }
 
             var pdfBytes = _reportExportService.GeneratePdf(
-                reportData, 
-                targetDate, 
-                targetDate, 
-                config.CompanyName, 
+                reportData,
+                targetDate,
+                targetDate,
+                config.CompanyName,
                 config.CompanyLogo);
 
             var excelBytes = _reportExportService.GenerateExcel(
-                reportData, 
-                targetDate, 
-                targetDate, 
-                config.CompanyName, 
-                config.CompanyLogo, 
+                reportData,
+                targetDate,
+                targetDate,
+                config.CompanyName,
+                config.CompanyLogo,
                 detailed: true);
 
             // Calcular estadísticas
             var totalAbsences = reportData.Count(x => x.IsAbsent);
-            
+
             var absencesByBranch = reportData.Where(x => x.IsAbsent)
                 .GroupBy(x => string.IsNullOrEmpty(x.BranchName) ? "Sin Sucursal" : x.BranchName)
                 .Select(g => new { Branch = g.Key, Count = g.Count() })
@@ -102,11 +102,11 @@ public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportComm
                 .Take(5);
 
             var subject = $"Reporte Diario de Asistencia - {targetDate.ToString("dd/MM/yyyy")}";
-            
+
             var bodyBuilder = new System.Text.StringBuilder();
             bodyBuilder.AppendLine($"<h3>Resumen Diario de Asistencia: {targetDate.ToString("dd/MM/yyyy")}</h3>");
             bodyBuilder.AppendLine($"<p>A continuación se presenta un resumen de las incidencias del día. Puede consultar los detalles en los archivos adjuntos (PDF y Excel).</p>");
-            
+
             bodyBuilder.AppendLine("<h4>Estadísticas Generales</h4>");
             bodyBuilder.AppendLine($"<ul><li><b>Total de Faltas:</b> {totalAbsences}</li></ul>");
 
@@ -167,14 +167,14 @@ public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportComm
             };
 
             await _emailService.SendReportAsync(
-                subject, 
-                bodyBuilder.ToString(), 
-                config.AutoReportEmails, 
-                attachments, 
+                subject,
+                bodyBuilder.ToString(),
+                config.AutoReportEmails,
+                attachments,
                 cancellationToken);
 
             _logger.LogInformation("Reporte diario automatizado generado y enviado con éxito.");
-            
+
             return Result<bool>.Success(true);
         }
         catch (Exception ex)

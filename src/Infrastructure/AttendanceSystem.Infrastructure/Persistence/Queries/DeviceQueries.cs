@@ -18,7 +18,7 @@ public class DeviceQueries : IDeviceQueries
     public async Task<IEnumerable<DeviceDto>> GetAllDevicesAsync(CancellationToken cancellationToken = default)
     {
         using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        
+
         // Usamos AsNoTracking para mejor rendimiento en lecturas
         var devices = await context.Devices
             .AsNoTracking()
@@ -59,12 +59,12 @@ public class DeviceQueries : IDeviceQueries
         if (string.IsNullOrWhiteSpace(deviceId)) return null;
 
         using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
-        
+
         var id = DeviceId.From(deviceId);
         var device = await context.Devices
             .AsNoTracking()
             .FirstOrDefaultAsync(d => d.Id == id, cancellationToken);
-            
+
         if (device == null) return null;
 
         return new DeviceDto(

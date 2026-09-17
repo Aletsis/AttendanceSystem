@@ -114,7 +114,7 @@ public sealed class GetEmployeesWithPaginationQueryHandler : IRequestHandler<Get
             // 2. Filtrado por Columna
             if (!string.IsNullOrWhiteSpace(request.IdFilter))
                 query = query.Where(e => e.Id.Contains(request.IdFilter, StringComparison.OrdinalIgnoreCase));
-            
+
             if (!string.IsNullOrWhiteSpace(request.NameFilter))
                 query = query.Where(e => e.FullName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase));
 

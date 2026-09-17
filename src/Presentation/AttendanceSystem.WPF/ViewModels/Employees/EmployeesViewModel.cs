@@ -124,12 +124,12 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             try
             {
                 var result = await _mediator.Send(new GetAllEmployeesQuery());
-                
+
                 if (result.IsSuccess && result.Value != null)
                 {
                     _allEmployeesData = result.Value.ToList();
                     _employees.Clear();
-                    
+
                     foreach (var emp in _allEmployeesData)
                     {
                         _employees.Add(new EmployeeListItem
@@ -146,7 +146,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                             HireDate = emp.HireDate
                         });
                     }
-                    
+
                     FilterEmployees();
                 }
                 else
@@ -198,10 +198,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private void ExecuteEditEmployee()
         {
             if (SelectedEmployee == null) return;
-            
+
             var parameters = new Prism.Navigation.NavigationParameters();
             parameters.Add("EmployeeId", SelectedEmployee.Id);
-            
+
             _navigationService.NavigateTo("EmployeeDetailView", parameters);
         }
 
@@ -220,7 +220,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             {
                 var command = new DeleteEmployeeCommand(SelectedEmployee.EmployeeNumber);
                 var result = await _mediator.Send(command);
-                
+
                 if (result.IsSuccess)
                 {
                     await _messageService.ShowSuccessAsync("Empleado eliminado correctamente");

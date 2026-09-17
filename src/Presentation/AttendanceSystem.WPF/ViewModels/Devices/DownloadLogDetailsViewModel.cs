@@ -36,16 +36,16 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public string? ErrorMessage => _log?.ErrorMessage;
 
         public bool IsLoadingRecords { get => _isLoadingRecords; set => SetProperty(ref _isLoadingRecords, value); }
-        public bool ShowRecords 
-        { 
-            get => _showRecords; 
-            set 
+        public bool ShowRecords
+        {
+            get => _showRecords;
+            set
             {
                 if (SetProperty(ref _showRecords, value) && value && _importedRecords.Count == 0)
                 {
                     _ = LoadRecordsAsync();
                 }
-            } 
+            }
         }
         public ObservableCollection<AttendanceLogViewDto> ImportedRecords { get => _importedRecords; set => SetProperty(ref _importedRecords, value); }
 

@@ -15,7 +15,7 @@ public sealed record RecordAttendanceBatchCommand(
 ) : IRequest<Result<int>>;
 
 // Handler
-public sealed class RecordAttendanceBatchCommandHandler 
+public sealed class RecordAttendanceBatchCommandHandler
     : IRequestHandler<RecordAttendanceBatchCommand, Result<int>>
 {
     private readonly IAttendanceRepository _attendanceRepository;
@@ -36,7 +36,7 @@ public sealed class RecordAttendanceBatchCommandHandler
     }
 
     public async Task<Result<int>> Handle(
-        RecordAttendanceBatchCommand command, 
+        RecordAttendanceBatchCommand command,
         CancellationToken cancellationToken)
     {
         if (command.Logs == null || command.Logs.Count == 0)
@@ -71,7 +71,7 @@ public sealed class RecordAttendanceBatchCommandHandler
                 var checkTime = log.CheckTime;
 
                 // Saltar si es un duplicado en la base de datos o ya visto en el lote actual
-                if (existingKeys.Contains((employeeIdVal, checkTime)) || 
+                if (existingKeys.Contains((employeeIdVal, checkTime)) ||
                     processedKeys.Contains((employeeIdVal, checkTime)))
                 {
                     skippedDuplicates++;
@@ -111,7 +111,7 @@ public sealed class RecordAttendanceBatchCommandHandler
             }
 
             _logger.LogInformation("Procesamiento por lotes completado para dispositivo {DeviceId}. " +
-                                  "Agregados: {AddedCount}, Duplicados omitidos: {SkippedCount}", 
+                                  "Agregados: {AddedCount}, Duplicados omitidos: {SkippedCount}",
                                   command.DeviceId, newRecords.Count, skippedDuplicates);
 
             return Result<int>.Success(newRecords.Count);

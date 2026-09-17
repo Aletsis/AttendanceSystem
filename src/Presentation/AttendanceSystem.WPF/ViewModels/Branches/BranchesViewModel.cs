@@ -104,16 +104,16 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             {
                 var result = await _mediator.Send(new GetBranchesQuery());
                 var employeesResult = await _mediator.Send(new GetAllEmployeesQuery());
-                
+
                 if (result.IsSuccess && result.Value != null)
                 {
-                    var employeeCounts = employeesResult.IsSuccess 
+                    var employeeCounts = employeesResult.IsSuccess
                         ? employeesResult.Value.GroupBy(e => e.BranchId).ToDictionary(g => g.Key, g => g.Count())
                         : new Dictionary<Guid, int>();
 
                     _allBranchesData = result.Value.ToList();
                     _branches.Clear();
-                    
+
                     foreach (var branch in _allBranchesData)
                     {
                         _branches.Add(new BranchListItem
@@ -126,7 +126,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
                             EmployeeCount = employeeCounts.GetValueOrDefault(branch.Id, 0)
                         });
                     }
-                    
+
                     FilterBranches();
                 }
                 else
@@ -153,8 +153,8 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             else
             {
                 var searchLower = SearchText.ToLower();
-                var filtered = _branches.Where(b => 
-                    b.Name.ToLower().Contains(searchLower) || 
+                var filtered = _branches.Where(b =>
+                    b.Name.ToLower().Contains(searchLower) ||
                     b.Code.ToLower().Contains(searchLower) ||
                     (b.Address?.ToLower().Contains(searchLower) ?? false));
                 Branches = new ObservableCollection<BranchListItem>(filtered);
@@ -245,7 +245,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             // Nota: Aquí se asume que existe un DeleteBranchCommand en el Application layer.
             // Si no existe, se mostrará un error de compilación o ejecución que el desarrollador deberá atender.
             // Basado en el patrón de otras entidades, implementamos la llamada.
-            try 
+            try
             {
                 // Buscamos si existe DeleteBranchCommand (usualmente en .Commands.DeleteBranch)
                 // Para evitar errores si no existe, por ahora mostramos el mensaje de "No Implementado" 

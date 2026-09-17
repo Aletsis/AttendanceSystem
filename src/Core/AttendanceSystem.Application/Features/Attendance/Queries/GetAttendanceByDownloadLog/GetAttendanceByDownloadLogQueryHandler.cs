@@ -41,7 +41,7 @@ public class GetAttendanceByDownloadLogQueryHandler : IRequestHandler<GetAttenda
         var devDict = devices.ToDictionary(d => d.Id, d => d.Name);
 
         // 3. Mapeo a DTO
-        var dtos = records.Select(r => 
+        var dtos = records.Select(r =>
         {
             string empName = empDict.TryGetValue(r.EmployeeId, out var name) ? name : r.EmployeeId.Value;
             string devName = devDict.TryGetValue(r.DeviceId, out var dName) ? dName : r.DeviceId.Value;

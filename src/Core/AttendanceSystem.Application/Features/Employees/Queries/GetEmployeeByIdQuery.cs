@@ -49,9 +49,9 @@ public sealed class GetEmployeeByIdQueryHandler : IRequestHandler<GetEmployeeByI
             var branch = await _branchRepository.GetByIdAsync(employee.BranchId, cancellationToken);
             var department = await _departmentRepository.GetByIdAsync(employee.DepartmentId, cancellationToken);
             var position = await _positionRepository.GetByIdAsync(employee.PositionId, cancellationToken);
-            
 
-            
+
+
             Shift? schedule = null;
             if (employee.ScheduleId != null)
             {

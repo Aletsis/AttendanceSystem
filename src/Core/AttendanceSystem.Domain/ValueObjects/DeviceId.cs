@@ -8,11 +8,11 @@ public sealed record DeviceId
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new DomainException("DeviceId no puede estar vacío");
-        
+
         Value = value;
     }
 
     public static DeviceId From(string value) => new(value);
-    
+
     public override string ToString() => Value;
 }

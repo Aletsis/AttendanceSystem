@@ -74,7 +74,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public DialogCloseListener RequestClose { get; }
 
         public DeviceAdvancedDetailsViewModel(
-            IMediator mediator, 
+            IMediator mediator,
             IDialogService dialogService,
             IMessageService messageService)
         {

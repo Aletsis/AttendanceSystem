@@ -1,9 +1,9 @@
 public interface IDeviceRepository
 {
     Task<Device?> GetByIdAsync(
-        DeviceId id, 
+        DeviceId id,
         CancellationToken cancellationToken = default);
-    
+
     Task<IReadOnlyList<Device>> GetActiveDevicesAsync(
         CancellationToken cancellationToken = default);
 
@@ -17,7 +17,7 @@ public interface IDeviceRepository
     Task<DateTime?> GetLastAttLogTimestampAsync(
         string serialNumber,
         CancellationToken cancellationToken = default);
-        
+
     Task ResetAttLogTimestampAsync(
         string serialNumber,
         CancellationToken cancellationToken = default);
@@ -26,21 +26,21 @@ public interface IDeviceRepository
         string serialNumber,
         DateTime lastLogTime,
         CancellationToken cancellationToken = default);
-    
+
     Task AddAsync(
-        Device device, 
+        Device device,
         CancellationToken cancellationToken = default);
-    
+
     Task UpdateAsync(
-        Device device, 
+        Device device,
         CancellationToken cancellationToken = default);
-    
+
     Task<DateTime?> GetLastDownloadTimeAsync(
-        DeviceId deviceId, 
+        DeviceId deviceId,
         CancellationToken cancellationToken = default);
-        
+
     Task ReloadAsync(
-        Device device, 
+        Device device,
         CancellationToken cancellationToken = default);
 
     void Detach(Device device);

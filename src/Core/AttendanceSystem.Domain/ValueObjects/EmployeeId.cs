@@ -8,14 +8,14 @@ public sealed record EmployeeId
     {
         if (string.IsNullOrWhiteSpace(value))
             throw new DomainException("EmployeeId no puede estar vacío");
-        
+
         if (value.Length > 20)
             throw new DomainException("EmployeeId no puede exceder 20 caracteres");
-        
+
         Value = value;
     }
 
     public static EmployeeId From(string value) => new(value);
-    
+
     public override string ToString() => Value;
 }

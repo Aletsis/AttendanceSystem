@@ -50,7 +50,7 @@ public static class IdentityDataSeeder
             if (adminUser == null)
             {
                 logger.LogInformation("Creando usuario administrador por defecto...");
-                
+
                 adminUser = new ApplicationUser
                 {
                     UserName = adminEmail,
@@ -73,7 +73,7 @@ public static class IdentityDataSeeder
                 }
                 else
                 {
-                    logger.LogError("Error al crear usuario administrador: {Errors}", 
+                    logger.LogError("Error al crear usuario administrador: {Errors}",
                         string.Join(", ", result.Errors.Select(e => e.Description)));
                 }
             }

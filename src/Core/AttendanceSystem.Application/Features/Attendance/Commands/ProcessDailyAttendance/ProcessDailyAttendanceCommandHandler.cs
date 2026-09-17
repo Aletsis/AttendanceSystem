@@ -51,7 +51,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             request.EmployeeId?.Value);
 
         int processedCount = 0;
-        
+
         // 1. Obtenemos todos los empleados
         var employees = (await _employeeRepo.GetAllAsync(cancellationToken)).ToList();
         _logger.LogDebug("Obtenidos {EmployeeCount} empleados de la base de datos", employees.Count);
@@ -69,7 +69,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             employees = employees.Where(e => e.Id == request.EmployeeId).ToList();
             _logger.LogDebug("Filtrado por empleado {EmployeeId}: {EmployeeCount} empleados", request.EmployeeId.Value, employees.Count);
         }
-        
+
         var totalDays = (request.EndDate.Date - request.StartDate.Date).Days + 1;
         _logger.LogInformation(
             "Procesando asistencia para {EmployeeCount} empleados durante {DayCount} días",
@@ -83,10 +83,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         // 1.2 Carga masiva de todos los registros de asistencia diaria existentes para el rango de fechas
         var existingDailyAttendances = await _dailyRepo.GetByDateRangeAsync(
-            request.StartDate, 
-            request.EndDate, 
-            request.BranchId, 
-            request.EmployeeId, 
+            request.StartDate,
+            request.EndDate,
+            request.BranchId,
+            request.EmployeeId,
             cancellationToken);
 
         var existingDaLookup = existingDailyAttendances
@@ -99,22 +99,22 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         var endQueryDate = DateOnly.FromDateTime(request.EndDate.Date.AddDays(2));
 
         var processedEmployeeIds = employees.Select(e => e.Id).ToHashSet();
-        
+
         IReadOnlyList<AttendanceRecord> allRecords;
         if (request.EmployeeId != null)
         {
             allRecords = await _attendanceRepo.GetByDateRangeAsync(
-                startQueryDate, 
-                endQueryDate, 
-                request.EmployeeId, 
+                startQueryDate,
+                endQueryDate,
+                request.EmployeeId,
                 cancellationToken);
         }
         else
         {
             allRecords = await _attendanceRepo.GetByDateRangeAsync(
-                startQueryDate, 
-                endQueryDate, 
-                null, 
+                startQueryDate,
+                endQueryDate,
+                null,
                 cancellationToken);
         }
 
@@ -128,9 +128,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         var recordsById = filteredRecords
             .ToDictionary(r => r.Id.Value);
-        
+
         _logger.LogDebug("Obtenidos {RecordCount} registros biométricos filtrados", filteredRecords.Count);
-        
+
         // 2. Iterar sobre cada día en el rango
         for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
         {
@@ -175,7 +175,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 bool isCrossDay = false;
                 TimeSpan dayStartTime = TimeSpan.Zero;
                 TimeSpan dayEndTime = TimeSpan.Zero;
-                
+
                 if (shift != null)
                 {
                     dayStartTime = shift.StartTime;
@@ -223,7 +223,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 // Determinar si hoy es un día de descanso
                 if (employee.RestDay.HasValue)
                 {
-                    var dayOfWeek = (WeekDay)(int)date.DayOfWeek; 
+                    var dayOfWeek = (WeekDay)(int)date.DayOfWeek;
                     if (employee.RestDay == dayOfWeek)
                     {
                         isRestDay = true;
@@ -282,13 +282,13 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 processedCount++;
             }
         }
-        
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        
+
         _logger.LogInformation(
             "Procesamiento de asistencia diaria completado. Registros procesados: {ProcessedCount}",
             processedCount);
-        
+
         return processedCount;
     }
 }

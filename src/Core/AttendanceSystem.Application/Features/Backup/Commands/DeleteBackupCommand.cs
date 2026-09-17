@@ -23,7 +23,7 @@ public class DeleteBackupCommandHandler : IRequestHandler<DeleteBackupCommand, b
         {
             _logger.LogInformation("Eliminando respaldo: {FilePath}", request.BackupFilePath);
             var result = await _backupService.DeleteBackupAsync(request.BackupFilePath, cancellationToken);
-            
+
             if (result)
             {
                 _logger.LogInformation("Respaldo eliminado exitosamente");

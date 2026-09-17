@@ -20,7 +20,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IUnitOfWork _unitOfWork;
- 
+
 
     public RegisterManualAttendanceCommandHandler(
         IAttendanceRepository attendanceRepo,
@@ -58,14 +58,14 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         }
         else
         {
-            
+
         }
 
         // 2. Crear AttendanceRecord
         var manualDeviceId = DeviceId.From("MANUAL");
 
         var checkType = request.Type == "Entrada" ? CheckType.CheckIn : CheckType.CheckOut;
-        
+
         var record = AttendanceRecord.Create(
             employeeId,
             manualDeviceId,
@@ -75,7 +75,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
 
         // 3. Guardar Registro
         await _attendanceRepo.AddAsync(record, cancellationToken);
-        
+
         // 4. Actualizar Asistencia Diaria si existe
         if (daily != null)
         {
@@ -87,7 +87,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
             {
                 daily.SetCheckOut(record.CheckTime, record.Id);
             }
-            
+
             // Marcar el registro como procesado
             record.MarkAsProcessed();
         }

@@ -12,7 +12,7 @@ public class EmployeeFingerprint : Entity<int>
 
     public EmployeeFingerprint(int fingerIndex, string template)
     {
-       FingerIndex = fingerIndex;
-       Template = template;
+        FingerIndex = fingerIndex;
+        Template = template;
     }
 }

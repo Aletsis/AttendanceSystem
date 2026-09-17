@@ -8,7 +8,7 @@ public sealed record PositionId
     {
         if (value == Guid.Empty)
             throw new DomainException("PositionId no puede ser vacío");
-        
+
         Value = value;
     }
 

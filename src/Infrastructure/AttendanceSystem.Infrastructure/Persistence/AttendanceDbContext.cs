@@ -39,7 +39,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder); // Configurar tablas de Identity
-        
+
         modelBuilder.Ignore<DomainEvent>();
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(AttendanceDbContext).Assembly);
 
@@ -64,7 +64,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     {
         // Publicar eventos de dominio antes de guardar
         var domainEntities = ChangeTracker.Entries()
-            .Where(e => e.Entity.GetType().BaseType != null && 
+            .Where(e => e.Entity.GetType().BaseType != null &&
                        e.Entity.GetType().BaseType!.IsGenericType &&
                        e.Entity.GetType().BaseType!.GetGenericTypeDefinition() == typeof(AggregateRoot<>))
             .Select(e => e.Entity)

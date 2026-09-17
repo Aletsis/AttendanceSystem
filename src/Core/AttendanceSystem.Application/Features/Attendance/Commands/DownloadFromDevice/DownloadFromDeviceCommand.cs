@@ -13,14 +13,14 @@ using AttendanceSystem.Domain.Enumerations;
 namespace AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
 
 public sealed record DownloadFromDeviceCommand(
-    string DeviceId, 
+    string DeviceId,
     DateTime? FromDate = null,
     DateTime? ToDate = null,
     bool CalculateAttendance = true,
     string? InitiatedByUserId = null,
     string? InitiatedByUserName = null) : IRequest<Result<DownloadResultDto>>;
 
-public sealed class DownloadFromDeviceCommandHandler 
+public sealed class DownloadFromDeviceCommandHandler
     : IRequestHandler<DownloadFromDeviceCommand, Result<DownloadResultDto>>
 {
     private readonly IDeviceRepository _deviceRepository;
@@ -71,7 +71,7 @@ public sealed class DownloadFromDeviceCommandHandler
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
-        DownloadFromDeviceCommand command, 
+        DownloadFromDeviceCommand command,
         CancellationToken cancellationToken)
     {
         Result<DownloadResultDto> result = Result<DownloadResultDto>.Failure("Error desconocido iniciando descarga");
@@ -85,11 +85,11 @@ public sealed class DownloadFromDeviceCommandHandler
     }
 
     private async Task<Result<DownloadResultDto>> HandleInternal(
-        DownloadFromDeviceCommand command, 
+        DownloadFromDeviceCommand command,
         CancellationToken cancellationToken)
     {
         var deviceId = DeviceId.From(command.DeviceId);
-        
+
         // 1. Obtener dispositivo INICIAL (solo para validación y datos básicos)
         var device = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
         if (device == null)
@@ -99,10 +99,10 @@ public sealed class DownloadFromDeviceCommandHandler
             return Result<DownloadResultDto>.Failure("Dispositivo inactivo");
 
         // Crear registro de descarga
-        var downloadType = string.IsNullOrEmpty(command.InitiatedByUserId) 
-            ? DownloadType.Automatic 
+        var downloadType = string.IsNullOrEmpty(command.InitiatedByUserId)
+            ? DownloadType.Automatic
             : DownloadType.Manual;
-            
+
         var requestToDate = command.ToDate ?? DateTime.UtcNow;
         DateTime? filterDate = command.FromDate ?? device.LastDownloadAt;
 
@@ -122,102 +122,102 @@ public sealed class DownloadFromDeviceCommandHandler
         // == Checadas ADMS ==
         if (device.DownloadMethod == DeviceDownloadMethod.Adms)
         {
-             try
-             {
-                 var sn = device.HardwareInfo?.SerialNumber;
-                 _logger.LogInformation("Verificando dispositivo ADMS {Id}. SN actual: '{SerialNumber}'", deviceId, sn);
+            try
+            {
+                var sn = device.HardwareInfo?.SerialNumber;
+                _logger.LogInformation("Verificando dispositivo ADMS {Id}. SN actual: '{SerialNumber}'", deviceId, sn);
 
-                 if (string.IsNullOrEmpty(sn))
-                 {
-                     // Intentar recargar en caso de problemas con cache
-                     await _deviceRepository.ReloadAsync(device, cancellationToken);
-                     sn = device.HardwareInfo?.SerialNumber;
-                     _logger.LogInformation("Recargado dispositivo ADMS {Id}. SN tras recarga: '{SerialNumber}'", deviceId, sn);
-                 }
+                if (string.IsNullOrEmpty(sn))
+                {
+                    // Intentar recargar en caso de problemas con cache
+                    await _deviceRepository.ReloadAsync(device, cancellationToken);
+                    sn = device.HardwareInfo?.SerialNumber;
+                    _logger.LogInformation("Recargado dispositivo ADMS {Id}. SN tras recarga: '{SerialNumber}'", deviceId, sn);
+                }
 
-                 if (string.IsNullOrEmpty(sn))
-                 {
-                     return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene nÃºmero de serie registrado.");
-                 }
+                if (string.IsNullOrEmpty(sn))
+                {
+                    return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene nÃºmero de serie registrado.");
+                }
 
-                 string admsCmd = "";
-                 
-                 bool isAccessMode = device.DeviceType == "acc";
+                string admsCmd = "";
 
-                  // Determinar el comando ADMS basado en el rango calculado
-                  if (filterDate.HasValue)
-                  {
-                      if (isAccessMode)
-                      {
-                          // Modo acceso: Siempre usamos DATA QUERY con rango para mayor precisión
-                          var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
-                          var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
-                          
-                          admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
-                          _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
-                      }
-                      else
-                      {
-                          // Modo asistencia: Usamos DATA UPDATE FROM con filtro de tiempo
-                          var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
-                          var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
-                          
-                          admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
-                          _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
-                      }
-                  }
-                  else
-                  {
-                      // Si NO hay fecha de filtro (primera descarga), entonces sí forzamos todo
-                      if (isAccessMode)
-                      {
-                          await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
-                          await _unitOfWork.SaveChangesAsync(cancellationToken);
-                          
-                          admsCmd = "DATA QUERY ATTLOG StartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
-                          _logger.LogInformation("ADMS: Primera descarga (completa) en modo acceso");
-                      }
-                      else
-                      {
-                          admsCmd = "DATA UPDATE ATTLOG";
-                          _logger.LogInformation("ADMS: Primera descarga (completa) en modo asistencia");
-                      }
-                  }
-                 
-                 if (!string.IsNullOrEmpty(admsCmd))
-                 {
-                     // PASAMOS el LogId para rastrear cuando termine
-                     _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
-                     
-                     _logger.LogInformation("âœ… ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}", 
-                         admsCmd, sn!, downloadLogId.Value);
-                     _logger.LogInformation("â³ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vÃ­a GET /getrequest", 
-                         sn!);
-                     _logger.LogInformation("ðŸ“‹ ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
-                 }
-                 else
-                 {
-                     // Si no se encolá comando (ej. ForceFullSync actuará ví­a push), damos por exitoso el log de tracking de inmediato
-                     // para que la UI no se quede esperando un POST /devicecmd
-                     downloadLog.MarkAsSuccessful(0, 0);
-                     await _unitOfWork.SaveChangesAsync(cancellationToken);
-                 }
-                 
-                 // Retornamos éxito indicando que se programó.
-                 // Nota: El frontend verá "0 registros" pero el log quedará sin fecha de fin.
-                 // Dependiendo del frontend, podría mostrarse un spinner o simplemente "Iniciado".
-                 
-                 return Result<DownloadResultDto>.Success(new DownloadResultDto(
-                     deviceId.Value,
-                     0,
-                     DateTime.UtcNow,
-                     null,
-                     null));
-             }
-             catch (Exception ex)
-             {
-                 return Result<DownloadResultDto>.Failure($"Error encolando comando ADMS: {ex.Message}");
-             }
+                bool isAccessMode = device.DeviceType == "acc";
+
+                // Determinar el comando ADMS basado en el rango calculado
+                if (filterDate.HasValue)
+                {
+                    if (isAccessMode)
+                    {
+                        // Modo acceso: Siempre usamos DATA QUERY con rango para mayor precisión
+                        var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
+                        var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
+
+                        admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
+                        _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
+                    }
+                    else
+                    {
+                        // Modo asistencia: Usamos DATA UPDATE FROM con filtro de tiempo
+                        var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                        var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
+
+                        admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
+                        _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
+                    }
+                }
+                else
+                {
+                    // Si NO hay fecha de filtro (primera descarga), entonces sí forzamos todo
+                    if (isAccessMode)
+                    {
+                        await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                        admsCmd = "DATA QUERY ATTLOG StartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
+                        _logger.LogInformation("ADMS: Primera descarga (completa) en modo acceso");
+                    }
+                    else
+                    {
+                        admsCmd = "DATA UPDATE ATTLOG";
+                        _logger.LogInformation("ADMS: Primera descarga (completa) en modo asistencia");
+                    }
+                }
+
+                if (!string.IsNullOrEmpty(admsCmd))
+                {
+                    // PASAMOS el LogId para rastrear cuando termine
+                    _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
+
+                    _logger.LogInformation("âœ… ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",
+                        admsCmd, sn!, downloadLogId.Value);
+                    _logger.LogInformation("â³ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vÃ­a GET /getrequest",
+                        sn!);
+                    _logger.LogInformation("ðŸ“‹ ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
+                }
+                else
+                {
+                    // Si no se encolá comando (ej. ForceFullSync actuará ví­a push), damos por exitoso el log de tracking de inmediato
+                    // para que la UI no se quede esperando un POST /devicecmd
+                    downloadLog.MarkAsSuccessful(0, 0);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                }
+
+                // Retornamos éxito indicando que se programó.
+                // Nota: El frontend verá "0 registros" pero el log quedará sin fecha de fin.
+                // Dependiendo del frontend, podría mostrarse un spinner o simplemente "Iniciado".
+
+                return Result<DownloadResultDto>.Success(new DownloadResultDto(
+                    deviceId.Value,
+                    0,
+                    DateTime.UtcNow,
+                    null,
+                    null));
+            }
+            catch (Exception ex)
+            {
+                return Result<DownloadResultDto>.Failure($"Error encolando comando ADMS: {ex.Message}");
+            }
         }
 
         // Capturar datos necesarios antes de limpiar el tracker
@@ -235,15 +235,15 @@ public sealed class DownloadFromDeviceCommandHandler
         device = null; // Liberar referencia para evitar uso accidental
         downloadLog = null; // Liberar referencia
 
-        try 
+        try
         {
             // 3. Obtener el cliente especí­fico para la marca del dispositivo
             var deviceClient = _deviceClientFactory.GetClient(deviceBrand);
 
             // 4. Conectar al dispositivo fí­sico (Operación Larga)
             var connected = await deviceClient.ConnectAsync(
-                deviceIp, 
-                devicePort, 
+                deviceIp,
+                devicePort,
                 username,
                 password,
                 cancellationToken);
@@ -263,15 +263,15 @@ public sealed class DownloadFromDeviceCommandHandler
 
             // 5. Descargar registros
             var rawRecords = await deviceClient.GetAttendanceLogsAsync(
-                deviceIdValue, 
-                filterDate, 
+                deviceIdValue,
+                filterDate,
                 requestToDate,
                 cancellationToken);
 
             // 5. Convertir a entidades de dominio
             // Nota: Usamos deviceId (ValueObject) que creamos al principio
             var domainRecords = new List<AttendanceRecord>();
-            
+
             // Obtener todas las sucursales externas para filtrar rápido
             var allBranches = await _branchRepository.GetAllAsync(cancellationToken);
             var externalBranches = allBranches.Where(b => b.IsExternal).ToList();
@@ -289,8 +289,8 @@ public sealed class DownloadFromDeviceCommandHandler
                     {
                         isExternal = true;
                         var actualEmployeeId = raw.UserId.Substring(3);
-                        
-                        _logger.LogInformation("Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}", 
+
+                        _logger.LogInformation("Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}",
                             branchCode, actualEmployeeId, externalBranch.ExternalHost);
 
                         // Transferir log (esto podría ser asíncrono en segundo plano si son muchos)
@@ -329,18 +329,18 @@ public sealed class DownloadFromDeviceCommandHandler
 
                 var existingRecords = await _attendanceRepository.GetByDeviceAndDateRangeAsync(
                     deviceId, minDate.Value, maxDate.Value, cancellationToken);
-                
+
                 // Usar servicio de dominio para filtrar nuevos
                 var newRecords = _deduplicationService.FilterNewRecords(domainRecords, existingRecords);
                 newRecordsCount = newRecords.Count;
-                
+
                 if (newRecords.Any())
                 {
                     affectedEmployeeIds = newRecords.Select(r => r.EmployeeId.Value).Distinct().ToList();
-                    
+
                     // 6. Persistir solo nuevos
                     foreach (var nr in newRecords) nr.DownloadLogId = downloadLogId;
-                    
+
                     await _attendanceRepository.AddRangeAsync(newRecords, cancellationToken);
                     // Guardar attendance records. No deberí­a haber conflictos aquí­.
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -355,14 +355,14 @@ public sealed class DownloadFromDeviceCommandHandler
                 // Aplicar logic
                 if (newRecordsCount > 0 || domainRecords.Count > 0)
                 {
-                     deviceToUpdate.RecordSuccessfulDownload(newRecordsCount, requestToDate);
+                    deviceToUpdate.RecordSuccessfulDownload(newRecordsCount, requestToDate);
                 }
                 else
                 {
-                     // Mantener lógica de negocio
-                     deviceToUpdate.RecordSuccessfulDownload(0, requestToDate);
+                    // Mantener lógica de negocio
+                    deviceToUpdate.RecordSuccessfulDownload(0, requestToDate);
                 }
-                
+
                 await _deviceRepository.UpdateAsync(deviceToUpdate, cancellationToken);
             }
 
@@ -373,7 +373,7 @@ public sealed class DownloadFromDeviceCommandHandler
                 successLog.MarkAsSuccessful(domainRecords.Count, newRecordsCount);
                 await _downloadLogRepository.UpdateAsync(successLog, cancellationToken);
             }
-            
+
             // Guardar actualizaciones finales (Device y Log)
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -401,11 +401,11 @@ public sealed class DownloadFromDeviceCommandHandler
                     var emp = await _employeeRepository.GetByIdAsync(EmployeeId.From(empId), cancellationToken);
                     if (emp != null)
                     {
-                        bool isMissingBiometrics = !emp.Fingerprints.Any() && 
-                                                   string.IsNullOrEmpty(emp.DevicePassword) && 
-                                                   string.IsNullOrEmpty(emp.CardNumber) && 
+                        bool isMissingBiometrics = !emp.Fingerprints.Any() &&
+                                                   string.IsNullOrEmpty(emp.DevicePassword) &&
+                                                   string.IsNullOrEmpty(emp.CardNumber) &&
                                                    string.IsNullOrEmpty(emp.FaceTemplate);
-                        
+
                         if (isMissingBiometrics)
                         {
                             _logger.LogInformation("Biometría faltante detectada para empleado {EmployeeId}. Encolando sincronización.", empId);
@@ -428,11 +428,11 @@ public sealed class DownloadFromDeviceCommandHandler
             _logger.LogError(ex, "Error descargando del dispositivo {DeviceId}", deviceId);
 
             // Manejo Robusto de Errores
-            try 
+            try
             {
                 // Limpiar cualquier estado sucio que haya quedado
                 _deviceRepository.ClearChangeTracker();
-                
+
                 // Intentar recuperar el log y marcar error
                 var errorLog = await _downloadLogRepository.GetByIdAsync(downloadLogId, cancellationToken);
                 if (errorLog != null)
@@ -442,12 +442,12 @@ public sealed class DownloadFromDeviceCommandHandler
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
                 }
             }
-            catch(Exception saveEx) 
+            catch (Exception saveEx)
             {
-                 // Si falla esto, ya no podemos hacer nada más que loguear a consola/archivo
-                 _logger.LogError(saveEx, "Error CRÃTICO guardando el log de fallo en BD.");
+                // Si falla esto, ya no podemos hacer nada más que loguear a consola/archivo
+                _logger.LogError(saveEx, "Error CRÃTICO guardando el log de fallo en BD.");
             }
-            
+
             return Result<DownloadResultDto>.Failure($"Error: {ex.Message}");
         }
     }

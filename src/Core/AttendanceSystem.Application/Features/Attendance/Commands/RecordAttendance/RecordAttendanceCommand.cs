@@ -8,7 +8,7 @@ public sealed record RecordAttendanceCommand(
     int CheckTypeCode) : IRequest<Result<Guid>>;
 
 // Handler
-public sealed class RecordAttendanceCommandHandler 
+public sealed class RecordAttendanceCommandHandler
     : IRequestHandler<RecordAttendanceCommand, Result<Guid>>
 {
     private readonly IAttendanceRepository _attendanceRepository;
@@ -26,7 +26,7 @@ public sealed class RecordAttendanceCommandHandler
     }
 
     public async Task<Result<Guid>> Handle(
-        RecordAttendanceCommand command, 
+        RecordAttendanceCommand command,
         CancellationToken cancellationToken)
     {
         try

@@ -28,7 +28,7 @@ public class AdmsController : ControllerBase
     private readonly IAttendanceJobScheduler _jobScheduler;
 
     public AdmsController(
-        ILogger<AdmsController> logger, 
+        ILogger<AdmsController> logger,
         IMediator mediator,
         IDeviceRepository deviceRepository,
         IUnitOfWork unitOfWork,
@@ -212,7 +212,7 @@ public class AdmsController : ControllerBase
             var hasPending = _admsCommandService.HasPendingCommands(SN);
             return Ok(new { SerialNumber = SN, HasPendingCommands = hasPending });
         }
-        
+
         return Ok(new { Message = "Provide SN parameter to check specific device" });
     }
 
@@ -232,27 +232,27 @@ public class AdmsController : ControllerBase
         string sn = SN ?? "";
         string id = "", ret = "", cmd = "";
 
-        try 
+        try
         {
             using var reader = new StreamReader(Request.Body);
             var body = await reader.ReadToEndAsync();
-            
+
             // Parsear — pueden venir en body como form-encoded
             var parsed = System.Web.HttpUtility.ParseQueryString(body);
-            id  = Request.Query["ID"].FirstOrDefault()  ?? parsed["ID"]     ?? "";
+            id = Request.Query["ID"].FirstOrDefault() ?? parsed["ID"] ?? "";
             ret = Request.Query["Return"].FirstOrDefault() ?? parsed["Return"] ?? "";
-            cmd = Request.Query["CMD"].FirstOrDefault() ?? parsed["CMD"]    ?? "";
-            
+            cmd = Request.Query["CMD"].FirstOrDefault() ?? parsed["CMD"] ?? "";
+
             if (string.IsNullOrEmpty(sn))
                 sn = parsed["SN"] ?? "";
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error leyendo request en DeviceCmd");
         }
 
         _logger.LogInformation("📬 devicecmd SN:{SN} ID:{ID} Return:{Return} CMD:{CMD}", sn, id, ret, cmd);
-        
+
         try
         {
             if (!string.IsNullOrEmpty(id))
@@ -264,29 +264,29 @@ public class AdmsController : ControllerBase
                     if (log != null)
                     {
                         var returnCode = int.TryParse(ret, out var r) ? r : -1;
-                        
+
                         if (returnCode >= 0 || returnCode == -2)
                         {
-                             // Return >= 0 o -2 = éxito o sin datos nuevos en el rango
-                             log.MarkAsSuccessful(0, 0); 
-                             
-                             // Actualizar LastDownloadAt del dispositivo usando el ToDate solicitado
-                             var device = await _deviceRepository.GetBySerialNumberAsync(sn);
-                             if (device != null && log.ToDate.HasValue)
-                             {
-                                 device.RecordSuccessfulDownload(0, log.ToDate);
-                                 await _deviceRepository.UpdateAsync(device);
-                             }
+                            // Return >= 0 o -2 = éxito o sin datos nuevos en el rango
+                            log.MarkAsSuccessful(0, 0);
 
-                             _logger.LogInformation("✅ ADMS: Descarga completada SN:{SerialNumber} CMD:{CommandId}", sn, id);
+                            // Actualizar LastDownloadAt del dispositivo usando el ToDate solicitado
+                            var device = await _deviceRepository.GetBySerialNumberAsync(sn);
+                            if (device != null && log.ToDate.HasValue)
+                            {
+                                device.RecordSuccessfulDownload(0, log.ToDate);
+                                await _deviceRepository.UpdateAsync(device);
+                            }
+
+                            _logger.LogInformation("✅ ADMS: Descarga completada SN:{SerialNumber} CMD:{CommandId}", sn, id);
                         }
                         else
                         {
-                             // Fallo reportado por el dispositivo
-                             log.MarkAsFailed($"Dispositivo retornó error: {ret}");
-                             _logger.LogWarning("❌ ADMS: Dispositivo {SerialNumber} reportó error {ReturnCode} para comando {CommandId}", sn, ret, id);
+                            // Fallo reportado por el dispositivo
+                            log.MarkAsFailed($"Dispositivo retornó error: {ret}");
+                            _logger.LogWarning("❌ ADMS: Dispositivo {SerialNumber} reportó error {ReturnCode} para comando {CommandId}", sn, ret, id);
                         }
-                        
+
                         await _downloadLogRepository.UpdateAsync(log);
                         await _unitOfWork.SaveChangesAsync();
                     }
@@ -313,7 +313,7 @@ public class AdmsController : ControllerBase
             try
             {
                 var parts = line.Split('\t');
-                
+
                 string? pin = "";
                 DateTime checkTime = DateTime.MinValue;
                 int checkType = 0;
@@ -334,21 +334,21 @@ public class AdmsController : ControllerBase
                         }
                     }
 
-                    if (logData.TryGetValue("pin", out pin) && 
-                        logData.TryGetValue("time", out var timeStr) && 
+                    if (logData.TryGetValue("pin", out pin) &&
+                        logData.TryGetValue("time", out var timeStr) &&
                         DateTime.TryParse(timeStr, out checkTime))
                     {
                         // Intentar sacar status y método
                         if (logData.TryGetValue("inoutstatus", out var inoutStr) && int.TryParse(inoutStr, out var s))
                             checkType = s;
-                            
+
                         if (logData.TryGetValue("verifytype", out var vTypeStr) && int.TryParse(vTypeStr, out var v))
                             verifyMethod = v == 0 ? 3 : v;
 
                         isValid = true;
                     }
                 }
-                else 
+                else
                 {
                     // Formato posicional
                     if (parts.Length >= 2 && DateTime.TryParse(parts[1], out checkTime))
@@ -367,13 +367,13 @@ public class AdmsController : ControllerBase
                     {
                         var branchCode = pin.Substring(0, 3);
                         var externalBranch = (await _branchRepository.GetAllAsync()).FirstOrDefault(b => b.IsExternal && b.Code == branchCode);
-                        
+
                         if (externalBranch != null)
                         {
                             isExternal = true;
                             var actualEmployeeId = pin.Substring(3);
-                            
-                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}", 
+
+                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}",
                                 branchCode, actualEmployeeId, externalBranch.ExternalHost);
 
                             await _logTransferService.TransferLogAsync(
@@ -389,7 +389,7 @@ public class AdmsController : ControllerBase
                     {
                         localLogs.Add(new AttendanceLogDto(pin, checkTime, verifyMethod, checkType));
                         processed++;
-                        
+
                         // Collect for calculation
                         uniqueCalculations.Add((pin, checkTime.Date));
                     }
@@ -421,12 +421,12 @@ public class AdmsController : ControllerBase
         {
             device.RecordSuccessfulDownload(processed);
             await _deviceRepository.UpdateAsync(device);
-            
+
             if (lastCheckTime.HasValue)
                 await _deviceRepository.UpdateLastAttLogTimestampAsync(SN, lastCheckTime.Value);
-                
+
             await _unitOfWork.SaveChangesAsync();
-            _logger.LogInformation("✅ {Count} registros de {SN}, stamp actualizado a {Stamp}", 
+            _logger.LogInformation("✅ {Count} registros de {SN}, stamp actualizado a {Stamp}",
                 processed, SN, lastCheckTime);
 
             // Trigger attendance calculation for each affected employee and day
@@ -502,12 +502,12 @@ public class AdmsController : ControllerBase
                         }
                     }
                 }
-                else if (table.Equals("USER", StringComparison.OrdinalIgnoreCase) || 
+                else if (table.Equals("USER", StringComparison.OrdinalIgnoreCase) ||
                          table.Equals("USERINFO", StringComparison.OrdinalIgnoreCase))
                 {
                     string? card = data.TryGetValue("Card", out var c) ? c : null;
                     string? pass = data.TryGetValue("Password", out var p) ? p : null;
-                    
+
                     employee.UpdateBiometrics(cardNumber: card, devicePassword: pass);
                     _logger.LogInformation("📝 ADMS: Recibida info de usuario para {Pin} ({SN})", pin, SN);
                 }

@@ -47,7 +47,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
         {
             SaveCommand = new DelegateCommand(ExecuteSave, CanExecuteSave)
                 .ObservesProperty(() => Name);
-            
+
             CancelCommand = new DelegateCommand(ExecuteCancel);
         }
 

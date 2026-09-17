@@ -25,7 +25,7 @@ public sealed record AdvancedReportDetailDto
     public double LateMinutes { get; init; }
     public double OvertimeMinutes { get; init; }
     public string WorkedHours { get; init; } = "--:--";
-    
+
     public bool IsAbsent { get; init; }
     public bool WorkedOnRestDay { get; init; }
     public bool IsRestDay { get; init; }

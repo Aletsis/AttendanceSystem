@@ -32,8 +32,8 @@ public class ZKTecoDeviceClient : IDeviceClient
     }
 
     public async Task<bool> ConnectAsync(
-        string ipAddress, 
-        int port, 
+        string ipAddress,
+        int port,
         string? username = null,
         string? password = null,
         CancellationToken cancellationToken = default)
@@ -44,14 +44,14 @@ public class ZKTecoDeviceClient : IDeviceClient
             return await Task.Run(() =>
         {
             _isConnected = _device.Connect_Net(ipAddress, port);
-            
+
             if (_isConnected)
             {
                 _logger.LogInformation(
                     "Conectado exitosamente a {IpAddress}:{Port}", ipAddress, port);
-                    
+
                 // Diagnóstico: Obtener versión de algoritmo de huella y forzar modo Unicode si es posible
-                try 
+                try
                 {
                     string zkFpVersion = "";
                     if (_device.GetSysOption(1, "~ZKFPVersion", out zkFpVersion))
@@ -66,7 +66,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                 int errorCode = 0;
                 _device.GetLastError(ref errorCode);
                 _logger.LogError(
-                    "Error al conectar a {IpAddress}:{Port}. Código: {ErrorCode}", 
+                    "Error al conectar a {IpAddress}:{Port}. Código: {ErrorCode}",
                     ipAddress, port, errorCode);
             }
 
@@ -170,7 +170,7 @@ public class ZKTecoDeviceClient : IDeviceClient
             }
         }, cancellationToken);
 
-        return records;
+            return records;
         }
         finally
         {
@@ -296,7 +296,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                 if (recordCount == 0 && _device.GetDeviceStatus(1, 1, ref value)) recordCount = value; // Fallback 1: Registros (General)
 
                 // --- OBTENER CAPACIDADES ---
-                
+
                 // Helper para limpiar strings que vienen de COM interop (con null terminators)
                 bool TryParseClean(string val, out int result)
                 {
@@ -310,7 +310,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                 {
                     string sValue = "";
                     bool success = _device.GetSysOption(1, key, out sValue);
-                    
+
                     // Mostrar el dato TOTALMENTE EN CRUDO
                     _logger.LogInformation("RAW GetSysOption [{Key}] -> Success: {Success}, RawValue: '{RawValue}'", key, success, sValue);
 
@@ -325,7 +325,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                 {
                     int temp = 0;
                     bool success = _device.GetDeviceStatus(1, code, ref temp);
-                    
+
                     // Mostrar el dato TOTALMENTE EN CRUDO
                     _logger.LogInformation("RAW GetDeviceStatus [{Code}] -> Success: {Success}, RawValue: {RawValue}", code, success, temp);
 
@@ -359,7 +359,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                 if (userCapacity <= 0 && dsUserCap > 0 && dsUserCap != userCount) userCapacity = dsUserCap;
                 if (fingerprintCapacity <= 0 && dsFingerCap > 0 && dsFingerCap != fingerprintCount) fingerprintCapacity = dsFingerCap;
                 if (recordCapacity <= 0 && dsRecordCap > 0 && dsRecordCap != recordCount) recordCapacity = dsRecordCap;
-                
+
                 if (faceCapacity <= 0)
                 {
                     if (dsFaceCap > 0 && dsFaceCap != faceCount) faceCapacity = dsFaceCap;
@@ -367,7 +367,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                 }
 
                 // Ajuste final de seguridad: Si todo falló o dio el conteo exacto, poner capacidades por defecto estándar de ZKTeco
-                if (userCapacity <= userCount) userCapacity = Math.Max(userCount > 3000 ? 10000 : 3000, userCount); 
+                if (userCapacity <= userCount) userCapacity = Math.Max(userCount > 3000 ? 10000 : 3000, userCount);
                 if (fingerprintCapacity <= fingerprintCount) fingerprintCapacity = Math.Max(fingerprintCount > 3000 ? 10000 : 3000, fingerprintCount);
                 if (faceCapacity <= faceCount && faceCount > 0) faceCapacity = Math.Max(faceCount > 1500 ? 3000 : 1500, faceCount);
                 if (recordCapacity <= recordCount) recordCapacity = Math.Max(recordCount > 50000 ? 100000 : 50000, recordCount);
@@ -437,7 +437,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                     int tmpLen = 0;
                     if (_device.SSR_GetUserTmpStr(1, enrollNumber, i, out template, out tmpLen))
                     {
-                         fingerprints.Add(new DeviceFingerprintDto(i, template));
+                        fingerprints.Add(new DeviceFingerprintDto(i, template));
                     }
                 }
 
@@ -452,7 +452,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                     // photoData is Base64
                 }
                 */
-                
+
                 users.Add(new DeviceUserDto(
                     enrollNumber,
                     name,
@@ -562,14 +562,14 @@ public class ZKTecoDeviceClient : IDeviceClient
         {
             return await Task.Run(() =>
         {
-            try 
+            try
             {
                 return _device.SetDeviceTime2(1, dateTime.Year, dateTime.Month, dateTime.Day, dateTime.Hour, dateTime.Minute, dateTime.Second);
             }
             catch
             {
                 _logger.LogWarning("SetDeviceTime2 no disponible, intentando SetDeviceTime");
-                 return false;
+                return false;
             }
         }, cancellationToken);
         }
@@ -610,7 +610,7 @@ public class ZKTecoDeviceClient : IDeviceClient
 
                     // Registrar información de usuario en el buffer
                     bool result = _device.SSR_SetUserInfo(1, user.UserId, cleanName, user.Password, user.Privilege, user.Enabled);
-                    
+
                     // Si falló el método moderno y el ID es numérico, intentar con el método legacy como fallback (para dispositivos B&W antiguos)
                     if (!result && isNumericId)
                     {
@@ -622,7 +622,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                         int errorCode = 0;
                         _device.GetLastError(ref errorCode);
                         _logger.LogWarning("Fallo al registrar usuario {UserId} en el buffer del SDK. Código error: {ErrorCode}", user.UserId, errorCode);
-                        
+
                         // Cerrar/cancelar batch para no dejar al SDK en estado intermedio bloqueado
                         _device.BatchUpdate(1);
                         return false;
@@ -655,7 +655,7 @@ public class ZKTecoDeviceClient : IDeviceClient
 
                     _device.BatchUpdate(1); // Confirmar y volcar todos los cambios (User Info, Card, Templates) al dispositivo en un solo lote
                     _device.RefreshData(1); // Refrescar caché del dispositivo
-                    
+
                     _logger.LogInformation("Usuario {UserId} ({Name}) con tarjeta y biometría enviado exitosamente.", user.UserId, user.Name);
                     return true;
                 }
@@ -708,7 +708,7 @@ public class ZKTecoDeviceClient : IDeviceClient
                         string template = "";
                         int tmpLen = 0;
                         int flag = 0;
-                        
+
                         // Intentar GetUserTmpExStr primero (Soporta 10.0 y es más robusto)
                         if (_device.GetUserTmpExStr(1, userId, i, out flag, out template, out tmpLen))
                         {
@@ -756,7 +756,7 @@ public class ZKTecoDeviceClient : IDeviceClient
     private string CleanName(string name)
     {
         if (string.IsNullOrEmpty(name)) return "";
-        
+
         // Muchos dispositivos ZKTeco no soportan acentos o eñes y muestran basura
         try
         {

@@ -9,10 +9,10 @@ public sealed class AttendanceDeduplicationService
     /// La unicidad se determina por la combinación de EmployeeId y CheckTime.
     /// </summary>
     public IReadOnlyList<AttendanceRecord> FilterNewRecords(
-        IEnumerable<AttendanceRecord> candidates, 
+        IEnumerable<AttendanceRecord> candidates,
         IEnumerable<AttendanceRecord> existing)
     {
-         if (!candidates.Any())
+        if (!candidates.Any())
             return Array.Empty<AttendanceRecord>();
 
         // 1. Deduplicar candidatos internamente (por si el dispositivo envía duplicados en el mismo lote)

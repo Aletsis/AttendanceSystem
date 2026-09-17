@@ -27,7 +27,7 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
 
     public async Task<Result<Guid>> Handle(CreateDepartmentCommand request, CancellationToken cancellationToken)
     {
-        try 
+        try
         {
             var department = Department.Create(
                 request.Name,
@@ -53,7 +53,7 @@ public sealed class CreateDepartmentCommandHandler : IRequestHandler<CreateDepar
         }
         catch (Exception ex)
         {
-             return Result<Guid>.Failure(ex.Message);
+            return Result<Guid>.Failure(ex.Message);
         }
     }
 }

@@ -5,9 +5,9 @@ namespace AttendanceSystem.Domain.Repositories;
 public interface IAttendanceRepository
 {
     Task<AttendanceRecord?> GetByIdAsync(
-        AttendanceRecordId id, 
+        AttendanceRecordId id,
         CancellationToken cancellationToken = default);
-    
+
     Task<IReadOnlyList<AttendanceRecord>> GetByDateRangeAsync(
         DateOnly startDate,
         DateOnly endDate,
@@ -22,21 +22,21 @@ public interface IAttendanceRepository
     Task<IReadOnlyList<AttendanceRecord>> GetByDownloadLogIdAsync(
         DownloadLogId downloadLogId,
         CancellationToken cancellationToken = default);
-    
+
     Task AddAsync(
-        AttendanceRecord record, 
+        AttendanceRecord record,
         CancellationToken cancellationToken = default);
-    
+
     Task AddRangeAsync(
-        IEnumerable<AttendanceRecord> records, 
+        IEnumerable<AttendanceRecord> records,
         CancellationToken cancellationToken = default);
-    
+
     Task UpdateAsync(
-        AttendanceRecord record, 
+        AttendanceRecord record,
         CancellationToken cancellationToken = default);
 
     Task<bool> HasCheckInForDateAsync(
-        EmployeeId employeeId, 
-        DateTime date, 
+        EmployeeId employeeId,
+        DateTime date,
         CancellationToken cancellationToken = default);
 }

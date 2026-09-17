@@ -5,8 +5,8 @@ using AttendanceSystem.Domain.ValueObjects;
 namespace AttendanceSystem.Application.Features.Attendance.Queries.GetDailyAttendance;
 
 public record GetDailyAttendanceByDateRangeQuery(
-    DateTime StartDate, 
+    DateTime StartDate,
     DateTime EndDate,
     BranchId? BranchId = null,
-    EmployeeId? EmployeeId = null) 
+    EmployeeId? EmployeeId = null)
     : IRequest<IReadOnlyList<DailyAttendance>>;

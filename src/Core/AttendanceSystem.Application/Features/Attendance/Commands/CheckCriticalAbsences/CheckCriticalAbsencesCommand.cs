@@ -101,7 +101,7 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
                 // 7. SEND ALERT
                 var positionName = positions.First(p => p.Id == employee.PositionId).Name;
                 var message = $"ALERTA CRÍTICA: El empleado {employee.FirstName} {employee.LastName} no ha registrado su entrada. Puesto crítico: {positionName}. Hora de entrada esperada: {startTime:hh\\:mm}.";
-                
+
                 await _emailService.SendAlertAsync(
                     "Alerta de Puesto Crítico no Cubierto",
                     message,
@@ -111,7 +111,7 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
                 // 8. Log Alert
                 var alert = SystemAlert.Create(AlertType.CriticalPositionAbsence, alertKey, message);
                 await _alertRepository.AddAsync(alert, cancellationToken);
-                
+
                 alertsSent++;
             }
 

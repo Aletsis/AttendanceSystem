@@ -130,9 +130,9 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
         }
 
         // Añadir llamada a Update del repositorio si el seguimiento no es automático
-        if (await _repository.GetConfigurationAsync(cancellationToken) != null) 
+        if (await _repository.GetConfigurationAsync(cancellationToken) != null)
         {
-             _repository.Update(config);
+            _repository.Update(config);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);

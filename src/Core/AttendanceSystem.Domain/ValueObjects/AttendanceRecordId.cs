@@ -8,7 +8,7 @@ public sealed record AttendanceRecordId
     {
         if (value == Guid.Empty)
             throw new DomainException("AttendanceRecordId no puede ser vacío");
-        
+
         Value = value;
     }
 

@@ -21,7 +21,7 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
     private readonly ILogger<DownloadFromAllDevicesCommandHandler> _logger;
 
     public DownloadFromAllDevicesCommandHandler(
-        IDeviceRepository deviceRepository, 
+        IDeviceRepository deviceRepository,
         IMediator mediator,
         IAttendanceJobScheduler jobScheduler,
         ILogger<DownloadFromAllDevicesCommandHandler> logger)
@@ -37,7 +37,7 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
         var allActiveDevices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
         var devices = allActiveDevices.Where(d => d.DownloadMethod != DeviceDownloadMethod.Adms).ToList();
         var results = new List<DownloadResultDto>();
-        
+
         DateTime? globalMinDate = null;
         DateTime? globalMaxDate = null;
 
@@ -46,25 +46,25 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
         foreach (var device in devices)
         {
             var command = new DownloadFromDeviceCommand(
-                device.Id.Value, 
-                request.FromDate, 
-                request.ToDate, 
+                device.Id.Value,
+                request.FromDate,
+                request.ToDate,
                 CalculateAttendance: false,
                 request.InitiatedByUserId,
                 request.InitiatedByUserName);
 
             var result = await _mediator.Send(command, cancellationToken);
-            
+
             if (result.IsSuccess)
             {
                 results.Add(result.Value);
-                
+
                 if (result.Value.MinDate.HasValue)
                 {
                     if (globalMinDate == null || result.Value.MinDate < globalMinDate)
                         globalMinDate = result.Value.MinDate;
                 }
-                
+
                 if (result.Value.MaxDate.HasValue)
                 {
                     if (globalMaxDate == null || result.Value.MaxDate > globalMaxDate)
@@ -82,21 +82,21 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
             else
             {
                 results.Add(new DownloadResultDto(
-                    DeviceId: device.Id.Value, 
-                    RecordsDownloaded: 0, 
-                    DownloadedAt: DateTime.UtcNow, 
-                    Success: false, 
+                    DeviceId: device.Id.Value,
+                    RecordsDownloaded: 0,
+                    DownloadedAt: DateTime.UtcNow,
+                    Success: false,
                     ErrorMessage: result.Error));
             }
         }
-        
+
         if (globalMinDate.HasValue && globalMaxDate.HasValue)
         {
             // Al descargar de TODOS los dispositivos, disparamos un proceso GLOBAL (null employeeId)
             // Esto asegura que se detecten las FALTAS de quienes no registraron nada.
             // Expandimos 1 día atrás para turnos nocturnos.
             var processStartDate = globalMinDate.Value.AddDays(-1);
-            
+
             _logger.LogInformation("Encolando procesamiento GLOBAL de asistencia para detectar faltas. Rango: {Start} - {End}", processStartDate, globalMaxDate.Value);
             _jobScheduler.EnqueueAttendanceProcessing(processStartDate, globalMaxDate.Value, null);
         }

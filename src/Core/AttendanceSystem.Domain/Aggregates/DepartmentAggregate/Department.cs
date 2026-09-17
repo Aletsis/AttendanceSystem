@@ -26,7 +26,7 @@ public sealed class Department : AggregateRoot<DepartmentId>
 
     public void Update(string name, string? description)
     {
-         if (string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del departamento es requerido.");
 
         Name = name;

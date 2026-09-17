@@ -16,7 +16,7 @@ public class AttendanceRepository : IAttendanceRepository
     }
 
     public async Task<AttendanceRecord?> GetByIdAsync(
-        AttendanceRecordId id, 
+        AttendanceRecordId id,
         CancellationToken cancellationToken = default)
     {
         return await _context.AttendanceRecords
@@ -33,7 +33,7 @@ public class AttendanceRepository : IAttendanceRepository
         var endDateTime = endDate.ToDateTime(TimeOnly.MaxValue);
 
         var query = _context.AttendanceRecords
-            .Where(x => x.CheckTime >= startDateTime 
+            .Where(x => x.CheckTime >= startDateTime
                      && x.CheckTime <= endDateTime);
 
         if (employeeId != null)
@@ -53,8 +53,8 @@ public class AttendanceRepository : IAttendanceRepository
         CancellationToken cancellationToken = default)
     {
         return await _context.AttendanceRecords
-            .Where(x => x.DeviceId == deviceId 
-                     && x.CheckTime >= startDateTime 
+            .Where(x => x.DeviceId == deviceId
+                     && x.CheckTime >= startDateTime
                      && x.CheckTime <= endDateTime)
             .ToListAsync(cancellationToken);
     }
@@ -70,21 +70,21 @@ public class AttendanceRepository : IAttendanceRepository
     }
 
     public async Task AddAsync(
-        AttendanceRecord record, 
+        AttendanceRecord record,
         CancellationToken cancellationToken = default)
     {
         await _context.AttendanceRecords.AddAsync(record, cancellationToken);
     }
 
     public async Task AddRangeAsync(
-        IEnumerable<AttendanceRecord> records, 
+        IEnumerable<AttendanceRecord> records,
         CancellationToken cancellationToken = default)
     {
         await _context.AttendanceRecords.AddRangeAsync(records, cancellationToken);
     }
 
     public Task UpdateAsync(
-        AttendanceRecord record, 
+        AttendanceRecord record,
         CancellationToken cancellationToken = default)
     {
         _context.AttendanceRecords.Update(record);
@@ -92,18 +92,18 @@ public class AttendanceRepository : IAttendanceRepository
     }
 
     public async Task<bool> HasCheckInForDateAsync(
-        EmployeeId employeeId, 
-        DateTime date, 
+        EmployeeId employeeId,
+        DateTime date,
         CancellationToken cancellationToken = default)
     {
         var dayStart = date.Date;
         var dayEnd = dayStart.AddDays(1);
 
         return await _context.AttendanceRecords
-            .AnyAsync(r => r.EmployeeId == employeeId && 
-                           r.CheckTime >= dayStart && 
+            .AnyAsync(r => r.EmployeeId == employeeId &&
+                           r.CheckTime >= dayStart &&
                            r.CheckTime < dayEnd &&
-                           r.CheckType == AttendanceSystem.Domain.Enumerations.CheckType.CheckIn, 
+                           r.CheckType == AttendanceSystem.Domain.Enumerations.CheckType.CheckIn,
                       cancellationToken);
     }
 }

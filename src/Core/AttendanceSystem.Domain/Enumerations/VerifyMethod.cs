@@ -36,11 +36,11 @@ public abstract class Enumeration : IComparable
     }
 
     public override string ToString() => Name;
-    
+
     public int CompareTo(object? other)
     {
-        return other is Enumeration enumeration 
-            ? Id.CompareTo(enumeration.Id) 
+        return other is Enumeration enumeration
+            ? Id.CompareTo(enumeration.Id)
             : throw new ArgumentException("Object is not an Enumeration");
     }
 }

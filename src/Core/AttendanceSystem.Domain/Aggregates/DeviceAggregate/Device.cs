@@ -130,7 +130,7 @@ public class Device : AggregateRoot<DeviceId>
 
         if (!string.IsNullOrWhiteSpace(serialNumber))
         {
-             HardwareInfo = HardwareInfo with { SerialNumber = serialNumber };
+            HardwareInfo = HardwareInfo with { SerialNumber = serialNumber };
         }
 
         AddDomainEvent(new DeviceConfigurationUpdatedEvent(Id));

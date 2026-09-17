@@ -18,7 +18,7 @@ public sealed record AttendanceReportViewDto
     public DateTime? ActualCheckOut { get; init; }
     public int LateMinutes { get; init; }
     public int OvertimeMinutes { get; init; }
-    
+
     public bool IsAbsent { get; init; }
     public bool IsRestDay { get; init; }
     public bool WorkedOnRestDay { get; init; }

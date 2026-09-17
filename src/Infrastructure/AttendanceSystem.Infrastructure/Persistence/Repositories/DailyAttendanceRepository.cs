@@ -23,10 +23,10 @@ public class DailyAttendanceRepository : IDailyAttendanceRepository
 
     public async Task<DailyAttendance?> GetByEmployeeAndDateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default)
     {
-         return await _context.DailyAttendances
-            .FirstOrDefaultAsync(x => x.EmployeeId == employeeId && x.Date == date.Date, cancellationToken);
+        return await _context.DailyAttendances
+           .FirstOrDefaultAsync(x => x.EmployeeId == employeeId && x.Date == date.Date, cancellationToken);
     }
-    
+
     public async Task<List<DailyAttendance>> GetByDateRangeAsync(DateTime startDate, DateTime endDate, BranchId? branchId = null, EmployeeId? employeeId = null, CancellationToken cancellationToken = default)
     {
         var query = _context.DailyAttendances.AsQueryable();

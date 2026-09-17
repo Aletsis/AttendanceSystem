@@ -98,7 +98,7 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
                                                $"<ul><li>Registros actuales: {deviceInfo.AttendanceRecordCount}</li>" +
                                                $"<li>Capacidad máxima: {deviceInfo.AttendanceRecordCapacity}</li></ul>" +
                                                $"<p>Por favor descargue los registros y limpie la memoria del dispositivo para evitar pérdida de datos.</p>";
-                                    
+
                                     await _emailService.SendAlertAsync(subject, body, AlertLevel.SystemFailure, cancellationToken);
                                 }
                             }
@@ -109,14 +109,14 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
                     else
                     {
                         device.MarkAsOffline();
-                        
+
                         // Notificar solo si el dispositivo acaba de desconectarse para no spamear
                         if (previousStatus != DeviceStatus.Offline && config != null && !string.IsNullOrWhiteSpace(config.SystemFailureAlertEmails))
                         {
                             var subject = $"🔴 Alerta de Conexión: Dispositivo {device.Name} Offline";
                             var body = $"<p>El dispositivo <b>{device.Name}</b> (IP: {device.IpAddress}) no respondió al monitoreo (Ping) y ha sido marcado como desconectado.</p>" +
                                        $"<p>Por favor revise la conectividad de red o la alimentación del equipo.</p>";
-                            
+
                             await _emailService.SendAlertAsync(subject, body, AlertLevel.SystemFailure, cancellationToken);
                         }
                     }
@@ -125,13 +125,13 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
                 {
                     _logger.LogError(ex, "Error al monitorear dispositivo {DeviceName} ({DeviceIp})", device.Name, device.IpAddress);
                     device.MarkAsOffline();
-                    
+
                     if (previousStatus != DeviceStatus.Offline && config != null && !string.IsNullOrWhiteSpace(config.SystemFailureAlertEmails))
                     {
                         await _emailService.SendAlertAsync(
-                            $"🔴 Alerta de Conexión: Dispositivo {device.Name} Offline", 
-                            $"<p>El dispositivo <b>{device.Name}</b> (IP: {device.IpAddress}) no respondió al monitoreo y ha sido marcado como desconectado.</p><p>Error: {ex.Message}</p>", 
-                            AlertLevel.SystemFailure, 
+                            $"🔴 Alerta de Conexión: Dispositivo {device.Name} Offline",
+                            $"<p>El dispositivo <b>{device.Name}</b> (IP: {device.IpAddress}) no respondió al monitoreo y ha sido marcado como desconectado.</p><p>Error: {ex.Message}</p>",
+                            AlertLevel.SystemFailure,
                             cancellationToken);
                     }
                 }

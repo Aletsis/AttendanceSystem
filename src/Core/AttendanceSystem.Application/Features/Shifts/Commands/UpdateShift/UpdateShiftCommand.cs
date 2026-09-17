@@ -67,7 +67,7 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
         }
         catch (Exception ex)
         {
-             return Result.Failure(ex.Message);
+            return Result.Failure(ex.Message);
         }
     }
 }

@@ -24,7 +24,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         IDailyAttendanceRepository dailyAttendanceRepository,
         IEmployeeRepository employeeRepository,
         IDepartmentRepository departmentRepository,
-        IPositionRepository positionRepository, 
+        IPositionRepository positionRepository,
         IBranchRepository branchRepository)
     {
         _dailyAttendanceRepository = dailyAttendanceRepository;
@@ -38,10 +38,10 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
     {
         // 1. Obtener datos de asistencia
         var attendanceData = await _dailyAttendanceRepository.GetByDateRangeAsync(
-            request.StartDate, 
-            request.EndDate, 
-            request.BranchId, 
-            request.EmployeeId, 
+            request.StartDate,
+            request.EndDate,
+            request.BranchId,
+            request.EmployeeId,
             cancellationToken);
 
         // 2. Fetch Employees
@@ -121,7 +121,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                     include = true;
                     break;
                 default:
-                    include = true; 
+                    include = true;
                     break;
             }
 
@@ -149,7 +149,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
                 if (!hasWorkedRest || !hasAbsence) continue;
             }
-            
+
             var deptName = (empRef.DepartmentId != null && deptDict.TryGetValue(empRef.DepartmentId, out var dName)) ? dName : "";
             var posName = (empRef.PositionId != null && posDict.TryGetValue(empRef.PositionId, out var pName)) ? pName : "";
             var branchName = (empRef.BranchId != null && branchDict.TryGetValue(empRef.BranchId, out var bName)) ? bName : "";
@@ -173,41 +173,41 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
             else if (request.ReportType == "HorasExtra" || request.ReportType == "HorasExtraPorDepartamento")
             {
-                 // Calcular primero el tiempo extra efectivo diario (maneja el límite diario)
-                 double totalOvertime = details.Sum(d => GetEffectiveOvertime(d, empRef));
+                // Calcular primero el tiempo extra efectivo diario (maneja el límite diario)
+                double totalOvertime = details.Sum(d => GetEffectiveOvertime(d, empRef));
 
-                  // Calcular primero el tiempo trabajado total (para mostrarlo en el resumen)
-                  double totalWorkedHours = 0;
-                  foreach(var d in details)
-                  {
-                     var refIn = GetReferenceEntry(d);
-                     var refOut = GetReferenceExit(d);
-                     if (refIn.HasValue && refOut.HasValue)
-                     {
-                         totalWorkedHours += (refOut.Value - refIn.Value).TotalHours;
-                     }
-                  }
+                // Calcular primero el tiempo trabajado total (para mostrarlo en el resumen)
+                double totalWorkedHours = 0;
+                foreach (var d in details)
+                {
+                    var refIn = GetReferenceEntry(d);
+                    var refOut = GetReferenceExit(d);
+                    if (refIn.HasValue && refOut.HasValue)
+                    {
+                        totalWorkedHours += (refOut.Value - refIn.Value).TotalHours;
+                    }
+                }
 
-                 // Maneja el límite de tiempo extra por periodo si aplica
-                 if (empRef.OvertimeCapType == OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
-                 {
-                     totalOvertime = Math.Min(totalOvertime, empRef.OvertimeCapMinutes.Value);
-                 }
+                // Maneja el límite de tiempo extra por periodo si aplica
+                if (empRef.OvertimeCapType == OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
+                {
+                    totalOvertime = Math.Min(totalOvertime, empRef.OvertimeCapMinutes.Value);
+                }
 
-                 summary.TotalMetric = totalOvertime;
-                 var otSpan = TimeSpan.FromMinutes(totalOvertime);
-                 summary.FormattedTotal = $"Lab: {totalWorkedHours:F1}h | Ext: {(int)otSpan.TotalHours:00}:{otSpan.Minutes:00}";
+                summary.TotalMetric = totalOvertime;
+                var otSpan = TimeSpan.FromMinutes(totalOvertime);
+                summary.FormattedTotal = $"Lab: {totalWorkedHours:F1}h | Ext: {(int)otSpan.TotalHours:00}:{otSpan.Minutes:00}";
             }
             else if (request.ReportType == "DescansoErroneo")
             {
-                 summary.Count = 1; 
-                 summary.FormattedTotal = "Incidencia Detectada";
+                summary.Count = 1;
+                summary.FormattedTotal = "Incidencia Detectada";
             }
-             else 
+            else
             {
                 summary.FormattedTotal = $"{summary.Count} Eventos";
             }
-            
+
             summaries.Add(summary);
         }
 
@@ -229,10 +229,10 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         DateTime? referenceExit = GetReferenceExit(att);
 
         // 2. Duración trabajada basada en la regla del usuario
-        TimeSpan? workedVal = (referenceExit.HasValue && referenceEntry.HasValue) 
-            ? (referenceExit.Value - referenceEntry.Value) 
+        TimeSpan? workedVal = (referenceExit.HasValue && referenceEntry.HasValue)
+            ? (referenceExit.Value - referenceEntry.Value)
             : null;
-            
+
         string workedStr = workedVal.HasValue ? $"{(int)workedVal.Value.TotalHours:00}:{workedVal.Value.Minutes:00}" : "--:--";
 
         double effectiveOvertime = GetEffectiveOvertime(att, emp);
@@ -241,17 +241,17 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         string checkInStr = "--";
         if (att.ActualCheckIn.HasValue)
         {
-             checkInStr = (att.ActualCheckIn.Value.Date == att.Date) 
-                ? att.ActualCheckIn.Value.ToString("HH:mm:ss")
-                : att.ActualCheckIn.Value.ToString("dd/MM/yyyy HH:mm:ss");
+            checkInStr = (att.ActualCheckIn.Value.Date == att.Date)
+               ? att.ActualCheckIn.Value.ToString("HH:mm:ss")
+               : att.ActualCheckIn.Value.ToString("dd/MM/yyyy HH:mm:ss");
         }
 
         string checkOutStr = "--";
         if (att.ActualCheckOut.HasValue)
         {
-             checkOutStr = (att.ActualCheckOut.Value.Date == att.Date) 
-                ? att.ActualCheckOut.Value.ToString("HH:mm:ss")
-                : att.ActualCheckOut.Value.ToString("dd/MM/yyyy HH:mm:ss");
+            checkOutStr = (att.ActualCheckOut.Value.Date == att.Date)
+               ? att.ActualCheckOut.Value.ToString("HH:mm:ss")
+               : att.ActualCheckOut.Value.ToString("dd/MM/yyyy HH:mm:ss");
         }
 
         return new AdvancedReportDetailDto
@@ -285,7 +285,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             // 2. FALLBACK/RECALCULATION: Si el almacenado es 0 pero tenemos registros, verificar si hay tiempo extra
             // (Este paso maneja días de descanso con nueva lógica o registros que aún no se han reprocesado completamente)
             double goal = 0;
-            
+
             if (!att.IsRestDay && att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue)
             {
                 var sIn = att.Date.Add(att.ScheduledCheckIn.Value);
@@ -295,7 +295,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
             else if (!att.IsRestDay)
             {
-                goal = 480; 
+                goal = 480;
             }
 
             if (att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
@@ -308,7 +308,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
             else
             {
-                 calculatedOvertime = att.OvertimeMinutes;
+                calculatedOvertime = att.OvertimeMinutes;
             }
         }
 

@@ -20,7 +20,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IEmployeeRepository _employeeRepo;
-    
+
     public UpdateDailyShiftCommandHandler(
         IDailyAttendanceRepository dailyRepo,
         IShiftRepository shiftRepo,
@@ -58,7 +58,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
         // Obtener los registros de ese día para re-evaluar
         var searchStartDate = request.Date;
         var searchEndDate = searchStartDate;
-        
+
         var dayStartTime = shift.StartTime;
         var dayEndTime = shift.EndTime;
 
@@ -80,7 +80,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
 
         var recordsEnumerable = await _attendanceRepo.GetByDateRangeAsync(
             searchStartDate, searchEndDate, employeeId, cancellationToken);
-            
+
         var records = recordsEnumerable.OrderBy(r => r.CheckTime).ToList();
 
         // Libere los registros asignados previamente para que puedan reasignarse o conservarse.
@@ -133,7 +133,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
                             .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 24)
                             .OrderBy(r => r.CheckTime)
                             .FirstOrDefault();
-                        
+
                         if (checkOutRecord != null) checkOut = checkOutRecord.CheckTime;
                     }
                 }
@@ -198,8 +198,8 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
 
             if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
             {
-                 if (Math.Abs((checkIn.Value - scheduledIn).TotalMinutes) <= Math.Abs((checkOut.Value - scheduledOut).TotalMinutes)) { checkOut = null; checkOutRecord = null; }
-                 else { checkIn = null; checkInRecord = null; }
+                if (Math.Abs((checkIn.Value - scheduledIn).TotalMinutes) <= Math.Abs((checkOut.Value - scheduledOut).TotalMinutes)) { checkOut = null; checkOutRecord = null; }
+                else { checkIn = null; checkInRecord = null; }
             }
         }
 
@@ -250,7 +250,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
-        
+
         return Result.Success();
     }
 }

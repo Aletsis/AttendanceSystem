@@ -28,7 +28,7 @@ public sealed class UpdateBranchCommandHandler : IRequestHandler<UpdateBranchCom
 
     public async Task<Result<Unit>> Handle(UpdateBranchCommand request, CancellationToken cancellationToken)
     {
-        try 
+        try
         {
             var branch = await _repository.GetByIdAsync(BranchId.From(request.Id), cancellationToken);
             if (branch is null)
@@ -48,7 +48,7 @@ public sealed class UpdateBranchCommandHandler : IRequestHandler<UpdateBranchCom
         }
         catch (Exception ex)
         {
-             return Result<Unit>.Failure(ex.Message);
+            return Result<Unit>.Failure(ex.Message);
         }
     }
 }

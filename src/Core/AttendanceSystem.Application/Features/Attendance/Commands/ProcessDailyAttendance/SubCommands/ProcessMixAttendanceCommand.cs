@@ -43,7 +43,7 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                 request.Date,
                 request.Records,
                 IsRestDay: true), cancellationToken);
-            
+
             return;
         }
 

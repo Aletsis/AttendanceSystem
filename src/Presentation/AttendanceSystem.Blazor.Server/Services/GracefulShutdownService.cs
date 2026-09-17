@@ -31,11 +31,11 @@ public class GracefulShutdownService : IHostedService
     public Task StartAsync(CancellationToken cancellationToken)
     {
         _logger.LogInformation("🛡️ Servicio de Graceful Shutdown iniciado");
-        
+
         // Registrar manejadores para los eventos del ciclo de vida de la aplicación
         _applicationLifetime.ApplicationStopping.Register(OnApplicationStopping);
         _applicationLifetime.ApplicationStopped.Register(OnApplicationStopped);
-        
+
         return Task.CompletedTask;
     }
 
@@ -53,11 +53,11 @@ public class GracefulShutdownService : IHostedService
     {
         _logger.LogWarning("⚠️ INICIANDO APAGADO ORDENADO DE LA APLICACIÓN");
         _logger.LogInformation("========================================");
-        
+
         // Obtener el timeout de apagado desde la configuración (por defecto 30 segundos)
         var shutdownTimeoutSeconds = _configuration.GetValue<int>("ShutdownTimeoutSeconds", 30);
         _shutdownCts = new CancellationTokenSource(TimeSpan.FromSeconds(shutdownTimeoutSeconds));
-        
+
         try
         {
             // Ejecutar el apagado ordenado de forma sincrónica
@@ -77,7 +77,7 @@ public class GracefulShutdownService : IHostedService
         _logger.LogInformation("========================================");
         _logger.LogInformation("✅ APLICACIÓN DETENIDA COMPLETAMENTE");
         _logger.LogInformation("========================================");
-        
+
         _shutdownCts?.Dispose();
     }
 
@@ -98,7 +98,7 @@ public class GracefulShutdownService : IHostedService
         for (int i = 0; i < shutdownSteps.Count; i++)
         {
             var (name, action) = shutdownSteps[i];
-            
+
             try
             {
                 _logger.LogInformation("📋 Paso {Step}/{Total}: {Name}...", i + 1, shutdownSteps.Count, name);
@@ -150,7 +150,7 @@ public class GracefulShutdownService : IHostedService
             while (DateTime.UtcNow - startTime < maxWaitTime && !cancellationToken.IsCancellationRequested)
             {
                 var processingJobs = monitoringApi.ProcessingJobs(0, int.MaxValue);
-                
+
                 if (processingJobs.Count == 0)
                 {
                     _logger.LogInformation("   ✅ No hay trabajos de Hangfire en ejecución");
@@ -176,7 +176,7 @@ public class GracefulShutdownService : IHostedService
         {
             using var scope = _serviceProvider.CreateScope();
             var dbContext = scope.ServiceProvider.GetService<AttendanceDbContext>();
-            
+
             if (dbContext != null)
             {
                 _logger.LogInformation("   🔌 Cerrando conexiones de base de datos...");
@@ -200,11 +200,11 @@ public class GracefulShutdownService : IHostedService
             // Aquí podríamos liberar recursos de servicios singleton específicos
             // Por ejemplo, cerrar conexiones de caché, liberar locks, etc.
             _logger.LogInformation("   🧹 Liberando recursos de servicios...");
-            
+
             // Ejemplo: Si tuviéramos un servicio de caché o conexiones persistentes
             // var cacheService = _serviceProvider.GetService<ICacheService>();
             // await cacheService?.FlushAsync(cancellationToken);
-            
+
             return Task.CompletedTask;
         }
         catch (Exception ex)

@@ -59,7 +59,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                 if (employeeBranch != null && employeeBranch.IsExternal)
                 {
                     deviceUserId = $"{employeeBranch.Code}{employee.Id.Value}";
-                    _logger.LogInformation("Empleado {Id} pertenece a sucursal externa {Code}. Usando ID concatenado: {DeviceUserId}", 
+                    _logger.LogInformation("Empleado {Id} pertenece a sucursal externa {Code}. Usando ID concatenado: {DeviceUserId}",
                         employee.Id.Value, employeeBranch.Code, deviceUserId);
                 }
 
@@ -76,7 +76,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                 );
 
                 var success = await deviceClient.SetUserAsync(userDto, cancellationToken);
-                
+
                 if (success)
                     return Result<bool>.Success(true);
                 else

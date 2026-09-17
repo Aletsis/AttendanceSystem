@@ -105,16 +105,16 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             {
                 var result = await _mediator.Send(new GetDepartmentsQuery());
                 var employeesResult = await _mediator.Send(new GetAllEmployeesQuery());
-                
+
                 if (result.IsSuccess && result.Value != null)
                 {
-                    var employeeCounts = employeesResult.IsSuccess 
+                    var employeeCounts = employeesResult.IsSuccess
                         ? employeesResult.Value.GroupBy(e => e.DepartmentId).ToDictionary(g => g.Key, g => g.Count())
                         : new Dictionary<Guid, int>();
 
                     _allDepartmentsData = result.Value.ToList();
                     _departments.Clear();
-                    
+
                     foreach (var dept in _allDepartmentsData)
                     {
                         _departments.Add(new DepartmentListItem
@@ -125,7 +125,7 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
                             EmployeeCount = employeeCounts.GetValueOrDefault(dept.Id, 0)
                         });
                     }
-                    
+
                     FilterDepartments();
                 }
                 else
@@ -152,8 +152,8 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             else
             {
                 var searchLower = SearchText.ToLower();
-                var filtered = _departments.Where(d => 
-                    d.Name.ToLower().Contains(searchLower) || 
+                var filtered = _departments.Where(d =>
+                    d.Name.ToLower().Contains(searchLower) ||
                     (d.Description?.ToLower().Contains(searchLower) ?? false));
                 Departments = new ObservableCollection<DepartmentListItem>(filtered);
             }
@@ -239,7 +239,7 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             {
                 var command = new DeleteDepartmentCommand(SelectedDepartment.Id);
                 var result = await _mediator.Send(command);
-                
+
                 if (result.IsSuccess)
                 {
                     await _messageService.ShowSuccessAsync("Departamento eliminado correctamente");

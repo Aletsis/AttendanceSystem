@@ -20,8 +20,8 @@ public class SendGridEmailService : IEmailService
     }
 
     public async Task SendAlertAsync(
-        string subject, 
-        string body, 
+        string subject,
+        string body,
         AlertLevel level = AlertLevel.SystemFailure,
         CancellationToken cancellationToken = default)
     {
@@ -40,12 +40,12 @@ public class SendGridEmailService : IEmailService
             var client = new SendGridClient(apiKey);
             var from = new EmailAddress(fromEmail, "Sistema de Asistencia");
             var to = new EmailAddress(toEmail);
-            
+
             var msg = MailHelper.CreateSingleEmail(
-                from, 
-                to, 
-                subject, 
-                body, 
+                from,
+                to,
+                subject,
+                body,
                 $"<html><body><p>{body}</p></body></html>");
 
             var response = await client.SendEmailAsync(msg, cancellationToken);
@@ -57,7 +57,7 @@ public class SendGridEmailService : IEmailService
             else
             {
                 _logger.LogError(
-                    "Error al enviar email de alerta ({Level}). Status: {StatusCode}", 
+                    "Error al enviar email de alerta ({Level}). Status: {StatusCode}",
                     level,
                     response.StatusCode);
             }
@@ -69,10 +69,10 @@ public class SendGridEmailService : IEmailService
     }
 
     public async Task SendReportAsync(
-        string subject, 
-        string body, 
-        string recipients, 
-        IEnumerable<(string Name, byte[] Content)> attachments, 
+        string subject,
+        string body,
+        string recipients,
+        IEnumerable<(string Name, byte[] Content)> attachments,
         CancellationToken cancellationToken = default)
     {
         try
@@ -88,7 +88,7 @@ public class SendGridEmailService : IEmailService
 
             var client = new SendGridClient(apiKey);
             var from = new EmailAddress(fromEmail, "Sistema de Asistencia");
-            
+
             var msg = new SendGridMessage
             {
                 From = from,
@@ -101,7 +101,7 @@ public class SendGridEmailService : IEmailService
             {
                 msg.AddTo(new EmailAddress(recipient.Trim()));
             }
-            
+
             if (attachments != null)
             {
                 foreach (var attachment in attachments)
@@ -110,7 +110,7 @@ public class SendGridEmailService : IEmailService
                     string mimeType = "application/octet-stream";
                     if (attachment.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) mimeType = "application/pdf";
                     else if (attachment.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)) mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-                    
+
                     msg.AddAttachment(attachment.Name, file, mimeType);
                 }
             }

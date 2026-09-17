@@ -13,7 +13,7 @@ namespace AttendanceSystem.Blazor.Server.Services
     {
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly ILogger<UpdateCheckerService> _logger;
-        
+
         private UpdateCheckResult? _cachedResult;
         private DateTime? _lastCheckTime;
         private readonly TimeSpan _cacheDuration = TimeSpan.FromHours(12);
@@ -26,7 +26,7 @@ namespace AttendanceSystem.Blazor.Server.Services
 
         public async Task<UpdateCheckResult> CheckForUpdatesAsync(bool force = false)
         {
-            if (!force && _cachedResult != null && _lastCheckTime.HasValue && 
+            if (!force && _cachedResult != null && _lastCheckTime.HasValue &&
                 (DateTime.UtcNow - _lastCheckTime.Value) < _cacheDuration)
             {
                 _logger.LogInformation("Retornando resultado de verificación de actualización desde caché.");
@@ -34,7 +34,7 @@ namespace AttendanceSystem.Blazor.Server.Services
             }
 
             var currentVersion = typeof(Program).Assembly.GetName().Version ?? new Version(1, 0, 0);
-            
+
             try
             {
                 _logger.LogInformation("Consultando la última versión en GitHub Releases...");
@@ -62,7 +62,7 @@ namespace AttendanceSystem.Blazor.Server.Services
                 if (Version.TryParse(cleanTagName, out var latestVersion))
                 {
                     bool isAvailable = latestVersion > currentVersion;
-                    
+
                     // Buscar el instalador .exe en los assets
                     string downloadUrl = response.HtmlUrl; // Fallback
                     foreach (var asset in response.Assets)
@@ -85,9 +85,9 @@ namespace AttendanceSystem.Blazor.Server.Services
                     };
                     _lastCheckTime = DateTime.UtcNow;
 
-                    _logger.LogInformation("Verificación de actualización completada. Disponible: {IsAvailable}, Local: {Local}, Remota: {Remote}", 
+                    _logger.LogInformation("Verificación de actualización completada. Disponible: {IsAvailable}, Local: {Local}, Remota: {Remote}",
                         isAvailable, currentVersion, latestVersion);
-                    
+
                     return _cachedResult;
                 }
                 else

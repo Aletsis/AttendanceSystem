@@ -19,18 +19,18 @@ public sealed class GetActiveDevicesQueryHandler : IRequestHandler<GetActiveDevi
     public async Task<Result<IEnumerable<DeviceDto>>> Handle(GetActiveDevicesQuery request, CancellationToken cancellationToken)
     {
         var devices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
-        
+
         var dtos = devices.Select(d => new DeviceDto(
-            d.Id.Value, 
-            d.Name, 
-            d.IpAddress, 
-            d.Port, 
-            d.Location, 
-            d.IsActive, 
+            d.Id.Value,
+            d.Name,
+            d.IpAddress,
+            d.Port,
+            d.Location,
+            d.IsActive,
             d.Status.Name,
             d.Brand,
             d.DownloadMethod,
-            d.LastDownloadAt, 
+            d.LastDownloadAt,
             d.TotalDownloadCount,
             d.ShouldClearAfterDownload,
             d.HardwareInfo.SerialNumber,

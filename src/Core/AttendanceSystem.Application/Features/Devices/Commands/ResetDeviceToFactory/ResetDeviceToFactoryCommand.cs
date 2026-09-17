@@ -40,8 +40,8 @@ public class ResetDeviceToFactoryHandler : IRequestHandler<ResetDeviceToFactoryC
             try
             {
                 var success = await deviceClient.ResetToFactorySettingsAsync(cancellationToken);
-                return success 
-                    ? Result.Success() 
+                return success
+                    ? Result.Success()
                     : Result.Failure("Device.ResetFailed: Device returned failure status");
             }
             finally

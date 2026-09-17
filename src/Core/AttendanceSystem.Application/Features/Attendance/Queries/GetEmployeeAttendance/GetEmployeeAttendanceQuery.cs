@@ -6,7 +6,7 @@ public sealed record GetEmployeeAttendanceQuery(
     DateOnly EndDate) : IRequest<Result<IReadOnlyList<AttendanceRecordDto>>>;
 
 // Handler
-public sealed class GetEmployeeAttendanceQueryHandler 
+public sealed class GetEmployeeAttendanceQueryHandler
     : IRequestHandler<GetEmployeeAttendanceQuery, Result<IReadOnlyList<AttendanceRecordDto>>>
 {
     private readonly IAttendanceRepository _repository;
@@ -17,7 +17,7 @@ public sealed class GetEmployeeAttendanceQueryHandler
     }
 
     public async Task<Result<IReadOnlyList<AttendanceRecordDto>>> Handle(
-        GetEmployeeAttendanceQuery query, 
+        GetEmployeeAttendanceQuery query,
         CancellationToken cancellationToken)
     {
         EmployeeId? employeeId = null;
@@ -25,9 +25,9 @@ public sealed class GetEmployeeAttendanceQueryHandler
         {
             employeeId = EmployeeId.From(query.EmployeeId);
         }
-        
+
         var records = await _repository.GetByDateRangeAsync(
-            query.StartDate, 
+            query.StartDate,
             query.EndDate,
             employeeId,
             cancellationToken);

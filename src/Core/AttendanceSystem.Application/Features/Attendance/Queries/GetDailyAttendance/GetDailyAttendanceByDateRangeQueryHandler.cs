@@ -4,7 +4,7 @@ using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
 namespace AttendanceSystem.Application.Features.Attendance.Queries.GetDailyAttendance;
 
-public class GetDailyAttendanceByDateRangeQueryHandler 
+public class GetDailyAttendanceByDateRangeQueryHandler
     : IRequestHandler<GetDailyAttendanceByDateRangeQuery, IReadOnlyList<DailyAttendance>>
 {
     private readonly IDailyAttendanceRepository _repository;
@@ -19,14 +19,14 @@ public class GetDailyAttendanceByDateRangeQueryHandler
     }
 
     public async Task<IReadOnlyList<DailyAttendance>> Handle(
-        GetDailyAttendanceByDateRangeQuery request, 
+        GetDailyAttendanceByDateRangeQuery request,
         CancellationToken cancellationToken)
     {
         var records = await _repository.GetByDateRangeAsync(
-            request.StartDate, 
-            request.EndDate, 
-            request.BranchId, 
-            request.EmployeeId, 
+            request.StartDate,
+            request.EndDate,
+            request.BranchId,
+            request.EmployeeId,
             cancellationToken);
 
         var employees = await _employeeRepository.GetAllAsync(cancellationToken);

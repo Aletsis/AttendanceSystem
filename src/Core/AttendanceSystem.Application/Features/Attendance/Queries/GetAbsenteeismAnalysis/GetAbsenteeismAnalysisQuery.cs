@@ -8,11 +8,11 @@ using System.Globalization;
 namespace AttendanceSystem.Application.Features.Attendance.Queries.GetAbsenteeismAnalysis;
 
 public sealed record GetAbsenteeismAnalysisQuery(
-    DateTime StartDate, 
-    DateTime EndDate, 
+    DateTime StartDate,
+    DateTime EndDate,
     BranchId? BranchId = null) : IRequest<Result<AbsenteeismAnalysisDto>>;
 
-public sealed class GetAbsenteeismAnalysisQueryHandler 
+public sealed class GetAbsenteeismAnalysisQueryHandler
     : IRequestHandler<GetAbsenteeismAnalysisQuery, Result<AbsenteeismAnalysisDto>>
 {
     private readonly IDailyAttendanceRepository _dailyAttendanceRepository;
@@ -33,16 +33,16 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
     }
 
     public async Task<Result<AbsenteeismAnalysisDto>> Handle(
-        GetAbsenteeismAnalysisQuery request, 
+        GetAbsenteeismAnalysisQuery request,
         CancellationToken cancellationToken)
     {
         try
         {
             var dailyRecords = await _dailyAttendanceRepository.GetByDateRangeAsync(
-                request.StartDate, 
-                request.EndDate, 
-                request.BranchId, 
-                null, 
+                request.StartDate,
+                request.EndDate,
+                request.BranchId,
+                null,
                 cancellationToken);
 
             var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
@@ -51,10 +51,10 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
             {
                 employees = employees.Where(e => e.BranchId == request.BranchId).ToList();
             }
-            
+
             var departments = await _departmentRepository.GetAllAsync(cancellationToken);
             var branches = await _branchRepository.GetAllAsync(cancellationToken);
-            
+
             var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
             var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
             var empDict = employees.ToDictionary(e => e.Id, e => e);
@@ -82,7 +82,7 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
                     totalPossibleDays > 0 ? (double)g.Count() / totalPossibleDays * 100 : 0
                 ))
                 .ToList();
-            
+
             // 2. Reordenar correctamente (patrón Lunes a Domingo)
             var sortedDays = new List<string> { "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo" };
             absencesByDay = absencesByDay
@@ -92,12 +92,13 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
             // 2. Ausentismos por Departamento
             var absencesByDept = absences
                 .GroupBy(a => empDict[a.EmployeeId].DepartmentId)
-                .Select(g => {
+                .Select(g =>
+                {
                     var deptName = deptDict.TryGetValue(g.Key, out var name) ? name : "Sin Departamento";
                     var possibleDaysInDept = validRecords
                         .Where(r => empDict[r.EmployeeId].DepartmentId == g.Key && !r.IsRestDay)
                         .Count();
-                    
+
                     return new DepartmentAbsenteeismDto(
                         deptName,
                         g.Count(),
@@ -111,7 +112,8 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
             // 3. Empleados con más ausencias
             var topEmployees = absences
                 .GroupBy(a => a.EmployeeId)
-                .Select(g => {
+                .Select(g =>
+                {
                     var emp = empDict[g.Key];
                     var deptName = deptDict.TryGetValue(emp.DepartmentId, out var name) ? name : "N/A";
                     return new EmployeeAbsenteeismDto(
@@ -127,12 +129,13 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
             // 4. Ausentismos por Sucursal
             var absencesByBranch = absences
                 .GroupBy(a => empDict[a.EmployeeId].BranchId)
-                .Select(g => {
+                .Select(g =>
+                {
                     var branchName = branchDict.TryGetValue(g.Key, out var name) ? name : "Sin Sucursal";
                     var possibleDaysInBranch = validRecords
                         .Where(r => empDict[r.EmployeeId].BranchId == g.Key && !r.IsRestDay)
                         .Count();
-                    
+
                     return new BranchAbsenteeismDto(
                         branchName,
                         g.Count(),
@@ -146,15 +149,16 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
             // 5. Ausentismos por Sucursal/Departamento
             var absencesByBranchDept = absences
                 .GroupBy(a => new { empDict[a.EmployeeId].BranchId, empDict[a.EmployeeId].DepartmentId })
-                .Select(g => {
+                .Select(g =>
+                {
                     var branchName = branchDict.TryGetValue(g.Key.BranchId, out var bName) ? bName : "N/A";
                     var deptName = deptDict.TryGetValue(g.Key.DepartmentId, out var dName) ? dName : "N/A";
                     var possibleDaysInCombo = validRecords
-                        .Where(r => empDict[r.EmployeeId].BranchId == g.Key.BranchId && 
-                                   empDict[r.EmployeeId].DepartmentId == g.Key.DepartmentId && 
+                        .Where(r => empDict[r.EmployeeId].BranchId == g.Key.BranchId &&
+                                   empDict[r.EmployeeId].DepartmentId == g.Key.DepartmentId &&
                                    !r.IsRestDay)
                         .Count();
-                    
+
                     return new BranchDepartmentAbsenteeismDto(
                         branchName,
                         deptName,

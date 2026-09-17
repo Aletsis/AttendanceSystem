@@ -8,21 +8,21 @@ using AttendanceSystem.Application.DTOs;
 public interface IDeviceClient
 {
     Task<bool> ConnectAsync(string ipAddress, int port, string? username = null, string? password = null, CancellationToken cancellationToken = default);
-    
+
     Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(
         string deviceId,
         DateTime? fromDate,
         DateTime? toDate = null,
         CancellationToken cancellationToken = default);
-    
+
     Task<bool> ClearLogsAsync(
         string deviceId,
         DateTime? fromDate = null,
         DateTime? toDate = null,
         CancellationToken cancellationToken = default);
-    
+
     Task DisconnectAsync(CancellationToken cancellationToken = default);
-    
+
     Task<DeviceInfoDto?> GetDeviceInfoAsync(CancellationToken cancellationToken = default);
 
     Task<IReadOnlyList<DeviceUserDto>> GetAllUsersAsync(

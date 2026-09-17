@@ -42,8 +42,8 @@ public class SetDeviceTimeHandler : IRequestHandler<SetDeviceTimeCommand, Result
             try
             {
                 var success = await deviceClient.SetDeviceTimeAsync(request.DateTime, cancellationToken);
-                return success 
-                    ? Result.Success() 
+                return success
+                    ? Result.Success()
                     : Result.Failure("Device.SetTimeFailed: Device returned failure status");
             }
             finally

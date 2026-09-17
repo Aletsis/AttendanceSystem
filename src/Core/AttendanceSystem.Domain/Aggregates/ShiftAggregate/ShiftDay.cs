@@ -24,8 +24,8 @@ public record ShiftDay
 
     private static TimeSpan NormalizeTime(TimeSpan time)
     {
-        return time.TotalDays >= 1 
-            ? time.Subtract(TimeSpan.FromDays((int)time.TotalDays)) 
+        return time.TotalDays >= 1
+            ? time.Subtract(TimeSpan.FromDays((int)time.TotalDays))
             : time;
     }
 }

@@ -99,12 +99,12 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             try
             {
                 var result = await _mediator.Send(new GetAllDevicesQuery());
-                
+
                 if (result.IsSuccess && result.Value != null)
                 {
                     _allDevicesData = result.Value.ToList();
                     _devices.Clear();
-                    
+
                     foreach (var device in _allDevicesData)
                     {
                         _devices.Add(new DeviceListItem
@@ -145,8 +145,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             else
             {
                 var searchLower = SearchText.ToLower();
-                var filtered = _devices.Where(d => 
-                    d.Name.ToLower().Contains(searchLower) || 
+                var filtered = _devices.Where(d =>
+                    d.Name.ToLower().Contains(searchLower) ||
                     d.IpAddress.ToLower().Contains(searchLower) ||
                     d.BranchName.ToLower().Contains(searchLower));
                 Devices = new ObservableCollection<DeviceListItem>(filtered);
@@ -272,7 +272,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private async Task ExecuteDownloadLogsAsync()
         {
             if (SelectedDevice == null) return;
-            
+
             _dialogService.ShowDialog("DownloadLogsRangeDialog", null, async result =>
             {
                 if (result.Result == ButtonResult.OK)
@@ -286,7 +286,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                         // TODO: Obtener el usuario actual para InitiatedBy
                         var command = new DownloadFromDeviceCommand(SelectedDevice.Id, fromDate, toDate, true, null, "Admin WPF");
                         var downloadResult = await _mediator.Send(command);
-                        
+
                         if (downloadResult.IsSuccess)
                         {
                             await _messageService.ShowSuccessAsync($"Sincronización completada.\nTotal: {downloadResult.Value.RecordsDownloaded} registros.");
@@ -306,7 +306,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private async Task ExecuteSyncEmployeesAsync()
         {
             if (SelectedDevice == null) return;
-            
+
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Sincronizar Empleados",
                 $"¿Desea importar los usuarios y datos biométricos desde '{SelectedDevice.Name}'?\nEsto actualizará la base de datos local.");
@@ -333,7 +333,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private void ExecuteViewDetails()
         {
             if (SelectedDevice == null) return;
-            
+
             var deviceData = _allDevicesData.FirstOrDefault(d => d.DeviceId == SelectedDevice.Id);
             if (deviceData == null) return;
 

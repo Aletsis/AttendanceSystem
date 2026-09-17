@@ -20,13 +20,13 @@ public class SmtpEmailService : IEmailService
     }
 
     public async Task SendAlertAsync(
-        string subject, 
-        string body, 
+        string subject,
+        string body,
         AlertLevel level = AlertLevel.SystemFailure,
         CancellationToken cancellationToken = default)
     {
         var config = await _configRepository.GetConfigurationAsync(cancellationToken);
-        
+
         if (config == null || !config.AreAlertsEnabled || string.IsNullOrEmpty(config.SmtpHost))
         {
             return;
@@ -76,14 +76,14 @@ public class SmtpEmailService : IEmailService
         }
     }
     public async Task SendReportAsync(
-        string subject, 
-        string body, 
-        string recipients, 
-        IEnumerable<(string Name, byte[] Content)> attachments, 
+        string subject,
+        string body,
+        string recipients,
+        IEnumerable<(string Name, byte[] Content)> attachments,
         CancellationToken cancellationToken = default)
     {
         var config = await _configRepository.GetConfigurationAsync(cancellationToken);
-        
+
         if (config == null || string.IsNullOrEmpty(config.SmtpHost))
         {
             _logger.LogWarning("No se puede enviar el reporte. SMTP no configurado.");
@@ -123,17 +123,17 @@ public class SmtpEmailService : IEmailService
                 {
                     var stream = new MemoryStream(attachment.Content);
                     streams.Add(stream);
-                    
+
                     string mimeType = "application/octet-stream";
                     if (attachment.Name.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase)) mimeType = "application/pdf";
                     else if (attachment.Name.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase)) mimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-                    
+
                     mailMessage.Attachments.Add(new Attachment(stream, attachment.Name, mimeType));
                 }
             }
 
             await client.SendMailAsync(mailMessage, cancellationToken);
-            
+
             // Dispose streams after sending
             foreach (var stream in streams)
             {

@@ -55,7 +55,7 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             _mediator = mediator;
             SaveCommand = new DelegateCommand(ExecuteSave, CanExecuteSave)
                 .ObservesProperty(() => Name);
-            
+
             CancelCommand = new DelegateCommand(ExecuteCancel);
         }
 

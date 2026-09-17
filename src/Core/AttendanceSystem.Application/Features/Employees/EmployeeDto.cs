@@ -32,7 +32,7 @@ public sealed record EmployeeDto
     public double? OvertimeCapMinutes { get; init; }
     public bool CalculateOvertimeBeforeEntry { get; init; }
     public DevicePrivilege DevicePrivilege { get; init; }
-    
+
     // Biometrics info for display
     public string? CardNumber { get; init; }
     public string? DevicePassword { get; init; }

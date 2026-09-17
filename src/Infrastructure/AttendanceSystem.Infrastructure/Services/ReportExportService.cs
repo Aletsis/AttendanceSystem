@@ -38,8 +38,8 @@ public class ReportExportService : IReportExportService
         // 2. Headers
         int headerRow = 4;
         string[] headers = {
-            "Id", "Nombre", "Horario Entrada", "Horario Salida", "Entrada", "Salida", 
-            "Tiempo trabajado", "Tiempo Extra", "Sucursal", 
+            "Id", "Nombre", "Horario Entrada", "Horario Salida", "Entrada", "Salida",
+            "Tiempo trabajado", "Tiempo Extra", "Sucursal",
             "Falta injustificada", "Descanso trabajado", "Retardo"
         };
 
@@ -53,10 +53,10 @@ public class ReportExportService : IReportExportService
         // 3. Data
         int currentRow = headerRow + 1;
         // Sort by ID is usually good
-        var sortedData = attendanceData.OrderBy(x => 
+        var sortedData = attendanceData.OrderBy(x =>
         {
-             if (long.TryParse(x.EmployeeId, out var id)) return id;
-             return long.MaxValue;
+            if (long.TryParse(x.EmployeeId, out var id)) return id;
+            return long.MaxValue;
         }).ThenBy(x => x.EmployeeId);
 
         foreach (var item in sortedData)
@@ -77,7 +77,7 @@ public class ReportExportService : IReportExportService
             SetCell(worksheet, currentRow, col++, FormatTimespan(worked));
             SetCell(worksheet, currentRow, col++, FormatMinutes(item.RoundedOvertimeMinutes));
             SetCell(worksheet, currentRow, col++, item.BranchName);
-            
+
             // Indicators
             SetCell(worksheet, currentRow, col++, item.IsAbsent ? "1FINJ" : "0", true);
             SetCell(worksheet, currentRow, col++, item.WorkedOnRestDay ? "1DFT" : "0", true);
@@ -99,11 +99,11 @@ public class ReportExportService : IReportExportService
 
         // 1. Title and Info
         SetupHeader(worksheet, companyName, startDate, endDate, companyLogo, "REPORTE RESUMIDO DE ASISTENCIA");
-        
+
         // 2. Headers
         int headerRow = 4;
         string[] headers = {
-            "ID", "Nombre", "Horario Entrada", "Horario Salida", 
+            "ID", "Nombre", "Horario Entrada", "Horario Salida",
             "Tiempo Trabajado", "Tiempo Extra", "Falta", "Descanso", "Retardo", "Prima Dominical"
         };
 
@@ -125,7 +125,7 @@ public class ReportExportService : IReportExportService
             var totalWorked = TimeSpan.FromTicks(totalWorkedTicks);
             var totalOvertimeMinutes = group.Sum(x => x.RoundedOvertimeMinutes);
             var totalAbsences = group.Count(x => x.IsAbsent);
-            var totalRestWorked = group.Any(x => x.WorkedOnRestDay) ? "1DFT" : ""; 
+            var totalRestWorked = group.Any(x => x.WorkedOnRestDay) ? "1DFT" : "";
             var totalLates = group.Count(x => x.LateMinutes > 0);
             var sundayPremium = group.Count(x => x.Date.DayOfWeek == DayOfWeek.Sunday && x.ActualCheckIn.HasValue && x.ActualCheckOut.HasValue);
 
@@ -158,13 +158,13 @@ public class ReportExportService : IReportExportService
         var worksheet = workbook.Worksheets.Add("Detallado");
 
         SetupHeader(worksheet, companyName, startDate, endDate, companyLogo, "REPORTE DETALLADO DE ASISTENCIA");
-        
+
         int headerRow = 4;
         int col = 1;
 
         // Fixed Columns
         string[] fixedHeaders = { "ID", "Nombre", "Puesto", "Departamento", "Sucursal", "Horario Entrada", "Horario Salida" };
-        foreach(var h in fixedHeaders) 
+        foreach (var h in fixedHeaders)
         {
             var cell = worksheet.Cell(headerRow, col++);
             cell.Value = h;
@@ -175,35 +175,35 @@ public class ReportExportService : IReportExportService
         var dates = Enumerable.Range(0, 1 + endDate.Subtract(startDate).Days)
                               .Select(offset => startDate.AddDays(offset))
                               .ToList();
-        
+
         // Sub-headers for each date
         string[] dateSubHeaders = { "Entrada", "Salida", "T. Trab", "T. Extra", "Falta", "Descanso", "Retardo" };
 
-        foreach(var date in dates)
+        foreach (var date in dates)
         {
-             // Merge header for Date
-             var dateRange = worksheet.Range(headerRow - 1, col, headerRow - 1, col + dateSubHeaders.Length - 1);
-             dateRange.Merge().Value = date.ToString("dd/MM/yyyy");
-             dateRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-             dateRange.Style.Font.Bold = true;
-             dateRange.Style.Fill.BackgroundColor = XLColor.LightGray;
-             dateRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            // Merge header for Date
+            var dateRange = worksheet.Range(headerRow - 1, col, headerRow - 1, col + dateSubHeaders.Length - 1);
+            dateRange.Merge().Value = date.ToString("dd/MM/yyyy");
+            dateRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            dateRange.Style.Font.Bold = true;
+            dateRange.Style.Fill.BackgroundColor = XLColor.LightGray;
+            dateRange.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
 
-             foreach(var h in dateSubHeaders)
-             {
-                 var cell = worksheet.Cell(headerRow, col++);
-                 cell.Value = h;
-                 StyleHeaderCell(cell);
-             }
+            foreach (var h in dateSubHeaders)
+            {
+                var cell = worksheet.Cell(headerRow, col++);
+                cell.Value = h;
+                StyleHeaderCell(cell);
+            }
         }
 
         // Summary Columns
         string[] summaryHeaders = { "T. Trab. Total", "T. Extra Total", "Total Faltas", "Total Retardos" };
-        foreach(var h in summaryHeaders)
+        foreach (var h in summaryHeaders)
         {
-             var cell = worksheet.Cell(headerRow, col++);
-             cell.Value = h;
-             StyleHeaderCell(cell);
+            var cell = worksheet.Cell(headerRow, col++);
+            cell.Value = h;
+            StyleHeaderCell(cell);
         }
 
         // Data
@@ -229,12 +229,12 @@ public class ReportExportService : IReportExportService
             SetCell(worksheet, currentRow, col++, schedOut?.ToString(@"hh\:mm") ?? "--:--");
 
             // Date Data
-            foreach(var date in dates)
+            foreach (var date in dates)
             {
                 if (dict.TryGetValue(date.Date, out var item))
                 {
                     var worked = (item.ActualCheckOut - item.ActualCheckIn) ?? TimeSpan.Zero;
-                    
+
                     SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckIn, date, "--"));
                     SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckOut, date, "--"));
                     SetCell(worksheet, currentRow, col++, FormatTimespan(worked));
@@ -246,7 +246,7 @@ public class ReportExportService : IReportExportService
                 else
                 {
                     // No record for this date (should rely on query returning all dates, but if not found, fill empty)
-                    for(int k=0; k<7; k++) SetCell(worksheet, currentRow, col++, "");
+                    for (int k = 0; k < 7; k++) SetCell(worksheet, currentRow, col++, "");
                 }
             }
 
@@ -255,13 +255,13 @@ public class ReportExportService : IReportExportService
             var totalOvertime = group.Sum(x => x.RoundedOvertimeMinutes);
             var totalAbsences = group.Count(x => x.IsAbsent);
             var totalLates = group.Sum(x => x.LateMinutes); // "La suma de todos los retardos" - Prompt said "Total Retardos (La suma de todos los retardos)". Could be minutes or count. Previously "numero de retardos". I'll format as minutes if it's "suma", or count.
-            // "Retardo (pondremos el numero de retardos acumulados)" in Summary.
-            // "Total Retardos (La suma de todos los retardos que tuvo el empleado)" in Detailed.
-            // Usually "suma de retardos" implies minutes. "Account of retardos" implies count.
-            // "1RET" implies a boolean flag per day.
-            // I'll assume Count for consistency with "1RET", but "Suma" suggests minutes.
-            // Let's output minutes for "Total Retardos" in detailed to be precise, as "suma de retardos" is often time.
-            
+                                                            // "Retardo (pondremos el numero de retardos acumulados)" in Summary.
+                                                            // "Total Retardos (La suma de todos los retardos que tuvo el empleado)" in Detailed.
+                                                            // Usually "suma de retardos" implies minutes. "Account of retardos" implies count.
+                                                            // "1RET" implies a boolean flag per day.
+                                                            // I'll assume Count for consistency with "1RET", but "Suma" suggests minutes.
+                                                            // Let's output minutes for "Total Retardos" in detailed to be precise, as "suma de retardos" is often time.
+
             SetCell(worksheet, currentRow, col++, FormatTimespan(TimeSpan.FromTicks(totalWorkedTicks)));
             SetCell(worksheet, currentRow, col++, FormatMinutes(totalOvertime));
             SetCell(worksheet, currentRow, col++, totalAbsences);
@@ -285,23 +285,23 @@ public class ReportExportService : IReportExportService
         titleRange.Style.Font.FontSize = 16;
         titleRange.Style.Font.Bold = true;
         titleRange.Style.Font.FontColor = XLColor.White;
-        titleRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#1976D2"); 
+        titleRange.Style.Fill.BackgroundColor = XLColor.FromHtml("#1976D2");
         titleRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         titleRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
-        
+
         var culture = new CultureInfo("es-ES");
-        var dateRangeStr = startDate.Date == endDate.Date 
+        var dateRangeStr = startDate.Date == endDate.Date
             ? startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()
             : $"{startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()} - {endDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()}";
 
         if (companyLogo != null && companyLogo.Length > 0)
         {
-            try 
+            try
             {
-               using var ms = new MemoryStream(companyLogo);
-               var pic = worksheet.AddPicture(ms).MoveTo(worksheet.Cell("A1"));
-               pic.Width = 60; 
-               pic.Height = 60;
+                using var ms = new MemoryStream(companyLogo);
+                var pic = worksheet.AddPicture(ms).MoveTo(worksheet.Cell("A1"));
+                pic.Width = 60;
+                pic.Height = 60;
             }
             catch { }
         }
@@ -324,15 +324,15 @@ public class ReportExportService : IReportExportService
 
     private string FormatTimespan(TimeSpan ts)
     {
-         if (ts == TimeSpan.Zero) return "00:00";
-         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
+        if (ts == TimeSpan.Zero) return "00:00";
+        return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
     }
-    
+
     private string FormatMinutes(int minutes)
     {
-         if (minutes == 0) return "00:00";
-         var ts = TimeSpan.FromMinutes(minutes);
-         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
+        if (minutes == 0) return "00:00";
+        var ts = TimeSpan.FromMinutes(minutes);
+        return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
     }
 
     private void SetCell(IXLWorksheet ws, int row, int col, object value, bool isIndicator = false)
@@ -340,10 +340,10 @@ public class ReportExportService : IReportExportService
         var cell = ws.Cell(row, col);
         if (value is string s) cell.Value = s;
         else cell.Value = value?.ToString() ?? "";
-        
+
         cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
         cell.Style.Border.OutsideBorderColor = XLColor.LightGray;
-        
+
         if (isIndicator && value?.ToString() != "0")
         {
             cell.Style.Font.Bold = true;
@@ -357,149 +357,149 @@ public class ReportExportService : IReportExportService
 
     public byte[] GeneratePdf(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo)
     {
-         return Document.Create(container =>
-        {
-            container.Page(page =>
-            {
-                page.Size(PageSizes.A4.Landscape());
-                page.Margin(1, Unit.Centimetre);
-                page.PageColor(Colors.White);
-                page.DefaultTextStyle(x => x.FontSize(8).FontFamily(Fonts.SegoeUI));
+        return Document.Create(container =>
+       {
+           container.Page(page =>
+           {
+               page.Size(PageSizes.A4.Landscape());
+               page.Margin(1, Unit.Centimetre);
+               page.PageColor(Colors.White);
+               page.DefaultTextStyle(x => x.FontSize(8).FontFamily(Fonts.SegoeUI));
 
-                page.Header()
-                    .Row(row => 
-                    {
-                        if (companyLogo != null && companyLogo.Length > 0)
-                        {
-                            row.ConstantItem(60).PaddingRight(10).Image(companyLogo).FitArea();
-                        }
+               page.Header()
+                   .Row(row =>
+                   {
+                       if (companyLogo != null && companyLogo.Length > 0)
+                       {
+                           row.ConstantItem(60).PaddingRight(10).Image(companyLogo).FitArea();
+                       }
 
-                        row.RelativeItem().Column(col => 
-                        {
-                            col.Item().AlignCenter().Text(companyName).SemiBold().FontSize(18).FontColor(Colors.Blue.Darken2);
-                            
-                            var culture = new CultureInfo("es-ES");
-                            var dateRangeStr = startDate.Date == endDate.Date 
-                                ? startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()
-                                : $"{startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()} - {endDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()}";
-                                
-                            col.Item().AlignCenter().Text($"INCIDENCIAS RELOJ CHECADOR: {dateRangeStr}").FontSize(10).FontColor(Colors.Grey.Medium);
-                        });
-                    });
+                       row.RelativeItem().Column(col =>
+                       {
+                           col.Item().AlignCenter().Text(companyName).SemiBold().FontSize(18).FontColor(Colors.Blue.Darken2);
 
-                page.Content()
-                    .PaddingVertical(0.5f, Unit.Centimetre)
-                    .Table(table =>
-                    {
-                        table.ColumnsDefinition(columns =>
-                        {
-                            columns.ConstantColumn(35); // Id
-                            columns.RelativeColumn(3); // Name
-                            columns.ConstantColumn(50); // Date
-                            columns.RelativeColumn(); // Sch In
-                            columns.RelativeColumn(); // Sch Out
-                            columns.RelativeColumn(); // In
-                            columns.RelativeColumn(); // Out
-                            columns.RelativeColumn(); // Worked
-                            columns.RelativeColumn(); // Overtime
-                            columns.RelativeColumn(2); // Branch
-                            columns.ConstantColumn(30); // Abs
-                            columns.ConstantColumn(30); // Rest
-                            columns.ConstantColumn(30); // Late
-                        });
+                           var culture = new CultureInfo("es-ES");
+                           var dateRangeStr = startDate.Date == endDate.Date
+                               ? startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()
+                               : $"{startDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()} - {endDate.ToString("dd 'DE' MMMM 'DE' yyyy", culture).ToUpper()}";
 
-                        table.Header(header =>
-                        {
-                            header.Cell().Element(HeaderStyle).Text("ID");
-                            header.Cell().Element(HeaderStyle).Text("Nombre");
-                            header.Cell().Element(HeaderStyle).Text("Fecha");
-                            header.Cell().Element(HeaderStyle).Text("H. Ent");
-                            header.Cell().Element(HeaderStyle).Text("H. Sal");
-                            header.Cell().Element(HeaderStyle).Text("Entrada");
-                            header.Cell().Element(HeaderStyle).Text("Salida");
-                            header.Cell().Element(HeaderStyle).Text("T. Trab");
-                            header.Cell().Element(HeaderStyle).Text("T. Ext");
-                            header.Cell().Element(HeaderStyle).Text("Sucursal");
-                            header.Cell().Element(HeaderStyle).Text("Falta");
-                            header.Cell().Element(HeaderStyle).Text("Desc.");
-                            header.Cell().Element(HeaderStyle).Text("Ret.");
+                           col.Item().AlignCenter().Text($"INCIDENCIAS RELOJ CHECADOR: {dateRangeStr}").FontSize(10).FontColor(Colors.Grey.Medium);
+                       });
+                   });
 
-                            static IContainer HeaderStyle(IContainer container)
-                            {
-                                return container
-                                    .Background(Colors.Blue.Darken2)
-                                    .PaddingVertical(5)
-                                    .PaddingHorizontal(2)
-                                    .AlignMiddle()
-                                    .AlignCenter()
-                                    .DefaultTextStyle(x => x.SemiBold().FontColor(Colors.White));
-                            }
-                        });
+               page.Content()
+                   .PaddingVertical(0.5f, Unit.Centimetre)
+                   .Table(table =>
+                   {
+                       table.ColumnsDefinition(columns =>
+                       {
+                           columns.ConstantColumn(35); // Id
+                           columns.RelativeColumn(3); // Name
+                           columns.ConstantColumn(50); // Date
+                           columns.RelativeColumn(); // Sch In
+                           columns.RelativeColumn(); // Sch Out
+                           columns.RelativeColumn(); // In
+                           columns.RelativeColumn(); // Out
+                           columns.RelativeColumn(); // Worked
+                           columns.RelativeColumn(); // Overtime
+                           columns.RelativeColumn(2); // Branch
+                           columns.ConstantColumn(30); // Abs
+                           columns.ConstantColumn(30); // Rest
+                           columns.ConstantColumn(30); // Late
+                       });
 
-                        uint rowIndex = 0;
-                        foreach (var item in attendanceData)
-                        {
-                            var overtimeStr = CalculateOvertimeString(item);
-                            
-                            TimeSpan worked = TimeSpan.Zero;
-                            if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
-                            {
-                                worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
-                            }
-                            
-                            var workedStr = worked == TimeSpan.Zero ? "" : $"{(int)worked.TotalHours:00}:{worked.Minutes:00}";
-                            var bgColor = rowIndex % 2 == 0 ? Colors.White : Colors.Grey.Lighten4;
+                       table.Header(header =>
+                       {
+                           header.Cell().Element(HeaderStyle).Text("ID");
+                           header.Cell().Element(HeaderStyle).Text("Nombre");
+                           header.Cell().Element(HeaderStyle).Text("Fecha");
+                           header.Cell().Element(HeaderStyle).Text("H. Ent");
+                           header.Cell().Element(HeaderStyle).Text("H. Sal");
+                           header.Cell().Element(HeaderStyle).Text("Entrada");
+                           header.Cell().Element(HeaderStyle).Text("Salida");
+                           header.Cell().Element(HeaderStyle).Text("T. Trab");
+                           header.Cell().Element(HeaderStyle).Text("T. Ext");
+                           header.Cell().Element(HeaderStyle).Text("Sucursal");
+                           header.Cell().Element(HeaderStyle).Text("Falta");
+                           header.Cell().Element(HeaderStyle).Text("Desc.");
+                           header.Cell().Element(HeaderStyle).Text("Ret.");
 
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.EmployeeId);
-                            table.Cell().Element(c => BodyStyle(c, bgColor).AlignLeft()).Text(item.EmployeeName);
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.Date.ToString("dd/MM/yyyy"));
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckIn, item.Date, "--"));
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckOut, item.Date, "--"));
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(workedStr);
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(overtimeStr);
-                            table.Cell().Element(c => BodyStyle(c, bgColor).AlignLeft()).Text(item.BranchName);
-                            
-                            // Indicators with colors
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.IsAbsent ? "1FINJ" : "").FontColor(Colors.Red.Medium).Bold();
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.WorkedOnRestDay ? "1DFT" : "").FontColor(Colors.Green.Darken1).Bold();
-                            table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.LateMinutes > 0 ? "1RET" : "").FontColor(Colors.Orange.Darken2).Bold();
+                           static IContainer HeaderStyle(IContainer container)
+                           {
+                               return container
+                                   .Background(Colors.Blue.Darken2)
+                                   .PaddingVertical(5)
+                                   .PaddingHorizontal(2)
+                                   .AlignMiddle()
+                                   .AlignCenter()
+                                   .DefaultTextStyle(x => x.SemiBold().FontColor(Colors.White));
+                           }
+                       });
 
-                            rowIndex++;
+                       uint rowIndex = 0;
+                       foreach (var item in attendanceData)
+                       {
+                           var overtimeStr = CalculateOvertimeString(item);
 
-                            static IContainer BodyStyle(IContainer container, string backgroundColor)
-                            {
-                                return container
-                                    .Background(backgroundColor)
-                                    .BorderBottom(1)
-                                    .BorderColor(Colors.Grey.Lighten3)
-                                    .PaddingVertical(4)
-                                    .PaddingHorizontal(2)
-                                    .AlignMiddle()
-                                    .AlignCenter();
-                            }
-                        }
-                    });
+                           TimeSpan worked = TimeSpan.Zero;
+                           if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
+                           {
+                               worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
+                           }
 
-                page.Footer()
-                    .AlignCenter()
-                    .Text(x =>
-                    {
-                        x.Span("Página ");
-                        x.CurrentPageNumber();
-                        x.Span(" de ");
-                        x.TotalPages();
-                    });
-            });
-        })
-        .GeneratePdf();
+                           var workedStr = worked == TimeSpan.Zero ? "" : $"{(int)worked.TotalHours:00}:{worked.Minutes:00}";
+                           var bgColor = rowIndex % 2 == 0 ? Colors.White : Colors.Grey.Lighten4;
+
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.EmployeeId);
+                           table.Cell().Element(c => BodyStyle(c, bgColor).AlignLeft()).Text(item.EmployeeName);
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.Date.ToString("dd/MM/yyyy"));
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckIn, item.Date, "--"));
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckOut, item.Date, "--"));
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(workedStr);
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(overtimeStr);
+                           table.Cell().Element(c => BodyStyle(c, bgColor).AlignLeft()).Text(item.BranchName);
+
+                           // Indicators with colors
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.IsAbsent ? "1FINJ" : "").FontColor(Colors.Red.Medium).Bold();
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.WorkedOnRestDay ? "1DFT" : "").FontColor(Colors.Green.Darken1).Bold();
+                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.LateMinutes > 0 ? "1RET" : "").FontColor(Colors.Orange.Darken2).Bold();
+
+                           rowIndex++;
+
+                           static IContainer BodyStyle(IContainer container, string backgroundColor)
+                           {
+                               return container
+                                   .Background(backgroundColor)
+                                   .BorderBottom(1)
+                                   .BorderColor(Colors.Grey.Lighten3)
+                                   .PaddingVertical(4)
+                                   .PaddingHorizontal(2)
+                                   .AlignMiddle()
+                                   .AlignCenter();
+                           }
+                       }
+                   });
+
+               page.Footer()
+                   .AlignCenter()
+                   .Text(x =>
+                   {
+                       x.Span("Página ");
+                       x.CurrentPageNumber();
+                       x.Span(" de ");
+                       x.TotalPages();
+                   });
+           });
+       })
+       .GeneratePdf();
     }
 
     private string CalculateOvertimeString(AttendanceReportViewDto item)
     {
         if (item.RoundedOvertimeMinutes <= 0) return "";
-        
+
         var ts = TimeSpan.FromMinutes(item.RoundedOvertimeMinutes);
         return $"{(int)ts.TotalHours:00}:{ts.Minutes:00}";
     }
@@ -515,7 +515,7 @@ public class ReportExportService : IReportExportService
         worksheet.Cell(1, 3).Value = "Dirección";
         worksheet.Cell(1, 4).Value = "Externa";
         worksheet.Cell(1, 5).Value = "Host Externo";
-        
+
         var header = worksheet.Range("A1:E1");
         header.Style.Font.Bold = true;
         header.Style.Fill.BackgroundColor = XLColor.LightGray;
@@ -530,7 +530,7 @@ public class ReportExportService : IReportExportService
             worksheet.Cell(row, 5).Value = item.ExternalHost;
             row++;
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -546,7 +546,7 @@ public class ReportExportService : IReportExportService
         // Headers
         worksheet.Cell(1, 1).Value = "Nombre";
         worksheet.Cell(1, 2).Value = "Descripción";
-        
+
         var header = worksheet.Range("A1:B1");
         header.Style.Font.Bold = true;
         header.Style.Fill.BackgroundColor = XLColor.LightGray;
@@ -558,7 +558,7 @@ public class ReportExportService : IReportExportService
             worksheet.Cell(row, 2).Value = item.Description;
             row++;
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -606,7 +606,7 @@ public class ReportExportService : IReportExportService
             worksheet.Cell(row, 12).Value = emp.RestDayName;
             row++;
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -636,7 +636,7 @@ public class ReportExportService : IReportExportService
             worksheet.Cell(row, 3).Value = item.BaseSalary;
             row++;
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -645,8 +645,8 @@ public class ReportExportService : IReportExportService
     }
 
     public byte[] GenerateAttendanceCardsPdf(
-        Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> groupedData, 
-        DateTime startDate, 
+        Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> groupedData,
+        DateTime startDate,
         DateTime endDate,
         string companyName,
         byte[]? companyLogo,
@@ -654,13 +654,13 @@ public class ReportExportService : IReportExportService
     {
         var durationDays = (endDate.Date - startDate.Date).TotalDays + 1;
         bool useHalfPage = durationDays <= 7;
-        
+
         return Document.Create(container =>
         {
             if (useHalfPage)
             {
                 var groupsList = groupedData.ToList();
-                for (int i = 0; i < groupsList.Count; i += 2) 
+                for (int i = 0; i < groupsList.Count; i += 2)
                 {
                     var item1 = groupsList[i];
                     var item2 = (i + 1 < groupsList.Count) ? (KeyValuePair<(string, string), List<AttendanceReportViewDto>>?)groupsList[i + 1] : null;
@@ -672,19 +672,19 @@ public class ReportExportService : IReportExportService
                         page.PageColor(Colors.White);
                         page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
 
-                        page.Content().Column(col => 
+                        page.Content().Column(col =>
                         {
                             // Card 1
                             // Use Height to constrain it to half page (Letter height ~28cm, margin 2cm = 26cm. Half ~13cm).
                             // We use 12.5cm to be safe.
                             col.Item().Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item1, startDate, endDate, companyName, companyLogo, includeOvertime));
-                            
+
                             if (item2.HasValue)
                             {
                                 // Cut Line
                                 col.Item().PaddingVertical(0.2f, Unit.Centimetre)
                                    .BorderBottom(1).BorderColor(Colors.Grey.Medium);
-                                
+
                                 // Card 2
                                 col.Item().PaddingTop(0.2f, Unit.Centimetre).Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item2.Value, startDate, endDate, companyName, companyLogo, includeOvertime));
                             }
@@ -692,7 +692,7 @@ public class ReportExportService : IReportExportService
                     });
                 }
             }
-            else 
+            else
             {
                 // Normal behavior: One card per page
                 foreach (var group in groupedData)
@@ -713,127 +713,128 @@ public class ReportExportService : IReportExportService
 
     private void ComposeAttendanceCard(IContainer container, KeyValuePair<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> group, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo, bool includeOvertime)
     {
-         var employeeInfo = group.Key;
-         var records = group.Value.OrderBy(x => x.Date).ToList();
-         var totalOvertimeMinutes = records.Sum(x => x.RoundedOvertimeMinutes);
+        var employeeInfo = group.Key;
+        var records = group.Value.OrderBy(x => x.Date).ToList();
+        var totalOvertimeMinutes = records.Sum(x => x.RoundedOvertimeMinutes);
 
-         container.Column(col => 
-         {
+        container.Column(col =>
+        {
             // Header
-            col.Item().Column(header => 
-            {
-                header.Item().Row(r => 
-                {
-                    if (companyLogo != null && companyLogo.Length > 0)
-                    {
-                        r.ConstantItem(50).PaddingRight(5).Image(companyLogo).FitArea();
-                    }
-                    
-                    r.RelativeItem().Column(c => {
+            col.Item().Column(header =>
+             {
+                 header.Item().Row(r =>
+                 {
+                     if (companyLogo != null && companyLogo.Length > 0)
+                     {
+                         r.ConstantItem(50).PaddingRight(5).Image(companyLogo).FitArea();
+                     }
+
+                     r.RelativeItem().Column(c =>
+                     {
                          c.Item().AlignCenter().Text(companyName).Bold().FontSize(14);
                          c.Item().AlignCenter().Text("TARJETA DE ASISTENCIA").Bold().FontSize(12);
                          c.Item().AlignCenter().Text($"Del {startDate:dd/MM/yyyy} al {endDate:dd/MM/yyyy}");
-                    });
-                });
+                     });
+                 });
 
-                header.Item().PaddingTop(10).Row(row =>
-                {
-                    row.RelativeItem().Text($"No. {employeeInfo.EmployeeId}").Bold();
-                    row.RelativeItem().AlignRight().Text(employeeInfo.EmployeeName).Bold();
-                });
-                header.Item().PaddingTop(5).LineHorizontal(1);
-            });
+                 header.Item().PaddingTop(10).Row(row =>
+                 {
+                     row.RelativeItem().Text($"No. {employeeInfo.EmployeeId}").Bold();
+                     row.RelativeItem().AlignRight().Text(employeeInfo.EmployeeName).Bold();
+                 });
+                 header.Item().PaddingTop(5).LineHorizontal(1);
+             });
 
             // Table Section
-             col.Item().PaddingTop(10).Table(table =>
-            {
-                table.ColumnsDefinition(columns =>
-                {
-                    columns.RelativeColumn(); // Date
-                    columns.RelativeColumn(); // Day
-                    columns.RelativeColumn(); // Scheduled In
-                    columns.RelativeColumn(); // Scheduled Out
-                    columns.RelativeColumn(); // In
-                    columns.RelativeColumn(); // Out
-                    if (includeOvertime)
-                    {
-                        columns.RelativeColumn(); // Overtime
-                    }
-                });
+            col.Item().PaddingTop(10).Table(table =>
+           {
+               table.ColumnsDefinition(columns =>
+               {
+                   columns.RelativeColumn(); // Date
+                   columns.RelativeColumn(); // Day
+                   columns.RelativeColumn(); // Scheduled In
+                   columns.RelativeColumn(); // Scheduled Out
+                   columns.RelativeColumn(); // In
+                   columns.RelativeColumn(); // Out
+                   if (includeOvertime)
+                   {
+                       columns.RelativeColumn(); // Overtime
+                   }
+               });
 
-                // Table Header
-                table.Header(header =>
-                {
-                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Fecha").Bold();
-                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Día").Bold();
-                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("H. Entrada").Bold();
-                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("H. Salida").Bold();
-                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Entrada").Bold();
-                    header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Salida").Bold();
-                    if (includeOvertime)
-                    {
-                        header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Hrs. Extra").Bold();
-                    }
-                });
+               // Table Header
+               table.Header(header =>
+               {
+                   header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Fecha").Bold();
+                   header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Día").Bold();
+                   header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("H. Entrada").Bold();
+                   header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("H. Salida").Bold();
+                   header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Entrada").Bold();
+                   header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Salida").Bold();
+                   if (includeOvertime)
+                   {
+                       header.Cell().Border(1).Background(Colors.Grey.Lighten3).AlignCenter().Padding(2).Text("Hrs. Extra").Bold();
+                   }
+               });
 
-                // Table Body
-                foreach (var record in records)
-                {
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("dd/MM/yyyy"));
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd"));
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
-                    var inStr = FormatDateTime(record.ActualCheckIn, record.Date);
-                    if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
+               // Table Body
+               foreach (var record in records)
+               {
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("dd/MM/yyyy"));
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd"));
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
+                   var inStr = FormatDateTime(record.ActualCheckIn, record.Date);
+                   if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
 
-                    var outStr = FormatDateTime(record.ActualCheckOut, record.Date);
-                    if (string.IsNullOrEmpty(outStr) && record.MissingCheckOut) outStr = "--";
+                   var outStr = FormatDateTime(record.ActualCheckOut, record.Date);
+                   if (string.IsNullOrEmpty(outStr) && record.MissingCheckOut) outStr = "--";
 
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(inStr);
-                    table.Cell().Border(1).AlignCenter().Padding(2).Text(outStr);
-                    if (includeOvertime)
-                    {
-                        table.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(record.RoundedOvertimeMinutes));
-                    }
-                }
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(inStr);
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(outStr);
+                   if (includeOvertime)
+                   {
+                       table.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(record.RoundedOvertimeMinutes));
+                   }
+               }
 
-                // Table Footer (Total)
-                if (includeOvertime)
-                {
-                    table.Footer(footer =>
-                    {
-                        footer.Cell().ColumnSpan(6).Border(1).AlignRight().Padding(2).Text("Total Horas Extra:").Bold();
-                        footer.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(totalOvertimeMinutes)).Bold();
-                    });
-                }
-            });
-            
+               // Table Footer (Total)
+               if (includeOvertime)
+               {
+                   table.Footer(footer =>
+                   {
+                       footer.Cell().ColumnSpan(6).Border(1).AlignRight().Padding(2).Text("Total Horas Extra:").Bold();
+                       footer.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(totalOvertimeMinutes)).Bold();
+                   });
+               }
+           });
+
             // Signature Section 
-            col.Item().PaddingTop(15).Row(row => 
-            {
+            col.Item().PaddingTop(15).Row(row =>
+             {
                  // Legal Text
-                row.RelativeItem(2).PaddingRight(10).Text("Previamente de asentar mi firma y mi huella digital en el presente documento, manifiesto que he revisado la relacion de entradas y salidas que el mismo contiene, por lo que acepto de conformidad dicha relacion de fechas y horas que se plasman en esta tarjeta, pues reflejan Fielmente los registros que hice de mis ingresos y egresos en el presente centro de trabajo.")
-                   .FontSize(6).Justify();
+                 row.RelativeItem(2).PaddingRight(10).Text("Previamente de asentar mi firma y mi huella digital en el presente documento, manifiesto que he revisado la relacion de entradas y salidas que el mismo contiene, por lo que acepto de conformidad dicha relacion de fechas y horas que se plasman en esta tarjeta, pues reflejan Fielmente los registros que hice de mis ingresos y egresos en el presente centro de trabajo.")
+                    .FontSize(6).Justify();
 
                  // Signature
-                row.RelativeItem(1).Column(c =>
-                {
-                    c.Item().AlignCenter().Container().Width(120).Height(35).BorderBottom(1).BorderColor(Colors.Black); 
-                    c.Item().AlignCenter().PaddingTop(2).Text("Firma").FontSize(8);
-                });
+                 row.RelativeItem(1).Column(c =>
+                 {
+                     c.Item().AlignCenter().Container().Width(120).Height(35).BorderBottom(1).BorderColor(Colors.Black);
+                     c.Item().AlignCenter().PaddingTop(2).Text("Firma").FontSize(8);
+                 });
 
-                // Fingerprint
-                row.RelativeItem(1).Column(c =>
-                {
-                    c.Item().AlignCenter().Container().Width(55).Height(55).Border(1).BorderColor(Colors.Black); 
-                    c.Item().AlignCenter().PaddingTop(2).Text("Huella").FontSize(8);
-                });
-            });
-         });
+                 // Fingerprint
+                 row.RelativeItem(1).Column(c =>
+                 {
+                     c.Item().AlignCenter().Container().Width(55).Height(55).Border(1).BorderColor(Colors.Black);
+                     c.Item().AlignCenter().PaddingTop(2).Text("Huella").FontSize(8);
+                 });
+             });
+        });
     }
 
 
-    
+
     private string FormatMinuteString(int minutes)
     {
         if (minutes == 0) return "00:00";
@@ -845,8 +846,8 @@ public class ReportExportService : IReportExportService
     {
         if (!dt.HasValue) return nullPlaceholder;
         // If it's the same date, show only time. Otherwise show Date + Time
-        return (dt.Value.Date == referenceDate.Date) 
-            ? dt.Value.ToString("HH:mm") 
+        return (dt.Value.Date == referenceDate.Date)
+            ? dt.Value.ToString("HH:mm")
             : dt.Value.ToString("dd/MM/yyyy HH:mm");
     }
 
@@ -875,7 +876,7 @@ public class ReportExportService : IReportExportService
             worksheet.Cell(currentRow, col++).Value = "Puesto";
             if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
             worksheet.Cell(currentRow, col++).Value = "Falta";
-            
+
             // Apply header style explicitly to the range
             var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
             range.Style.Font.Bold = true;
@@ -892,7 +893,7 @@ public class ReportExportService : IReportExportService
                     {
                         col = 1;
                         worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
-                        worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}"; 
+                        worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                         worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                         worksheet.Cell(currentRow, col++).Value = summary.PositionName;
@@ -942,7 +943,7 @@ public class ReportExportService : IReportExportService
                 worksheet.Cell(currentRow, col++).Value = "Departamento";
                 worksheet.Cell(currentRow, col++).Value = "Puesto";
                 if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
-                
+
                 // Save start column for dates
                 int dateColStart = col;
 
@@ -958,7 +959,7 @@ public class ReportExportService : IReportExportService
                     col++;
                     currentDt = currentDt.AddDays(1);
                 }
-                
+
                 int totalColIndex = col;
                 worksheet.Cell(currentRow, totalColIndex).Value = "Total";
 
@@ -1002,7 +1003,7 @@ public class ReportExportService : IReportExportService
                 }
             }
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -1028,14 +1029,14 @@ public class ReportExportService : IReportExportService
             // --- Detailed View (Pivot/Expanded) ---
             // Requested: ID | Nombre | Dept | Puesto | Sucursal (Optional) | [Date 1] | [Date 2] ... | Total
             // Note: User asked for "Detailed" to have Date Columns with 1DFT.
-            
+
             int col = 1;
             worksheet.Cell(currentRow, col++).Value = "ID de Empleado";
             worksheet.Cell(currentRow, col++).Value = "Nombre";
             worksheet.Cell(currentRow, col++).Value = "Departamento";
             worksheet.Cell(currentRow, col++).Value = "Puesto";
             if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
-            
+
             int dateColStart = col;
 
             var dates = new List<DateTime>();
@@ -1126,7 +1127,7 @@ public class ReportExportService : IReportExportService
                 }
             }
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -1157,7 +1158,7 @@ public class ReportExportService : IReportExportService
             worksheet.Cell(currentRow, col++).Value = "Puesto";
             if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
             worksheet.Cell(currentRow, col++).Value = "Retardo";
-            
+
             var range = worksheet.Range(currentRow, 1, currentRow, col - 1);
             range.Style.Font.Bold = true;
             range.Style.Fill.BackgroundColor = XLColor.LightGray;
@@ -1173,13 +1174,13 @@ public class ReportExportService : IReportExportService
                     {
                         col = 1;
                         worksheet.Cell(currentRow, col++).Value = detail.Date.ToShortDateString();
-                        worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}"; 
+                        worksheet.Cell(currentRow, col++).Value = $"'{summary.EmployeeId}";
                         worksheet.Cell(currentRow, col++).Value = summary.EmployeeName;
                         worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                         worksheet.Cell(currentRow, col++).Value = summary.PositionName;
                         if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
                         worksheet.Cell(currentRow, col++).Value = "1RET";
-                        worksheet.Cell(currentRow, col-1).Style.Font.FontColor = XLColor.Orange;
+                        worksheet.Cell(currentRow, col - 1).Style.Font.FontColor = XLColor.Orange;
                         currentRow++;
                     }
                 }
@@ -1221,7 +1222,7 @@ public class ReportExportService : IReportExportService
                 worksheet.Cell(currentRow, col++).Value = "Departamento";
                 worksheet.Cell(currentRow, col++).Value = "Puesto";
                 if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
-                
+
                 int dateColStart = col;
 
                 var dates = new List<DateTime>();
@@ -1235,7 +1236,7 @@ public class ReportExportService : IReportExportService
                     col++;
                     currentDt = currentDt.AddDays(1);
                 }
-                
+
                 int totalColIndex = col;
                 worksheet.Cell(currentRow, totalColIndex).Value = "Total";
 
@@ -1279,7 +1280,7 @@ public class ReportExportService : IReportExportService
                 }
             }
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -1334,7 +1335,7 @@ public class ReportExportService : IReportExportService
                 var validEmployees = employees.Where(s => s.TotalMetric > 0).ToList();
 
                 if (!validEmployees.Any()) continue;
-                
+
                 int startRow = currentRow;
                 var totalDeptMins = validEmployees.Sum(e => e.TotalMetric);
 
@@ -1348,7 +1349,7 @@ public class ReportExportService : IReportExportService
                     worksheet.Cell(currentRow, col++).Value = emp.PositionName;
                     worksheet.Cell(currentRow, col++).Value = FormatMinuteString(totalDeptMins);
                     worksheet.Cell(currentRow, col++).Value = ""; // Observaciones
-                    
+
                     currentRow++;
                 }
 
@@ -1393,11 +1394,11 @@ public class ReportExportService : IReportExportService
                         worksheet.Cell(currentRow, col++).Value = summary.DepartmentName;
                         worksheet.Cell(currentRow, col++).Value = summary.PositionName;
                         if (showBranch) worksheet.Cell(currentRow, col++).Value = summary.BranchName;
-                        
+
                         int mins = (int)Math.Round(detail.OvertimeMinutes);
                         int he2MinsToday = Math.Min(mins, 3 * 60);
                         int he3MinsToday = mins - he2MinsToday;
-                        
+
                         string otStr = "";
                         if (he2MinsToday > 0)
                         {
@@ -1409,10 +1410,10 @@ public class ReportExportService : IReportExportService
                             double he3 = he3MinsToday / 60 + (he3MinsToday % 60) / 100.0;
                             otStr += string.IsNullOrEmpty(otStr) ? $"{he3.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE3" : $",{he3.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture)}HE3";
                         }
-                        
+
                         worksheet.Cell(currentRow, col++).Value = otStr;
-                        worksheet.Cell(currentRow, col-1).Style.Font.FontColor = XLColor.Blue;
-                        
+                        worksheet.Cell(currentRow, col - 1).Style.Font.FontColor = XLColor.Blue;
+
                         currentRow++;
                     }
                 }
@@ -1455,7 +1456,7 @@ public class ReportExportService : IReportExportService
                 worksheet.Cell(currentRow, col++).Value = "Departamento";
                 worksheet.Cell(currentRow, col++).Value = "Puesto";
                 if (showBranch) worksheet.Cell(currentRow, col++).Value = "Sucursal";
-                
+
                 int dateColStart = col;
 
                 var dates = new List<DateTime>();
@@ -1469,7 +1470,7 @@ public class ReportExportService : IReportExportService
                     col++;
                     currentDt = currentDt.AddDays(1);
                 }
-                
+
                 int totalColIndex = col;
                 worksheet.Cell(currentRow, totalColIndex).Value = "Total";
 
@@ -1506,17 +1507,17 @@ public class ReportExportService : IReportExportService
                         if (detail != null)
                         {
                             int mins = (int)Math.Round(detail.OvertimeMinutes);
-                            
+
                             int he2MinsToday = Math.Min(mins, 3 * 60);
                             if (accumulatedHE2Mins + he2MinsToday > 9 * 60)
                             {
                                 he2MinsToday = Math.Max(0, 9 * 60 - accumulatedHE2Mins);
                             }
-                            
+
                             int he3MinsToday = mins - he2MinsToday;
                             accumulatedHE2Mins += he2MinsToday;
                             accumulatedHE3Mins += he3MinsToday;
-                            
+
                             string otStr = "";
                             if (he2MinsToday > 0)
                             {
@@ -1556,7 +1557,7 @@ public class ReportExportService : IReportExportService
                 }
             }
         }
-        
+
         worksheet.Columns().AdjustToContents();
 
         using var stream = new MemoryStream();
@@ -1578,10 +1579,10 @@ public class ReportExportService : IReportExportService
         }
 
         // Sort by ID (ascending)
-        var sortedLogs = logs.OrderBy(x => 
+        var sortedLogs = logs.OrderBy(x =>
         {
-             if (long.TryParse(x.EmployeeId, out var id)) return id;
-             return long.MaxValue;
+            if (long.TryParse(x.EmployeeId, out var id)) return id;
+            return long.MaxValue;
         }).ThenBy(x => x.EmployeeId)
           .ThenBy(x => x.CheckTime);
 
@@ -1608,7 +1609,7 @@ public class ReportExportService : IReportExportService
         var sb = new System.Text.StringBuilder();
         // Layout: CódigoEmpleado, Fecha, TipoIncidencia, Valor
         // TipoIncidencia (Sugeridos): 1=Falta, 2=Retardo, 3=HoraExtra
-        
+
         foreach (var item in attendanceData)
         {
             var dateStr = item.Date.ToString("dd/MM/yyyy");
@@ -1641,7 +1642,7 @@ public class ReportExportService : IReportExportService
         var sb = new System.Text.StringBuilder();
         // Layout Aspel NOI (Movimientos): ClaveEmpleado, Fecha, ClaveIncidencia, Cantidad
         // ClaveIncidencia (Sugeridos): F=Falta, R=Retardo, HE=HoraExtra
-        
+
         foreach (var item in attendanceData)
         {
             var dateStr = item.Date.ToString("dd/MM/yyyy");

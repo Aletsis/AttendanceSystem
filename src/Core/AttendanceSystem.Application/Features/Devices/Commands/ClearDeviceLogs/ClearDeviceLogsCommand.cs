@@ -40,8 +40,8 @@ public class ClearDeviceLogsHandler : IRequestHandler<ClearDeviceLogsCommand, Re
             try
             {
                 var success = await deviceClient.ClearLogsAsync(device.DeviceId, request.FromDate, request.ToDate, cancellationToken);
-                return success 
-                    ? Result.Success() 
+                return success
+                    ? Result.Success()
                     : Result.Failure("Device.ClearLogsFailed: Device returned failure status");
             }
             finally

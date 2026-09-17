@@ -27,13 +27,13 @@ public class AuthenticationService : IAuthenticationService
         try
         {
             var result = await _signInManager.PasswordSignInAsync(username, password, isPersistent: true, lockoutOnFailure: false);
-            
+
             if (result.Succeeded)
             {
                 _logger.LogInformation("Usuario {Username} autenticado existosamente", username);
                 return true;
             }
-            
+
             _logger.LogWarning("Fallo en autenticación para usuario {Username}", username);
             return false;
         }
@@ -49,7 +49,7 @@ public class AuthenticationService : IAuthenticationService
     {
         var user = await _userManager.FindByNameAsync(username);
         if (user == null) return false;
-        
+
         // Por ahora retornamos true si el usuario existe. 
         // TODO: Implementar roles reales
         return true;

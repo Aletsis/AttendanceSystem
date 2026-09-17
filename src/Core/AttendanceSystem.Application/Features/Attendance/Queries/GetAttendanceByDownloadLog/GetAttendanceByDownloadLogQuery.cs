@@ -5,5 +5,5 @@ using System.Collections.Generic;
 
 namespace AttendanceSystem.Application.Features.Attendance.Queries.GetAttendanceByDownloadLog;
 
-public sealed record GetAttendanceByDownloadLogQuery(DownloadLogId DownloadLogId) 
+public sealed record GetAttendanceByDownloadLogQuery(DownloadLogId DownloadLogId)
     : IRequest<IEnumerable<AttendanceLogViewDto>>;

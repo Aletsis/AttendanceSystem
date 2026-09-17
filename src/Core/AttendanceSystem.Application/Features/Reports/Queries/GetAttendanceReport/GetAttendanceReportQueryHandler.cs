@@ -40,10 +40,10 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
 
         // 1. Obtener Asistencia Procesada
         var attendanceData = await _dailyAttendanceRepository.GetByDateRangeAsync(
-            request.StartDate, 
-            request.EndDate, 
-            request.BranchId, 
-            empId, 
+            request.StartDate,
+            request.EndDate,
+            request.BranchId,
+            empId,
             cancellationToken);
 
         // 2. Obtener Empleados, Sucursales, Departamentos y Puestos
@@ -52,7 +52,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
         var departments = await _departmentRepository.GetAllAsync(cancellationToken);
         var positions = await _positionRepository.GetAllAsync(cancellationToken);
-        
+
         var empDict = employees.ToDictionary(e => e.Id, e => e);
         var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
         var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
@@ -60,7 +60,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
 
         // 3. Mapear a DTO
         var dtos = new List<AttendanceReportViewDto>();
-        
+
         // Agrupar por empleado para manejar la ordenación y los límites del período
         var attByEmployee = attendanceData.GroupBy(a => a.EmployeeId);
 
@@ -105,7 +105,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                 {
                     double remaining = Math.Max(0, periodCap.Value - accumulatedOvertime);
                     effectiveOvertime = Math.Min(effectiveOvertime, remaining);
-                    
+
                     accumulatedOvertime += effectiveOvertime;
                 }
 

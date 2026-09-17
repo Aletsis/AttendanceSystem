@@ -25,7 +25,7 @@ public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCom
     private readonly Microsoft.Extensions.Logging.ILogger<UpdateDeviceCommandHandler> _logger;
 
     public UpdateDeviceCommandHandler(
-        IDeviceRepository deviceRepository, 
+        IDeviceRepository deviceRepository,
         IUnitOfWork unitOfWork,
         Microsoft.Extensions.Logging.ILogger<UpdateDeviceCommandHandler> logger)
     {
@@ -44,7 +44,7 @@ public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCom
             return Result.Failure("El dispositivo no fue encontrado");
         }
 
-        _logger.LogInformation("Actualizando dispositivo {Id} ({Name}). Nuevo SN recibido: '{SerialNumber}'", 
+        _logger.LogInformation("Actualizando dispositivo {Id} ({Name}). Nuevo SN recibido: '{SerialNumber}'",
             request.Id, request.Name, request.SerialNumber);
 
         device.UpdateConfiguration(
@@ -59,7 +59,7 @@ public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCom
             request.Username,
             request.Password);
 
-        _logger.LogInformation("Dispositivo actualizado en memoria. SN actual en entidad: '{SerialNumber}'", 
+        _logger.LogInformation("Dispositivo actualizado en memoria. SN actual en entidad: '{SerialNumber}'",
             device.HardwareInfo.SerialNumber);
 
         await _deviceRepository.UpdateAsync(device, cancellationToken);

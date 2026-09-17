@@ -14,7 +14,7 @@ public class ReportItem
     public string CheckOut { get; set; } = "--";
     public int LateMinutes { get; set; }
     public int OvertimeMinutes { get; set; }
-    public string WorkedHeaders { get; set; } = "--:--"; 
+    public string WorkedHeaders { get; set; } = "--:--";
 }
 
 public class ReportSummaryItem
@@ -23,7 +23,7 @@ public class ReportSummaryItem
     public string EmployeeName { get; set; } = string.Empty;
     public string DepartmentName { get; set; } = string.Empty;
     public int Count { get; set; }
-    public double TotalMetric { get; set; } 
+    public double TotalMetric { get; set; }
     public string FormattedTotal { get; set; } = string.Empty;
     public List<ReportItem> Details { get; set; } = new();
 }

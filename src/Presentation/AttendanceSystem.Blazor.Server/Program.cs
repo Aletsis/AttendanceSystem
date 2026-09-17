@@ -44,370 +44,370 @@ try
 {
     Log.Information("Iniciando configuración del host...");
 
-// ===== NPGSQL DATETIME CONFIGURATION =====
-// Configurar Npgsql para convertir DateTime a UTC automáticamente
-// Esto es necesario porque PostgreSQL requiere UTC para 'timestamp with time zone'
-AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", false);
+    // ===== NPGSQL DATETIME CONFIGURATION =====
+    // Configurar Npgsql para convertir DateTime a UTC automáticamente
+    // Esto es necesario porque PostgreSQL requiere UTC para 'timestamp with time zone'
+    AppContext.SetSwitch("Npgsql.EnableLegacyTimestampBehavior", false);
 
-var builder = WebApplication.CreateBuilder(args);
+    var builder = WebApplication.CreateBuilder(args);
 
-// ===== CONFIGURACIÓN DE GRACEFUL SHUTDOWN =====
-// Configurar el timeout de apagado (por defecto 30 segundos)
-var shutdownTimeoutSeconds = builder.Configuration.GetValue<int>("ShutdownTimeoutSeconds", 30);
-builder.Host.ConfigureHostOptions(options =>
-{
-    options.ShutdownTimeout = TimeSpan.FromSeconds(shutdownTimeoutSeconds);
-});
-
-// ===== LOGGING CON SERILOG =====
-builder.Host.UseSerilog((context, services, configuration) => configuration
-    .ReadFrom.Configuration(context.Configuration)
-    .ReadFrom.Services(services)
-    .Enrich.FromLogContext()
-    .Enrich.WithMachineName()
-    .Enrich.WithThreadId()
-    .Enrich.WithEnvironmentName()
-    .Enrich.WithProperty("Application", "AttendanceSystem"));
-
-
-// Blazor
-builder.Services.AddRazorComponents()
-    .AddInteractiveServerComponents();
-builder.Services.AddMudServices();
-builder.Services.AddControllersWithViews(); // Enable Controllers with Views for Antiforgery support
-builder.Services.AddScoped<IReportExportService, ReportExportService>();
-builder.Services.AddScoped<IImportService, ImportService>();
-
-// ===== GRACEFUL SHUTDOWN SERVICE =====
-builder.Services.AddHostedService<GracefulShutdownService>();
-
-// ===== VERIFICADOR DE ACTUALIZACIONES =====
-builder.Services.AddHttpClient();
-builder.Services.AddSingleton<UpdateCheckerService>();
-
-// ===== DOMAIN LAYER =====
-// Servicios de dominio
-builder.Services.AddScoped<AttendanceDeduplicationService>();
-
-// ===== APPLICATION LAYER =====
-builder.Services.AddMediatR(cfg =>
-{
-    cfg.RegisterServicesFromAssembly(typeof(RecordAttendanceCommand).Assembly);
-    // Agregar behavior de logging para todas las solicitudes
-    cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
-});
-
-builder.Services.AddScoped<AttendanceValidationService>();
-
-// ===== INFRASTRUCTURE LAYER =====
-builder.Services.AddDbContext<AttendanceDbContext>(options =>
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("AttendanceDb"),
-        b => b.MigrationsAssembly("AttendanceSystem.Infrastructure")));
-
-builder.Services.AddDbContextFactory<AttendanceDbContext>(options =>
-    options.UseNpgsql(
-        builder.Configuration.GetConnectionString("AttendanceDb"),
-        b => b.MigrationsAssembly("AttendanceSystem.Infrastructure")),
-    ServiceLifetime.Scoped);
-
-builder.Services.AddScoped<IUnitOfWork>(sp => 
-    sp.GetRequiredService<AttendanceDbContext>());
-
-// Repositorios
-builder.Services.AddScoped<IAttendanceRepository, AttendanceRepository>();
-builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
-
-// gRPC Client al servicio Windows
-builder.Services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
-{
-    options.Address = new Uri(builder.Configuration["ZKTecoService:Url"]!);
-})
-.ConfigureHttpClient((sp, client) =>
-{
-    var config = sp.GetRequiredService<IConfiguration>();
-    var apiKey = config["ZKTecoService:ApiKey"] ?? "AttendanceSystemSecretApiKey123!";
-    client.DefaultRequestHeaders.Add("x-api-key", apiKey);
-})
-.ConfigurePrimaryHttpMessageHandler(() =>
-{
-    var handler = new HttpClientHandler();
-    // Permitir HTTP/2 sin TLS para conexiones locales
-    handler.ServerCertificateCustomValidationCallback = 
-        HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-    return handler;
-})
-.ConfigureChannel(options =>
-{
-    // Configurar para usar HTTP en lugar de HTTPS
-    options.UnsafeUseInsecureChannelCallCredentials = true;
-    options.MaxReceiveMessageSize = 10 * 1024 * 1024; // 10 MB
-    options.MaxSendMessageSize = 10 * 1024 * 1024; // 10 MB
-});
-
-// Clientes de dispositivos (Implementaciones)
-builder.Services.AddScoped<GrpcZKTecoDeviceClient>();
-builder.Services.AddHttpClient<HikvisionDeviceClient>();
-builder.Services.AddScoped<AdmsDeviceClient>();
-
-// Fábrica de clientes para resolver por marca
-builder.Services.AddScoped<IDeviceClientFactory, DeviceClientFactory>();
-builder.Services.AddScoped<IDeviceDiscoveryService, GrpcZKTecoDiscoveryService>();
-
-// Servicios de infraestructura
-builder.Services.AddScoped<IEmailService, SmtpEmailService>();
-builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
-builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
-builder.Services.AddScoped<IBackupService, BackupService>();
-builder.Services.AddScoped<ILogTransferService, LogTransferService>();
-
-// Servicios de Query (CQRS - Lectura)
-builder.Services.AddScoped<IDeviceQueries, DeviceQueries>();
-builder.Services.AddScoped<IShiftQueries, ShiftQueries>();
-builder.Services.AddScoped<IBranchQueries, BranchQueries>();
-builder.Services.AddScoped<IDepartmentQueries, DepartmentQueries>();
-builder.Services.AddScoped<IPositionQueries, PositionQueries>();
-builder.Services.AddSingleton<IAdmsCommandService, AdmsCommandService>();
-
-// Repositorios
-builder.Services.AddScoped<IShiftRepository, ShiftRepository>();
-builder.Services.AddScoped<IBranchRepository, BranchRepository>();
-builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();
-builder.Services.AddScoped<IPositionRepository, PositionRepository>();
-builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
-builder.Services.AddScoped<IDailyAttendanceRepository, DailyAttendanceRepository>();
-builder.Services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
-builder.Services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
-builder.Services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
-
-// ===== IDENTITY & AUTHENTICATION =====
-builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
-{
-    // Configuración de contraseña
-    options.Password.RequireDigit = true;
-    options.Password.RequireLowercase = true;
-    options.Password.RequireUppercase = true;
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
-    
-    // Configuración de usuario
-    options.User.RequireUniqueEmail = false;
-    
-    // Configuración de bloqueo
-    options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-    options.Lockout.MaxFailedAccessAttempts = 5;
-    options.Lockout.AllowedForNewUsers = true;
-})
-.AddEntityFrameworkStores<AttendanceDbContext>()
-.AddDefaultTokenProviders();
-
-// Configurar cookies de autenticación
-builder.Services.ConfigureApplicationCookie(options =>
-{
-    options.Cookie.HttpOnly = true;
-    options.ExpireTimeSpan = TimeSpan.FromHours(8);
-    options.SlidingExpiration = true;
-    
-    options.LoginPath = "/login";
-    options.AccessDeniedPath = "/AccessDenied";
-});
-
-// Servicios de autenticación para Blazor
-builder.Services.AddCascadingAuthenticationState();
-// builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
-builder.Services.AddScoped<AuthenticationStateProvider, ServerAuthenticationStateProvider>();
-
-// ===== HANGFIRE =====
-builder.Services.AddHangfire(config => config
-    .UsePostgreSqlStorage(c => 
-        c.UseNpgsqlConnection(builder.Configuration.GetConnectionString("HangfireDb"))));
-
-builder.Services.AddHangfireServer();
-
-builder.Services.AddScoped<IAttendanceJobScheduler, HangfireAttendanceJobScheduler>();
-builder.Services.AddScoped<AttendanceJobs>();
-
-var app = builder.Build();
-
-// ===== VERIFICAR Y APLICAR MIGRACIONES PENDIENTES =====
-using (var scope = app.Services.CreateScope())
-{
-    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-    var logger = loggerFactory.CreateLogger("DatabaseMigration");
-    
-    try
+    // ===== CONFIGURACIÓN DE GRACEFUL SHUTDOWN =====
+    // Configurar el timeout de apagado (por defecto 30 segundos)
+    var shutdownTimeoutSeconds = builder.Configuration.GetValue<int>("ShutdownTimeoutSeconds", 30);
+    builder.Host.ConfigureHostOptions(options =>
     {
-        var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
-        
-        // Verificar si hay migraciones pendientes
-        var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
-        
-        if (pendingMigrations.Any())
-        {
-            logger.LogWarning("Se encontraron {Count} migraciones pendientes. Aplicando migraciones...", pendingMigrations.Count());
-            foreach (var migration in pendingMigrations)
-            {
-                logger.LogInformation("Migración pendiente: {Migration}", migration);
-            }
-            
-            // Aplicar migraciones
-            await dbContext.Database.MigrateAsync();
-            logger.LogInformation("Todas las migraciones se aplicaron correctamente");
-        }
-        else
-        {
-            logger.LogInformation("La base de datos está actualizada. No hay migraciones pendientes");
-        }
-    }
-    catch (Exception ex)
+        options.ShutdownTimeout = TimeSpan.FromSeconds(shutdownTimeoutSeconds);
+    });
+
+    // ===== LOGGING CON SERILOG =====
+    builder.Host.UseSerilog((context, services, configuration) => configuration
+        .ReadFrom.Configuration(context.Configuration)
+        .ReadFrom.Services(services)
+        .Enrich.FromLogContext()
+        .Enrich.WithMachineName()
+        .Enrich.WithThreadId()
+        .Enrich.WithEnvironmentName()
+        .Enrich.WithProperty("Application", "AttendanceSystem"));
+
+
+    // Blazor
+    builder.Services.AddRazorComponents()
+        .AddInteractiveServerComponents();
+    builder.Services.AddMudServices();
+    builder.Services.AddControllersWithViews(); // Enable Controllers with Views for Antiforgery support
+    builder.Services.AddScoped<IReportExportService, ReportExportService>();
+    builder.Services.AddScoped<IImportService, ImportService>();
+
+    // ===== GRACEFUL SHUTDOWN SERVICE =====
+    builder.Services.AddHostedService<GracefulShutdownService>();
+
+    // ===== VERIFICADOR DE ACTUALIZACIONES =====
+    builder.Services.AddHttpClient();
+    builder.Services.AddSingleton<UpdateCheckerService>();
+
+    // ===== DOMAIN LAYER =====
+    // Servicios de dominio
+    builder.Services.AddScoped<AttendanceDeduplicationService>();
+
+    // ===== APPLICATION LAYER =====
+    builder.Services.AddMediatR(cfg =>
     {
-        logger.LogError(ex, "Error al verificar o aplicar migraciones de base de datos");
-        throw; // Detener la aplicación si hay un error crítico con las migraciones
-    }
-}
+        cfg.RegisterServicesFromAssembly(typeof(RecordAttendanceCommand).Assembly);
+        // Agregar behavior de logging para todas las solicitudes
+        cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
+    });
 
-// ===== INICIALIZAR DATOS DE IDENTITY =====
-using (var scope = app.Services.CreateScope())
-{
-    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-    var logger = loggerFactory.CreateLogger("IdentityDataSeeder");
-    await AttendanceSystem.Blazor.Server.Data.IdentityDataSeeder.SeedAsync(app.Services, logger);
-}
+    builder.Services.AddScoped<AttendanceValidationService>();
 
+    // ===== INFRASTRUCTURE LAYER =====
+    builder.Services.AddDbContext<AttendanceDbContext>(options =>
+        options.UseNpgsql(
+            builder.Configuration.GetConnectionString("AttendanceDb"),
+            b => b.MigrationsAssembly("AttendanceSystem.Infrastructure")));
 
-// ===== LOGGING MIDDLEWARE =====
-app.UseSerilogRequestLogging();
-app.UseMiddleware<RequestLoggingMiddleware>();
+    builder.Services.AddDbContextFactory<AttendanceDbContext>(options =>
+        options.UseNpgsql(
+            builder.Configuration.GetConnectionString("AttendanceDb"),
+            b => b.MigrationsAssembly("AttendanceSystem.Infrastructure")),
+        ServiceLifetime.Scoped);
 
-// Configure the HTTP request pipeline
-if (!app.Environment.IsDevelopment())
-{
-    app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // Solo habilitar HSTS si realmente se requiere seguridad estricta
-    // app.UseHsts();
-}
+    builder.Services.AddScoped<IUnitOfWork>(sp =>
+        sp.GetRequiredService<AttendanceDbContext>());
 
-// En instalaciones con instalador (IIS Local), a menudo no hay SSL configurado.
-// Solo redirigir si el puerto HTTPS está presente en la configuración.
-if (!string.IsNullOrEmpty(builder.Configuration["HTTPS_PORT"]) || app.Environment.IsDevelopment())
-{
-    app.UseHttpsRedirection();
-}
+    // Repositorios
+    builder.Services.AddScoped<IAttendanceRepository, AttendanceRepository>();
+    builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
 
-app.UseStaticFiles();
-app.MapStaticAssets(); // Obligatorio para .NET 9 / MudBlazor 8
-app.UseRouting();
-
-// ===== AUTHENTICATION & AUTHORIZATION =====
-app.UseAuthentication();
-app.UseAuthorization();
-
-
-// Initial System Configuration for Hangfire
-// (Normally we would query DB here to restore schedules, but Hangfire persists them in DB, so no need to re-schedule on startup if using SQL storage)
-
-// Hangfire
-app.UseHangfireDashboard("/hangfire");
-
-// Programar alertas de puestos críticos al inicio
-using (var scope = app.Services.CreateScope())
-{
-    var scheduler = scope.ServiceProvider.GetRequiredService<IAttendanceJobScheduler>();
-    scheduler.ScheduleCriticalAbsenceCheck();
-    scheduler.ScheduleDeviceHeartbeat();
-}
-
-app.UseAntiforgery();
-
-app.MapRazorComponents<AttendanceSystem.Blazor.Server.Components.App>()
-    .AddInteractiveServerRenderMode();
-
-
-app.MapControllers(); // Map Controllers
-
-// ===== MOSTRAR INFORMACIÓN DE PUERTOS Y CONFIGURACIÓN =====
-using (var scope = app.Services.CreateScope())
-{
-    var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-    var logger = loggerFactory.CreateLogger("ServerStartup");
-    var configRepo = scope.ServiceProvider.GetRequiredService<ISystemConfigurationRepository>();
-    
-    try
+    // gRPC Client al servicio Windows
+    builder.Services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
     {
-        // Obtener configuración del sistema
-        var systemConfig = await configRepo.GetConfigurationAsync();
-        var admsPort = systemConfig?.AdmsPort ?? 18373;
-        
-        // Obtener las URLs en las que está escuchando el servidor
-        var addresses = app.Urls;
-        
-        logger.LogInformation("========================================");
-        logger.LogInformation("🚀 SERVIDOR INICIADO CORRECTAMENTE");
-        logger.LogInformation("========================================");
-        logger.LogInformation("");
-        
-        // Mostrar URLs de escucha
-        logger.LogInformation("📡 Servidor escuchando en:");
-        foreach (var address in addresses)
+        options.Address = new Uri(builder.Configuration["ZKTecoService:Url"]!);
+    })
+    .ConfigureHttpClient((sp, client) =>
+    {
+        var config = sp.GetRequiredService<IConfiguration>();
+        var apiKey = config["ZKTecoService:ApiKey"] ?? "AttendanceSystemSecretApiKey123!";
+        client.DefaultRequestHeaders.Add("x-api-key", apiKey);
+    })
+    .ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var handler = new HttpClientHandler();
+        // Permitir HTTP/2 sin TLS para conexiones locales
+        handler.ServerCertificateCustomValidationCallback =
+            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
+        return handler;
+    })
+    .ConfigureChannel(options =>
+    {
+        // Configurar para usar HTTP en lugar de HTTPS
+        options.UnsafeUseInsecureChannelCallCredentials = true;
+        options.MaxReceiveMessageSize = 10 * 1024 * 1024; // 10 MB
+        options.MaxSendMessageSize = 10 * 1024 * 1024; // 10 MB
+    });
+
+    // Clientes de dispositivos (Implementaciones)
+    builder.Services.AddScoped<GrpcZKTecoDeviceClient>();
+    builder.Services.AddHttpClient<HikvisionDeviceClient>();
+    builder.Services.AddScoped<AdmsDeviceClient>();
+
+    // Fábrica de clientes para resolver por marca
+    builder.Services.AddScoped<IDeviceClientFactory, DeviceClientFactory>();
+    builder.Services.AddScoped<IDeviceDiscoveryService, GrpcZKTecoDiscoveryService>();
+
+    // Servicios de infraestructura
+    builder.Services.AddScoped<IEmailService, SmtpEmailService>();
+    builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
+    builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
+    builder.Services.AddScoped<IBackupService, BackupService>();
+    builder.Services.AddScoped<ILogTransferService, LogTransferService>();
+
+    // Servicios de Query (CQRS - Lectura)
+    builder.Services.AddScoped<IDeviceQueries, DeviceQueries>();
+    builder.Services.AddScoped<IShiftQueries, ShiftQueries>();
+    builder.Services.AddScoped<IBranchQueries, BranchQueries>();
+    builder.Services.AddScoped<IDepartmentQueries, DepartmentQueries>();
+    builder.Services.AddScoped<IPositionQueries, PositionQueries>();
+    builder.Services.AddSingleton<IAdmsCommandService, AdmsCommandService>();
+
+    // Repositorios
+    builder.Services.AddScoped<IShiftRepository, ShiftRepository>();
+    builder.Services.AddScoped<IBranchRepository, BranchRepository>();
+    builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();
+    builder.Services.AddScoped<IPositionRepository, PositionRepository>();
+    builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
+    builder.Services.AddScoped<IDailyAttendanceRepository, DailyAttendanceRepository>();
+    builder.Services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
+    builder.Services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
+    builder.Services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
+
+    // ===== IDENTITY & AUTHENTICATION =====
+    builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
+    {
+        // Configuración de contraseña
+        options.Password.RequireDigit = true;
+        options.Password.RequireLowercase = true;
+        options.Password.RequireUppercase = true;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequiredLength = 6;
+
+        // Configuración de usuario
+        options.User.RequireUniqueEmail = false;
+
+        // Configuración de bloqueo
+        options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
+        options.Lockout.MaxFailedAccessAttempts = 5;
+        options.Lockout.AllowedForNewUsers = true;
+    })
+    .AddEntityFrameworkStores<AttendanceDbContext>()
+    .AddDefaultTokenProviders();
+
+    // Configurar cookies de autenticación
+    builder.Services.ConfigureApplicationCookie(options =>
+    {
+        options.Cookie.HttpOnly = true;
+        options.ExpireTimeSpan = TimeSpan.FromHours(8);
+        options.SlidingExpiration = true;
+
+        options.LoginPath = "/login";
+        options.AccessDeniedPath = "/AccessDenied";
+    });
+
+    // Servicios de autenticación para Blazor
+    builder.Services.AddCascadingAuthenticationState();
+    // builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
+    builder.Services.AddScoped<AuthenticationStateProvider, ServerAuthenticationStateProvider>();
+
+    // ===== HANGFIRE =====
+    builder.Services.AddHangfire(config => config
+        .UsePostgreSqlStorage(c =>
+            c.UseNpgsqlConnection(builder.Configuration.GetConnectionString("HangfireDb"))));
+
+    builder.Services.AddHangfireServer();
+
+    builder.Services.AddScoped<IAttendanceJobScheduler, HangfireAttendanceJobScheduler>();
+    builder.Services.AddScoped<AttendanceJobs>();
+
+    var app = builder.Build();
+
+    // ===== VERIFICAR Y APLICAR MIGRACIONES PENDIENTES =====
+    using (var scope = app.Services.CreateScope())
+    {
+        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("DatabaseMigration");
+
+        try
         {
-            var uri = new Uri(address);
-            var protocol = uri.Scheme.ToUpper();
-            var port = uri.Port;
-            
-            if (protocol == "HTTPS")
+            var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+
+            // Verificar si hay migraciones pendientes
+            var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+
+            if (pendingMigrations.Any())
             {
-                logger.LogInformation("   🔒 {Protocol}: {Address} (UI - Seguro)", protocol, address);
-            }
-            else if (port == admsPort)
-            {
-                logger.LogInformation("   📱 {Protocol}: {Address} (ADMS - Dispositivos)", protocol, address);
+                logger.LogWarning("Se encontraron {Count} migraciones pendientes. Aplicando migraciones...", pendingMigrations.Count());
+                foreach (var migration in pendingMigrations)
+                {
+                    logger.LogInformation("Migración pendiente: {Migration}", migration);
+                }
+
+                // Aplicar migraciones
+                await dbContext.Database.MigrateAsync();
+                logger.LogInformation("Todas las migraciones se aplicaron correctamente");
             }
             else
             {
-                logger.LogInformation("   🌐 {Protocol}: {Address} (UI - Web)", protocol, address);
+                logger.LogInformation("La base de datos está actualizada. No hay migraciones pendientes");
             }
         }
-        
-        logger.LogInformation("");
-        logger.LogInformation("⚙️  Configuración ADMS:");
-        logger.LogInformation("   Puerto configurado: {AdmsPort}", admsPort);
-        logger.LogInformation("   URL para dispositivos: http://[IP_SERVIDOR]:{AdmsPort}", admsPort);
-        logger.LogInformation("");
-        
-        // Obtener IP local
-        var hostName = System.Net.Dns.GetHostName();
-        var localIPs = System.Net.Dns.GetHostEntry(hostName).AddressList
-            .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-            .Select(ip => ip.ToString())
-            .ToList();
-        
-        if (localIPs.Any())
+        catch (Exception ex)
         {
-            logger.LogInformation("🌍 IPs locales detectadas:");
-            foreach (var ip in localIPs)
-            {
-                logger.LogInformation("   • {IP}", ip);
-                logger.LogInformation("     - UI Web: http://{IP}:16372", ip);
-                logger.LogInformation("     - ADMS: http://{IP}:{AdmsPort}", ip, admsPort);
-            }
-            logger.LogInformation("");
+            logger.LogError(ex, "Error al verificar o aplicar migraciones de base de datos");
+            throw; // Detener la aplicación si hay un error crítico con las migraciones
         }
-        
-        logger.LogInformation("📊 Servicios disponibles:");
-        logger.LogInformation("   • Interfaz Web: {Url}", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
-        logger.LogInformation("   • Hangfire Dashboard: {Url}/hangfire", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
-        logger.LogInformation("   • API ADMS: {Url}", addresses.FirstOrDefault(a => a.Contains(admsPort.ToString())) ?? $"http://localhost:{admsPort}");
-        logger.LogInformation("");
-        
-        logger.LogInformation("========================================");
-        logger.LogInformation("✅ Sistema listo para recibir conexiones");
-        logger.LogInformation("========================================");
     }
-    catch (Exception ex)
+
+    // ===== INICIALIZAR DATOS DE IDENTITY =====
+    using (var scope = app.Services.CreateScope())
     {
-        logger.LogError(ex, "Error al mostrar información de puertos");
+        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("IdentityDataSeeder");
+        await AttendanceSystem.Blazor.Server.Data.IdentityDataSeeder.SeedAsync(app.Services, logger);
     }
-}
+
+
+    // ===== LOGGING MIDDLEWARE =====
+    app.UseSerilogRequestLogging();
+    app.UseMiddleware<RequestLoggingMiddleware>();
+
+    // Configure the HTTP request pipeline
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseExceptionHandler("/Error", createScopeForErrors: true);
+        // Solo habilitar HSTS si realmente se requiere seguridad estricta
+        // app.UseHsts();
+    }
+
+    // En instalaciones con instalador (IIS Local), a menudo no hay SSL configurado.
+    // Solo redirigir si el puerto HTTPS está presente en la configuración.
+    if (!string.IsNullOrEmpty(builder.Configuration["HTTPS_PORT"]) || app.Environment.IsDevelopment())
+    {
+        app.UseHttpsRedirection();
+    }
+
+    app.UseStaticFiles();
+    app.MapStaticAssets(); // Obligatorio para .NET 9 / MudBlazor 8
+    app.UseRouting();
+
+    // ===== AUTHENTICATION & AUTHORIZATION =====
+    app.UseAuthentication();
+    app.UseAuthorization();
+
+
+    // Initial System Configuration for Hangfire
+    // (Normally we would query DB here to restore schedules, but Hangfire persists them in DB, so no need to re-schedule on startup if using SQL storage)
+
+    // Hangfire
+    app.UseHangfireDashboard("/hangfire");
+
+    // Programar alertas de puestos críticos al inicio
+    using (var scope = app.Services.CreateScope())
+    {
+        var scheduler = scope.ServiceProvider.GetRequiredService<IAttendanceJobScheduler>();
+        scheduler.ScheduleCriticalAbsenceCheck();
+        scheduler.ScheduleDeviceHeartbeat();
+    }
+
+    app.UseAntiforgery();
+
+    app.MapRazorComponents<AttendanceSystem.Blazor.Server.Components.App>()
+        .AddInteractiveServerRenderMode();
+
+
+    app.MapControllers(); // Map Controllers
+
+    // ===== MOSTRAR INFORMACIÓN DE PUERTOS Y CONFIGURACIÓN =====
+    using (var scope = app.Services.CreateScope())
+    {
+        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+        var logger = loggerFactory.CreateLogger("ServerStartup");
+        var configRepo = scope.ServiceProvider.GetRequiredService<ISystemConfigurationRepository>();
+
+        try
+        {
+            // Obtener configuración del sistema
+            var systemConfig = await configRepo.GetConfigurationAsync();
+            var admsPort = systemConfig?.AdmsPort ?? 18373;
+
+            // Obtener las URLs en las que está escuchando el servidor
+            var addresses = app.Urls;
+
+            logger.LogInformation("========================================");
+            logger.LogInformation("🚀 SERVIDOR INICIADO CORRECTAMENTE");
+            logger.LogInformation("========================================");
+            logger.LogInformation("");
+
+            // Mostrar URLs de escucha
+            logger.LogInformation("📡 Servidor escuchando en:");
+            foreach (var address in addresses)
+            {
+                var uri = new Uri(address);
+                var protocol = uri.Scheme.ToUpper();
+                var port = uri.Port;
+
+                if (protocol == "HTTPS")
+                {
+                    logger.LogInformation("   🔒 {Protocol}: {Address} (UI - Seguro)", protocol, address);
+                }
+                else if (port == admsPort)
+                {
+                    logger.LogInformation("   📱 {Protocol}: {Address} (ADMS - Dispositivos)", protocol, address);
+                }
+                else
+                {
+                    logger.LogInformation("   🌐 {Protocol}: {Address} (UI - Web)", protocol, address);
+                }
+            }
+
+            logger.LogInformation("");
+            logger.LogInformation("⚙️  Configuración ADMS:");
+            logger.LogInformation("   Puerto configurado: {AdmsPort}", admsPort);
+            logger.LogInformation("   URL para dispositivos: http://[IP_SERVIDOR]:{AdmsPort}", admsPort);
+            logger.LogInformation("");
+
+            // Obtener IP local
+            var hostName = System.Net.Dns.GetHostName();
+            var localIPs = System.Net.Dns.GetHostEntry(hostName).AddressList
+                .Where(ip => ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+                .Select(ip => ip.ToString())
+                .ToList();
+
+            if (localIPs.Any())
+            {
+                logger.LogInformation("🌍 IPs locales detectadas:");
+                foreach (var ip in localIPs)
+                {
+                    logger.LogInformation("   • {IP}", ip);
+                    logger.LogInformation("     - UI Web: http://{IP}:16372", ip);
+                    logger.LogInformation("     - ADMS: http://{IP}:{AdmsPort}", ip, admsPort);
+                }
+                logger.LogInformation("");
+            }
+
+            logger.LogInformation("📊 Servicios disponibles:");
+            logger.LogInformation("   • Interfaz Web: {Url}", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
+            logger.LogInformation("   • Hangfire Dashboard: {Url}/hangfire", addresses.FirstOrDefault(a => a.Contains("16372")) ?? "http://localhost:16372");
+            logger.LogInformation("   • API ADMS: {Url}", addresses.FirstOrDefault(a => a.Contains(admsPort.ToString())) ?? $"http://localhost:{admsPort}");
+            logger.LogInformation("");
+
+            logger.LogInformation("========================================");
+            logger.LogInformation("✅ Sistema listo para recibir conexiones");
+            logger.LogInformation("========================================");
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error al mostrar información de puertos");
+        }
+    }
 
     app.Run();
 }

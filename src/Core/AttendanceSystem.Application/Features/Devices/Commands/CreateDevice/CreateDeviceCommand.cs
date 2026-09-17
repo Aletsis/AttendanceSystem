@@ -29,7 +29,7 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
     private readonly ILogger<CreateDeviceCommandHandler> _logger;
 
     public CreateDeviceCommandHandler(
-        IDeviceRepository deviceRepository, 
+        IDeviceRepository deviceRepository,
         IUnitOfWork unitOfWork,
         IDeviceClientFactory deviceClientFactory,
         ILogger<CreateDeviceCommandHandler> logger)
@@ -60,16 +60,16 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
         {
             try
             {
-                _logger.LogInformation("Conectando al dispositivo {Brand} {IpAddress}:{Port} para obtener información...", 
+                _logger.LogInformation("Conectando al dispositivo {Brand} {IpAddress}:{Port} para obtener información...",
                     request.Brand, request.IpAddress, request.Port);
 
                 var deviceClient = _deviceClientFactory.GetClient(request.Brand);
                 var connected = await deviceClient.ConnectAsync(request.IpAddress, request.Port, request.Username, request.Password, cancellationToken);
-                
+
                 if (connected)
                 {
                     var deviceInfo = await deviceClient.GetDeviceInfoAsync(cancellationToken);
-                    
+
                     if (deviceInfo != null)
                     {
                         var hardwareInfo = new DeviceHardwareInfo(
@@ -86,8 +86,8 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
                             deviceInfo.AttendanceRecordCapacity);
 
                         device.UpdateDeviceInfo(hardwareInfo);
-                        
-                        _logger.LogInformation("Información del dispositivo obtenida: S/N={SerialNumber}", 
+
+                        _logger.LogInformation("Información del dispositivo obtenida: S/N={SerialNumber}",
                             deviceInfo.SerialNumber);
                     }
 

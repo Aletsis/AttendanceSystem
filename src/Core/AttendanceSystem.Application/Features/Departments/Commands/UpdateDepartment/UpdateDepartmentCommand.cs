@@ -29,7 +29,7 @@ public sealed class UpdateDepartmentCommandHandler : IRequestHandler<UpdateDepar
 
     public async Task<Result<Unit>> Handle(UpdateDepartmentCommand request, CancellationToken cancellationToken)
     {
-        try 
+        try
         {
             var department = await _repository.GetByIdAsync(DepartmentId.From(request.Id), cancellationToken);
             if (department is null)
@@ -42,13 +42,13 @@ public sealed class UpdateDepartmentCommandHandler : IRequestHandler<UpdateDepar
             _repository.Update(department);
 
             // Actualizar puestos asociados al departamento
-             if (request.PositionIds != null)
+            if (request.PositionIds != null)
             {
                 var positionsToAssign = new List<Position>();
                 foreach (var positionId in request.PositionIds)
                 {
                     var position = await _positionRepository.GetByIdAsync(PositionId.From(positionId), cancellationToken);
-                     if (position != null)
+                    if (position != null)
                     {
                         positionsToAssign.Add(position);
                     }
@@ -62,7 +62,7 @@ public sealed class UpdateDepartmentCommandHandler : IRequestHandler<UpdateDepar
         }
         catch (Exception ex)
         {
-             return Result<Unit>.Failure(ex.Message);
+            return Result<Unit>.Failure(ex.Message);
         }
     }
 }

@@ -8,11 +8,11 @@ using System.Globalization;
 namespace AttendanceSystem.Application.Features.Attendance.Queries.GetTardinessAnalysis;
 
 public sealed record GetTardinessAnalysisQuery(
-    DateTime StartDate, 
-    DateTime EndDate, 
+    DateTime StartDate,
+    DateTime EndDate,
     BranchId? BranchId = null) : IRequest<Result<TardinessAnalysisDto>>;
 
-public sealed class GetTardinessAnalysisQueryHandler 
+public sealed class GetTardinessAnalysisQueryHandler
     : IRequestHandler<GetTardinessAnalysisQuery, Result<TardinessAnalysisDto>>
 {
     private readonly IDailyAttendanceRepository _dailyAttendanceRepository;
@@ -33,16 +33,16 @@ public sealed class GetTardinessAnalysisQueryHandler
     }
 
     public async Task<Result<TardinessAnalysisDto>> Handle(
-        GetTardinessAnalysisQuery request, 
+        GetTardinessAnalysisQuery request,
         CancellationToken cancellationToken)
     {
         try
         {
             var dailyRecords = await _dailyAttendanceRepository.GetByDateRangeAsync(
-                request.StartDate, 
-                request.EndDate, 
-                request.BranchId, 
-                null, 
+                request.StartDate,
+                request.EndDate,
+                request.BranchId,
+                null,
                 cancellationToken);
 
             var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
@@ -51,10 +51,10 @@ public sealed class GetTardinessAnalysisQueryHandler
             {
                 employees = employees.Where(e => e.BranchId == request.BranchId).ToList();
             }
-            
+
             var departments = await _departmentRepository.GetAllAsync(cancellationToken);
             var branches = await _branchRepository.GetAllAsync(cancellationToken);
-            
+
             var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
             var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
             var empDict = employees.ToDictionary(e => e.Id, e => e);
@@ -85,7 +85,7 @@ public sealed class GetTardinessAnalysisQueryHandler
                     g.Sum(r => r.LateMinutes)
                 ))
                 .ToList();
-            
+
             // Reordenar correctamente (patrón de lunes a domingo)
             var sortedDays = new List<string> { "lunes", "martes", "miércoles", "jueves", "viernes", "sábado", "domingo" };
             tardinessByDay = tardinessByDay
@@ -95,12 +95,13 @@ public sealed class GetTardinessAnalysisQueryHandler
             // 2. Retardos por departamento
             var tardinessByDept = tardies
                 .GroupBy(a => empDict[a.EmployeeId].DepartmentId)
-                .Select(g => {
+                .Select(g =>
+                {
                     var deptName = deptDict.TryGetValue(g.Key, out var name) ? name : "Sin Departamento";
                     var possibleDaysInDept = validRecords
                         .Where(r => empDict[r.EmployeeId].DepartmentId == g.Key && !r.IsRestDay)
                         .Count();
-                    
+
                     return new DepartmentTardinessDto(
                         deptName,
                         g.Count(),
@@ -115,7 +116,8 @@ public sealed class GetTardinessAnalysisQueryHandler
             // 3. Empleados con más retardos
             var topEmployees = tardies
                 .GroupBy(a => a.EmployeeId)
-                .Select(g => {
+                .Select(g =>
+                {
                     var emp = empDict[g.Key];
                     var deptName = deptDict.TryGetValue(emp.DepartmentId, out var name) ? name : "N/A";
                     return new EmployeeTardinessDto(
@@ -132,12 +134,13 @@ public sealed class GetTardinessAnalysisQueryHandler
             // 4. Retardos por sucursal
             var tardinessByBranch = tardies
                 .GroupBy(a => empDict[a.EmployeeId].BranchId)
-                .Select(g => {
+                .Select(g =>
+                {
                     var branchName = branchDict.TryGetValue(g.Key, out var name) ? name : "Sin Sucursal";
                     var possibleDaysInBranch = validRecords
                         .Where(r => empDict[r.EmployeeId].BranchId == g.Key && !r.IsRestDay)
                         .Count();
-                    
+
                     return new BranchTardinessDto(
                         branchName,
                         g.Count(),
@@ -152,15 +155,16 @@ public sealed class GetTardinessAnalysisQueryHandler
             // 5. Retardos por Sucursal/Departamento
             var tardinessByBranchDept = tardies
                 .GroupBy(a => new { empDict[a.EmployeeId].BranchId, empDict[a.EmployeeId].DepartmentId })
-                .Select(g => {
+                .Select(g =>
+                {
                     var branchName = branchDict.TryGetValue(g.Key.BranchId, out var bName) ? bName : "N/A";
                     var deptName = deptDict.TryGetValue(g.Key.DepartmentId, out var dName) ? dName : "N/A";
                     var possibleDaysInCombo = validRecords
-                        .Where(r => empDict[r.EmployeeId].BranchId == g.Key.BranchId && 
-                                   empDict[r.EmployeeId].DepartmentId == g.Key.DepartmentId && 
+                        .Where(r => empDict[r.EmployeeId].BranchId == g.Key.BranchId &&
+                                   empDict[r.EmployeeId].DepartmentId == g.Key.DepartmentId &&
                                    !r.IsRestDay)
                         .Count();
-                    
+
                     return new BranchDepartmentTardinessDto(
                         branchName,
                         deptName,

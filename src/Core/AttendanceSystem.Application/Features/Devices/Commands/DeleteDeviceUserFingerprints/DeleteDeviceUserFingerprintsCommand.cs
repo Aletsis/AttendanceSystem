@@ -40,8 +40,8 @@ public class DeleteDeviceUserFingerprintsHandler : IRequestHandler<DeleteDeviceU
             try
             {
                 var success = await deviceClient.DeleteUserFingerprintsAsync(request.UserId, cancellationToken);
-                return success 
-                    ? Result.Success() 
+                return success
+                    ? Result.Success()
                     : Result.Failure("Device.DeleteFingerprintsFailed: Device returned failure status");
             }
             finally

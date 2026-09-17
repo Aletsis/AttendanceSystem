@@ -43,7 +43,7 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
         public ICommand BackToDashboardCommand { get; }
 
         public BackupViewModel(
-            IFrameNavigationService navigationService, 
+            IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator)
         {

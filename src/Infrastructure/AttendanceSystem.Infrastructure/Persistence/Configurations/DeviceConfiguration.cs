@@ -65,12 +65,12 @@ public class DeviceConfiguration : IEntityTypeConfiguration<Device>
             hardware.Property(p => p.SerialNumber).HasColumnName("SerialNumber").HasMaxLength(100);
             hardware.Property(p => p.FirmwareVersion).HasColumnName("FirmwareVersion").HasMaxLength(100);
             hardware.Property(p => p.Platform).HasColumnName("Platform").HasMaxLength(100);
-            
+
             hardware.Property(p => p.UserCount).HasColumnName("UserCount");
             hardware.Property(p => p.FingerprintCount).HasColumnName("FingerprintCount");
             hardware.Property(p => p.FaceCount).HasColumnName("FaceCount");
             hardware.Property(p => p.AttendanceRecordCount).HasColumnName("AttendanceRecordCount");
-            
+
             hardware.Property(p => p.UserCapacity).HasColumnName("UserCapacity");
             hardware.Property(p => p.FingerprintCapacity).HasColumnName("FingerprintCapacity");
             hardware.Property(p => p.FaceCapacity).HasColumnName("FaceCapacity");

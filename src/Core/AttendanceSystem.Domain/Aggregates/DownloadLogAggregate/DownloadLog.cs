@@ -77,7 +77,7 @@ public sealed class DownloadLog : AggregateRoot<DownloadLogId>
     }
 
     // Constructor privado para EF Core
-    private DownloadLog() 
+    private DownloadLog()
     {
         DeviceId = null!;
         DownloadType = DownloadType.Automatic;

@@ -27,7 +27,7 @@ public sealed class UpdatePositionCommandHandler : IRequestHandler<UpdatePositio
 
     public async Task<Result<Unit>> Handle(UpdatePositionCommand request, CancellationToken cancellationToken)
     {
-        try 
+        try
         {
             var position = await _repository.GetByIdAsync(PositionId.From(request.Id), cancellationToken);
             if (position is null)
@@ -46,7 +46,7 @@ public sealed class UpdatePositionCommandHandler : IRequestHandler<UpdatePositio
         }
         catch (Exception ex)
         {
-             return Result<Unit>.Failure(ex.Message);
+            return Result<Unit>.Failure(ex.Message);
         }
     }
 }

@@ -26,7 +26,7 @@ public sealed class CreateBranchCommandHandler : IRequestHandler<CreateBranchCom
 
     public async Task<Result<Guid>> Handle(CreateBranchCommand request, CancellationToken cancellationToken)
     {
-        try 
+        try
         {
             var branch = Branch.Create(
                 request.Code,
@@ -42,7 +42,7 @@ public sealed class CreateBranchCommandHandler : IRequestHandler<CreateBranchCom
         }
         catch (Exception ex)
         {
-             return Result<Guid>.Failure(ex.Message);
+            return Result<Guid>.Failure(ex.Message);
         }
     }
 }

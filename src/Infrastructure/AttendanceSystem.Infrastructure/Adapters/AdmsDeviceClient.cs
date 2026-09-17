@@ -144,9 +144,9 @@ public class AdmsDeviceClient : IDeviceClient
         _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=USERINFO");
         _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=USERPIC");
         _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=BIODATA");
-        
+
         _logger.LogInformation("Comandos de consulta de datos encolados para dispositivo ADMS {SN}", _serialNumber);
-        
+
         // Retornamos lista vacía porque la respuesta llegará asíncronamente vía AdmsController
         return new List<DeviceUserDto>();
     }
@@ -255,7 +255,7 @@ public class AdmsDeviceClient : IDeviceClient
         var userCmd = $"PIN={user.UserId}\tName={user.Name}\tPrivilege=0"; // 0 = Usuario normal
         if (!string.IsNullOrEmpty(user.Password)) userCmd += $"\tPassword={user.Password}";
         if (!string.IsNullOrEmpty(user.CardNumber)) userCmd += $"\tCard={user.CardNumber}";
-        
+
         _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE USERINFO\t{userCmd}");
 
         // 2. Huellas Digitales

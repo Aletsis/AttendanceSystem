@@ -26,7 +26,7 @@ public class Result<T> : Result
 {
     public T Value { get; }
 
-    protected Result(bool isSuccess, T value, string error) 
+    protected Result(bool isSuccess, T value, string error)
         : base(isSuccess, error)
     {
         Value = value;

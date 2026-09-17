@@ -1,6 +1,6 @@
 namespace AttendanceSystem.Application.Features.Attendance.EventHandlers;
 
-public sealed class AttendanceRecordedEventHandler 
+public sealed class AttendanceRecordedEventHandler
     : INotificationHandler<AttendanceRecordedEvent>
 {
     private readonly IEmailService _emailService;
@@ -15,7 +15,7 @@ public sealed class AttendanceRecordedEventHandler
     }
 
     public async Task Handle(
-        AttendanceRecordedEvent notification, 
+        AttendanceRecordedEvent notification,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation(
@@ -26,7 +26,7 @@ public sealed class AttendanceRecordedEventHandler
     }
 }
 
-public sealed class OutOfHoursCheckDetectedEventHandler 
+public sealed class OutOfHoursCheckDetectedEventHandler
     : INotificationHandler<OutOfHoursCheckDetectedEvent>
 {
     private readonly IEmailService _emailService;
@@ -37,7 +37,7 @@ public sealed class OutOfHoursCheckDetectedEventHandler
     }
 
     public async Task Handle(
-        OutOfHoursCheckDetectedEvent notification, 
+        OutOfHoursCheckDetectedEvent notification,
         CancellationToken cancellationToken)
     {
         // Enviar alerta a supervisores

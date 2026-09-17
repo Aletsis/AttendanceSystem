@@ -14,7 +14,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public TimeSpan LateTolerance { get; private set; }
     public TimeSpan StandardWorkHours { get; private set; }
     public bool AutoClearDevicesAfterDownload { get; private set; }
-    
+
     // Auto Download Settings
     public bool IsAutoDownloadEnabled { get; private set; }
     public TimeSpan? AutoDownloadTime { get; private set; } // Time from midnight
@@ -46,7 +46,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public string? AbsenceAlertEmails { get; private set; }
     public string? LateAlertEmails { get; private set; }
     public string? SystemFailureAlertEmails { get; private set; }
-    
+
     // SMTP Settings
     public string? SmtpHost { get; private set; }
     public int SmtpPort { get; private set; }

@@ -22,7 +22,7 @@ public sealed class GetUsersQueryHandler : IRequestHandler<GetUsersQuery, List<U
         // directo a EF Core en la capa de Aplicación, usaremos la ejecución síncrona o podríamos
         // envolverlo en Task.Run si fuera crítico, aunque para una lista de usuarios administrativa está bien.
         var users = _userManager.Users.ToList();
-        
+
         var userDtos = new List<UserDto>();
 
         foreach (var user in users)

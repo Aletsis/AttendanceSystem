@@ -11,14 +11,14 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     public DateTime HireDate { get; private set; }
     public EmployeeStatus Status { get; private set; }
     public Gender Gender { get; private set; } // Nuevo campo
-    
+
     public DevicePrivilege DevicePrivilege { get; private set; }
-    
+
     // Relaciones con otros agregados
     public BranchId BranchId { get; private set; } = null!;
     public DepartmentId DepartmentId { get; private set; } = null!;
     public PositionId PositionId { get; private set; } = null!;
-    
+
     // Horario y configuración laboral
     public ShiftType? ShiftType { get; private set; }
     public ShiftId? ScheduleId { get; private set; } // Horario específico (puede ser diferente al turno)
@@ -96,17 +96,17 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     }
 
     public void UpdateBiometrics(
-        string? cardNumber = null, 
-        string? devicePassword = null, 
-        string? faceTemplate = null, 
-        List<EmployeeFingerprint>? fingerprints = null, 
+        string? cardNumber = null,
+        string? devicePassword = null,
+        string? faceTemplate = null,
+        List<EmployeeFingerprint>? fingerprints = null,
         string? photo = null)
     {
         if (cardNumber != null) CardNumber = cardNumber;
         if (devicePassword != null) DevicePassword = devicePassword;
         if (faceTemplate != null) FaceTemplate = faceTemplate;
         if (photo != null) Photo = photo;
-        
+
         if (fingerprints != null)
         {
             foreach (var fp in fingerprints)

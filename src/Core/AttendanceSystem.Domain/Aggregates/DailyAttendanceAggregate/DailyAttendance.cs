@@ -22,7 +22,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 {
     public EmployeeId EmployeeId { get; private set; } = null!;
     public DateTime Date { get; private set; }
-    
+
     // Shift Snapshot
     public ShiftId? ShiftId { get; private set; }
     public string? ShiftName { get; private set; }
@@ -38,13 +38,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public AttendanceRecordId? CheckInRecordId { get; private set; }
     public DateTime? ActualCheckOut { get; private set; }
     public AttendanceRecordId? CheckOutRecordId { get; private set; }
-    
+
     // Calculated Status
     public bool IsAbsent { get; private set; }
     public int LateMinutes { get; private set; }
     public int EarlyDepartureMinutes { get; private set; }
     public int OvertimeMinutes { get; private set; } // Based on shift end or simple work hours?
-    
+
     // Flags
     public bool MissingCheckIn { get; private set; }
     public bool MissingCheckOut { get; private set; }
@@ -71,11 +71,11 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     /// </summary>
     public string? AttendanceNote => (HasTemporaryExits, TemporaryExitStatus) switch
     {
-        (true, TemporaryExitStatus.Pending)        => $"⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
-        (true, TemporaryExitStatus.ApprovedPaid)   => $"✅ Permiso con goce — {TemporaryExitNote}",
+        (true, TemporaryExitStatus.Pending) => $"⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
+        (true, TemporaryExitStatus.ApprovedPaid) => $"✅ Permiso con goce — {TemporaryExitNote}",
         (true, TemporaryExitStatus.ApprovedUnpaid) => $"✂️ Permiso sin goce — {TemporaryExitMinutes} min descontados",
-        (true, TemporaryExitStatus.Dismissed)      => $"ℹ️ Error de checada — ignorado",
-        _                                          => null
+        (true, TemporaryExitStatus.Dismissed) => $"ℹ️ Error de checada — ignorado",
+        _ => null
     };
 
     private DailyAttendance() { }
@@ -108,7 +108,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             attendance.ShiftId = shift.Id;
             attendance.ShiftName = shift.Name;
             attendance.ShiftType = shift.ShiftType;
-            
+
             var dayStartTime = shift.StartTime;
             var dayEndTime = shift.EndTime;
 
@@ -161,7 +161,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         CheckOutRecordId = recordId;
         CalculateStatus();
     }
-    
+
     public void RemoveCheckOut()
     {
         ActualCheckOut = null;
@@ -172,7 +172,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public void UpdateShift(Shift shift)
     {
         if (shift == null) throw new ArgumentNullException(nameof(shift));
-        
+
         ShiftId = shift.Id;
         ShiftName = shift.Name;
         ShiftType = shift.ShiftType;
@@ -195,9 +195,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         ToleranceMinutes = shift.ToleranceMinutes;
         RoundingsEnabled = shift.RoundingsEnabled;
         RoundingInterval = shift.RoundingInterval;
-        
+
         // If updating shift, it's likely not a Rest Day anymore unless strict override, but usually shift implies work day.
-        IsRestDay = false; 
+        IsRestDay = false;
 
         CalculateStatus();
     }
@@ -261,9 +261,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         // If Rest Day
         if (IsRestDay)
         {
-            if (ActualCheckIn.HasValue || ActualCheckOut.HasValue) 
+            if (ActualCheckIn.HasValue || ActualCheckOut.HasValue)
             {
-                 WorkedOnRestDay = true;
+                WorkedOnRestDay = true;
             }
             else
             {
@@ -276,13 +276,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         if (ScheduledCheckIn == null || ScheduledCheckOut == null)
         {
             // Fallback for missing schedule details but working normal day
-             if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
+            if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {
                 var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
-                
+
                 // If Rest Day, everything is overtime. If not, fallback to 8h (480m)
                 int goal = IsRestDay ? 0 : 480;
-                
+
                 if (totalMinutes >= goal)
                 {
                     OvertimeMinutes = (int)totalMinutes - goal;
@@ -305,7 +305,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         }
         else if (ActualCheckIn == null && ActualCheckOut != null)
         {
-            MissingCheckIn = true; 
+            MissingCheckIn = true;
         }
 
         var scheduledInDateTime = Date.Add(ScheduledCheckIn.Value);
@@ -335,8 +335,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         if (ActualCheckOut.HasValue)
         {
             var scheduledOutDateTime = Date.Add(ScheduledCheckOut.Value);
-            
-             if (ScheduledCheckOut <= ScheduledCheckIn)
+
+            if (ScheduledCheckOut <= ScheduledCheckIn)
             {
                 scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
             }
@@ -412,7 +412,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
             return ActualCheckIn.Value;
         }
-        
+
         if (ScheduledCheckIn.HasValue)
         {
             var scheduledInDateTime = Date.Add(ScheduledCheckIn.Value);

@@ -47,7 +47,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             _mediator = mediator;
             SelectCommand = new DelegateCommand(ExecuteSelect, CanExecuteSelect);
             CancelCommand = new DelegateCommand(ExecuteCancel);
-            
+
             LoadDevices();
         }
 

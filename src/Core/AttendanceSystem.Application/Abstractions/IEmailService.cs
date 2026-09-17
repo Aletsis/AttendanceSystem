@@ -8,15 +8,15 @@ public enum AlertLevel
 public interface IEmailService
 {
     Task SendAlertAsync(
-        string subject, 
-        string body, 
+        string subject,
+        string body,
         AlertLevel level = AlertLevel.SystemFailure,
         CancellationToken cancellationToken = default);
 
     Task SendReportAsync(
-        string subject, 
-        string body, 
-        string recipients, 
-        IEnumerable<(string Name, byte[] Content)> attachments, 
+        string subject,
+        string body,
+        string recipients,
+        IEnumerable<(string Name, byte[] Content)> attachments,
         CancellationToken cancellationToken = default);
 }

@@ -31,7 +31,7 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
 
     public async Task<Result<Guid>> Handle(CreateShiftCommand request, CancellationToken cancellationToken)
     {
-        try 
+        try
         {
             var days = request.Days?.Select(d => new ShiftDay(
                 d.DayOfWeek,
@@ -59,7 +59,7 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
         catch (Exception ex)
         {
             // Proporcionando un error genérico por ahora, confiando en el manejo global de excepciones o en la construcción de errores específicos si es necesario
-             return Result<Guid>.Failure(ex.Message);
+            return Result<Guid>.Failure(ex.Message);
         }
     }
 }

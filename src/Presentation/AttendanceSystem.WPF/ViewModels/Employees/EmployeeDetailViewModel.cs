@@ -33,7 +33,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private DateTime _hireDate = DateTime.Today;
         private Gender _gender = Gender.Male;
         private EmployeeStatus _status = EmployeeStatus.Alta;
-        
+
         // Selections
         private string? _selectedDepartmentId;
         private string? _selectedPositionId;
@@ -41,7 +41,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private string? _selectedShiftId; // ScheduleId
         private ShiftType _selectedShiftType = ShiftType.Matutino;
         private int? _selectedRestDay; // 0=Sunday, etc.
-        
+
         // Overtime configuration
         private bool _overtimeAuthorized;
         private OvertimeCalculationMethod _overtimeCalculationMethod = OvertimeCalculationMethod.NoRounding;
@@ -62,7 +62,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public ObservableCollection<BranchDto> Branches { get; } = new();
         public ObservableCollection<ShiftDto> Shifts { get; } = new();
         public ObservableCollection<ShiftDto> VisibleShifts { get; } = new(); // Filtered Shifts
-        
+
         public IEnumerable<Gender> GenderOptions => Enum.GetValues(typeof(Gender)).Cast<Gender>();
         public IEnumerable<EmployeeStatus> StatusOptions => Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>();
         public IEnumerable<ShiftType> ShiftTypeOptions => Enum.GetValues(typeof(ShiftType)).Cast<ShiftType>();
@@ -77,14 +77,14 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public string Title { get => _title; set => SetProperty(ref _title, value); }
         public bool IsEditMode { get => _isEditMode; set => SetProperty(ref _isEditMode, value); }
 
-        public string Id 
-        { 
-            get => _id; 
-            set 
+        public string Id
+        {
+            get => _id;
+            set
             {
-                if (SetProperty(ref _id, value)) 
+                if (SetProperty(ref _id, value))
                     ((DelegateCommand)SaveCommand).RaiseCanExecuteChanged();
-            } 
+            }
         }
         public string FirstName { get => _firstName; set => SetProperty(ref _firstName, value); }
         public string LastName { get => _lastName; set => SetProperty(ref _lastName, value); }
@@ -93,35 +93,35 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public DateTime HireDate { get => _hireDate; set => SetProperty(ref _hireDate, value); }
         public Gender Gender { get => _gender; set => SetProperty(ref _gender, value); }
         public EmployeeStatus Status { get => _status; set => SetProperty(ref _status, value); }
-        
-        public string? SelectedDepartmentId 
-        { 
-            get => _selectedDepartmentId; 
-            set 
+
+        public string? SelectedDepartmentId
+        {
+            get => _selectedDepartmentId;
+            set
             {
                 if (SetProperty(ref _selectedDepartmentId, value))
                 {
                     FilterPositions();
                 }
-            } 
+            }
         }
 
         public string? SelectedPositionId { get => _selectedPositionId; set => SetProperty(ref _selectedPositionId, value); }
         public string? SelectedBranchId { get => _selectedBranchId; set => SetProperty(ref _selectedBranchId, value); }
         public string? SelectedShiftId { get => _selectedShiftId; set => SetProperty(ref _selectedShiftId, value); }
-        
-        public ShiftType SelectedShiftType 
-        { 
-            get => _selectedShiftType; 
-            set 
+
+        public ShiftType SelectedShiftType
+        {
+            get => _selectedShiftType;
+            set
             {
                 if (SetProperty(ref _selectedShiftType, value))
                 {
                     FilterShifts();
                 }
-            } 
+            }
         }
-        
+
         public int? SelectedRestDay { get => _selectedRestDay; set => SetProperty(ref _selectedRestDay, value); }
         public bool OvertimeAuthorized { get => _overtimeAuthorized; set => SetProperty(ref _overtimeAuthorized, value); }
         public OvertimeCalculationMethod SelectedOvertimeCalculationMethod { get => _overtimeCalculationMethod; set => SetProperty(ref _overtimeCalculationMethod, value); }
@@ -151,7 +151,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         public void OnNavigatedTo(NavigationContext navigationContext)
         {
-            _ = LoadCatalogsAsync().ContinueWith(async t => 
+            _ = LoadCatalogsAsync().ContinueWith(async t =>
             {
                 if (navigationContext.Parameters.ContainsKey("EmployeeId"))
                 {
@@ -180,7 +180,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             try
             {
                 var deps = await _mediator.Send(new GetDepartmentsQuery());
-                if (deps.IsSuccess) 
+                if (deps.IsSuccess)
                 {
                     Departments.Clear();
                     Departments.AddRange(deps.Value.OrderBy(d => d.Name));
@@ -206,7 +206,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     Shifts.Clear();
                     Shifts.AddRange(shifts.Value.OrderBy(s => s.StartTime));
                 }
-                
+
                 // Initial filter after loading catalogs
                 FilterPositions();
                 FilterShifts();
@@ -216,7 +216,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 await _messageService.ShowErrorAsync($"Error al cargar catálogos: {ex.Message}");
             }
         }
-        
+
         private void FilterPositions()
         {
             VisiblePositions.Clear();
@@ -238,7 +238,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 // Fallback if no ids mapped
                 // VisiblePositions.AddRange(Positions);
             }
-            
+
             // Validate if selected position is still valid
             if (SelectedPositionId != null && !VisiblePositions.Any(p => p.Id.ToString() == SelectedPositionId))
             {
@@ -251,7 +251,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             VisibleShifts.Clear();
             var filtered = Shifts.Where(s => s.ShiftType == SelectedShiftType).OrderBy(s => s.StartTime).ToList();
             VisibleShifts.AddRange(filtered);
-            
+
             // Validate if selected shift is still valid
             if (SelectedShiftId != null && !VisibleShifts.Any(s => s.Id.ToString() == SelectedShiftId))
             {
@@ -278,15 +278,15 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     Status = emp.Status;
                     SelectedDepartmentId = emp.DepartmentId.ToString();
                     // Filter Positions triggers here
-                    
+
                     SelectedPositionId = emp.PositionId.ToString();
                     SelectedBranchId = emp.BranchId.ToString();
-                    
+
                     SelectedShiftType = emp.ShiftType ?? ShiftType.Matutino;
                     // Filter Shifts triggers here
-                    
+
                     SelectedShiftId = emp.ScheduleId?.ToString();
-                    
+
                     SelectedRestDay = emp.RestDay;
                     OvertimeAuthorized = emp.OvertimeAuthorized;
                     SelectedOvertimeCalculationMethod = emp.OvertimeCalculationMethod;
@@ -323,16 +323,16 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 if (IsEditMode)
                 {
                     var command = new UpdateEmployeeCommand(
-                        Id, 
-                        FirstName, 
-                        LastName, 
-                        Email, 
-                        PhoneNumber, 
-                        HireDate, 
-                        Gender, 
-                        Status, 
-                        SelectedBranchId!, 
-                        SelectedDepartmentId!, 
+                        Id,
+                        FirstName,
+                        LastName,
+                        Email,
+                        PhoneNumber,
+                        HireDate,
+                        Gender,
+                        Status,
+                        SelectedBranchId!,
+                        SelectedDepartmentId!,
                         SelectedPositionId!,
                         SelectedShiftType,
                         SelectedShiftId,
@@ -354,15 +354,15 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 else
                 {
                     var command = new CreateEmployeeCommand(
-                        Id, 
-                        FirstName, 
-                        LastName, 
-                        Email, 
-                        PhoneNumber, 
-                        HireDate, 
-                        Gender, 
-                        SelectedBranchId!, 
-                        SelectedDepartmentId!, 
+                        Id,
+                        FirstName,
+                        LastName,
+                        Email,
+                        PhoneNumber,
+                        HireDate,
+                        Gender,
+                        SelectedBranchId!,
+                        SelectedDepartmentId!,
                         SelectedPositionId!,
                         SelectedShiftType,
                         SelectedShiftId,
@@ -407,7 +407,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             if (string.IsNullOrWhiteSpace(SelectedDepartmentId)) { _messageService.ShowErrorAsync("El departamento es requerido."); return false; }
             if (string.IsNullOrWhiteSpace(SelectedPositionId)) { _messageService.ShowErrorAsync("El puesto es requerido."); return false; }
             if (string.IsNullOrWhiteSpace(SelectedBranchId)) { _messageService.ShowErrorAsync("La sucursal es requerida."); return false; }
-            
+
             return true;
         }
 

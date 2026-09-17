@@ -36,32 +36,32 @@ public sealed class SyncEmployeeBiometricsCommandHandler : IRequestHandler<SyncE
     {
         var employeeId = EmployeeId.From(request.EmployeeId);
         var employee = await _employeeRepository.GetByIdAsync(employeeId, cancellationToken);
-        
+
         if (employee == null)
             return Result<bool>.Failure("Empleado no encontrado");
 
         var deviceId = DeviceId.From(request.DeviceId);
         var device = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
-        
+
         if (device == null || !device.IsActive)
             return Result<bool>.Failure("Dispositivo no encontrado o inactivo");
 
         try
         {
             var deviceClient = _deviceClientFactory.GetClient(device.Brand);
-            
+
             // Conectar al dispositivo (modo SDK, si falla, usar comando ADMS si es compatible)
             var connected = await deviceClient.ConnectAsync(device.IpAddress, device.Port, device.Username, device.Password, cancellationToken);
-            
+
             if (!connected)
                 return Result<bool>.Failure("No se pudo conectar al dispositivo");
 
             var deviceUser = await deviceClient.GetUserAsync(request.EmployeeId, cancellationToken);
-            
+
             if (deviceUser != null)
             {
                 var domainFingerprints = deviceUser.Fingerprints?.Select(fp => new EmployeeFingerprint(fp.Index, fp.Template)).ToList();
-                
+
                 employee.UpdateBiometrics(
                     cardNumber: deviceUser.CardNumber,
                     devicePassword: string.IsNullOrEmpty(deviceUser.Password) ? null : deviceUser.Password,
@@ -76,7 +76,7 @@ public sealed class SyncEmployeeBiometricsCommandHandler : IRequestHandler<SyncE
             }
             else
             {
-                 _logger.LogWarning("Empleado {EmployeeId} no encontrado en el dispositivo {DeviceId}", request.EmployeeId, request.DeviceId);
+                _logger.LogWarning("Empleado {EmployeeId} no encontrado en el dispositivo {DeviceId}", request.EmployeeId, request.DeviceId);
             }
 
             await deviceClient.DisconnectAsync(cancellationToken);

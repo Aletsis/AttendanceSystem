@@ -8,7 +8,7 @@ public sealed record ShiftId
     {
         if (value == Guid.Empty)
             throw new DomainException("ShiftId no puede ser vacío");
-        
+
         Value = value;
     }
 

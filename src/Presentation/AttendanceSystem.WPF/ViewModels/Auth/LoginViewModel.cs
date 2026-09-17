@@ -13,10 +13,10 @@ namespace AttendanceSystem.WPF.ViewModels.Auth
 
         private string _username = "";
 
-        public string Username 
-        { 
-            get => _username; 
-            set 
+        public string Username
+        {
+            get => _username;
+            set
             {
                 SetProperty(ref _username, value);
                 ((DelegateCommand<object>)LoginCommand).RaiseCanExecuteChanged();
@@ -26,7 +26,7 @@ namespace AttendanceSystem.WPF.ViewModels.Auth
         public ICommand LoginCommand { get; }
 
         public LoginViewModel(
-            IAuthenticationStateService authService, 
+            IAuthenticationStateService authService,
             IFrameNavigationService navigationService,
             IMessageService messageService)
         {
@@ -61,12 +61,12 @@ namespace AttendanceSystem.WPF.ViewModels.Auth
                 }
                 else
                 {
-                     await _messageService.ShowErrorAsync("Credenciales incorrectas.");
+                    await _messageService.ShowErrorAsync("Credenciales incorrectas.");
                 }
             }
             catch (Exception ex)
             {
-                 await _messageService.ShowErrorAsync($"Error al iniciar sesión: {ex.Message}");
+                await _messageService.ShowErrorAsync($"Error al iniciar sesión: {ex.Message}");
             }
             finally
             {

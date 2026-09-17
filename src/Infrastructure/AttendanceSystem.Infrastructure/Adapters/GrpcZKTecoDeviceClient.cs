@@ -27,7 +27,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         try
         {
             _logger.LogInformation("Conectando a {IpAddress}:{Port} vía gRPC...", ipAddress, port);
-            
+
             var request = new ConnectDeviceRequest
             {
                 IpAddress = ipAddress,
@@ -36,7 +36,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
             };
 
             var response = await _client.ConnectDeviceAsync(request, cancellationToken: cancellationToken);
-            
+
             if (!response.Success)
             {
                 _logger.LogWarning("Fallo al conectar: {Message}", response.Message);
@@ -136,7 +136,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         try
         {
             _logger.LogInformation("Obteniendo información del dispositivo vía gRPC...");
-            
+
             var request = new GetDeviceInfoRequest();
             var response = await _client.GetDeviceInfoAsync(request, cancellationToken: cancellationToken);
 
@@ -174,20 +174,20 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         {
             _logger.LogInformation("Solicitando lista de usuarios gRPC...");
             var request = new GetAllUsersRequest { DeviceId = "" }; // DeviceId might be irrelevant if handled by connection context, but proto has it.
-            // Wait, looking at proto, GetAllUsersRequest has device_id.
-            // In Grpc service, we might need it if we manage multiple connections.
-            // But currently the service seems stateful per connection?
-            // Checking Proto... Yes, device_id is field 1.
-            // In ConnectDeviceRequest we pass IP/Port.
-            // The service seems to keep one connection open?
-            // Looking at ZKTecoGrpcService.cs, it uses _zkClient.ConnectAsync.
-            // If the service is a Singleton wrapping a single device client, then it's stateful.
-            // If the service is Scoped, it's per request? 
-            // Usually gRPC services are Scoped or Singleton.
-            // ZKTecoGrpcService inherits ZKTecoServiceBase. 
-            // In `Program.cs` of ZKTeco.Service, how is it registered?
-            // Assuming it maintains state.
-            
+                                                                    // Wait, looking at proto, GetAllUsersRequest has device_id.
+                                                                    // In Grpc service, we might need it if we manage multiple connections.
+                                                                    // But currently the service seems stateful per connection?
+                                                                    // Checking Proto... Yes, device_id is field 1.
+                                                                    // In ConnectDeviceRequest we pass IP/Port.
+                                                                    // The service seems to keep one connection open?
+                                                                    // Looking at ZKTecoGrpcService.cs, it uses _zkClient.ConnectAsync.
+                                                                    // If the service is a Singleton wrapping a single device client, then it's stateful.
+                                                                    // If the service is Scoped, it's per request? 
+                                                                    // Usually gRPC services are Scoped or Singleton.
+                                                                    // ZKTecoGrpcService inherits ZKTecoServiceBase. 
+                                                                    // In `Program.cs` of ZKTeco.Service, how is it registered?
+                                                                    // Assuming it maintains state.
+
             var response = await _client.GetAllUsersAsync(request, cancellationToken: cancellationToken);
 
             if (!response.Success)
@@ -217,7 +217,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
 
     public async Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-         try
+        try
         {
             var request = new DeleteEmployeeRequest { EmployeeId = userId };
             var response = await _client.DeleteEmployeeAsync(request, cancellationToken: cancellationToken);
@@ -268,7 +268,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
             var response = await _client.SetDeviceTimeAsync(request, cancellationToken: cancellationToken);
             return response.Success;
         }
-         catch (Exception ex)
+        catch (Exception ex)
         {
             _logger.LogError(ex, "Error configurando hora");
             return false;
@@ -281,7 +281,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         {
             var request = new RegisterEmployeeRequest
             {
-                DeviceId = "", 
+                DeviceId = "",
                 EmployeeId = user.UserId,
                 Name = user.Name,
                 Password = user.Password,
@@ -294,10 +294,10 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
 
             if (user.Fingerprints != null)
             {
-                request.Fingerprints.AddRange(user.Fingerprints.Select(f => new UserFingerprint 
-                { 
-                    FingerIndex = f.Index, 
-                    TemplateData = f.Template 
+                request.Fingerprints.AddRange(user.Fingerprints.Select(f => new UserFingerprint
+                {
+                    FingerIndex = f.Index,
+                    TemplateData = f.Template
                 }));
             }
 

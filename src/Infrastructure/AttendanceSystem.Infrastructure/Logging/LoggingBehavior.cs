@@ -33,9 +33,9 @@ public class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
         try
         {
             var response = await next();
-            
+
             stopwatch.Stop();
-            
+
             _logger.LogInformation(
                 "Solicitud completada: {RequestName} - Tiempo: {ElapsedMilliseconds}ms",
                 requestName,
@@ -46,7 +46,7 @@ public class LoggingBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, 
         catch (Exception ex)
         {
             stopwatch.Stop();
-            
+
             _logger.LogError(
                 ex,
                 "Error en solicitud: {RequestName} - Tiempo: {ElapsedMilliseconds}ms - Error: {ErrorMessage}",

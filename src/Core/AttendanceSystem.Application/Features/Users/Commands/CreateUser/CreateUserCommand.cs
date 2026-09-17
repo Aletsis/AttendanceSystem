@@ -51,8 +51,8 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
             var roleResult = await _userManager.AddToRolesAsync(user, request.Roles);
             if (!roleResult.Succeeded)
             {
-                 var errors = string.Join(", ", roleResult.Errors.Select(e => e.Description));
-                 throw new Exception($"Usuario creado, pero falló la asignación de roles: {errors}");
+                var errors = string.Join(", ", roleResult.Errors.Select(e => e.Description));
+                throw new Exception($"Usuario creado, pero falló la asignación de roles: {errors}");
             }
         }
 

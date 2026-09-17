@@ -7,7 +7,7 @@ namespace AttendanceSystem.Infrastructure.Persistence.Queries;
 
 public class PositionQueries : IPositionQueries
 {
-     private readonly AttendanceDbContext _dbContext;
+    private readonly AttendanceDbContext _dbContext;
 
     public PositionQueries(AttendanceDbContext dbContext)
     {

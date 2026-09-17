@@ -8,7 +8,7 @@ public class AdmsCommandService : IAdmsCommandService
     private record QueuedCommand(string CommandText, Guid? DownloadLogId);
 
     private readonly ConcurrentDictionary<string, ConcurrentQueue<QueuedCommand>> _commandQueues = new();
-    
+
     // Map CommandID (sent to device) -> DownloadLogId
     private readonly ConcurrentDictionary<string, Guid> _pendingExecutions = new();
 
@@ -38,7 +38,7 @@ public class AdmsCommandService : IAdmsCommandService
     public bool HasPendingCommands(string serialNumber)
     {
         if (string.IsNullOrWhiteSpace(serialNumber)) return false;
-        
+
         return _commandQueues.TryGetValue(serialNumber, out var queue) && !queue.IsEmpty;
     }
 

@@ -124,7 +124,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             SelectedShiftType = ShiftTypes.First();
             SaveCommand = new DelegateCommand(ExecuteSave, CanExecuteSave)
                 .ObservesProperty(() => Name);
-            
+
             CancelCommand = new DelegateCommand(ExecuteCancel);
 
             InitDays();
@@ -164,7 +164,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         {
             TimeSpan startTime = StartDateTime?.TimeOfDay ?? TimeSpan.Zero;
             TimeSpan endTime = EndDateTime?.TimeOfDay ?? TimeSpan.Zero;
-            
+
             if (SelectedShiftType.Key == ShiftType.Continuo)
             {
                 startTime = TimeSpan.Zero;
@@ -174,7 +174,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             TimeSpan durationEnd = endTime;
             if (durationEnd <= startTime)
                 durationEnd = durationEnd.Add(TimeSpan.FromHours(24));
-            
+
             TimeSpan workHours = durationEnd - startTime;
 
             var dayDtos = new List<ShiftDayDto>();
@@ -185,7 +185,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var dStart = d.StartDateTime?.TimeOfDay ?? TimeSpan.Zero;
                     var dEnd = d.EndDateTime?.TimeOfDay ?? TimeSpan.Zero;
                     var dDur = dEnd <= dStart ? dEnd.Add(TimeSpan.FromHours(24)) : dEnd;
-                    
+
                     dayDtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart, d.ShiftType));
                 }
             }
@@ -226,15 +226,15 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 _shiftId = parameters.GetValue<Guid>("ShiftId");
                 Name = parameters.GetValue<string>("Name");
                 ToleranceMinutes = parameters.GetValue<int>("ToleranceMinutes");
-                
+
                 var type = parameters.GetValue<ShiftType>("ShiftType");
                 SelectedShiftType = ShiftTypes.FirstOrDefault(t => t.Key == type);
 
                 var start = parameters.GetValue<TimeSpan>("StartTime");
                 var workHours = parameters.GetValue<TimeSpan>("WorkHours");
-                
+
                 StartDateTime = DateTime.Today.Add(start);
-                
+
                 var end = start.Add(workHours);
                 if (end.TotalDays >= 1) end = end.Subtract(TimeSpan.FromDays(1));
                 EndDateTime = DateTime.Today.Add(end);

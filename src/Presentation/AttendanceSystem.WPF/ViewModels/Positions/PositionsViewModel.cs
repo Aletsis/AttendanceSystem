@@ -110,17 +110,17 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
                 if (result.IsSuccess && result.Value != null)
                 {
-                    var deptDict = deptsResult.IsSuccess 
+                    var deptDict = deptsResult.IsSuccess
                         ? deptsResult.Value.ToDictionary(d => d.Id, d => d.Name)
                         : new Dictionary<Guid, string>();
 
-                    var employeeCounts = employeesResult.IsSuccess 
+                    var employeeCounts = employeesResult.IsSuccess
                         ? employeesResult.Value.GroupBy(e => e.PositionId).ToDictionary(g => g.Key, g => g.Count())
                         : new Dictionary<Guid, int>();
 
                     _allPositionsData = result.Value.ToList();
                     _positions.Clear();
-                    
+
                     foreach (var pos in _allPositionsData)
                     {
                         // Intentar encontrar el departamento que tiene este puesto
@@ -141,7 +141,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                             EmployeeCount = employeeCounts.GetValueOrDefault(pos.Id, 0)
                         });
                     }
-                    
+
                     FilterPositions();
                 }
                 else
@@ -168,8 +168,8 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             else
             {
                 var searchLower = SearchText.ToLower();
-                var filtered = _positions.Where(p => 
-                    p.Name.ToLower().Contains(searchLower) || 
+                var filtered = _positions.Where(p =>
+                    p.Name.ToLower().Contains(searchLower) ||
                     (p.Description?.ToLower().Contains(searchLower) ?? false) ||
                     p.DepartmentName.ToLower().Contains(searchLower));
                 Positions = new ObservableCollection<PositionListItem>(filtered);
@@ -256,7 +256,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             {
                 var command = new DeletePositionCommand(SelectedPosition.Id);
                 var result = await _mediator.Send(command);
-                
+
                 if (result.IsSuccess)
                 {
                     await _messageService.ShowSuccessAsync("Posición eliminada correctamente");

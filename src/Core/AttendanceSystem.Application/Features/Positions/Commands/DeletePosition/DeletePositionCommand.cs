@@ -29,7 +29,7 @@ public sealed class DeletePositionCommandHandler : IRequestHandler<DeletePositio
         try
         {
             var positionId = PositionId.From(request.Id);
-            
+
             var position = await _repository.GetByIdAsync(positionId, cancellationToken);
             if (position == null)
             {

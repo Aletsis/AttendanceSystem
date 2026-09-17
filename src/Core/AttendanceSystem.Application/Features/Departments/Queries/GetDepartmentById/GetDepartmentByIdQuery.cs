@@ -21,7 +21,7 @@ public sealed class GetDepartmentByIdQueryHandler : IRequestHandler<GetDepartmen
         var result = await _queries.GetDepartmentByIdAsync(request.Id, cancellationToken);
         if (result == null)
             return Result<DepartmentDto>.Failure("Departamento no encontrado");
-            
+
         return Result<DepartmentDto>.Success(result);
     }
 }

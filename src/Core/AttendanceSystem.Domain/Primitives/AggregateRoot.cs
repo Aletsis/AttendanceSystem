@@ -34,7 +34,7 @@ public abstract class Entity<TId>
         if (GetType() != other.GetType())
             return false;
 
-        if (EqualityComparer<TId>.Default.Equals(Id, default) || 
+        if (EqualityComparer<TId>.Default.Equals(Id, default) ||
             EqualityComparer<TId>.Default.Equals(other.Id, default))
             return false;
 

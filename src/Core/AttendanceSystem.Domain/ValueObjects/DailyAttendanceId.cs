@@ -18,6 +18,6 @@ public sealed record DailyAttendanceId
     {
         return new DailyAttendanceId(value);
     }
-    
+
     public override string ToString() => Value.ToString();
 }

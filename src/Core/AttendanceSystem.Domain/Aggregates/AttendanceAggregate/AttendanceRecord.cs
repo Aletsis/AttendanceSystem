@@ -34,7 +34,7 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
 
         // Regla de negocio: validar horario
         record.ValidateBusinessHours();
-        
+
         // Levantar evento de dominio
         record.AddDomainEvent(new AttendanceRecordedEvent(
             record.Id,
@@ -55,7 +55,7 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
             return; // Idempotent is safer for re-processing logic where we might re-save
 
         Status = AttendanceStatus.Processed;
-        
+
         AddDomainEvent(new AttendanceProcessedEvent(Id, EmployeeId, CheckTime));
     }
 
@@ -73,7 +73,7 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
     public void MarkAsAnomalous(string reason)
     {
         Status = AttendanceStatus.Anomalous;
-        
+
         AddDomainEvent(new AttendanceAnomalyDetectedEvent(
             Id, EmployeeId, CheckTime, reason));
     }
@@ -82,7 +82,7 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
     private void ValidateBusinessHours()
     {
         var hour = CheckTime.Hour;
-        
+
         // Ejemplo: alertar si registro fuera de horario laboral
         if (hour < 6 || hour > 22)
         {

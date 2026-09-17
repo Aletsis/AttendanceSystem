@@ -26,18 +26,18 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         // Cron: Minute Hour * * *
         // Example: 14:30 -> "30 14 * * *"
         var cron = $"{timeOfDay.Minutes} {timeOfDay.Hours} * * *";
-        
+
         // Use the server's local timezone to match the user's expected time exactly
         var timeZone = TimeZoneInfo.Local;
-        
+
         var options = new RecurringJobOptions
         {
             TimeZone = timeZone
         };
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            JobId, 
-            jobs => jobs.DownloadFromAllDevices(), 
+            JobId,
+            jobs => jobs.DownloadFromAllDevices(),
             cron,
             options);
     }
@@ -59,10 +59,10 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
     {
         var cron = $"{timeOfDay.Minutes} {timeOfDay.Hours} * * *";
         var timeZone = TimeZoneInfo.Local;
-        
+
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "automated-database-backup", 
-            jobs => jobs.PerformAutoBackup(), 
+            "automated-database-backup",
+            jobs => jobs.PerformAutoBackup(),
             cron,
             new RecurringJobOptions { TimeZone = timeZone });
     }
@@ -76,10 +76,10 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
     {
         var cron = $"{timeOfDay.Minutes} {timeOfDay.Hours} * * *";
         var timeZone = TimeZoneInfo.Local;
-        
+
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "automated-daily-report", 
-            jobs => jobs.SendAutoReport(), 
+            "automated-daily-report",
+            jobs => jobs.SendAutoReport(),
             cron,
             new RecurringJobOptions { TimeZone = timeZone });
     }

@@ -10,7 +10,7 @@ public sealed record BranchId
     {
         if (value == Guid.Empty)
             throw new DomainException("BranchId no puede ser vacío");
-        
+
         Value = value;
     }
 

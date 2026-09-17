@@ -62,7 +62,7 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
 
                 int processedCount = 0;
                 int skippedCount = 0;
-                
+
                 // Procesar usuarios únicos del dispositivo
                 foreach (var dUser in deviceUsers.DistinctBy(u => u.UserId))
                 {
@@ -73,20 +73,20 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
                     {
                         // CASO: Usuario Ya Registrado en BD -> Solo actualizamos métodos de registro (Biometría)
                         // Esto asegura que no tengamos errores de claves duplicadas y mantenemos los datos demográficos de la BD.
-                        
+
                         var fingerprints = dUser.Fingerprints?
                             .Select(fp => new EmployeeFingerprint(fp.Index, fp.Template))
                             .ToList() ?? new List<EmployeeFingerprint>();
 
-                         employee.UpdateBiometrics(
-                              dUser.CardNumber, 
-                              dUser.Password, 
-                              dUser.FaceTemplate, 
-                              fingerprints,
-                              dUser.Photo);
-                         
-                         _employeeRepository.Update(employee);
-                         processedCount++;
+                        employee.UpdateBiometrics(
+                             dUser.CardNumber,
+                             dUser.Password,
+                             dUser.FaceTemplate,
+                             fingerprints,
+                             dUser.Photo);
+
+                        _employeeRepository.Update(employee);
+                        processedCount++;
                     }
                     else
                     {
@@ -97,22 +97,22 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
                         skippedCount++;
                     }
                 }
-                
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
-                
+
                 _logger.LogInformation("Sincronización completada. Actualizados: {Updated}, Omitidos (No en BD): {Skipped}", processedCount, skippedCount);
-                
+
                 return Result<int>.Success(processedCount);
             }
             finally
             {
-                 await deviceClient.DisconnectAsync(cancellationToken);
+                await deviceClient.DisconnectAsync(cancellationToken);
             }
         }
         catch (Exception ex)
         {
-             _logger.LogError(ex, "Error sincronizando usuarios desde dispositivo");
-             return Result<int>.Failure($"Error durante la importación: {ex.Message}");
+            _logger.LogError(ex, "Error sincronizando usuarios desde dispositivo");
+            return Result<int>.Failure($"Error durante la importación: {ex.Message}");
         }
     }
 }

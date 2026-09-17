@@ -24,7 +24,7 @@ public class SystemAlertConfiguration : IEntityTypeConfiguration<SystemAlert>
 
         builder.Property(a => a.ReferenceId)
             .HasMaxLength(100);
-            
+
         builder.Property(a => a.Type)
             .HasConversion<int>();
     }

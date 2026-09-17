@@ -8,7 +8,7 @@ public sealed record SystemAlertId
     {
         if (value == Guid.Empty)
             throw new DomainException("SystemAlertId no puede ser vacío");
-        
+
         Value = value;
     }
 

@@ -24,7 +24,7 @@ public class HikvisionDeviceClient : IDeviceClient
         _username = username ?? "admin";
         _password = password;
         _baseUrl = $"http://{ipAddress}:{port}";
-        
+
         try
         {
             var info = await GetDeviceInfoAsync(cancellationToken);
@@ -40,7 +40,7 @@ public class HikvisionDeviceClient : IDeviceClient
     public async Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(string deviceId, DateTime? fromDate, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Obteniendo logs de Hikvision para {DeviceId} desde {From} hasta {To}...", deviceId, fromDate, toDate);
-        
+
         var start = fromDate?.ToString("yyyy-MM-ddTHH:mm:ss") ?? DateTime.Today.AddDays(-1).ToString("yyyy-MM-ddTHH:mm:ss");
         var end = toDate?.ToString("yyyy-MM-ddTHH:mm:ss") ?? DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
 
@@ -55,7 +55,7 @@ public class HikvisionDeviceClient : IDeviceClient
         try
         {
             var response = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/AcsEvent", filter, cancellationToken);
-            if (!response.IsSuccessStatusCode) return new List< RawAttendanceRecord>();
+            if (!response.IsSuccessStatusCode) return new List<RawAttendanceRecord>();
 
             var xml = await response.Content.ReadAsStringAsync(cancellationToken);
             return ParseAcsEvents(xml);
@@ -70,7 +70,7 @@ public class HikvisionDeviceClient : IDeviceClient
     private IReadOnlyList<RawAttendanceRecord> ParseAcsEvents(string xml)
     {
         var records = new List<RawAttendanceRecord>();
-        
+
         // El XML de Hikvision tiene múltiples <AcsEvent> dentro de <AcsEventSearchList>
         var searchPattern = "<AcsEvent>";
         var currentPos = 0;
@@ -81,7 +81,7 @@ public class HikvisionDeviceClient : IDeviceClient
             if (endPos == -1) break;
 
             var eventXml = xml[currentPos..(endPos + 11)];
-            
+
             var employeeId = ExtractXmlValue(eventXml, "employeeNoString");
             var timeStr = ExtractXmlValue(eventXml, "time");
             var major = ExtractXmlValue(eventXml, "major");
@@ -149,16 +149,16 @@ public class HikvisionDeviceClient : IDeviceClient
     private async Task<HttpResponseMessage> SendRequestAsync(HttpMethod method, string path, string? content = null, CancellationToken cancellationToken = default)
     {
         var url = _baseUrl + path;
-        
+
         // Primera petición sin auth para ver si el servidor desafía con Digest
         var request = new HttpRequestMessage(method, url);
         if (content != null) request.Content = new StringContent(content, System.Text.Encoding.UTF8, "application/xml");
-        
+
         // Nota: Una implementación real de Digest requiere capturar 401, parsear el desafío nonce/realm
         // y reintentar con el header 'Authorization: Digest ...'.
         // Para este MVP, usaremos autenticación básica si el cliente la soporta o simularemos el flujo si es necesario.
         // O mejor, configuramos el HttpClientHandler con credenciales si es posible.
-        
+
         // Intentar con Basic Auth por ahora (muchos Hikvision la permiten si se activa)
         if (!string.IsNullOrEmpty(_username) && !string.IsNullOrEmpty(_password))
         {
@@ -188,16 +188,16 @@ public class HikvisionDeviceClient : IDeviceClient
             <maxResults>1000</maxResults>
             <searchResultPosition>0</searchResultPosition>
         </UserInfoSearchCond>";
-        
+
         var faceDict = new Dictionary<string, string>();
-        try 
+        try
         {
             var faceSearchXml = $@"<FaceInfoSearchCond>
                 <searchID>{Guid.NewGuid()}</searchID>
                 <maxResults>1000</maxResults>
                 <searchResultPosition>0</searchResultPosition>
             </FaceInfoSearchCond>";
-            
+
             var faceResponse = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/UserInfo/Face/Search", faceSearchXml, cancellationToken);
             if (faceResponse.IsSuccessStatusCode)
             {
@@ -207,7 +207,7 @@ public class HikvisionDeviceClient : IDeviceClient
         }
         catch (Exception ex)
         {
-             _logger.LogWarning(ex, "Error buscando rostros/fotos en Hikvision. Continuando sin fotos.");
+            _logger.LogWarning(ex, "Error buscando rostros/fotos en Hikvision. Continuando sin fotos.");
         }
 
         try
@@ -240,7 +240,7 @@ public class HikvisionDeviceClient : IDeviceClient
             var pin = ExtractXmlValue(userXml, "employeeNo");
             var name = ExtractXmlValue(userXml, "name");
             var privilege = ExtractXmlValue(userXml, "userType") == "admin" ? 3 : 0;
-            
+
             string? photo = null;
             if (pin != null && faceDict?.TryGetValue(pin, out photo) == true)
             {
@@ -371,8 +371,8 @@ public class HikvisionDeviceClient : IDeviceClient
                     <employeeNo>{user.UserId}</employeeNo>
                     <faceData>{user.Photo}</faceData>
                 </FaceInfoRecord>";
-                
-                try 
+
+                try
                 {
                     await SendRequestAsync(HttpMethod.Put, "/ISAPI/AccessControl/UserInfo/Face/Record", faceXml, cancellationToken);
                 }

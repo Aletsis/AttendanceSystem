@@ -66,7 +66,7 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
         }
 
         // 5. Mapear a DTO
-        var dtos = rawRecords.Select(r => 
+        var dtos = rawRecords.Select(r =>
         {
             string entryType = "No Válida";
             DateTime? assignedDate = null;
@@ -94,10 +94,10 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
             };
         });
 
-        return dtos.OrderBy(x => 
+        return dtos.OrderBy(x =>
         {
-             if (long.TryParse(x.EmployeeId, out var id)) return id;
-             return long.MaxValue;
+            if (long.TryParse(x.EmployeeId, out var id)) return id;
+            return long.MaxValue;
         }).ThenBy(x => x.EmployeeId)
           .ThenBy(x => x.CheckTime);
     }

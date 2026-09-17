@@ -54,7 +54,7 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
         public ICommand BackToDashboardCommand { get; }
 
         public ReportsViewModel(
-            IFrameNavigationService navigationService, 
+            IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator)
         {

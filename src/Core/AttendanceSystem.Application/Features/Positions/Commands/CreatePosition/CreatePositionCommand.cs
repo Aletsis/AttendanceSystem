@@ -25,7 +25,7 @@ public sealed class CreatePositionCommandHandler : IRequestHandler<CreatePositio
 
     public async Task<Result<Guid>> Handle(CreatePositionCommand request, CancellationToken cancellationToken)
     {
-        try 
+        try
         {
             var position = Position.Create(
                 request.Name,
@@ -40,7 +40,7 @@ public sealed class CreatePositionCommandHandler : IRequestHandler<CreatePositio
         }
         catch (Exception ex)
         {
-             return Result<Guid>.Failure(ex.Message);
+            return Result<Guid>.Failure(ex.Message);
         }
     }
 }

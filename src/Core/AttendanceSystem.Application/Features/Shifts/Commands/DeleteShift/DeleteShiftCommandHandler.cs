@@ -33,7 +33,7 @@ internal sealed class DeleteShiftCommandHandler : IRequestHandler<DeleteShiftCom
         // Verificar si el turno está en uso
         if (await _employeeRepository.IsShiftInUseAsync(request.ShiftId, cancellationToken))
         {
-             return Result.Failure("No se puede eliminar el turno porque está asignado a uno o más empleados.");
+            return Result.Failure("No se puede eliminar el turno porque está asignado a uno o más empleados.");
         }
 
         _shiftRepository.Delete(shift);

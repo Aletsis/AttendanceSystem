@@ -37,14 +37,14 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
 
         // 1. Logica de asignación inteligente para turnos que cruzan la medianoche
         DateOnly targetDate = request.Date;
-        
+
         // Si se está asignando una salida, verificar si pertenece al día anterior
         if (request.AssignmentType == "Salida")
         {
             var yesterday = request.Date.AddDays(-1);
             var yesterdayDA = await _dailyRepo.GetByEmployeeAndDateAsync(
-                employeeId, 
-                yesterday.ToDateTime(TimeOnly.MinValue), 
+                employeeId,
+                yesterday.ToDateTime(TimeOnly.MinValue),
                 cancellationToken);
 
             // Si ayer tiene un turno que cruza la medianoche y este registro es en la mañana, podría pertenecer a ayer.
@@ -57,13 +57,13 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
                     // Si el registro es antes de la entrada programada de hoy (o temprano en la mañana)
                     // y ayer fue un turno nocturno, casi con certeza pertenece a ayer.
                     bool belongsToYesterday = false;
-                    
-                    if (yesterdayDA.ShiftType == ShiftType.Continuo || 
+
+                    if (yesterdayDA.ShiftType == ShiftType.Continuo ||
                         (yesterdayDA.ScheduledCheckOut.HasValue && yesterdayDA.ScheduledCheckOut < yesterdayDA.ScheduledCheckIn))
                     {
                         // Está dentro de las 16 horas posteriores a la entrada de ayer, es un candidato.
                         var diffHours = (attendanceRecord.CheckTime - yesterdayDA.ActualCheckIn.Value).TotalHours;
-                        if (diffHours > 0 && diffHours < 18) 
+                        if (diffHours > 0 && diffHours < 18)
                         {
                             belongsToYesterday = true;
                         }
@@ -78,8 +78,8 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         }
 
         var daily = await _dailyRepo.GetByEmployeeAndDateAsync(
-            employeeId, 
-            targetDate.ToDateTime(TimeOnly.MinValue), 
+            employeeId,
+            targetDate.ToDateTime(TimeOnly.MinValue),
             cancellationToken);
 
         if (daily == null)
@@ -102,14 +102,14 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
             // "Validando que no haya 2 entradas o actualizaciones"
             // Si ya hay un CheckIn, lo reemplazamos.
             // Si el registro que estamos asignando es actualmente el CheckOut, debemos borrar CheckOut.
-            
+
             if (daily.CheckOutRecordId == recordId)
             {
                 daily.RemoveCheckOut();
             }
 
             daily.SetCheckIn(record.CheckTime, record.Id);
-            
+
             // Si el registro no está procesado, lo marcamos como procesado
             if (record.Status != AttendanceStatus.Processed)
             {
@@ -140,14 +140,14 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         }
         else
         {
-             return Result.Failure("Tipo de asignación inválido. Use 'Entrada' o 'Salida'.");
+            return Result.Failure("Tipo de asignación inválido. Use 'Entrada' o 'Salida'.");
         }
-        
+
         // 4. Actualizamos el DailyAttendance en el repositorio
         // Necesitamos un método Update en IDailyAttendanceRepository? O solo confiamos en EF Core Change Tracking?
         // La implementación que vimos antes usa Remove + Add o solo EF Change Tracking si se cargó.
         // Asumiendo que el seguimiento de EF Core está activo ya que cargamos 'daily'.
-        
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();

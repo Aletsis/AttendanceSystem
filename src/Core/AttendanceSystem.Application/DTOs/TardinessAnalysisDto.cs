@@ -6,7 +6,7 @@ public class TardinessAnalysisDto
     public int TotalTardies { get; set; }
     public int TotalPossibleWorkDays { get; set; }
     public int TotalTardinessMinutes { get; set; }
-    
+
     public List<DayTardinessDto> TardinessByDayOfWeek { get; set; } = new();
     public List<DepartmentTardinessDto> TardinessByDepartment { get; set; } = new();
     public List<BranchTardinessDto> TardinessByBranch { get; set; } = new();

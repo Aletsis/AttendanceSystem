@@ -33,19 +33,19 @@ public class IdentityRevalidatingAuthenticationStateProvider : RevalidatingServe
         // Obtener el servicio de gestión de usuarios
         await using var scope = _scopeFactory.CreateAsyncScope();
         var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        
+
         return await ValidateSecurityStampAsync(userManager, authenticationState.User);
     }
 
     private async Task<bool> ValidateSecurityStampAsync(UserManager<ApplicationUser> userManager, ClaimsPrincipal principal)
     {
         var user = await userManager.GetUserAsync(principal);
-        
+
         if (user == null)
         {
             return false;
         }
-        
+
         // Verificar si el usuario está activo
         if (!user.IsActive)
         {

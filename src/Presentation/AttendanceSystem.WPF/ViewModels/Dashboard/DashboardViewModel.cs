@@ -65,7 +65,7 @@ namespace AttendanceSystem.WPF.ViewModels.Dashboard
         private async Task LoadDashboardAsync()
         {
             WelcomeMessage = $"Bienvenido, {_authService.CurrentUserName ?? "Usuario"}";
-            
+
             SetBusy(true, "Cargando estadísticas...");
             try
             {
@@ -80,7 +80,7 @@ namespace AttendanceSystem.WPF.ViewModels.Dashboard
                 var today = DateTime.Today;
                 var attQuery = new GetDailyAttendanceByDateRangeQuery(today, today);
                 var attResult = await _mediator.Send(attQuery);
-                
+
                 if (attResult != null)
                 {
                     PresentToday = attResult.Count(a => a.ActualCheckIn.HasValue && !a.IsAbsent);
@@ -101,7 +101,7 @@ namespace AttendanceSystem.WPF.ViewModels.Dashboard
 
         private void NavigateTo(string viewName)
         {
-             switch (viewName)
+            switch (viewName)
             {
                 case "Employees": _navigationService.NavigateTo<Views.Employees.EmployeesView>(); break;
                 case "Departments": _navigationService.NavigateTo<Views.Departments.DepartmentsView>(); break;

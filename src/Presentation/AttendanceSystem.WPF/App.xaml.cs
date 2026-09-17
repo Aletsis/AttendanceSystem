@@ -36,11 +36,11 @@ namespace AttendanceSystem.WPF
         protected override Window CreateShell()
         {
             var shell = Container.Resolve<ShellWindow>();
-            
+
             // Navigate to Dashboard
             var regionManager = Container.Resolve<IRegionManager>();
             regionManager.RegisterViewWithRegion("MainRegion", typeof(Views.Dashboard.DashboardView));
-            
+
             return shell;
         }
 
@@ -62,22 +62,22 @@ namespace AttendanceSystem.WPF
             // Build a ServiceProvider for MediatR and EF Core
             var connectionString = Configuration.GetConnectionString("AttendanceDb");
             var services = new ServiceCollection();
-            
+
             // Add Configuration
             services.AddSingleton<IConfiguration>(Configuration);
-            
+
             // Add Logging
             services.AddLogging(builder =>
             {
                 builder.AddSerilog();
             });
-            
+
             // Add MediatR
-            services.AddMediatR(cfg => 
+            services.AddMediatR(cfg =>
             {
                 cfg.RegisterServicesFromAssembly(typeof(AttendanceSystem.Application.Features.Employees.Commands.CreateEmployeeCommand).Assembly);
             });
-            
+
             // Add DbContext
             services.AddDbContext<AttendanceDbContext>(options =>
             {
@@ -88,7 +88,7 @@ namespace AttendanceSystem.WPF
             {
                 options.UseNpgsql(connectionString);
             });
-            
+
             // Add Repositories
             services.AddScoped<IEmployeeRepository, EmployeeRepository>();
             services.AddScoped<IDepartmentRepository, DepartmentRepository>();
@@ -100,22 +100,22 @@ namespace AttendanceSystem.WPF
             services.AddScoped<IDailyAttendanceRepository, DailyAttendanceRepository>();
             services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
             services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
-            
+
             // Add Queries (Dapper/EF Core Raw)
             services.AddScoped<IDepartmentQueries, DepartmentQueries>();
             services.AddScoped<IPositionQueries, PositionQueries>();
             services.AddScoped<IBranchQueries, BranchQueries>();
             services.AddScoped<IShiftQueries, ShiftQueries>();
             services.AddScoped<IDeviceQueries, DeviceQueries>();
-            
+
             // Add UnitOfWork
             services.AddScoped<IUnitOfWork, AttendanceSystem.Infrastructure.Common.UnitOfWork>();
-            
+
             // Add Services
             services.AddScoped<IImportService, ImportService>();
             services.AddScoped<IReportExportService, ReportExportService>();
             services.AddScoped<IBackupService, BackupService>();
-            
+
             // Add JobScheduler implementation for WPF Client (No-Op)
             services.AddSingleton<IAttendanceJobScheduler, WpfAttendanceJobScheduler>();
 
@@ -131,16 +131,16 @@ namespace AttendanceSystem.WPF
             .AddEntityFrameworkStores<AttendanceDbContext>();
 
             _serviceProvider = services.BuildServiceProvider();
-            
+
             // Register services in Prism container
             // We register the IMediator instance resolved from our ServiceProvider
             containerRegistry.RegisterInstance<IMediator>(_serviceProvider.GetRequiredService<IMediator>());
-            
+
             // Register factories for scoped services (DbContext and Repositories)
             // Using a factory pattern to get fresh scoped instances
-            containerRegistry.RegisterSingleton<Func<AttendanceDbContext>>(() => 
+            containerRegistry.RegisterSingleton<Func<AttendanceDbContext>>(() =>
                 () => _serviceProvider.CreateScope().ServiceProvider.GetRequiredService<AttendanceDbContext>());
-            
+
             // WPF Services
             // AuthenticationStateService necesita UserManager<ApplicationUser> del ServiceProvider
             containerRegistry.RegisterSingleton<IAuthenticationStateService>(() =>
@@ -148,7 +148,7 @@ namespace AttendanceSystem.WPF
                     _serviceProvider!.GetRequiredService<UserManager<ApplicationUser>>()));
             containerRegistry.RegisterSingleton<IFrameNavigationService, FrameNavigationService>();
             containerRegistry.RegisterSingleton<IMessageService, MessageService>();
-            
+
             containerRegistry.RegisterInstance<IImportService>(_serviceProvider.GetRequiredService<IImportService>());
             containerRegistry.RegisterInstance<IReportExportService>(_serviceProvider.GetRequiredService<IReportExportService>());
             containerRegistry.RegisterInstance<IBackupService>(_serviceProvider.GetRequiredService<IBackupService>());

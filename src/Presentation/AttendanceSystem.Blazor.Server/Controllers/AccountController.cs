@@ -15,7 +15,7 @@ public class AccountController : Controller
     private readonly ILogger<AccountController> _logger;
 
     public AccountController(
-        SignInManager<ApplicationUser> signInManager, 
+        SignInManager<ApplicationUser> signInManager,
         IAuthenticationService authService,
         ILogger<AccountController> logger)
     {
@@ -38,9 +38,9 @@ public class AccountController : Controller
         {
             // Usar SignInManager directamente aquí porque estamos en un contexto HTTP tradicional
             var result = await _signInManager.PasswordSignInAsync(
-                model.Username, 
-                model.Password, 
-                isPersistent: true, 
+                model.Username,
+                model.Password,
+                isPersistent: true,
                 lockoutOnFailure: false);
 
             if (result.Succeeded)

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Configuration;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
 using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration;
-using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport; 
+using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport;
 
 namespace AttendanceSystem.WPF.ViewModels.Attendance
 {
@@ -31,23 +31,23 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
 
         public ObservableCollection<AttendanceLogItem> AttendanceLogs { get => _attendanceLogs; set => SetProperty(ref _attendanceLogs, value); }
         public AttendanceLogItem? SelectedLog { get => _selectedLog; set => SetProperty(ref _selectedLog, value); }
-        
-        public DateTime StartDate 
-        { 
-            get => _startDate; 
-            set { if (SetProperty(ref _startDate, value)) _ = LoadAttendanceLogsAsync(); } 
+
+        public DateTime StartDate
+        {
+            get => _startDate;
+            set { if (SetProperty(ref _startDate, value)) _ = LoadAttendanceLogsAsync(); }
         }
-        
-        public DateTime EndDate 
-        { 
-            get => _endDate; 
-            set { if (SetProperty(ref _endDate, value)) _ = LoadAttendanceLogsAsync(); } 
+
+        public DateTime EndDate
+        {
+            get => _endDate;
+            set { if (SetProperty(ref _endDate, value)) _ = LoadAttendanceLogsAsync(); }
         }
-        
-        public string SearchText 
-        { 
-            get => _searchText; 
-            set { if (SetProperty(ref _searchText, value)) FilterLogs(); } 
+
+        public string SearchText
+        {
+            get => _searchText;
+            set { if (SetProperty(ref _searchText, value)) FilterLogs(); }
         }
 
         public ICommand ManualEntryCommand { get; }
@@ -57,7 +57,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
         public ICommand BackToDashboardCommand { get; }
 
         public AttendanceViewModel(
-            IFrameNavigationService navigationService, 
+            IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
             IReportExportService reportExportService,
@@ -86,7 +86,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                 // 1. Get Employees for name mapping
                 var employeesResult = await _mediator.Send(new GetAllEmployeesQuery());
                 var employeeDict = new Dictionary<string, string>();
-                
+
                 if (employeesResult.IsSuccess && employeesResult.Value != null)
                 {
                     employeeDict = employeesResult.Value.ToDictionary(e => e.Id, e => e.FullName);
@@ -96,7 +96,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                 // Note: GetDailyAttendanceByDateRangeQuery takes optional BranchId and EmployeeId
                 var query = new GetDailyAttendanceByDateRangeQuery(StartDate, EndDate);
                 var attendanceResult = await _mediator.Send(query);
-                
+
                 _attendanceLogs.Clear();
                 _allLogsData.Clear();
 
@@ -108,14 +108,14 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                     {
                         var employeeId = daily.EmployeeId.Value;
                         var employeeName = employeeDict.TryGetValue(employeeId, out var name) ? name : "Desconocido";
-                        
+
                         // Calculate status string
                         string status = "Asistencia";
                         if (daily.IsAbsent) status = "Falta";
                         else if (daily.IsRestDay && !daily.WorkedOnRestDay) status = "Descanso";
                         else if (daily.IsRestDay && daily.WorkedOnRestDay) status = "Descanso Laborado";
                         else if (daily.LateMinutes > 0) status = $"Retardo ({daily.LateMinutes}m)";
-                        
+
                         var item = new AttendanceLogItem
                         {
                             Id = daily.Id.Value,
@@ -129,10 +129,10 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                             Status = status,
                             Notes = daily.AttendanceNote
                         };
-                        
+
                         _allLogsData.Add(item);
                     }
-                    
+
                     FilterLogs();
                 }
             }
@@ -145,15 +145,15 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                 SetBusy(false);
             }
         }
-        
+
         private string CalculateWorkedHours(DateTime? checkIn, DateTime? checkOut)
         {
-             if (checkIn.HasValue && checkOut.HasValue)
-             {
-                 var diff = checkOut.Value - checkIn.Value;
-                 return $"{(int)diff.TotalHours:00}:{diff.Minutes:00}";
-             }
-             return "--:--";
+            if (checkIn.HasValue && checkOut.HasValue)
+            {
+                var diff = checkOut.Value - checkIn.Value;
+                return $"{(int)diff.TotalHours:00}:{diff.Minutes:00}";
+            }
+            return "--:--";
         }
 
         private void FilterLogs()
@@ -165,11 +165,11 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             else
             {
                 var searchLower = SearchText.ToLower();
-                var filtered = _allLogsData.Where(l => 
-                    l.EmployeeName.ToLower().Contains(searchLower) || 
+                var filtered = _allLogsData.Where(l =>
+                    l.EmployeeName.ToLower().Contains(searchLower) ||
                     l.EmployeeNumber.ToLower().Contains(searchLower) ||
                     l.Status.ToLower().Contains(searchLower));
-                    
+
                 AttendanceLogs = new ObservableCollection<AttendanceLogItem>(filtered);
             }
         }
@@ -186,17 +186,17 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             {
                 var command = new ProcessDailyAttendanceCommand(StartDate, EndDate);
                 var processedCount = await _mediator.Send(command);
-                
+
                 await _messageService.ShowSuccessAsync($"Cálculo de asistencia completado. Días procesados: {processedCount}");
                 await LoadAttendanceLogsAsync();
             }
-            catch (Exception ex) 
-            { 
-                await _messageService.ShowErrorAsync($"Error al calcular la asistencia: {ex.Message}"); 
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al calcular la asistencia: {ex.Message}");
             }
-            finally 
-            { 
-                SetBusy(false); 
+            finally
+            {
+                SetBusy(false);
             }
         }
 
@@ -238,13 +238,13 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                     await _messageService.ShowSuccessAsync("Reporte exportado correctamente");
                 }
             }
-            catch (Exception ex) 
-            { 
-                await _messageService.ShowErrorAsync($"Error al exportar: {ex.Message}"); 
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al exportar: {ex.Message}");
             }
-            finally 
-            { 
-                SetBusy(false); 
+            finally
+            {
+                SetBusy(false);
             }
         }
     }

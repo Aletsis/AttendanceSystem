@@ -4,5 +4,6 @@
     <Authors>Aletsis</Authors>
     <Company>Aletsis</Company>
     <Product>Attendance System</Product>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
   </PropertyGroup>
 </Project>

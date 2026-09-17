@@ -63,8 +63,8 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
             var pwdResult = await _userManager.ResetPasswordAsync(user, token, request.NewPassword);
             if (!pwdResult.Succeeded)
             {
-                 var errors = string.Join(", ", pwdResult.Errors.Select(e => e.Description));
-                 throw new Exception($"Error al cambiar contraseña: {errors}");
+                var errors = string.Join(", ", pwdResult.Errors.Select(e => e.Description));
+                throw new Exception($"Error al cambiar contraseña: {errors}");
             }
         }
 

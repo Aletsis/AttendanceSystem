@@ -30,11 +30,11 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
 
         builder.Property(s => s.WorkHours)
             .IsRequired();
-            
+
         builder.Property(s => s.ShiftType)
             .IsRequired()
             .HasConversion<int>();
-            
+
         builder.Property(s => s.EndTime)
             .IsRequired();
 
@@ -55,7 +55,7 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             d.ToTable("ShiftDays");
             d.WithOwner().HasForeignKey("ShiftId");
             d.HasKey("ShiftId", "DayOfWeek");
-            
+
             d.Property(x => x.DayOfWeek)
                 .IsRequired()
                 .HasConversion<int>();
@@ -63,7 +63,7 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             d.Property(x => x.StartTime).IsRequired();
             d.Property(x => x.EndTime).IsRequired();
             d.Property(x => x.WorkHours).IsRequired();
-            
+
             d.Property(x => x.ShiftType)
                 .IsRequired()
                 .HasDefaultValue(AttendanceSystem.Domain.Enumerations.ShiftType.Matutino)

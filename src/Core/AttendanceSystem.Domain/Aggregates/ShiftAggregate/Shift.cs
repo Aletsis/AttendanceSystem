@@ -55,7 +55,7 @@ public class Shift : AggregateRoot<ShiftId>
             throw new DomainException("El nombre del turno es requerido.");
         if (toleranceMinutes < 0)
             throw new DomainException("El tiempo de tolerancia no puede ser negativo.");
-        
+
         return shift;
     }
 
@@ -94,8 +94,8 @@ public class Shift : AggregateRoot<ShiftId>
 
     private static TimeSpan NormalizeTime(TimeSpan time)
     {
-        return time.TotalDays >= 1 
-            ? time.Subtract(TimeSpan.FromDays((int)time.TotalDays)) 
+        return time.TotalDays >= 1
+            ? time.Subtract(TimeSpan.FromDays((int)time.TotalDays))
             : time;
     }
 }

@@ -64,7 +64,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
                 .ObservesProperty(() => Name)
                 .ObservesProperty(() => IsExternal)
                 .ObservesProperty(() => ExternalHost);
-            
+
             CancelCommand = new DelegateCommand(ExecuteCancel);
         }
 
@@ -72,10 +72,10 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
         {
             if (string.IsNullOrWhiteSpace(Code) || string.IsNullOrWhiteSpace(Name))
                 return false;
-            
+
             if (IsExternal && string.IsNullOrWhiteSpace(ExternalHost))
                 return false;
-            
+
             return true;
         }
 

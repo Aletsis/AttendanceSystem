@@ -33,13 +33,13 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         // General Settings
         private int _toleranceMinutes = 15;
         private int _standardWorkHours = 8;
-        
+
         // ADMS Settings
         private int _admsPort = 5005;
         private bool _isAutoDownloadEnabled = true;
         private bool _autoDownloadOnlyToday = true;
         private TimeSpan? _autoDownloadTime = new TimeSpan(23, 0, 0);
-        
+
         // Backup Settings
         private string _backupDirectory = "Backups";
         private int _backupTimeoutMinutes = 10;
@@ -93,7 +93,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         public ICommand SelectBackupFolderCommand { get; }
 
         public SettingsViewModel(
-            IFrameNavigationService navigationService, 
+            IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
             IConfiguration configuration)
@@ -135,7 +135,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                 if (result.IsSuccess && result.Value != null)
                 {
                     _currentConfig = result.Value;
-                    
+
                     CompanyName = _currentConfig.CompanyName;
                     CompanyLogo = _currentConfig.CompanyLogo;
                     ToleranceMinutes = (int)_currentConfig.LateToleranceMinutes.TotalMinutes;

@@ -8,7 +8,7 @@ public sealed record DepartmentId
     {
         if (value == Guid.Empty)
             throw new DomainException("DepartmentId no puede ser vacío");
-        
+
         Value = value;
     }
 

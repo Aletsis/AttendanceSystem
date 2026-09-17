@@ -52,23 +52,23 @@ public class ImportService : IImportService
 
             var range = worksheet.RangeUsed();
             if (range == null) return;
-            var rows = range.RowsUsed().Skip(1); 
+            var rows = range.RowsUsed().Skip(1);
 
             foreach (var row in rows)
             {
                 try
                 {
                     var empId = row.Cell(1).GetValue<string>();
-                    
+
                     DateTime date;
                     if (!row.Cell(2).TryGetValue(out date))
                     {
-                         var dateStr = row.Cell(2).GetValue<string>();
-                         if (!DateTime.TryParse(dateStr, out date))
-                         {
-                             result.Errors.Add($"Fila {row.RowNumber()}: Fecha inválida.");
-                             continue;
-                         }
+                        var dateStr = row.Cell(2).GetValue<string>();
+                        if (!DateTime.TryParse(dateStr, out date))
+                        {
+                            result.Errors.Add($"Fila {row.RowNumber()}: Fecha inválida.");
+                            continue;
+                        }
                     }
 
                     TimeSpan time;
@@ -82,23 +82,23 @@ public class ImportService : IImportService
                     }
                     else
                     {
-                         var timeStr = row.Cell(3).GetValue<string>();
-                         if (!TimeSpan.TryParse(timeStr, out time))
-                         {
-                             result.Errors.Add($"Fila {row.RowNumber()}: Hora inválida.");
-                             continue;
-                         }
+                        var timeStr = row.Cell(3).GetValue<string>();
+                        if (!TimeSpan.TryParse(timeStr, out time))
+                        {
+                            result.Errors.Add($"Fila {row.RowNumber()}: Hora inválida.");
+                            continue;
+                        }
                     }
 
-                    var type = row.Cell(4).GetValue<string>(); 
+                    var type = row.Cell(4).GetValue<string>();
                     var dateTime = date.Date + time;
 
-                    if (string.IsNullOrWhiteSpace(empId)) 
+                    if (string.IsNullOrWhiteSpace(empId))
                     {
                         result.Errors.Add($"Fila {row.RowNumber()}: EmployeeId vacío.");
                         continue;
                     }
-                    
+
                     result.ValidEntries.Add(new ImportedLogEntryDto(empId, dateTime, type));
                 }
                 catch (Exception ex)
@@ -120,11 +120,11 @@ public class ImportService : IImportService
             using var reader = new StreamReader(stream);
             string? line;
             int lineNumber = 0;
-            
+
             while ((line = await reader.ReadLineAsync()) != null)
             {
                 lineNumber++;
-                if (lineNumber == 1) continue; 
+                if (lineNumber == 1) continue;
 
                 var parts = line.Split(',');
                 if (parts.Length < 4) continue;
@@ -132,12 +132,12 @@ public class ImportService : IImportService
                 try
                 {
                     var empId = parts[0].Trim();
-                    if (!DateTime.TryParse(parts[1].Trim(), out var date)) 
+                    if (!DateTime.TryParse(parts[1].Trim(), out var date))
                     {
                         result.Errors.Add($"Fila {lineNumber}: Fecha inválida.");
                         continue;
                     }
-                    if (!TimeSpan.TryParse(parts[2].Trim(), out var time)) 
+                    if (!TimeSpan.TryParse(parts[2].Trim(), out var time))
                     {
                         result.Errors.Add($"Fila {lineNumber}: Hora inválida.");
                         continue;
@@ -146,12 +146,12 @@ public class ImportService : IImportService
 
                     var dateTime = date.Date + time;
 
-                    if (string.IsNullOrWhiteSpace(empId)) 
+                    if (string.IsNullOrWhiteSpace(empId))
                     {
                         result.Errors.Add($"Fila {lineNumber}: EmployeeId vacío.");
                         continue;
                     }
-                    
+
                     result.ValidEntries.Add(new ImportedLogEntryDto(empId, dateTime, type));
                 }
                 catch (Exception ex)
@@ -169,7 +169,7 @@ public class ImportService : IImportService
     // --- Branches ---
     public async Task<ImportResult<ImportBranchDto>> ParseBranchesAsync(Stream stream)
     {
-        return await Task.Run(() => 
+        return await Task.Run(() =>
         {
             var result = new ImportResult<ImportBranchDto>();
             try
@@ -214,7 +214,7 @@ public class ImportService : IImportService
     // --- Departments ---
     public async Task<ImportResult<ImportDepartmentDto>> ParseDepartmentsAsync(Stream stream)
     {
-        return await Task.Run(() => 
+        return await Task.Run(() =>
         {
             var result = new ImportResult<ImportDepartmentDto>();
             try
@@ -256,7 +256,7 @@ public class ImportService : IImportService
     // --- Positions ---
     public async Task<ImportResult<ImportPositionDto>> ParsePositionsAsync(Stream stream)
     {
-        return await Task.Run(() => 
+        return await Task.Run(() =>
         {
             var result = new ImportResult<ImportPositionDto>();
             try
@@ -275,7 +275,7 @@ public class ImportService : IImportService
                     {
                         var name = row.Cell(1).GetValue<string>();
                         var desc = row.Cell(2).GetValue<string>();
-                        
+
                         decimal baseSalary = 0;
                         if (!row.Cell(3).TryGetValue<decimal>(out baseSalary))
                             baseSalary = 0;
@@ -302,7 +302,7 @@ public class ImportService : IImportService
     // --- Employees ---
     public async Task<ImportResult<ImportEmployeeDto>> ParseEmployeesAsync(Stream stream)
     {
-        return await Task.Run(() => 
+        return await Task.Run(() =>
         {
             var result = new ImportResult<ImportEmployeeDto>();
             try
@@ -340,8 +340,8 @@ public class ImportService : IImportService
                         var gender = row.Cell(9).GetValue<string>();
 
                         result.ValidEntries.Add(new ImportEmployeeDto(
-                            id, firstName, lastName, email, 
-                            branchName, deptName, posName, 
+                            id, firstName, lastName, email,
+                            branchName, deptName, posName,
                             gender, hireDate
                         ));
                     }
@@ -367,7 +367,7 @@ public class ImportService : IImportService
         ws.Cell(1, 2).Value = "Fecha";
         ws.Cell(1, 3).Value = "Hora";
         ws.Cell(1, 4).Value = "Tipo";
-        
+
         // Add sample data for clarity
         ws.Cell(2, 1).Value = "1001";
         ws.Cell(2, 2).Value = DateTime.Today.ToString("yyyy-MM-dd");

@@ -7,7 +7,7 @@ namespace AttendanceSystem.Infrastructure.Persistence.Queries;
 
 public class DepartmentQueries : IDepartmentQueries
 {
-     private readonly AttendanceDbContext _dbContext;
+    private readonly AttendanceDbContext _dbContext;
 
     public DepartmentQueries(AttendanceDbContext dbContext)
     {

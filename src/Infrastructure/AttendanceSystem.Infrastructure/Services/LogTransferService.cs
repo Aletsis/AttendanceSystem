@@ -17,11 +17,11 @@ public class LogTransferService : ILogTransferService
     }
 
     public async Task<Result<bool>> TransferLogAsync(
-        string host, 
-        string employeeId, 
-        DateTime checkTime, 
-        int verifyMethod, 
-        int checkType, 
+        string host,
+        string employeeId,
+        DateTime checkTime,
+        int verifyMethod,
+        int checkType,
         CancellationToken cancellationToken = default)
     {
         try
@@ -49,7 +49,7 @@ public class LogTransferService : ILogTransferService
             }
 
             var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
-            _logger.LogWarning("Fallo al transferir log a {Host}. Status: {Status}. Error: {Error}", 
+            _logger.LogWarning("Fallo al transferir log a {Host}. Status: {Status}. Error: {Error}",
                 host, response.StatusCode, errorContent);
 
             return Result<bool>.Failure($"Error {response.StatusCode}: {errorContent}");

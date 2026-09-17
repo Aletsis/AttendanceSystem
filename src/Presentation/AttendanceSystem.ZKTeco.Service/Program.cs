@@ -49,42 +49,42 @@ public class Program
                 .Enrich.WithProperty("Application", "ZKTecoService"));
 
 
-        // ===== CONFIGURAR COMO SERVICIO DE WINDOWS =====
-        builder.Services.AddWindowsService(options =>
-        {
-            options.ServiceName = "AttendanceSystem.ZKTeco.Service";
-        });
-
-        // Agregar el worker (necesario para que funcione como servicio de Windows)
-        builder.Services.AddHostedService<Worker>();
-
-        // Configurar gRPC Server con Interceptor de Autenticación
-        builder.Services.AddGrpc(options =>
-        {
-            options.Interceptors.Add<ApiKeyAuthInterceptor>();
-        });
-        
-        // ZKTeco SDK Service registration
-        builder.Services.AddSingleton<IDeviceClient, ZKTecoDeviceClient>(); 
-        builder.Services.AddSingleton<IDeviceDiscoveryService, ZKTecoDiscoveryService>(); 
-
-        // Configurar Kestrel explícitamente si es necesario, o usar appsettings
-        builder.WebHost.ConfigureKestrel(options =>
-        {
-            var port = builder.Configuration.GetValue<int>("GrpcPort", 5001);
-            options.ListenAnyIP(port, listenOptions =>
+            // ===== CONFIGURAR COMO SERVICIO DE WINDOWS =====
+            builder.Services.AddWindowsService(options =>
             {
-                listenOptions.Protocols = HttpProtocols.Http2;
+                options.ServiceName = "AttendanceSystem.ZKTeco.Service";
             });
-        });
 
-        var app = builder.Build();
+            // Agregar el worker (necesario para que funcione como servicio de Windows)
+            builder.Services.AddHostedService<Worker>();
 
-        app.MapGrpcService<ZKTecoGrpcService>();
-        app.MapGet("/", () => "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
+            // Configurar gRPC Server con Interceptor de Autenticación
+            builder.Services.AddGrpc(options =>
+            {
+                options.Interceptors.Add<ApiKeyAuthInterceptor>();
+            });
 
-        Log.Information("Servicio ZKTeco configurado correctamente");
-        app.Run();
+            // ZKTeco SDK Service registration
+            builder.Services.AddSingleton<IDeviceClient, ZKTecoDeviceClient>();
+            builder.Services.AddSingleton<IDeviceDiscoveryService, ZKTecoDiscoveryService>();
+
+            // Configurar Kestrel explícitamente si es necesario, o usar appsettings
+            builder.WebHost.ConfigureKestrel(options =>
+            {
+                var port = builder.Configuration.GetValue<int>("GrpcPort", 5001);
+                options.ListenAnyIP(port, listenOptions =>
+                {
+                    listenOptions.Protocols = HttpProtocols.Http2;
+                });
+            });
+
+            var app = builder.Build();
+
+            app.MapGrpcService<ZKTecoGrpcService>();
+            app.MapGet("/", () => "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
+
+            Log.Information("Servicio ZKTeco configurado correctamente");
+            app.Run();
         }
         catch (Exception ex)
         {

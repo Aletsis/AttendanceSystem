@@ -29,7 +29,7 @@ public sealed class DeleteDepartmentCommandHandler : IRequestHandler<DeleteDepar
         try
         {
             var departmentId = DepartmentId.From(request.Id);
-            
+
             var department = await _repository.GetByIdAsync(departmentId, cancellationToken);
             if (department == null)
             {

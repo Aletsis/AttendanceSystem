@@ -7,7 +7,7 @@ namespace AttendanceSystem.Infrastructure.Persistence.Queries;
 
 public class BranchQueries : IBranchQueries
 {
-     private readonly AttendanceDbContext _dbContext;
+    private readonly AttendanceDbContext _dbContext;
 
     public BranchQueries(AttendanceDbContext dbContext)
     {

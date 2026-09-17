@@ -91,7 +91,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             {
                 var result = await _mediator.Send(new GetShiftsQuery());
                 var employeesResult = await _mediator.Send(new GetAllEmployeesQuery());
-                
+
                 if (result.IsSuccess && result.Value != null)
                 {
                     var employeeCounts = employeesResult.IsSuccess && employeesResult.Value != null
@@ -103,7 +103,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
                     _allShiftsData = result.Value.ToList();
                     _shifts.Clear();
-                    
+
                     foreach (var s in _allShiftsData)
                     {
                         _shifts.Add(new ShiftListItem
@@ -119,7 +119,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                             EmployeeCount = employeeCounts.GetValueOrDefault(s.Id, 0)
                         });
                     }
-                    
+
                     FilterShifts();
                 }
                 else
@@ -146,7 +146,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             else
             {
                 var searchLower = SearchText.ToLower();
-                var filtered = _shifts.Where(s => 
+                var filtered = _shifts.Where(s =>
                     s.Name.ToLower().Contains(searchLower) ||
                     s.ShiftTypeDisplay.ToLower().Contains(searchLower));
                 Shifts = new ObservableCollection<ShiftListItem>(filtered);
@@ -249,7 +249,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 var shiftId = ShiftId.From(SelectedShift.Id);
                 var command = new DeleteShiftCommand(shiftId);
                 var result = await _mediator.Send(command);
-                
+
                 if (result.IsSuccess)
                 {
                     await _messageService.ShowSuccessAsync("Turno eliminado correctamente");
