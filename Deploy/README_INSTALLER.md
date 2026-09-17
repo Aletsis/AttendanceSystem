@@ -9,12 +9,14 @@ Este documento explica cómo generar el instalador final (`setup.exe`) para el s
 ## Prerrequisitos
 
 1.  **Inno Setup Compiler**: Descargar e instalar la última versión (6.x o superior) desde [jrsoftware.org](https://jrsoftware.org/isdl.php).
-2.  **Instalador de PostgreSQL**:
-    - Descargar la versión 16.x para Windows x64 desde [enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads).
-    - **IMPORTANTE**: Renombra el archivo a `postgresql-installer.exe` y colócalo en la carpeta `Deploy`.
-3.  **ASP.NET Core Hosting Bundle 9.0**:
-    - Descargar desde el sitio oficial de Microsoft (.NET 9.0 Hosting Bundle).
-    - **IMPORTANTE**: Renombra el archivo a `dotnet-hosting.exe` y colócalo en la carpeta `Deploy`.
+2.  **Descarga Automática de Prerrequisitos (Recomendada)**:
+    Ejecuta el script incluido para descargar automáticamente PostgreSQL 16 y el .NET Hosting Bundle:
+    ```powershell
+    .\Deploy\Download-Prerequisites.ps1
+    ```
+3.  **Descarga Manual (Alternativa)**:
+    - **PostgreSQL**: Descargar la versión 16.x para Windows x64 desde [enterprisedb.com](https://www.enterprisedb.com/downloads/postgres-postgresql-downloads), renombrarlo a `postgresql-installer.exe` y colocarlo en `Deploy\`.
+    - **ASP.NET Core Hosting Bundle**: Descargar desde Microsoft, renombrarlo a `dotnet-hosting.exe` y colocarlo en `Deploy\`.
 
 ## Pasos para Generar el Instalador
 

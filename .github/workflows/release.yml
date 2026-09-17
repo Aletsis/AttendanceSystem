@@ -1,70 +1,147 @@
-name: Build and Release
+name: CD - Build & Publish Release
 
 on:
   push:
     tags:
-      - 'v*'
+      - 'v*.*.*'
+      - 'v*.*.*-*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Versión del release (ej. 2.1.7)'
+        required: false
+        default: ''
+      is_prerelease:
+        description: '¿Es un pre-release (beta/rc)?'
+        type: boolean
+        default: false
+      is_draft:
+        description: '¿Crear como borrador (draft)?'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
 
 jobs:
   release:
-    name: Build and Release Installer
+    name: Build Installer & Publish Release
     runs-on: windows-latest
-    permissions:
-      contents: write
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Setup .NET SDK
+      - name: Determine Version
+        id: get_version
+        shell: pwsh
+        run: |
+          $rawVersion = "${{ github.event.inputs.version }}"
+          if ([string]::IsNullOrWhiteSpace($rawVersion)) {
+            $tag = "${{ github.ref_name }}"
+            if ($tag -match '^v?(.+)$') {
+              $rawVersion = $Matches[1]
+            } else {
+              $rawVersion = "2.1.6"
+            }
+          }
+          Write-Host "Releasing version: $rawVersion"
+          "VERSION=$rawVersion" >> $env:GITHUB_ENV
+          "version=$rawVersion" >> $env:GITHUB_OUTPUT
+
+      - name: Setup .NET 10 SDK
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'Directory.Build.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Restore Dependencies
+        run: dotnet restore AttendanceSystem.sln
+
+      - name: Run Quality Gate Tests
+        run: dotnet test AttendanceSystem.sln -c Release --no-restore --verbosity normal
+
+      - name: Prepare Release Binaries (Web & Service)
+        shell: pwsh
+        run: |
+          .\Prepare-Release.ps1 -Configuration Release -OutputDir ".\Release"
+
+      - name: Download Third-Party Prerequisites (PostgreSQL & .NET Hosting)
+        shell: pwsh
+        run: |
+          .\Deploy\Download-Prerequisites.ps1 -DeployDir ".\Deploy"
+
       - name: Install Inno Setup
-        run: choco install innosetup -y
-
-      - name: Download PostgreSQL Installer
-        shell: powershell
+        shell: pwsh
         run: |
-          Write-Host "Downloading PostgreSQL 16.1 installer..."
-          Invoke-WebRequest -Uri "https://get.enterprisedb.com/postgresql/postgresql-16.1-1-windows-x64.exe" -OutFile "Deploy/postgresql-installer.exe"
-          Write-Host "PostgreSQL downloaded successfully."
-
-      - name: Download .NET 10.0 Hosting Bundle
-        shell: powershell
-        run: |
-          Write-Host "Downloading .NET 10.0 Hosting Bundle..."
-          # Usamos la redirección oficial aka.ms que siempre apunta a la última versión de .NET 10.0
-          Invoke-WebRequest -Uri "https://aka.ms/dotnet/10.0/dotnet-hosting-win.exe" -OutFile "Deploy/dotnet-hosting.exe"
-          Write-Host ".NET Hosting Bundle downloaded successfully."
-
-      - name: Prepare Release Artifacts
-        shell: powershell
-        run: |
-          # Ejecutar el script que compila la web y el servicio
-          .\Prepare-Release.ps1
+          choco install innosetup --no-progress -y
 
       - name: Compile Inno Setup Installer
-        shell: cmd
+        shell: pwsh
         run: |
-          iscc Deploy/setup_script.iss
+          $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $isccPath)) {
+            $isccPath = "iscc.exe"
+          }
+          Write-Host "Compilando instalador para versión ${{ env.VERSION }}..."
+          & $isccPath "/DMyAppVersion=${{ env.VERSION }}" "Deploy\setup_script.iss"
 
-      - name: Verify Installer Output
-        shell: powershell
+      - name: Package Portable Zips & Rename Installer
+        shell: pwsh
         run: |
-          if (Test-Path "Output/AttendanceSystem_Setup.exe") {
-              Write-Host "Installer compiled successfully!"
+          New-Item -ItemType Directory -Path ".\Artifacts" | Out-Null
+          
+          # Renombrar instalador con versión
+          if (Test-Path ".\Output\AttendanceSystem_Setup.exe") {
+            Copy-Item ".\Output\AttendanceSystem_Setup.exe" ".\Artifacts\AttendanceSystem_Setup_v${{ env.VERSION }}.exe" -Force
           } else {
-              Write-Error "Installer file Output/AttendanceSystem_Setup.exe was not found."
-              exit 1
+            Write-Error "No se encontró el instalador generado en .\Output\AttendanceSystem_Setup.exe"
+            exit 1
           }
 
-      - name: Create GitHub Release and Upload Asset
+          # Crear paquetes portables ZIP para Web y Service
+          Compress-Archive -Path ".\Release\Web\*" -DestinationPath ".\Artifacts\AttendanceSystem_Web_v${{ env.VERSION }}.zip" -Force
+          Compress-Archive -Path ".\Release\Service\*" -DestinationPath ".\Artifacts\AttendanceSystem_ZKTecoService_v${{ env.VERSION }}.zip" -Force
+
+          Write-Host "Artefactos generados:"
+          Get-ChildItem ".\Artifacts" | Select-Object Name, Length
+
+      - name: Generate Changelog & Release Notes
+        id: release_notes
+        shell: pwsh
+        run: |
+          $notes = @"
+          ## AttendanceSystem v${{ env.VERSION }}
+
+          ### 📦 Instalador y Paquetes de Despliegue
+          - **Instalador Todo-en-Uno**: `AttendanceSystem_Setup_v${{ env.VERSION }}.exe` (incluye Blazor Server Web, Servicio ZKTeco x86 con SDK COM, PostgreSQL y configuraciones automáticas).
+          - **Paquete Web Portable**: `AttendanceSystem_Web_v${{ env.VERSION }}.zip`
+          - **Paquete Servicio Portable**: `AttendanceSystem_ZKTecoService_v${{ env.VERSION }}.zip`
+
+          ### 🚀 Registro de Cambios
+          Revisa los commits incluidos en esta versión en la rama principal.
+          "@
+          $notes | Out-File -FilePath ".\RELEASE_NOTES.md" -Encoding utf8
+
+      - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: Output/AttendanceSystem_Setup.exe
-          draft: false
-          prerelease: false
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', env.VERSION) }}
+          name: "AttendanceSystem v${{ env.VERSION }}"
+          body_path: ".\RELEASE_NOTES.md"
+          draft: ${{ github.event.inputs.is_draft == 'true' }}
+          prerelease: ${{ github.event.inputs.is_prerelease == 'true' }}
+          files: |
+            ./Artifacts/AttendanceSystem_Setup_v${{ env.VERSION }}.exe
+            ./Artifacts/AttendanceSystem_Web_v${{ env.VERSION }}.zip
+            ./Artifacts/AttendanceSystem_ZKTecoService_v${{ env.VERSION }}.zip
+          generate_release_notes: true

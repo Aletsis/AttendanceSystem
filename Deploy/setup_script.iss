@@ -1,12 +1,29 @@
 ; Script generado para Inno Setup
 ; Este script crea un instalador "Todo en Uno" para AttendanceSystem + PostgreSQL
 
+#ifndef MyAppName
 #define MyAppName "AttendanceSystem"
+#endif
+
+#ifndef MyAppVersion
 #define MyAppVersion "2.1.6"
-#define MyAppPublisher "Tu Empresa"
-#define MyAppURL "http://www.tuempresa.com/"
+#endif
+
+#ifndef MyAppPublisher
+#define MyAppPublisher "Aletsis"
+#endif
+
+#ifndef MyAppURL
+#define MyAppURL "https://github.com/Aletsis/AttendanceSystem"
+#endif
+
+#ifndef MyAppExeName
 #define MyAppExeName "AttendanceSystem.Blazor.Server.exe"
+#endif
+
+#ifndef MyServiceExeName
 #define MyServiceExeName "AttendanceSystem.ZKTeco.Service.exe"
+#endif
 
 [Setup]
 ; Identificador único de la App
