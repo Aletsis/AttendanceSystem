@@ -402,6 +402,22 @@
             return;
         }
 
+        if (!_filteredPositions.Any(p => p.Id == PositionId))
+        {
+            Snackbar.Add("El puesto seleccionado no pertenece al departamento seleccionado", Severity.Warning);
+            return;
+        }
+
+        if (ScheduleId.HasValue && _selectedShiftType.HasValue)
+        {
+            var selectedSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
+            if (selectedSchedule != null && selectedSchedule.ShiftType != _selectedShiftType.Value)
+            {
+                Snackbar.Add("El horario seleccionado no corresponde al turno seleccionado", Severity.Warning);
+                return;
+            }
+        }
+
         // Si es un nuevo empleado, validar que el ID no exista
         if (string.IsNullOrEmpty(EmployeeId))
         {

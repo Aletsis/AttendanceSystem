@@ -53,6 +53,7 @@ public class CreateEmployeeCommandHandlerTests
         _sampleBranch = Branch.Create("A01", "Sucursal Matriz", "Av. Principal 123");
         _sampleDepartment = Department.Create("Sistemas", "Departamento TI");
         _samplePosition = Position.Create("Desarrollador", "Senior Dev", 25000m);
+        _sampleDepartment.AddPosition(_samplePosition);
         _sampleShift = Shift.Create("Matutino", new TimeSpan(8, 0, 0), 10, new TimeSpan(8, 0, 0), ShiftType.Matutino);
     }
 
@@ -132,6 +133,107 @@ public class CreateEmployeeCommandHandlerTests
         // Assert
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Contain("No existe la sucursal");
+    }
+
+    [Fact]
+    public async Task Handle_WhenPositionDoesNotBelongToDepartment_ShouldReturnFailure()
+    {
+        // Arrange
+        var anotherDepartment = Department.Create("Recursos Humanos", "RH");
+        var command = new CreateEmployeeCommand(
+            Id: "EMP-004",
+            FirstName: "Carlos",
+            LastName: "Gomez",
+            Email: "carlos@empresa.com",
+            PhoneNumber: null,
+            HireDate: new DateTime(2025, 1, 1),
+            Gender: Gender.Male,
+            BranchId: _sampleBranch.Id.Value.ToString(),
+            DepartmentId: anotherDepartment.Id.Value.ToString(),
+            PositionId: _samplePosition.Id.Value.ToString(),
+            ShiftType: null,
+            ScheduleId: null,
+            RestDay: 0,
+            OvertimeAuthorized: false,
+            OvertimeCalculationMethod: OvertimeCalculationMethod.NoRounding,
+            OvertimeCapType: OvertimeCapType.Daily,
+            OvertimeCapMinutes: null,
+            CalculateOvertimeBeforeEntry: false);
+
+        _employeeRepoMock
+            .Setup(r => r.ExistsAsync(It.IsAny<EmployeeId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _branchRepoMock
+            .Setup(r => r.GetByIdAsync(_sampleBranch.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_sampleBranch);
+
+        _departmentRepoMock
+            .Setup(r => r.GetByIdAsync(anotherDepartment.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(anotherDepartment);
+
+        _positionRepoMock
+            .Setup(r => r.GetByIdAsync(_samplePosition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_samplePosition);
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Contain("no pertenece al departamento");
+    }
+
+    [Fact]
+    public async Task Handle_WhenScheduleDoesNotBelongToShiftType_ShouldReturnFailure()
+    {
+        // Arrange
+        var command = new CreateEmployeeCommand(
+            Id: "EMP-005",
+            FirstName: "Maria",
+            LastName: "Diaz",
+            Email: "maria@empresa.com",
+            PhoneNumber: null,
+            HireDate: new DateTime(2025, 1, 1),
+            Gender: Gender.Female,
+            BranchId: _sampleBranch.Id.Value.ToString(),
+            DepartmentId: _sampleDepartment.Id.Value.ToString(),
+            PositionId: _samplePosition.Id.Value.ToString(),
+            ShiftType: ShiftType.Vespertino, // Different from _sampleShift.ShiftType (Matutino)
+            ScheduleId: _sampleShift.Id.Value.ToString(),
+            RestDay: 0,
+            OvertimeAuthorized: false,
+            OvertimeCalculationMethod: OvertimeCalculationMethod.NoRounding,
+            OvertimeCapType: OvertimeCapType.Daily,
+            OvertimeCapMinutes: null,
+            CalculateOvertimeBeforeEntry: false);
+
+        _employeeRepoMock
+            .Setup(r => r.ExistsAsync(It.IsAny<EmployeeId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _branchRepoMock
+            .Setup(r => r.GetByIdAsync(_sampleBranch.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_sampleBranch);
+
+        _departmentRepoMock
+            .Setup(r => r.GetByIdAsync(_sampleDepartment.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_sampleDepartment);
+
+        _positionRepoMock
+            .Setup(r => r.GetByIdAsync(_samplePosition.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_samplePosition);
+
+        _shiftRepoMock
+            .Setup(r => r.GetByIdAsync(_sampleShift.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(_sampleShift);
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Contain("no corresponde al turno seleccionado");
     }
 
     [Fact]

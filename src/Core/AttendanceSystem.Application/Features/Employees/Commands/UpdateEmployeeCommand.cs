@@ -102,6 +102,11 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 return Result<EmployeeDto>.Failure($"No existe el puesto con ID {request.PositionId}");
             }
 
+            if (!department.Positions.Any(p => p.Id == positionId))
+            {
+                return Result<EmployeeDto>.Failure($"El puesto '{position.Name}' no pertenece al departamento '{department.Name}'");
+            }
+
             ShiftId? scheduleId = null;
             Shift? schedule = null;
             if (!string.IsNullOrWhiteSpace(request.ScheduleId))
@@ -111,6 +116,11 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 if (schedule is null)
                 {
                     return Result<EmployeeDto>.Failure($"No existe el horario con ID {request.ScheduleId}");
+                }
+
+                if (request.ShiftType.HasValue && schedule.ShiftType != request.ShiftType.Value)
+                {
+                    return Result<EmployeeDto>.Failure($"El horario '{schedule.Name}' no corresponde al turno seleccionado ({request.ShiftType.Value})");
                 }
             }
 

@@ -408,6 +408,18 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             if (string.IsNullOrWhiteSpace(SelectedPositionId)) { _messageService.ShowErrorAsync("El puesto es requerido."); return false; }
             if (string.IsNullOrWhiteSpace(SelectedBranchId)) { _messageService.ShowErrorAsync("La sucursal es requerida."); return false; }
 
+            if (!VisiblePositions.Any(p => p.Id.ToString() == SelectedPositionId))
+            {
+                _messageService.ShowErrorAsync("El puesto seleccionado no pertenece al departamento seleccionado.");
+                return false;
+            }
+
+            if (!string.IsNullOrEmpty(SelectedShiftId) && !VisibleShifts.Any(s => s.Id.ToString() == SelectedShiftId))
+            {
+                _messageService.ShowErrorAsync("El horario seleccionado no corresponde al turno seleccionado.");
+                return false;
+            }
+
             return true;
         }
 
