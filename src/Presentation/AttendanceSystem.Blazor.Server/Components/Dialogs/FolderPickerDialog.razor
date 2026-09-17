@@ -1,0 +1,369 @@
+@using System.IO
+@using MudBlazor
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center">
+            <MudIcon Icon="@Icons.Material.Filled.FolderOpen" Color="Color.Primary" Class="mr-2" />
+            <MudText Typo="Typo.h6">Seleccionar Carpeta en el Servidor</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudStack Spacing="3">
+            <!-- Barra de navegación y acciones -->
+            <MudToolBar Dense="true" Class="gap-2 px-0">
+                <MudIconButton Icon="@Icons.Material.Filled.ArrowUpward" 
+                               title="Subir nivel" 
+                               OnClick="NavigateUp" 
+                               Disabled="@(!CanNavigateUp)" 
+                               Color="Color.Default" 
+                               Variant="Variant.Outlined" 
+                               Size="Size.Small" />
+
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh" 
+                               title="Actualizar" 
+                               OnClick="() => LoadDirectories(_currentPath)" 
+                               Color="Color.Default" 
+                               Variant="Variant.Outlined" 
+                               Size="Size.Small" />
+
+                <MudIconButton Icon="@Icons.Material.Filled.CreateNewFolder" 
+                               title="Nueva Carpeta" 
+                               OnClick="ToggleNewFolderMode" 
+                               Color="@(_isCreatingFolder ? Color.Secondary : Color.Default)" 
+                               Variant="Variant.Outlined" 
+                               Size="Size.Small" />
+
+                <!-- Unidades de disco / Raíz -->
+                @foreach (var drive in _drives)
+                {
+                    <MudChip T="string" 
+                             Size="Size.Small" 
+                             Color="@(IsCurrentDrive(drive) ? Color.Primary : Color.Default)" 
+                             Variant="@(IsCurrentDrive(drive) ? Variant.Filled : Variant.Outlined)"
+                             Icon="@Icons.Material.Filled.Storage"
+                             OnClick="@(() => NavigateTo(drive.RootDirectory.FullName))">
+                        @(string.IsNullOrEmpty(drive.Name) ? "/" : drive.Name)
+                    </MudChip>
+                }
+            </MudToolBar>
+
+            <!-- Ruta actual -->
+            <div class="d-flex align-center gap-2">
+                <MudTextField @bind-Value="_currentPath" 
+                              Label="Ruta Actual" 
+                              Variant="Variant.Outlined" 
+                              Margin="Margin.Dense"
+                              OnKeyDown="HandlePathKeyDown"
+                              HelperText="Presione Enter o el botón para ir a la ruta" />
+                <MudButton Variant="Variant.Filled" 
+                           Color="Color.Primary" 
+                           Size="Size.Small" 
+                           Class="mt-1"
+                           OnClick="() => NavigateTo(_currentPath)">
+                    Ir
+                </MudButton>
+            </div>
+
+            <!-- Panel crear nueva carpeta -->
+            @if (_isCreatingFolder)
+            {
+                <MudPaper Outlined="true" Class="pa-3 bg-light">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Crear nueva carpeta en la ruta actual:</MudText>
+                    <div class="d-flex align-center gap-2">
+                        <MudTextField @bind-Value="_newFolderName" 
+                                      Label="Nombre de la carpeta" 
+                                      Variant="Variant.Outlined" 
+                                      Margin="Margin.Dense" 
+                                      Placeholder="NuevaCarpeta"
+                                      Immediate="true"
+                                      OnKeyDown="HandleNewFolderKeyDown" />
+                        <MudButton Variant="Variant.Filled" 
+                                   Color="Color.Success" 
+                                   Size="Size.Small" 
+                                   OnClick="CreateFolder"
+                                   Disabled="@string.IsNullOrWhiteSpace(_newFolderName)">
+                            Crear
+                        </MudButton>
+                        <MudButton Variant="Variant.Text" 
+                                   Color="Color.Default" 
+                                   Size="Size.Small" 
+                                   OnClick="ToggleNewFolderMode">
+                            Cancelar
+                        </MudButton>
+                    </div>
+                </MudPaper>
+            }
+
+            <!-- Mensaje de error / advertencia -->
+            @if (!string.IsNullOrEmpty(_errorMessage))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="my-1">
+                    @_errorMessage
+                </MudAlert>
+            }
+
+            <!-- Lista de subcarpetas -->
+            <MudPaper Outlined="true" Class="pa-1" Style="height: 280px; overflow-y: auto;">
+                @if (_isLoading)
+                {
+                    <div class="d-flex justify-center align-center" style="height: 100%;">
+                        <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+                    </div>
+                }
+                else if (_subDirectories.Count == 0)
+                {
+                    <div class="d-flex flex-column justify-center align-center py-8 text-secondary">
+                        <MudIcon Icon="@Icons.Material.Filled.FolderOff" Size="Size.Large" Class="mb-2" />
+                        <MudText Typo="Typo.body2">No hay subcarpetas en este directorio.</MudText>
+                    </div>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true">
+                        @foreach (var dir in _subDirectories)
+                        {
+                            <MudListItem T="string"
+                                         OnClick="@(() => NavigateTo(dir.FullName))"
+                                         Class="@(IsSelected(dir.FullName) ? "mud-theme-primary-hover mud-selected-item" : "")">
+                                <div class="d-flex align-center justify-space-between width-100">
+                                    <div class="d-flex align-center">
+                                        <MudIcon Icon="@Icons.Material.Filled.Folder" Color="Color.Warning" Class="mr-3" />
+                                        <MudText Typo="Typo.body2"><b>@dir.Name</b></MudText>
+                                    </div>
+                                    <MudIconButton Icon="@Icons.Material.Filled.ChevronRight" 
+                                                   Size="Size.Small" 
+                                                   title="Entrar a la carpeta"
+                                                   OnClick="@(() => NavigateTo(dir.FullName))" />
+                                </div>
+                            </MudListItem>
+                        }
+                    </MudList>
+                }
+            </MudPaper>
+
+            <!-- Resumen de carpeta seleccionada -->
+            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                <strong>Carpeta a seleccionar:</strong> @_currentPath
+            </MudText>
+        </MudStack>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Check" OnClick="Submit">
+            Seleccionar Esta Carpeta
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string? InitialPath { get; set; }
+
+    private string _currentPath = string.Empty;
+    private List<DirectoryInfo> _subDirectories = new();
+    private List<DriveInfo> _drives = new();
+    private bool _isLoading = false;
+    private string? _errorMessage;
+    private bool _isCreatingFolder = false;
+    private string _newFolderName = string.Empty;
+
+    private bool CanNavigateUp
+    {
+        get
+        {
+            if (string.IsNullOrWhiteSpace(_currentPath)) return false;
+            try
+            {
+                var parent = Directory.GetParent(_currentPath);
+                return parent != null;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        try
+        {
+            _drives = DriveInfo.GetDrives().Where(d => d.IsReady).ToList();
+        }
+        catch
+        {
+            _drives = new List<DriveInfo>();
+        }
+
+        var startPath = InitialPath;
+        if (string.IsNullOrWhiteSpace(startPath) || !Directory.Exists(startPath))
+        {
+            if (!string.IsNullOrWhiteSpace(startPath) && !Path.IsPathRooted(startPath))
+            {
+                var combined = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, startPath);
+                if (Directory.Exists(combined))
+                {
+                    startPath = combined;
+                }
+                else
+                {
+                    startPath = AppDomain.CurrentDomain.BaseDirectory;
+                }
+            }
+            else
+            {
+                startPath = AppDomain.CurrentDomain.BaseDirectory;
+            }
+        }
+
+        NavigateTo(startPath);
+    }
+
+    private void NavigateTo(string path)
+    {
+        _isCreatingFolder = false;
+        _newFolderName = string.Empty;
+        LoadDirectories(path);
+    }
+
+    private void NavigateUp()
+    {
+        if (string.IsNullOrWhiteSpace(_currentPath)) return;
+        try
+        {
+            var parent = Directory.GetParent(_currentPath);
+            if (parent != null)
+            {
+                NavigateTo(parent.FullName);
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"No se pudo navegar al directorio superior: {ex.Message}";
+        }
+    }
+
+    private void LoadDirectories(string path)
+    {
+        _isLoading = true;
+        _errorMessage = null;
+
+        try
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                path = AppDomain.CurrentDomain.BaseDirectory;
+            }
+
+            var dirInfo = new DirectoryInfo(path);
+            if (!dirInfo.Exists)
+            {
+                _errorMessage = $"El directorio '{path}' no existe.";
+                _subDirectories.Clear();
+                _isLoading = false;
+                return;
+            }
+
+            _currentPath = dirInfo.FullName;
+            _subDirectories = dirInfo.GetDirectories()
+                                     .Where(d => !d.Attributes.HasFlag(FileAttributes.Hidden) && !d.Attributes.HasFlag(FileAttributes.System))
+                                     .OrderBy(d => d.Name)
+                                     .ToList();
+        }
+        catch (UnauthorizedAccessException)
+        {
+            _errorMessage = "Acceso denegado: No cuenta con permisos para explorar este directorio.";
+            _subDirectories.Clear();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error al leer directorio: {ex.Message}";
+            _subDirectories.Clear();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private void SelectDirectory(string path)
+    {
+        _currentPath = path;
+    }
+
+    private bool IsSelected(string path)
+    {
+        return string.Equals(_currentPath, path, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool IsCurrentDrive(DriveInfo drive)
+    {
+        try
+        {
+            return _currentPath.StartsWith(drive.RootDirectory.FullName, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void ToggleNewFolderMode()
+    {
+        _isCreatingFolder = !_isCreatingFolder;
+        _newFolderName = string.Empty;
+    }
+
+    private void CreateFolder()
+    {
+        if (string.IsNullOrWhiteSpace(_newFolderName)) return;
+
+        try
+        {
+            var newPath = Path.Combine(_currentPath, _newFolderName.Trim());
+            if (Directory.Exists(newPath))
+            {
+                _errorMessage = "Ya existe una carpeta con ese nombre.";
+                return;
+            }
+
+            Directory.CreateDirectory(newPath);
+            _isCreatingFolder = false;
+            _newFolderName = string.Empty;
+            LoadDirectories(_currentPath);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error al crear carpeta: {ex.Message}";
+        }
+    }
+
+    private void HandleNewFolderKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            CreateFolder();
+        }
+    }
+
+    private void HandlePathKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            NavigateTo(_currentPath);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit()
+    {
+        if (string.IsNullOrWhiteSpace(_currentPath))
+        {
+            return;
+        }
+        MudDialog.Close(DialogResult.Ok(_currentPath));
+    }
+}

@@ -35,12 +35,21 @@
                 </MudCardHeader>
                 <MudCardContent>
                     <MudStack Spacing="3">
-                        <MudTextField @bind-Value="_backupDirectory"
-                                      Label="Directorio en el Servidor"
-                                      Variant="Variant.Outlined"
-                                      Margin="Margin.Dense"
-                                      Placeholder="Backups"
-                                      Disabled="_isSavingDirectory || _isCreatingBackup || _isUploadingBackup || _isRestoring" />
+                        <div class="d-flex align-center gap-2">
+                            <MudTextField @bind-Value="_backupDirectory"
+                                          Label="Directorio en el Servidor"
+                                          Variant="Variant.Outlined"
+                                          Margin="Margin.Dense"
+                                          Placeholder="Backups"
+                                          Disabled="_isSavingDirectory || _isCreatingBackup || _isUploadingBackup || _isRestoring" />
+                            <MudButton Variant="Variant.Outlined"
+                                       Color="Color.Secondary"
+                                       StartIcon="@Icons.Material.Filled.FolderOpen"
+                                       OnClick="OpenFolderPicker"
+                                       Disabled="_isSavingDirectory || _isCreatingBackup || _isUploadingBackup || _isRestoring">
+                                Explorar
+                            </MudButton>
+                        </div>
 
                         <MudAlert Severity="Severity.Info" Dense="true">
                             Asegúrese de que el servicio tenga permisos de lectura y escritura en esta ruta.
@@ -349,6 +358,31 @@
         finally
         {
             _isSavingDirectory = false;
+        }
+    }
+
+    private async Task OpenFolderPicker()
+    {
+        var parameters = new DialogParameters<FolderPickerDialog>
+        {
+            { x => x.InitialPath, _backupDirectory }
+        };
+
+        var options = new DialogOptions
+        {
+            MaxWidth = MaxWidth.Medium,
+            FullWidth = true,
+            CloseButton = true,
+            CloseOnEscapeKey = true
+        };
+
+        var dialog = await DialogService.ShowAsync<FolderPickerDialog>("Seleccionar Directorio de Almacenamiento", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is string selectedPath)
+        {
+            _backupDirectory = selectedPath;
+            Snackbar.Add("Carpeta seleccionada. Haga clic en 'Guardar Directorio' para aplicar.", Severity.Info);
         }
     }
 
