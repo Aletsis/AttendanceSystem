@@ -18,7 +18,6 @@ using System.Threading.Tasks;
 using System;
 using Prism.Dialogs;
 using System.Windows.Media;
-using System.Collections.ObjectModel;
 using Prism.Mvvm;
 
 namespace AttendanceSystem.WPF.ViewModels.Devices
@@ -199,13 +198,13 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 { "Name", deviceData.Name },
                 { "IpAddress", deviceData.IpAddress },
                 { "Port", deviceData.Port },
-                { "Location", deviceData.Location },
+                { "Location", deviceData.Location ?? string.Empty },
                 { "Brand", deviceData.Brand },
                 { "DownloadMethod", deviceData.DownloadMethod },
-                { "SerialNumber", deviceData.SerialNumber },
+                { "SerialNumber", deviceData.SerialNumber ?? string.Empty },
                 { "ShouldClearAfterDownload", deviceData.ShouldClearAfterDownload },
-                { "Username", deviceData.Username },
-                { "Password", deviceData.Password }
+                { "Username", deviceData.Username ?? string.Empty },
+                { "Password", deviceData.Password ?? string.Empty }
             };
 
             _dialogService.ShowDialog("DeviceDetailDialog", parameters, async result =>

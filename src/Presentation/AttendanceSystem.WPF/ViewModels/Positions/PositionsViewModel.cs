@@ -213,7 +213,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             {
                 { "PositionId", posData.Id },
                 { "Name", posData.Name },
-                { "Description", posData.Description },
+                { "Description", posData.Description ?? string.Empty },
                 { "BaseSalary", posData.BaseSalary }
             };
 

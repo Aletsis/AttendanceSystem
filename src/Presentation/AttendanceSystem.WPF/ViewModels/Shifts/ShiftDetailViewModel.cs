@@ -192,7 +192,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
             var parameters = new DialogParameters
             {
-                { "ShiftId", _shiftId },
                 { "Name", Name },
                 { "StartTime", startTime },
                 { "ToleranceMinutes", ToleranceMinutes },
@@ -202,6 +201,11 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "RoundingsEnabled", RoundingsEnabled },
                 { "RoundingInterval", RoundingInterval }
             };
+
+            if (_shiftId.HasValue)
+            {
+                parameters.Add("ShiftId", _shiftId.Value);
+            }
 
             RequestClose.Invoke(parameters, ButtonResult.OK);
         }

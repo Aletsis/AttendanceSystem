@@ -7,7 +7,6 @@ using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments;
 using AttendanceSystem.Application.Features.Departments.Commands.DeleteDepartment;
 using AttendanceSystem.Application.Features.Departments.Commands.CreateDepartment;
 using AttendanceSystem.Application.Features.Departments.Commands.UpdateDepartment;
-using AttendanceSystem.Application.Features.Departments.Commands.UpdateDepartment;
 using AttendanceSystem.Application.Features.Departments;
 using AttendanceSystem.Application.Features.Employees.Queries;
 using AttendanceSystem.Application.DTOs;
@@ -197,8 +196,8 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             {
                 { "DepartmentId", deptData.Id },
                 { "Name", deptData.Name },
-                { "Description", deptData.Description },
-                { "PositionIds", deptData.PositionIds }
+                { "Description", deptData.Description ?? string.Empty },
+                { "PositionIds", deptData.PositionIds ?? new List<Guid>() }
             };
 
             _dialogService.ShowDialog("DepartmentDetailDialog", parameters, async result =>

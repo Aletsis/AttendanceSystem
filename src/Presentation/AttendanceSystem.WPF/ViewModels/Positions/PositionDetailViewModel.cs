@@ -60,11 +60,15 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
         {
             var parameters = new DialogParameters
             {
-                { "PositionId", _positionId },
                 { "Name", Name },
-                { "Description", Description },
+                { "Description", Description ?? string.Empty },
                 { "BaseSalary", BaseSalary }
             };
+
+            if (_positionId.HasValue)
+            {
+                parameters.Add("PositionId", _positionId.Value);
+            }
 
             RequestClose.Invoke(parameters, ButtonResult.OK);
         }

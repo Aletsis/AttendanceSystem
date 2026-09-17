@@ -68,6 +68,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
 
         private void ExecuteSelect()
         {
+            if (SelectedDevice == null) return;
             var parameters = new DialogParameters { { "DeviceId", SelectedDevice.DeviceId }, { "DeviceName", SelectedDevice.Name } };
             RequestClose.Invoke(parameters, ButtonResult.OK);
         }

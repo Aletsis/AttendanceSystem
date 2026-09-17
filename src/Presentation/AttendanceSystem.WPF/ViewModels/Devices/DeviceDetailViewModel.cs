@@ -61,18 +61,22 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         {
             var parameters = new DialogParameters
             {
-                { "DeviceId", _deviceId },
                 { "Name", Name },
                 { "IpAddress", IpAddress },
                 { "Port", Port },
-                { "Location", Location },
+                { "Location", Location ?? string.Empty },
                 { "Brand", SelectedBrand },
                 { "DownloadMethod", SelectedDownloadMethod },
-                { "SerialNumber", SerialNumber },
+                { "SerialNumber", SerialNumber ?? string.Empty },
                 { "ShouldClearAfterDownload", ShouldClearAfterDownload },
-                { "Username", Username },
-                { "Password", Password }
+                { "Username", Username ?? string.Empty },
+                { "Password", Password ?? string.Empty }
             };
+
+            if (!string.IsNullOrEmpty(_deviceId))
+            {
+                parameters.Add("DeviceId", _deviceId);
+            }
 
             RequestClose.Invoke(parameters, ButtonResult.OK);
         }

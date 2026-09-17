@@ -94,10 +94,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 
                 if (result.IsSuccess && result.Value != null)
                 {
-                    var employeeCounts = employeesResult.IsSuccess 
+                    var employeeCounts = employeesResult.IsSuccess && employeesResult.Value != null
                         ? employeesResult.Value
                             .Where(e => e.ScheduleId.HasValue)
-                            .GroupBy(e => e.ScheduleId.Value)
+                            .GroupBy(e => e.ScheduleId!.Value)
                             .ToDictionary(g => g.Key, g => g.Count())
                         : new Dictionary<Guid, int>();
 

@@ -29,11 +29,9 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
 
         private void ExecuteDownload()
         {
-            var parameters = new DialogParameters
-            {
-                { "FromDate", FromDate },
-                { "ToDate", ToDate }
-            };
+            var parameters = new DialogParameters();
+            if (FromDate.HasValue) parameters.Add("FromDate", FromDate.Value);
+            if (ToDate.HasValue) parameters.Add("ToDate", ToDate.Value);
             RequestClose.Invoke(parameters, ButtonResult.OK);
         }
 

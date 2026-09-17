@@ -73,11 +73,15 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
 
             var parameters = new DialogParameters
             {
-                { "DepartmentId", _departmentId },
                 { "Name", Name },
-                { "Description", Description },
+                { "Description", Description ?? string.Empty },
                 { "PositionIds", selectedPositionIds }
             };
+
+            if (_departmentId.HasValue)
+            {
+                parameters.Add("DepartmentId", _departmentId.Value);
+            }
 
             RequestClose.Invoke(parameters, ButtonResult.OK);
         }

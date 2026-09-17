@@ -201,9 +201,9 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
                 { "BranchId", branchData.Id },
                 { "Code", branchData.Code },
                 { "Name", branchData.Name },
-                { "Address", branchData.Address },
+                { "Address", branchData.Address ?? string.Empty },
                 { "IsExternal", branchData.IsExternal },
-                { "ExternalHost", branchData.ExternalHost }
+                { "ExternalHost", branchData.ExternalHost ?? string.Empty }
             };
 
             _dialogService.ShowDialog("BranchDetailDialog", parameters, async result =>

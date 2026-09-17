@@ -83,13 +83,17 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
         {
             var parameters = new DialogParameters
             {
-                { "BranchId", _branchId },
                 { "Code", Code },
                 { "Name", Name },
-                { "Address", Address },
+                { "Address", Address ?? string.Empty },
                 { "IsExternal", IsExternal },
-                { "ExternalHost", ExternalHost }
+                { "ExternalHost", ExternalHost ?? string.Empty }
             };
+
+            if (_branchId.HasValue)
+            {
+                parameters.Add("BranchId", _branchId.Value);
+            }
 
             RequestClose.Invoke(parameters, ButtonResult.OK);
         }
