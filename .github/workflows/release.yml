@@ -119,25 +119,26 @@ jobs:
         id: release_notes
         shell: pwsh
         run: |
+          $ver = "${{ env.VERSION }}"
           $notes = @"
-          ## AttendanceSystem v${{ env.VERSION }}
+## AttendanceSystem v$ver
 
-          ### 📦 Instalador y Paquetes de Despliegue
-          - **Instalador Todo-en-Uno**: `AttendanceSystem_Setup_v${{ env.VERSION }}.exe` (incluye Blazor Server Web, Servicio ZKTeco x86 con SDK COM, PostgreSQL y configuraciones automáticas).
-          - **Paquete Web Portable**: `AttendanceSystem_Web_v${{ env.VERSION }}.zip`
-          - **Paquete Servicio Portable**: `AttendanceSystem_ZKTecoService_v${{ env.VERSION }}.zip`
+### 📦 Instalador y Paquetes de Despliegue
+- **Instalador Todo-en-Uno**: ``AttendanceSystem_Setup_v$ver.exe`` (incluye Blazor Server Web, Servicio ZKTeco x86 con SDK COM, PostgreSQL y configuraciones automáticas).
+- **Paquete Web Portable**: ``AttendanceSystem_Web_v$ver.zip``
+- **Paquete Servicio Portable**: ``AttendanceSystem_ZKTecoService_v$ver.zip``
 
-          ### 🚀 Registro de Cambios
-          Revisa los commits incluidos en esta versión en la rama principal.
-          "@
-          $notes | Out-File -FilePath ".\RELEASE_NOTES.md" -Encoding utf8
+### 🚀 Registro de Cambios
+Revisa los commits incluidos en esta versión en la rama principal.
+"@
+          $notes | Out-File -FilePath "./RELEASE_NOTES.md" -Encoding utf8
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || format('v{0}', env.VERSION) }}
           name: "AttendanceSystem v${{ env.VERSION }}"
-          body_path: ".\RELEASE_NOTES.md"
+          body_path: ./RELEASE_NOTES.md
           draft: ${{ github.event.inputs.is_draft == 'true' }}
           prerelease: ${{ github.event.inputs.is_prerelease == 'true' }}
           files: |
