@@ -124,7 +124,7 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             if (result.IsSuccess)
             {
                 Positions = new ObservableCollection<SelectablePosition>(
-                    result.Value.Select(p => new SelectablePosition { Id = p.Id, Name = p.Name })
+                    result.Value.OrderBy(p => p.Name).Select(p => new SelectablePosition { Id = p.Id, Name = p.Name })
                 );
             }
         }

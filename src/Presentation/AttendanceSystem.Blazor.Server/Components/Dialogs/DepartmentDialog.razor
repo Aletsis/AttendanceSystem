@@ -37,7 +37,7 @@
         var positionsResult = await Sender.Send(new GetPositionsQuery());
         if (positionsResult.IsSuccess)
         {
-            _positions = positionsResult.Value;
+            _positions = positionsResult.Value.OrderBy(p => p.Name).ToList();
         }
 
         if (DepartmentId.HasValue)

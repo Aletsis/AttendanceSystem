@@ -18,6 +18,7 @@ public class PositionQueries : IPositionQueries
     {
         var positions = await _dbContext.Set<Position>()
             .AsNoTracking()
+            .OrderBy(p => p.Name)
             .ToListAsync(cancellationToken);
 
         return positions.Select(p => new PositionDto(
