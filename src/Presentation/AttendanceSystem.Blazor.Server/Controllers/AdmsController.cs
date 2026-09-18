@@ -374,9 +374,19 @@ public class AdmsController : ControllerBase
                         }
                         else
                         {
-                            // Fallo reportado por el dispositivo
-                            log.MarkAsFailed($"Dispositivo retornó error: {ret}");
-                            _logger.LogWarning("❌ ADMS: Dispositivo {SerialNumber} reportó error {ReturnCode} para comando {CommandId}", sn, ret, id);
+                            // Fallo reportado por el dispositivo con mapeo amigable de códigos ZKTeco
+                            var friendlyError = returnCode switch
+                            {
+                                -1 => "Error general en la ejecución interna del reloj (código -1).",
+                                -5 => "El reloj está ocupado procesando otra tarea o biometría (código -5).",
+                                -629 => "Tabla o parámetros de consulta no soportados por el firmware del reloj (código -629).",
+                                -1001 => "Memoria de almacenamiento llena en el dispositivo (código -1001).",
+                                -1002 => "Sintaxis de comando no válida o comando no reconocido por esta versión de firmware (código -1002).",
+                                _ => $"El dispositivo reportó error con código de retorno: {ret}"
+                            };
+
+                            log.MarkAsFailed(friendlyError);
+                            _logger.LogWarning("❌ ADMS: Dispositivo {SerialNumber} reportó error {ReturnCode} ({FriendlyError}) para comando {CommandId}", sn, ret, friendlyError, id);
                         }
 
                         await _downloadLogRepository.UpdateAsync(log);
