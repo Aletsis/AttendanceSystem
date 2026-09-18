@@ -68,7 +68,7 @@ function Download-FileWithRetry {
                     Write-Warning "El archivo de destino no fue generado."
                 }
             } catch {
-                Write-Warning "Error en el intento $attempt: $_"
+                Write-Warning "Error en el intento ${attempt}: $_"
                 if (Test-Path $OutputFile) {
                     Remove-Item $OutputFile -Force -ErrorAction SilentlyContinue
                 }
