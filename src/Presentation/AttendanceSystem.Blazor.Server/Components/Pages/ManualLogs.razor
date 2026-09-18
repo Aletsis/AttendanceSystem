@@ -45,7 +45,7 @@
 
             <MudItem xs="12" sm="6">
                 <MudSelect T="string" Label="Empleados" MultiSelection="true" @bind-SelectedValues="_selectedEmployeeIds" 
-                           SelectAllText="Seleccionar Todos" MultiSelectionTextFunc="@(new Func<List<string>, string>(GetMultiSelectionText))"
+                           SelectAllText="Seleccionar Todos" MultiSelectionTextFunc="@GetMultiSelectionText"
                            AdornmentIcon="@Icons.Material.Filled.Search">
                     @foreach (var emp in _filteredEmployees)
                     {
@@ -141,7 +141,7 @@
         }
     }
     
-    private string GetMultiSelectionText(List<string> selectedValues)
+    private string GetMultiSelectionText(IReadOnlyList<string> selectedValues)
     {
         if (selectedValues == null || !selectedValues.Any())
             return "Seleccione empleados";
