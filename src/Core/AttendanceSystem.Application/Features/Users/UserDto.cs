@@ -6,4 +6,7 @@ public sealed record UserDto(
     string Email,
     string FullName,
     bool IsActive,
-    List<string> Roles);
+    List<string> Roles)
+{
+    public UserDto() : this(string.Empty, string.Empty, string.Empty, string.Empty, true, new List<string>()) { }
+}

@@ -1,3 +1,6 @@
 namespace AttendanceSystem.Application.DTOs;
 
-public record PositionDto(Guid Id, string Name, string? Description, decimal BaseSalary, bool IsCritical);
+public record PositionDto(Guid Id, string Name, string? Description, decimal BaseSalary, bool IsCritical)
+{
+    public PositionDto() : this(Guid.Empty, string.Empty, null, 0m, false) { }
+}

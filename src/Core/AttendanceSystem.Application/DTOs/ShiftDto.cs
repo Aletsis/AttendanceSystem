@@ -13,4 +13,7 @@ public record ShiftDto(
     IEnumerable<ShiftDayDto> Days,
     bool RoundingsEnabled,
     int RoundingInterval
-);
+)
+{
+    public ShiftDto() : this(Guid.Empty, string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0, TimeSpan.Zero, ShiftType.Matutino, Enumerable.Empty<ShiftDayDto>(), false, 0) { }
+}

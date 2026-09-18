@@ -45,7 +45,10 @@ public sealed record DeviceDto(
     int? FaceCapacity = null,
     int? AttendanceRecordCapacity = null,
     string? Username = null,
-    string? Password = null);
+    string? Password = null)
+{
+    public DeviceDto() : this(string.Empty, string.Empty, string.Empty, 4370, null, true, "Active", DeviceBrand.ZKTeco, DeviceDownloadMethod.Sdk, null, 0) { }
+}
 
 public sealed record CreateDeviceDto(
     string DeviceId,
@@ -177,7 +180,10 @@ public sealed record SystemConfigurationDto(
     bool IsAutoReportEnabled = false,
     TimeSpan? AutoReportTime = null,
     string? AutoReportEmails = null,
-    bool AutoReportForToday = false);
+    bool AutoReportForToday = false)
+{
+    public SystemConfigurationDto() : this(string.Empty, null, TimeSpan.Zero, TimeSpan.Zero, false, false, null, false) { }
+}
 
 // DTO para datos crudos del dispositivo ZKTeco
 public sealed record RawAttendanceRecord(
