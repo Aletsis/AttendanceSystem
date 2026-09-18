@@ -199,6 +199,43 @@ public class AdmsController : ControllerBase
         return Content("OK", "text/plain");
     }
 
+    // 4.1 POST /iclock/querydata — recibir respuestas a consultas DATA QUERY (ATTLOG, Transaction, USERINFO, etc.)
+    [HttpPost("querydata")]
+    public async Task<IActionResult> QueryData(
+        [FromQuery] string SN,
+        [FromQuery] string? tablename = null,
+        [FromQuery] string? table = null,
+        [FromQuery] string? type = null)
+    {
+        using var reader = new StreamReader(Request.Body);
+        var body = await reader.ReadToEndAsync();
+        var targetTable = tablename ?? table ?? "";
+        _logger.LogInformation("📥 POST querydata SN:{SN} table:{Table} type:{Type}", SN, targetTable, type);
+
+        Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
+
+        if (targetTable.Equals("ATTLOG", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("Transaction", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("rtlog", StringComparison.OrdinalIgnoreCase))
+        {
+            var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var count = await ProcessAttLogs(lines, SN);
+            return Content($"OK: {count}", "text/plain");
+        }
+
+        if (targetTable.Equals("USER", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("USERINFO", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("USERPIC", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("BIODATA", StringComparison.OrdinalIgnoreCase))
+        {
+            var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            await ProcessDeviceData(lines, SN, targetTable);
+            return Content("OK", "text/plain");
+        }
+
+        return Content("OK", "text/plain");
+    }
+
     // 5. GET /iclock/getrequest — heartbeat y comandos
     [HttpGet("getrequest")]
     public async Task<IActionResult> GetRequest([FromQuery] string SN)
@@ -393,6 +430,21 @@ public class AdmsController : ControllerBase
                         logData.TryGetValue("time", out var timeStr) &&
                         DateTime.TryParse(timeStr, out checkTime))
                     {
+                        // En Access Control (Transaction):
+                        // event=0: Acceso normal verificado / concedido (checada válida)
+                        // event=1: Botón de salida manual / pulsador
+                        // event=4: Alarma de coacción (duress)
+                        // event=20..25: Acceso denegado (tarjeta no válida, PIN incorrecto, fuera de horario)
+                        // event=27: Alarma puerta abierta
+                        if (logData.TryGetValue("event", out var eventStr) && int.TryParse(eventStr, out var eventCode))
+                        {
+                            if (eventCode != 0)
+                            {
+                                _logger.LogInformation("ADMS: Evento de acceso no laboral ignorado (EventCode={EventCode}, PIN={Pin}, SN={SN})", eventCode, pin, SN);
+                                continue;
+                            }
+                        }
+
                         // Intentar sacar status y método
                         if (logData.TryGetValue("inoutstatus", out var inoutStr) && int.TryParse(inoutStr, out var s))
                             checkType = s;

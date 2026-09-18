@@ -152,13 +152,13 @@ public sealed class DownloadFromDeviceCommandHandler
 
                     if (isAccessMode)
                     {
-                        admsCmd = "DATA QUERY ATTLOG StartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
-                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo acceso para SN:{SerialNumber}", sn);
+                        admsCmd = "DATA QUERY TABLE=Transaction\tStartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
+                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo acceso (TABLE=Transaction) para SN:{SerialNumber}", sn);
                     }
                     else
                     {
                         admsCmd = "DATA UPDATE ATTLOG";
-                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo asistencia para SN:{SerialNumber}", sn);
+                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo asistencia (ATTLOG) para SN:{SerialNumber}", sn);
                     }
 
                     // Encolar comando CHECK para incitar al reloj a sincronizar inmediatamente
@@ -172,8 +172,8 @@ public sealed class DownloadFromDeviceCommandHandler
                         var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
                         var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
 
-                        admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
-                        _logger.LogInformation("ADMS: Solicitada descarga por rango (desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
+                        admsCmd = $"DATA QUERY TABLE=Transaction\tStartTime={startTimeStr}\tEndTime={endTimeStr}";
+                        _logger.LogInformation("ADMS: Solicitada descarga por rango en modo acceso (TABLE=Transaction desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
                     }
                     else
                     {
@@ -181,7 +181,7 @@ public sealed class DownloadFromDeviceCommandHandler
                         var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
 
                         admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
-                        _logger.LogInformation("ADMS: Solicitada descarga por rango (desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
+                        _logger.LogInformation("ADMS: Solicitada descarga por rango en modo asistencia (ATTLOG desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
                     }
                 }
 
