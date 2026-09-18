@@ -11,7 +11,8 @@ public sealed record DownloadFromAllDevicesCommand(
     DateTime? FromDate = null,
     DateTime? ToDate = null,
     string? InitiatedByUserId = null,
-    string? InitiatedByUserName = null) : IRequest<Result<IEnumerable<DownloadResultDto>>>;
+    string? InitiatedByUserName = null,
+    bool ForceFullSync = false) : IRequest<Result<IEnumerable<DownloadResultDto>>>;
 
 public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<DownloadFromAllDevicesCommand, Result<IEnumerable<DownloadResultDto>>>
 {
@@ -34,8 +35,7 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
 
     public async Task<Result<IEnumerable<DownloadResultDto>>> Handle(DownloadFromAllDevicesCommand request, CancellationToken cancellationToken)
     {
-        var allActiveDevices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
-        var devices = allActiveDevices.Where(d => d.DownloadMethod != DeviceDownloadMethod.Adms).ToList();
+        var devices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
         var results = new List<DownloadResultDto>();
 
         DateTime? globalMinDate = null;
@@ -51,7 +51,8 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
                 request.ToDate,
                 CalculateAttendance: false,
                 request.InitiatedByUserId,
-                request.InitiatedByUserName);
+                request.InitiatedByUserName,
+                request.ForceFullSync);
 
             var result = await _mediator.Send(command, cancellationToken);
 

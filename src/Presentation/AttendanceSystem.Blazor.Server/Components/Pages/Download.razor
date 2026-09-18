@@ -6,6 +6,7 @@
 @using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice
 @using AttendanceSystem.Application.Features.DownloadLogs.Queries.GetDownloadLogs
 @using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate
+@using AttendanceSystem.Domain.Enumerations
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthenticationStateProvider
@@ -26,15 +27,20 @@
                 </MudCardHeader>
                 <MudCardContent>
                     <MudGrid Class="mb-4">
-                        <MudItem xs="12" sm="6">
-                            <MudDatePicker Label="Desde (Opcional)" @bind-Date="_downloadFromDate" HelperText="Si vacío: última descarga" />
+                        <MudItem xs="12" sm="5">
+                            <MudDatePicker Label="Desde (Opcional)" @bind-Date="_downloadFromDate" Disabled="@_forceFullSync" HelperText="@(_forceFullSync ? "Deshabilitado (descarga completa)" : "Si vacío: última descarga")" />
                         </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_downloadToDate" HelperText="Si vacío: hasta hoy" />
+                        <MudItem xs="12" sm="5">
+                            <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_downloadToDate" Disabled="@_forceFullSync" HelperText="@(_forceFullSync ? "Deshabilitado (descarga completa)" : "Si vacío: hasta hoy")" />
+                        </MudItem>
+                        <MudItem xs="12" sm="2" Class="d-flex align-center">
+                            <MudTooltip Text="Solicita al reloj todos los registros históricos de su memoria y reinicia el watermark">
+                                <MudCheckBox @bind-Value="_forceFullSync" Color="Color.Warning" Label="Re-descargar Todo" Dense="true" />
+                            </MudTooltip>
                         </MudItem>
                     </MudGrid>
                     <AuthorizeView Roles="Administrador" Context="authContext">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="DownloadFromAllDevices" Disabled="@IsBusy">
+                    <MudButton Variant="Variant.Filled" Color="@(_forceFullSync ? Color.Warning : Color.Primary)" OnClick="DownloadFromAllDevices" Disabled="@IsBusy">
                         @if (_isDownloadingAll)
                         {
                             <MudProgressCircular Size="Size.Small" Indeterminate="true" />
@@ -42,8 +48,8 @@
                         }
                         else
                         {
-                            <MudIcon Icon="@Icons.Material.Filled.Download" />
-                            <MudText Class="ml-2">Descargar Todo</MudText>
+                            <MudIcon Icon="@(_forceFullSync ? Icons.Material.Filled.SyncProblem : Icons.Material.Filled.Download)" />
+                            <MudText Class="ml-2">@(_forceFullSync ? "Forzar Descarga Completa de Todos" : "Descargar de Todos")</MudText>
                         }
                     </MudButton>
                     </AuthorizeView>
@@ -55,17 +61,19 @@
                              @foreach (var device in _devices)
                             {
                                 var isDownloadingThis = _downloadingDeviceId == device.DeviceId;
+                                var isAdms = device.DownloadMethod == DeviceDownloadMethod.Adms;
                                 <MudItem>
                                     <MudChip T="string"
-                                        Icon="@(isDownloadingThis ? null : Icons.Material.Filled.DeviceHub)"
-                                        Color="Color.Primary"
+                                        Icon="@(isDownloadingThis ? null : (isAdms ? Icons.Material.Filled.CloudSync : Icons.Material.Filled.DeviceHub))"
+                                        Color="@(isAdms ? Color.Info : Color.Primary)"
+                                        Variant="@(isAdms ? Variant.Outlined : Variant.Filled)"
                                         OnClick="@(() => DownloadFromDevice(device.DeviceId))"
                                         Disabled="@IsBusy">
                                         @if (isDownloadingThis)
                                         {
                                             <MudProgressCircular Class="ms-n1 mr-1" Size="Size.Small" Indeterminate="true"/>
                                         }
-                                        @device.Name
+                                        @device.Name @(isAdms ? "(ADMS)" : "")
                                     </MudChip>
                                 </MudItem>
                             }
@@ -196,6 +204,7 @@
     private bool IsBusy => _isDownloadingAll || !string.IsNullOrEmpty(_downloadingDeviceId);
     private DateTime? _downloadFromDate;
     private DateTime? _downloadToDate;
+    private bool _forceFullSync;
     private List<DeviceDto> _devices = new();
 
     // Logs logic variables
@@ -224,6 +233,16 @@
 
     private async Task DownloadFromAllDevices()
     {
+        if (_forceFullSync)
+        {
+            bool? confirmed = await DialogService.ShowMessageBoxAsync(
+                "Confirmar Sincronización Completa",
+                "¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de todos los dispositivos? Esta acción reiniciará el stamp de sincronización. Los registros duplicados se omitirán automáticamente.",
+                yesText: "Sí, Sincronizar Todo", cancelText: "Cancelar");
+
+            if (confirmed != true) return;
+        }
+
         _isDownloadingAll = true;
         try
         {
@@ -236,12 +255,17 @@
                 ? _downloadToDate.Value.Date.AddDays(1).AddTicks(-1) 
                 : (DateTime?)null;
 
-            var command = new DownloadFromAllDevicesCommand(_downloadFromDate, effectiveToDate, userId, userName);
+            var command = new DownloadFromAllDevicesCommand(
+                _forceFullSync ? null : _downloadFromDate, 
+                _forceFullSync ? null : effectiveToDate, 
+                userId, 
+                userName, 
+                _forceFullSync);
              var result = await Mediator.Send(command);
 
              if (result.IsSuccess)
              {
-                 Snackbar.Add("Descarga completada", Severity.Success);
+                 Snackbar.Add("Descarga completada / órdenes encoladas", Severity.Success);
                  await LoadLogs(); // Refresh logs
              }
              else
@@ -257,6 +281,17 @@
 
     private async Task DownloadFromDevice(string deviceId)
     {
+        if (_forceFullSync)
+        {
+            var devName = GetDeviceName(deviceId);
+            bool? confirmed = await DialogService.ShowMessageBoxAsync(
+                "Confirmar Sincronización Completa",
+                $"¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de '{devName}'? Esta acción reiniciará el stamp de sincronización en el reloj. Los registros duplicados se omitirán automáticamente.",
+                yesText: "Sí, Sincronizar Todo", cancelText: "Cancelar");
+
+            if (confirmed != true) return;
+        }
+
         _downloadingDeviceId = deviceId;
         try
         {
@@ -269,12 +304,19 @@
                 ? _downloadToDate.Value.Date.AddDays(1).AddTicks(-1) 
                 : (DateTime?)null;
 
-            var command = new DownloadFromDeviceCommand(deviceId, _downloadFromDate, effectiveToDate, true, userId, userName);
+            var command = new DownloadFromDeviceCommand(
+                deviceId, 
+                _forceFullSync ? null : _downloadFromDate, 
+                _forceFullSync ? null : effectiveToDate, 
+                true, 
+                userId, 
+                userName, 
+                _forceFullSync);
             var result = await Mediator.Send(command);
 
             if (result.IsSuccess)
             {
-                 Snackbar.Add($"Descarga de {deviceId} solicitada/completada", Severity.Success);
+                 Snackbar.Add($"Descarga de {GetDeviceName(deviceId)} solicitada / completada", Severity.Success);
                  await LoadLogs(); // Refresh logs
             }
             else

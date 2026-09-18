@@ -4,6 +4,7 @@ using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance
 using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using Microsoft.Extensions.Logging;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
@@ -53,10 +54,21 @@ public class AdmsController : ControllerBase
 
     // 1. GET /iclock/cdata — solo dice si está registrado o no
     [HttpGet("cdata")]
-    public IActionResult CheckData([FromQuery] string SN, [FromQuery] string? options = null)
+    public async Task<IActionResult> CheckData([FromQuery] string SN, [FromQuery] string? options = null)
     {
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
         _logger.LogInformation("🔧 GET cdata {SN}", SN);
+
+        if (!string.IsNullOrEmpty(SN))
+        {
+            var device = await _deviceRepository.GetBySerialNumberAsync(SN);
+            if (device != null && device.Status != DeviceStatus.Online)
+            {
+                device.MarkAsOnline();
+                await _deviceRepository.UpdateAsync(device);
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
 
         // Si el dispositivo ya está en nuestra BD, le decimos que el registro es "ok" 
         // para que proceda a pedir la configuración completa vía POST /push
@@ -84,6 +96,7 @@ public class AdmsController : ControllerBase
         if (device != null)
         {
             device.SetDeviceType(deviceType ?? "acc");
+            device.MarkAsOnline();
             await _deviceRepository.UpdateAsync(device);
             await _unitOfWork.SaveChangesAsync();
         }
@@ -106,6 +119,13 @@ public class AdmsController : ControllerBase
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
 
         var device = await _deviceRepository.GetBySerialNumberAsync(SN);
+        if (device != null && device.Status != DeviceStatus.Online)
+        {
+            device.MarkAsOnline();
+            await _deviceRepository.UpdateAsync(device);
+            await _unitOfWork.SaveChangesAsync();
+        }
+
         var isAccessMode = device?.DeviceType == "acc";
 
         // Obtener último timestamp de logs para este dispositivo
@@ -138,7 +158,7 @@ public class AdmsController : ControllerBase
 
         _logger.LogInformation("📋 Push {SN} stamp={Stamp} ({StampReadable}) mode={Mode}",
             SN, stamp,
-            lastLog.HasValue ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss") : "ninguno",
+            lastLog.HasValue ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss") : "ninguno (0 - Full Sync)",
             isAccessMode ? "acc" : "att");
 
         return Content(response, "text/plain;charset=ISO-8859-1");
@@ -179,12 +199,23 @@ public class AdmsController : ControllerBase
         return Content("OK", "text/plain");
     }
 
-    // 5. GET /iclock/getrequest — heartbeat y comandos (sin cambios)
+    // 5. GET /iclock/getrequest — heartbeat y comandos
     [HttpGet("getrequest")]
-    public IActionResult GetRequest([FromQuery] string SN)
+    public async Task<IActionResult> GetRequest([FromQuery] string SN)
     {
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
-        _logger.LogInformation("� getrequest {SN}", SN);
+        _logger.LogInformation("🔔 getrequest {SN}", SN);
+
+        if (!string.IsNullOrEmpty(SN))
+        {
+            var device = await _deviceRepository.GetBySerialNumberAsync(SN);
+            if (device != null && device.Status != DeviceStatus.Online)
+            {
+                device.MarkAsOnline();
+                await _deviceRepository.UpdateAsync(device);
+                await _unitOfWork.SaveChangesAsync();
+            }
+        }
 
         if (_admsCommandService.HasPendingCommands(SN))
         {
@@ -231,20 +262,28 @@ public class AdmsController : ControllerBase
         // El reloj puede mandar SN, ID, Return en query string O en el body
         string sn = SN ?? "";
         string id = "", ret = "", cmd = "";
+        string body = "";
 
         try
         {
             using var reader = new StreamReader(Request.Body);
-            var body = await reader.ReadToEndAsync();
+            body = await reader.ReadToEndAsync();
 
-            // Parsear — pueden venir en body como form-encoded
-            var parsed = System.Web.HttpUtility.ParseQueryString(body);
-            id = Request.Query["ID"].FirstOrDefault() ?? parsed["ID"] ?? "";
-            ret = Request.Query["Return"].FirstOrDefault() ?? parsed["Return"] ?? "";
-            cmd = Request.Query["CMD"].FirstOrDefault() ?? parsed["CMD"] ?? "";
-
+            id = Request.Query["ID"].FirstOrDefault() ?? "";
+            ret = Request.Query["Return"].FirstOrDefault() ?? "";
+            cmd = Request.Query["CMD"].FirstOrDefault() ?? "";
             if (string.IsNullOrEmpty(sn))
-                sn = parsed["SN"] ?? "";
+                sn = Request.Query["SN"].FirstOrDefault() ?? "";
+
+            // Parsear si vienen en body como form-encoded
+            if (body.Contains("=") && (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(ret)))
+            {
+                var parsed = System.Web.HttpUtility.ParseQueryString(body);
+                if (string.IsNullOrEmpty(id)) id = parsed["ID"] ?? "";
+                if (string.IsNullOrEmpty(ret)) ret = parsed["Return"] ?? "";
+                if (string.IsNullOrEmpty(cmd)) cmd = parsed["CMD"] ?? "";
+                if (string.IsNullOrEmpty(sn)) sn = parsed["SN"] ?? "";
+            }
         }
         catch (Exception ex)
         {
@@ -252,6 +291,22 @@ public class AdmsController : ControllerBase
         }
 
         _logger.LogInformation("📬 devicecmd SN:{SN} ID:{ID} Return:{Return} CMD:{CMD}", sn, id, ret, cmd);
+
+        // Si el body contiene registros de asistencia (en formato TSV o key=value) devueltos por DATA QUERY
+        if (!string.IsNullOrEmpty(sn) && (body.Contains("\t") || body.Contains("pin=") || body.Contains("PIN=")))
+        {
+            var lines = body.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
+                .Where(l => !l.StartsWith("ID=", StringComparison.OrdinalIgnoreCase) &&
+                            !l.StartsWith("Return=", StringComparison.OrdinalIgnoreCase) &&
+                            !l.StartsWith("CMD=", StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+
+            if (lines.Length > 0)
+            {
+                _logger.LogInformation("📥 ADMS: Procesando {Count} registros recibidos en cuerpo de devicecmd para SN: {SN}", lines.Length, sn);
+                await ProcessAttLogs(lines, sn);
+            }
+        }
 
         try
         {

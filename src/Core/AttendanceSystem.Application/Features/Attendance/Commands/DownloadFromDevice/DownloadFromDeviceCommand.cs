@@ -18,7 +18,8 @@ public sealed record DownloadFromDeviceCommand(
     DateTime? ToDate = null,
     bool CalculateAttendance = true,
     string? InitiatedByUserId = null,
-    string? InitiatedByUserName = null) : IRequest<Result<DownloadResultDto>>;
+    string? InitiatedByUserName = null,
+    bool ForceFullSync = false) : IRequest<Result<DownloadResultDto>>;
 
 public sealed class DownloadFromDeviceCommandHandler
     : IRequestHandler<DownloadFromDeviceCommand, Result<DownloadResultDto>>
@@ -104,14 +105,14 @@ public sealed class DownloadFromDeviceCommandHandler
             : DownloadType.Manual;
 
         var requestToDate = command.ToDate ?? DateTime.UtcNow;
-        DateTime? filterDate = command.FromDate ?? device.LastDownloadAt;
+        DateTime? filterDate = command.ForceFullSync ? null : (command.FromDate ?? device.LastDownloadAt);
 
         var downloadLog = DownloadLog.Create(
             deviceId,
             downloadType,
             command.InitiatedByUserId,
             command.InitiatedByUserName,
-            command.FromDate,
+            command.ForceFullSync ? null : command.FromDate,
             requestToDate);
 
         var downloadLogId = downloadLog.Id; // Guardar ID para luego
@@ -137,50 +138,50 @@ public sealed class DownloadFromDeviceCommandHandler
 
                 if (string.IsNullOrEmpty(sn))
                 {
-                    return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene nÃºmero de serie registrado.");
+                    return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene número de serie registrado.");
                 }
 
                 string admsCmd = "";
-
                 bool isAccessMode = device.DeviceType == "acc";
 
-                // Determinar el comando ADMS basado en el rango calculado
-                if (filterDate.HasValue)
+                if (command.ForceFullSync || !filterDate.HasValue)
                 {
+                    // Forzar sincronización completa: Resetear stamp en BD para que el próximo push entregue todo
+                    await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+
                     if (isAccessMode)
                     {
-                        // Modo acceso: Siempre usamos DATA QUERY con rango para mayor precisión
-                        var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
-                        var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
-
-                        admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
-                        _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
-                    }
-                    else
-                    {
-                        // Modo asistencia: Usamos DATA UPDATE FROM con filtro de tiempo
-                        var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
-                        var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
-
-                        admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
-                        _logger.LogInformation("ADMS: Solicitada descarga incremental (desde {From} hasta {To})", filterDate.Value, requestToDate);
-                    }
-                }
-                else
-                {
-                    // Si NO hay fecha de filtro (primera descarga), entonces sí forzamos todo
-                    if (isAccessMode)
-                    {
-                        await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
-                        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
                         admsCmd = "DATA QUERY ATTLOG StartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
-                        _logger.LogInformation("ADMS: Primera descarga (completa) en modo acceso");
+                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo acceso para SN:{SerialNumber}", sn);
                     }
                     else
                     {
                         admsCmd = "DATA UPDATE ATTLOG";
-                        _logger.LogInformation("ADMS: Primera descarga (completa) en modo asistencia");
+                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo asistencia para SN:{SerialNumber}", sn);
+                    }
+
+                    // Encolar comando CHECK para incitar al reloj a sincronizar inmediatamente
+                    _admsCommandService.EnqueueCommand(sn!, "CHECK");
+                }
+                else
+                {
+                    // Descarga por rango específico o incremental
+                    if (isAccessMode)
+                    {
+                        var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
+                        var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
+
+                        admsCmd = $"DATA QUERY ATTLOG StartTime={startTimeStr}\tEndTime={endTimeStr}";
+                        _logger.LogInformation("ADMS: Solicitada descarga por rango (desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
+                    }
+                    else
+                    {
+                        var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                        var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
+
+                        admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
+                        _logger.LogInformation("ADMS: Solicitada descarga por rango (desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
                     }
                 }
 
