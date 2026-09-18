@@ -272,6 +272,11 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
     private double GetEffectiveOvertime(DailyAttendance att, Employee emp)
     {
+        if (!emp.OvertimeAuthorized)
+        {
+            return 0;
+        }
+
         double calculatedOvertime = 0;
 
         // 1. PRIORIDAD A LOS DATOS ALMACENADOS: Si el registro ha sido procesado y tiene tiempo extra, usarlo.
@@ -283,19 +288,14 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         else
         {
             // 2. FALLBACK/RECALCULATION: Si el almacenado es 0 pero tenemos registros, verificar si hay tiempo extra
-            // (Este paso maneja días de descanso con nueva lógica o registros que aún no se han reprocesado completamente)
-            double goal = 0;
+            double goal = 480;
 
-            if (!att.IsRestDay && att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue)
+            if (att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue)
             {
                 var sIn = att.Date.Add(att.ScheduledCheckIn.Value);
                 var sOut = att.Date.Add(att.ScheduledCheckOut.Value);
                 if (att.ScheduledCheckOut < att.ScheduledCheckIn) sOut = sOut.AddDays(1);
                 goal = (sOut - sIn).TotalMinutes;
-            }
-            else if (!att.IsRestDay)
-            {
-                goal = 480;
             }
 
             if (att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
@@ -303,6 +303,14 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 DateTime referenceEntry = GetReferenceEntry(att) ?? att.ActualCheckIn.Value;
                 DateTime referenceExit = GetReferenceExit(att) ?? att.ActualCheckOut.Value;
                 var workedDuration = (referenceExit - referenceEntry).TotalMinutes;
+
+                workedDuration -= att.LunchBreakMinutesApplied;
+                if (att.TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
+                {
+                    workedDuration -= att.TemporaryExitMinutes;
+                }
+                if (workedDuration < 0) workedDuration = 0;
+
                 calculatedOvertime = workedDuration - goal;
                 if (calculatedOvertime < 0) calculatedOvertime = 0;
             }

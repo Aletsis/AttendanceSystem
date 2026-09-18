@@ -167,4 +167,96 @@ public class DailyAttendanceTests
         da.TemporaryExitStatus.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
         da.AttendanceNote.Should().Contain("Permiso sin goce");
     }
+
+    [Fact]
+    public void Create_WhenWorkingNormalScheduleOnRestDay_ShouldNotHaveOvertime()
+    {
+        // Arrange (8:00 to 16:00 = 8 hrs = 480 min, scheduled = 8 hrs = 480 min)
+        var checkIn = _date.AddHours(8);
+        var checkOut = _date.AddHours(16);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: _standardShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: true,
+            overtimeAuthorized: true);
+
+        // Assert
+        da.WorkedOnRestDay.Should().BeTrue();
+        da.IsRestDay.Should().BeTrue();
+        da.OvertimeMinutes.Should().Be(0);
+    }
+
+    [Fact]
+    public void Create_WhenWorkingOvertimeOnRestDayWithAuthorization_ShouldCalculateOvertime()
+    {
+        // Arrange (8:00 to 18:00 = 10 hrs = 600 min, scheduled = 8 hrs = 480 min -> 120 min OT)
+        var checkIn = _date.AddHours(8);
+        var checkOut = _date.AddHours(18);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: _standardShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: true,
+            overtimeAuthorized: true);
+
+        // Assert
+        da.WorkedOnRestDay.Should().BeTrue();
+        da.IsRestDay.Should().BeTrue();
+        da.OvertimeMinutes.Should().Be(120);
+    }
+
+    [Fact]
+    public void Create_WhenWorkingOvertimeOnRestDayWithoutAuthorization_ShouldHaveZeroOvertime()
+    {
+        // Arrange (8:00 to 18:00 = 10 hrs = 600 min, scheduled = 8 hrs = 480 min)
+        var checkIn = _date.AddHours(8);
+        var checkOut = _date.AddHours(18);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: _standardShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: true,
+            overtimeAuthorized: false);
+
+        // Assert
+        da.WorkedOnRestDay.Should().BeTrue();
+        da.IsRestDay.Should().BeTrue();
+        da.OvertimeMinutes.Should().Be(0);
+    }
+
+    [Fact]
+    public void Create_WhenWorkingOnRestDayWithoutShift_ShouldUse8HourGoal()
+    {
+        // Arrange: No shift assigned, worked 9 hours (540 min) -> 60 min OT over 8h (480 min) base
+        var checkIn = _date.AddHours(8);
+        var checkOut = _date.AddHours(17);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: null,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: true,
+            overtimeAuthorized: true);
+
+        // Assert
+        da.WorkedOnRestDay.Should().BeTrue();
+        da.IsRestDay.Should().BeTrue();
+        da.OvertimeMinutes.Should().Be(60);
+    }
 }

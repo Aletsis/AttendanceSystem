@@ -280,12 +280,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             {
                 var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
 
-                // If Rest Day, everything is overtime. If not, fallback to 8h (480m)
-                int goal = IsRestDay ? 0 : 480;
+                // Jornada base estándar de 8 horas (480 min)
+                int goal = 480;
 
-                if (totalMinutes >= goal)
+                if (totalMinutes > goal && OvertimeAuthorized)
                 {
-                    OvertimeMinutes = (int)totalMinutes - goal;
+                    OvertimeMinutes = (int)(totalMinutes - goal);
                 }
             }
             return;
