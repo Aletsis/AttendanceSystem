@@ -95,7 +95,7 @@ public class AdmsController : ControllerBase
         var device = await _deviceRepository.GetBySerialNumberAsync(SN);
         if (device != null)
         {
-            device.SetDeviceType(deviceType ?? "acc");
+            device.SetDeviceType(deviceType ?? "att");
             device.MarkAsOnline();
             await _deviceRepository.UpdateAsync(device);
             await _unitOfWork.SaveChangesAsync();
@@ -440,17 +440,16 @@ public class AdmsController : ControllerBase
                         logData.TryGetValue("time", out var timeStr) &&
                         DateTime.TryParse(timeStr, out checkTime))
                     {
-                        // En Access Control (Transaction):
-                        // event=0: Acceso normal verificado / concedido (checada válida)
-                        // event=1: Botón de salida manual / pulsador
-                        // event=4: Alarma de coacción (duress)
-                        // event=20..25: Acceso denegado (tarjeta no válida, PIN incorrecto, fuera de horario)
-                        // event=27: Alarma puerta abierta
+                        // En Access Control (Transaction / rtlog):
+                        // 0..19 y 200..255: Eventos normales / verificaciones concedidas (0=Normal, 3=Multi/Punch normal, 14=Normal verify, etc.)
+                        // 20..99: Acceso denegado / Errores (tarjeta no válida, PIN incorrecto, fuera de horario)
+                        // 100..199: Alarmas (puerta abierta, coacción, sabotaje)
                         if (logData.TryGetValue("event", out var eventStr) && int.TryParse(eventStr, out var eventCode))
                         {
-                            if (eventCode != 0)
+                            bool isDeniedOrAlarm = (eventCode >= 20 && eventCode <= 199);
+                            if (isDeniedOrAlarm)
                             {
-                                _logger.LogInformation("ADMS: Evento de acceso no laboral ignorado (EventCode={EventCode}, PIN={Pin}, SN={SN})", eventCode, pin, SN);
+                                _logger.LogInformation("ADMS: Evento de acceso denegado o alarma ignorado (EventCode={EventCode}, PIN={Pin}, SN={SN})", eventCode, pin, SN);
                                 continue;
                             }
                         }

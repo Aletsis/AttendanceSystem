@@ -141,68 +141,38 @@ public sealed class DownloadFromDeviceCommandHandler
                     return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene número de serie registrado.");
                 }
 
-                string admsCmd = "";
-                bool isAccessMode = device.DeviceType == "acc";
-
                 if (command.ForceFullSync || !filterDate.HasValue)
                 {
-                    // Forzar sincronización completa: Resetear stamp en BD para que el próximo push entregue todo
+                    // Forzar sincronización completa: Resetear stamp en BD para que el próximo push entregue todo desde el inicio
                     await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                    if (isAccessMode)
-                    {
-                        admsCmd = "DATA QUERY TABLE=Transaction\tStartTime=2000-01-01T00:00:00\tEndTime=2099-12-31T23:59:59";
-                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo acceso (TABLE=Transaction) para SN:{SerialNumber}", sn);
-                    }
-                    else
-                    {
-                        admsCmd = "DATA UPDATE ATTLOG";
-                        _logger.LogInformation("ADMS: Sincronización completa forzada en modo asistencia (ATTLOG) para SN:{SerialNumber}", sn);
-                    }
+                    _logger.LogInformation("ADMS: Sincronización completa forzada (CHECK + ATTLOGStamp=0) para SN:{SerialNumber}", sn);
 
-                    // Encolar comando CHECK para incitar al reloj a sincronizar inmediatamente
+                    // El comando CHECK incita al dispositivo a comunicarse con /push (donde recibirá ATTLOGStamp=0) y descargar todos los logs
+                    _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
+                    _admsCommandService.EnqueueCommand(sn!, "DATA UPDATE ATTLOG");
+                }
+                else
+                {
+                    var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                    var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
+
+                    // Actualizar stamp para que /push responda con la fecha requerida
+                    await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, filterDate.Value, cancellationToken);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                    var admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
+                    _logger.LogInformation("ADMS: Solicitada descarga por rango para SN:{SerialNumber}: {Command}", sn, admsCmd);
+
+                    _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
                     _admsCommandService.EnqueueCommand(sn!, "CHECK");
                 }
-                else
-                {
-                    // Descarga por rango específico o incremental
-                    if (isAccessMode)
-                    {
-                        var startTimeStr = filterDate.Value.ToString("yyyy-MM-ddTHH:mm:ss");
-                        var endTimeStr = requestToDate.ToString("yyyy-MM-ddTHH:mm:ss");
 
-                        admsCmd = $"DATA QUERY TABLE=Transaction\tStartTime={startTimeStr}\tEndTime={endTimeStr}";
-                        _logger.LogInformation("ADMS: Solicitada descarga por rango en modo acceso (TABLE=Transaction desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
-                    }
-                    else
-                    {
-                        var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
-                        var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
-
-                        admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
-                        _logger.LogInformation("ADMS: Solicitada descarga por rango en modo asistencia (ATTLOG desde {From} hasta {To}) para SN:{SerialNumber}", filterDate.Value, requestToDate, sn);
-                    }
-                }
-
-                if (!string.IsNullOrEmpty(admsCmd))
-                {
-                    // PASAMOS el LogId para rastrear cuando termine
-                    _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
-
-                    _logger.LogInformation("âœ… ADMS: Comando '{Command}' encolado para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",
-                        admsCmd, sn!, downloadLogId.Value);
-                    _logger.LogInformation("â³ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vÃ­a GET /getrequest",
-                        sn!);
-                    _logger.LogInformation("ðŸ“‹ ADMS: El dispositivo debe estar configurado para comunicarse con este servidor en la URL base del sistema");
-                }
-                else
-                {
-                    // Si no se encolá comando (ej. ForceFullSync actuará ví­a push), damos por exitoso el log de tracking de inmediato
-                    // para que la UI no se quede esperando un POST /devicecmd
-                    downloadLog.MarkAsSuccessful(0, 0);
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-                }
+                _logger.LogInformation("✅ ADMS: Comandos de sincronización encolados para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",
+                    sn!, downloadLogId.Value);
+                _logger.LogInformation("⏳ ADMS: Esperando que el dispositivo SN: {SerialNumber} solicite comandos vía GET /getrequest",
+                    sn!);
 
                 // Retornamos éxito indicando que se programó.
                 // Nota: El frontend verá "0 registros" pero el log quedará sin fecha de fin.
