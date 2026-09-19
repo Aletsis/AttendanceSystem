@@ -37,28 +37,34 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         var employeeId = EmployeeId.From(request.EmployeeId);
         var date = request.CheckTime.Date;
 
-        // 1. Combrobar/Obtener Asistencia Diaria para validar duplicación
+        // 1. Obtener Asistencia Diaria existente si ya fue procesada/creada
         var daily = await _dailyRepo.GetByEmployeeAndDateAsync(
             employeeId,
             date,
             cancellationToken);
 
-        // Logica requerida: "No puede haber 2 entradas ni 2 salidas"
-        // Esto implica validar contra la asistencia *procesada*.
+        // Si ya existe una asistencia diaria y tiene un registro previo del mismo tipo,
+        // desasignamos el registro anterior (cambiando su estado a Pending)
         if (daily != null)
         {
-            if (request.Type == "Entrada" && daily.ActualCheckIn.HasValue)
+            if (request.Type == "Entrada" && daily.CheckInRecordId != null)
             {
-                return Result.Failure($"Ya existe una Entrada registrada para el usuario el día {date:dd/MM/yyyy} a las {daily.ActualCheckIn.Value:HH:mm}.");
+                var previousCheckIn = await _attendanceRepo.GetByIdAsync(daily.CheckInRecordId, cancellationToken);
+                if (previousCheckIn != null)
+                {
+                    previousCheckIn.ResetStatus();
+                    await _attendanceRepo.UpdateAsync(previousCheckIn, cancellationToken);
+                }
             }
-            if (request.Type == "Salida" && daily.ActualCheckOut.HasValue)
+            else if (request.Type == "Salida" && daily.CheckOutRecordId != null)
             {
-                return Result.Failure($"Ya existe una Salida registrada para el usuario el día {date:dd/MM/yyyy} a las {daily.ActualCheckOut.Value:HH:mm}.");
+                var previousCheckOut = await _attendanceRepo.GetByIdAsync(daily.CheckOutRecordId, cancellationToken);
+                if (previousCheckOut != null)
+                {
+                    previousCheckOut.ResetStatus();
+                    await _attendanceRepo.UpdateAsync(previousCheckOut, cancellationToken);
+                }
             }
-        }
-        else
-        {
-
         }
 
         // 2. Crear AttendanceRecord
@@ -76,7 +82,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         // 3. Guardar Registro
         await _attendanceRepo.AddAsync(record, cancellationToken);
 
-        // 4. Actualizar Asistencia Diaria si existe
+        // 4. Actualizar Asistencia Diaria si existe (SetCheckIn/SetCheckOut recalculan automáticamente el estado)
         if (daily != null)
         {
             if (request.Type == "Entrada")
@@ -88,7 +94,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
                 daily.SetCheckOut(record.CheckTime, record.Id);
             }
 
-            // Marcar el registro como procesado
+            // Marcar el nuevo registro como procesado
             record.MarkAsProcessed();
         }
 
