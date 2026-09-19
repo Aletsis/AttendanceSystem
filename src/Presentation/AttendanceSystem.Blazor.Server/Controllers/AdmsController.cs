@@ -195,7 +195,14 @@ public class AdmsController : ControllerBase
             return Content("OK", "text/plain");
         }
 
-        // rtstate, options, tabledata, etc. — responder OK
+        if (table?.Equals("options", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("tabledata", StringComparison.OrdinalIgnoreCase) == true)
+        {
+            _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en cdata para SN: {SN}:\n{Body}", SN, body);
+            return Content("OK", "text/plain");
+        }
+
+        // rtstate, tabledata, etc. — responder OK
         return Content("OK", "text/plain");
     }
 
@@ -213,6 +220,13 @@ public class AdmsController : ControllerBase
         _logger.LogInformation("📥 POST querydata SN:{SN} table:{Table} type:{Type}", SN, targetTable, type);
 
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
+
+        if (targetTable.Equals("options", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("tabledata", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en querydata para SN: {SN}:\n{Body}", SN, body);
+            return Content("OK", "text/plain");
+        }
 
         if (targetTable.Equals("ATTLOG", StringComparison.OrdinalIgnoreCase) ||
             targetTable.Equals("Transaction", StringComparison.OrdinalIgnoreCase) ||

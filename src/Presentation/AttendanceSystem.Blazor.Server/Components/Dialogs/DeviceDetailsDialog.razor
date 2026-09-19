@@ -7,6 +7,7 @@
 @using AttendanceSystem.Application.Features.Devices.Commands.SetDeviceTime
 @using AttendanceSystem.Application.Features.Devices.Commands.ResetDeviceToFactory
 @using AttendanceSystem.Application.Features.Devices.Commands.ClearDeviceLogs
+@using AttendanceSystem.Application.Features.Devices.Commands.QueryDeviceOptions
 @inject ISender Sender
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
@@ -220,6 +221,28 @@
                               </MudCardActions>
                           </MudCard>
                       </MudItem>
+
+                       @if (Device.DownloadMethod == AttendanceSystem.Domain.Enumerations.DeviceDownloadMethod.Adms)
+                       {
+                           <MudItem xs="12" md="4">
+                               <MudCard Elevation="3">
+                                   <MudCardHeader>
+                                       <CardHeaderContent>
+                                           <MudText Typo="Typo.h6" Color="Color.Primary">Parámetros ADMS</MudText>
+                                       </CardHeaderContent>
+                                       <CardHeaderActions>
+                                           <MudIcon Icon="@Icons.Material.Filled.SettingsSuggest" Color="Color.Primary"/>
+                                       </CardHeaderActions>
+                                   </MudCardHeader>
+                                   <MudCardContent>
+                                       <MudText>Solicita las opciones y variables internas del reloj (<code>DATA QUERY tablename=options</code>) para diagnóstico.</MudText>
+                                   </MudCardContent>
+                                   <MudCardActions>
+                                       <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="QueryOptions" Disabled="@_processingAction">Consultar Opciones</MudButton>
+                                   </MudCardActions>
+                               </MudCard>
+                           </MudItem>
+                       }
                  </MudGrid>
             </MudTabPanel>
         </MudTabs>
@@ -333,6 +356,17 @@
         
         if (result.IsSuccess) Snackbar.Add("Hora sincronizada correctamente", Severity.Success);
         else Snackbar.Add($"Error al sincronizar hora: {result.Error}", Severity.Error);
+        
+        _processingAction = false;
+    }
+
+    private async Task QueryOptions()
+    {
+        _processingAction = true;
+        var result = await Sender.Send(new QueryDeviceOptionsCommand(Device.DeviceId));
+        
+        if (result.IsSuccess) Snackbar.Add("Comando de consulta de opciones (DATA QUERY) encolado. El reloj responderá en su siguiente latido.", Severity.Success);
+        else Snackbar.Add($"Error al consultar opciones: {result.Error}", Severity.Error);
         
         _processingAction = false;
     }

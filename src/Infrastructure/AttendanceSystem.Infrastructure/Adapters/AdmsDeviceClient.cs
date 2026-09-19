@@ -170,7 +170,16 @@ public class AdmsDeviceClient : IDeviceClient
     public Task<bool> SetDeviceTimeAsync(DateTime dateTime, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
+
+        var tzOffsetHours = (int)TimeZoneInfo.Local.GetUtcOffset(dateTime).TotalHours;
+        
+        // Encolar configuración de Zona Horaria y desactivar Horario de Verano para evitar desfases con la cabecera HTTP Date
+        _admsCommandService.EnqueueCommand(_serialNumber, $"SET OPTIONS TimeZone={tzOffsetHours},TZ={tzOffsetHours},~TimeZone={tzOffsetHours},DaylightSavingTime=0,~DaylightSavingTime=0");
         _admsCommandService.EnqueueCommand(_serialNumber, $"SET OPTIONS DateTime={dateTime:yyyy-MM-dd HH:mm:ss}");
+        
+        _logger.LogInformation("ADMS: Encolados comandos de zona horaria (UTC{Offset:+#;-#;+0}) y hora ({DateTime:yyyy-MM-dd HH:mm:ss}) para SN: {SN}",
+            tzOffsetHours, dateTime, _serialNumber);
+
         return Task.FromResult(true);
     }
 
