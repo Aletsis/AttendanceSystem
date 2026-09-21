@@ -37,7 +37,7 @@ Log.Logger = new LoggerConfiguration()
     .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
     .Enrich.FromLogContext()
     .WriteTo.Console()
-    .WriteTo.File("logs/bootstrap-log-.txt", rollingInterval: RollingInterval.Day)
+    .WriteTo.File("logs/bootstrap/bootstrap-.txt", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
     .CreateBootstrapLogger();
 
 try
@@ -59,15 +59,9 @@ try
         options.ShutdownTimeout = TimeSpan.FromSeconds(shutdownTimeoutSeconds);
     });
 
-    // ===== LOGGING CON SERILOG =====
+    // ===== LOGGING CON SERILOG (SUB-LOGGERS POR FUNCIONALIDAD) =====
     builder.Host.UseSerilog((context, services, configuration) => configuration
-        .ReadFrom.Configuration(context.Configuration)
-        .ReadFrom.Services(services)
-        .Enrich.FromLogContext()
-        .Enrich.WithMachineName()
-        .Enrich.WithThreadId()
-        .Enrich.WithEnvironmentName()
-        .Enrich.WithProperty("Application", "AttendanceSystem"));
+        .ConfigureAttendanceLogging(context.Configuration, services));
 
 
     // Blazor

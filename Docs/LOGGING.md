@@ -40,26 +40,47 @@ El sistema de asistencia ahora cuenta con un sistema de logging completo impleme
 - **Nivel mínimo**: Warning (en todos los ambientes para reducir ruido)
 
 ### 2. Archivos
-Se generan dos tipos de archivos en la carpeta `logs/`:
+Los logs se organizan y separan automáticamente en subcarpetas temáticas dentro de `logs/`:
 
-#### Archivo General
-- **Nombre**: `attendance-system-YYYYMMDD.log`
-- **Contenido**: Todos los logs (Information y superior)
-- **Rotación**: Diaria
-- **Retención**: 30 días
-- **Tamaño máximo**: 10 MB por archivo
+#### ADMS (`logs/adms/`)
+- **Nombre**: `adms-YYYYMMDD.log`
+- **Contenido**: Comunicación con terminales ADMS, endpoints `/iclock`, comandos y clientes ADMS
+- **Rotación**: Diaria | **Retención**: 30 días | **Tamaño máx**: 10 MB
 
-#### Archivo de Errores
-- **Nombre**: `attendance-system-errors-YYYYMMDD.log`
-- **Contenido**: Solo errores (Error y Fatal)
-- **Rotación**: Diaria
-- **Retención**: 90 días
+#### Base de Datos (`logs/database/`)
+- **Nombre**: `database-YYYYMMDD.log`
+- **Contenido**: Consultas SQL, comandos Entity Framework Core, transacciones Npgsql y migraciones
+- **Rotación**: Diaria | **Retención**: 15 días | **Tamaño máx**: 20 MB
 
-### 3. Base de Datos SQL Server
-- **Tabla**: `dbo.Logs`
+#### Procesamiento de Asistencia (`logs/attendance/`)
+- **Nombre**: `attendance-processing-YYYYMMDD.log`
+- **Contenido**: Cálculo de turnos, incidencias, deduplicación y jobs automáticos de asistencia
+- **Rotación**: Diaria | **Retención**: 60 días | **Tamaño máx**: 10 MB
+
+#### Comunicación ZKTeco (`logs/zkteco/`)
+- **Nombre**: `zkteco-comm-YYYYMMDD.log`
+- **Contenido**: Comunicación cliente gRPC con el servicio ZKTeco, descubrimiento y sincronización
+- **Rotación**: Diaria | **Retención**: 30 días | **Tamaño máx**: 10 MB
+
+#### Sistema / General (`logs/system/`)
+- **Nombre**: `system-YYYYMMDD.log`
+- **Contenido**: Eventos de hosting, ciclo de vida de la aplicación, middleware HTTP y auditoría general
+- **Rotación**: Diaria | **Retención**: 30 días | **Tamaño máx**: 10 MB
+
+#### Archivo Global de Errores (`logs/errors/`)
+- **Nombre**: `errors-YYYYMMDD.log`
+- **Contenido**: Excepciones y fallos críticos de cualquier origen (niveles `Error` y `Fatal`)
+- **Rotación**: Diaria | **Retención**: 90 días | **Tamaño máx**: 10 MB
+
+#### Bootstrap (`logs/bootstrap/`)
+- **Nombre**: `bootstrap-YYYYMMDD.txt`
+- **Contenido**: Logs tempranos durante el arranque del host
+- **Rotación**: Diaria | **Retención**: 7 días
+
+### 3. Base de Datos PostgreSQL
+- **Tabla**: `Logs`
 - **Nivel mínimo**: Information
 - **Creación automática**: Sí
-- **Batch**: 50 registros cada 5 segundos
 - **Columnas adicionales**: UserName, MachineName, Application
 
 ## Niveles de Log
@@ -218,44 +239,54 @@ _logger.LogCritical(ex, "No se pudo conectar a la base de datos");
 
 ### 1. Archivos de Log
 
-Los archivos se encuentran en la carpeta `logs/` en la raíz del proyecto:
+Los archivos se encuentran organizados en subcarpetas dentro de `logs/`:
 
 ```
 logs/
-├── attendance-system-20260109.log          # Logs generales
-├── attendance-system-20260110.log
-├── attendance-system-errors-20260109.log   # Solo errores
-└── attendance-system-errors-20260110.log
+├── adms/
+│   └── adms-20260921.log                 # Comunicación y comandos ADMS
+├── database/
+│   └── database-20260921.log             # Consultas y operaciones BD (EF Core/Npgsql)
+├── attendance/
+│   └── attendance-processing-20260921.log # Procesamiento de asistencias y turnos
+├── zkteco/
+│   └── zkteco-comm-20260921.log          # Sincronización y gRPC con ZKTeco
+├── system/
+│   └── system-20260921.log               # Eventos generales y hosting
+├── errors/
+│   └── errors-20260921.log               # Errores globales (Error y Fatal)
+└── bootstrap/
+    └── bootstrap-20260921.txt            # Inicialización temprana
 ```
 
-### 2. Base de Datos
+### 2. Base de Datos PostgreSQL
 
-Consulta la tabla `Logs` en SQL Server:
+Consulta la tabla `Logs` en PostgreSQL:
 
 ```sql
 -- Ver los últimos 100 logs
-SELECT TOP 100 
-    TimeStamp,
-    Level,
-    Message,
-    Exception,
-    MachineName,
-    Application
-FROM dbo.Logs
-ORDER BY TimeStamp DESC;
+SELECT 
+    "Timestamp",
+    "Level",
+    "Message",
+    "Exception",
+    "Properties"
+FROM "Logs"
+ORDER BY "Timestamp" DESC
+LIMIT 100;
 
 -- Ver solo errores de hoy
 SELECT *
-FROM dbo.Logs
-WHERE Level = 'Error'
-  AND CAST(TimeStamp AS DATE) = CAST(GETDATE() AS DATE)
-ORDER BY TimeStamp DESC;
+FROM "Logs"
+WHERE "Level" = 'Error'
+  AND "Timestamp"::date = CURRENT_DATE
+ORDER BY "Timestamp" DESC;
 
 -- Buscar logs de un comando específico
 SELECT *
-FROM dbo.Logs
-WHERE Message LIKE '%CreateEmployeeCommand%'
-ORDER BY TimeStamp DESC;
+FROM "Logs"
+WHERE "Message" LIKE '%CreateEmployeeCommand%'
+ORDER BY "Timestamp" DESC;
 ```
 
 ### 3. Consola

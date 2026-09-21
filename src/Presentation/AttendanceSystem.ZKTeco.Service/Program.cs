@@ -23,7 +23,7 @@ public class Program
             .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
             .Enrich.FromLogContext()
             .WriteTo.Console()
-            .WriteTo.File("logs/zkteco-service-log-.txt", rollingInterval: RollingInterval.Day)
+            .WriteTo.File("logs/bootstrap/zkteco-service-bootstrap-.txt", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
             .CreateBootstrapLogger();
 
         try
@@ -46,7 +46,24 @@ public class Program
                 .Enrich.FromLogContext()
                 .Enrich.WithMachineName()
                 .Enrich.WithThreadId()
-                .Enrich.WithProperty("Application", "ZKTecoService"));
+                .Enrich.WithProperty("Application", "ZKTecoService")
+                .WriteTo.Logger(zkLogger => zkLogger
+                    .WriteTo.File(
+                        path: "logs/zkteco/zkteco-service-.log",
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileCountLimit: 30,
+                        fileSizeLimitBytes: 10485760,
+                        rollOnFileSizeLimit: true,
+                        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}"))
+                .WriteTo.Logger(errLogger => errLogger
+                    .Filter.ByIncludingOnly(e => e.Level >= LogEventLevel.Error)
+                    .WriteTo.File(
+                        path: "logs/errors/zkteco-errors-.log",
+                        rollingInterval: RollingInterval.Day,
+                        retainedFileCountLimit: 90,
+                        fileSizeLimitBytes: 10485760,
+                        rollOnFileSizeLimit: true,
+                        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")));
 
 
             // ===== CONFIGURAR COMO SERVICIO DE WINDOWS =====
