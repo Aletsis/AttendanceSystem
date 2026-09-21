@@ -44,7 +44,7 @@ public class QueryDeviceOptionsHandler : IRequestHandler<QueryDeviceOptionsComma
                 }
 
                 _logger.LogInformation("ADMS: Encolando consulta de opciones (DATA QUERY tablename=options) para SN: {SerialNumber}", sn);
-                
+
                 _admsCommandService.EnqueueCommand(sn, "DATA QUERY tablename=options");
                 _admsCommandService.EnqueueCommand(sn, "CHECK");
 
