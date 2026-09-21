@@ -44,7 +44,7 @@ Los logs se organizan y separan automáticamente en subcarpetas temáticas dentr
 
 #### ADMS (`logs/adms/`)
 - **Nombre**: `adms-YYYYMMDD.log`
-- **Contenido**: Comunicación con terminales ADMS, endpoints `/iclock`, comandos y clientes ADMS
+- **Contenido**: Comunicación completa con terminales ADMS, endpoints `/iclock` (incluyendo todas las cabeceras HTTP, parámetros de consulta y payload completo de cada solicitud), comandos y clientes ADMS
 - **Rotación**: Diaria | **Retención**: 30 días | **Tamaño máx**: 10 MB
 
 #### Base de Datos (`logs/database/`)

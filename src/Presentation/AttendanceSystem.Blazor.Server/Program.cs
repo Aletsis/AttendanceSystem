@@ -270,6 +270,7 @@ try
 
 
     // ===== LOGGING MIDDLEWARE =====
+    app.UseMiddleware<AdmsRequestLoggingMiddleware>();
     app.UseSerilogRequestLogging();
     app.UseMiddleware<RequestLoggingMiddleware>();
 

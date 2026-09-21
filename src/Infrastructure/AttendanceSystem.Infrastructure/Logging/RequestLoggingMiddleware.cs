@@ -20,6 +20,13 @@ public class RequestLoggingMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // Omitir endpoints ADMS para evitar duplicados (AdmsRequestLoggingMiddleware los registra en detalle)
+        if (AdmsRequestLoggingMiddleware.IsAdmsRequest(context.Request.Path))
+        {
+            await _next(context);
+            return;
+        }
+
         var stopwatch = Stopwatch.StartNew();
         var requestPath = context.Request.Path;
         var requestMethod = context.Request.Method;

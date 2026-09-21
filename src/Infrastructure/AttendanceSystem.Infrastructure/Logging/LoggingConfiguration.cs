@@ -45,10 +45,11 @@ public static class LoggingConfiguration
             .Enrich.WithEnvironmentName()
             .Enrich.WithProperty("Application", "AttendanceSystem");
 
-        // 3. Sub-logger: ADMS (Controlador, servicios y clientes ADMS)
+        // 3. Sub-logger: ADMS (Controlador, middleware, servicios y clientes ADMS)
         loggerConfiguration.WriteTo.Logger(admsLogger => admsLogger
             .Filter.ByIncludingOnly(e => IsMatchingContext(e,
                 "AttendanceSystem.Blazor.Server.Controllers.Adms",
+                "AttendanceSystem.Infrastructure.Logging.Adms",
                 "AttendanceSystem.Infrastructure.Services.Adms",
                 "AttendanceSystem.Infrastructure.Adapters.Adms"))
             .WriteTo.File(
@@ -166,6 +167,7 @@ public static class LoggingConfiguration
     {
         return IsMatchingContext(e,
             "AttendanceSystem.Blazor.Server.Controllers.Adms",
+            "AttendanceSystem.Infrastructure.Logging.Adms",
             "AttendanceSystem.Infrastructure.Services.Adms",
             "AttendanceSystem.Infrastructure.Adapters.Adms",
             "Microsoft.EntityFrameworkCore",
