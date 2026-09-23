@@ -145,16 +145,16 @@ public class AdmsController : ControllerBase
 
         var isAccessMode = device?.DeviceType == "acc";
 
-        // Obtener último timestamp de logs para este dispositivo
+        // Obtener último timestamp de logs para este dispositivo (formato estándar con espacio: yyyy-MM-dd HH:mm:ss)
         var lastLog = await _deviceRepository.GetLastAttLogTimestampAsync(SN);
-        // En referencias (ZKTecoADMS repo) se evalúa como la cadena de fecha literal ISO yyyy-MM-ddTHH:mm:ss:
         var stamp = lastLog.HasValue
-            ? lastLog.Value.ToString("yyyy-MM-ddTHH:mm:ss")
-            : "0";
+            ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss")
+            : "1970-01-01 00:00:00";
 
-        // TransTables diferente según el modo
-        var transTable = isAccessMode ? "Transaction" : "User Transaction";
-        transTable += ",User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
+        // TransTables compatible con ambos modos (Transaction y User Transaction)
+        var transTable = "Transaction,User Transaction,User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
+
+        var tzOffsetHours = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
 
         // Manual sección 7.5: configuración y stamps de push (compatible con modo att y acc)
         var sessionId = Guid.NewGuid().ToString("N").ToUpper();
@@ -166,6 +166,11 @@ public class AdmsController : ControllerBase
                        $"OPERLOGStamp=9999\n" +
                        $"PhotoStamp=0\n" +
                        $"ATTPHOTOStamp=0\n" +
+                       $"TimeZone={tzOffsetHours}\n" +
+                       $"~TimeZone={tzOffsetHours}\n" +
+                       $"TZ={tzOffsetHours}\n" +
+                       $"DaylightSavingTime=0\n" +
+                       $"~DaylightSavingTime=0\n" +
                        $"ErrorDelay=60\n" +
                        $"Delay=10\n" +
                        $"RequestDelay=5\n" +

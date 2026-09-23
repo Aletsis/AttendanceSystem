@@ -147,10 +147,11 @@ public sealed class DownloadFromDeviceCommandHandler
                     await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                    _logger.LogInformation("ADMS: Sincronización completa forzada (CHECK + ATTLOGStamp=0) para SN:{SerialNumber}", sn);
+                    _logger.LogInformation("ADMS: Sincronización completa forzada (CHECK + LOG + Stamp=1970-01-01) para SN:{SerialNumber}", sn);
 
-                    // El comando CHECK incita al dispositivo a comunicarse con /push (donde recibirá ATTLOGStamp=0) y descargar todos los logs
+                    // CHECK actualiza opciones y stamps en el dispositivo; LOG fuerza la subida inmediata de registros
                     _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
+                    _admsCommandService.EnqueueCommand(sn!, "LOG");
                 }
                 else
                 {
@@ -160,8 +161,9 @@ public sealed class DownloadFromDeviceCommandHandler
                     await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, filterDate.Value, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                    _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} para SN:{SerialNumber} (CHECK + ATTLOGStamp)", fromStr, sn);
+                    _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} para SN:{SerialNumber} (CHECK + LOG)", fromStr, sn);
                     _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
+                    _admsCommandService.EnqueueCommand(sn!, "LOG");
                 }
 
                 _logger.LogInformation("✅ ADMS: Comandos de sincronización encolados para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",
