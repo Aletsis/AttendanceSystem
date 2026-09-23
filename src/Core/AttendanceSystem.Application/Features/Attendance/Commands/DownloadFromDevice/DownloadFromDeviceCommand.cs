@@ -151,22 +151,17 @@ public sealed class DownloadFromDeviceCommandHandler
 
                     // El comando CHECK incita al dispositivo a comunicarse con /push (donde recibirá ATTLOGStamp=0) y descargar todos los logs
                     _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
-                    _admsCommandService.EnqueueCommand(sn!, "DATA UPDATE ATTLOG");
                 }
                 else
                 {
                     var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
-                    var toStr = requestToDate.ToString("yyyy-MM-dd HH:mm:ss");
 
                     // Actualizar stamp para que /push responda con la fecha requerida
                     await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, filterDate.Value, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                    var admsCmd = $"DATA UPDATE FROM ATTLOG WHERE Time>=\"{fromStr}\" AND Time<=\"{toStr}\"";
-                    _logger.LogInformation("ADMS: Solicitada descarga por rango para SN:{SerialNumber}: {Command}", sn, admsCmd);
-
-                    _admsCommandService.EnqueueCommand(sn!, admsCmd, downloadLogId.Value);
-                    _admsCommandService.EnqueueCommand(sn!, "CHECK");
+                    _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} para SN:{SerialNumber} (CHECK + ATTLOGStamp)", fromStr, sn);
+                    _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
                 }
 
                 _logger.LogInformation("✅ ADMS: Comandos de sincronización encolados para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",
