@@ -156,12 +156,18 @@ public class AdmsController : ControllerBase
         var transTable = isAccessMode ? "Transaction" : "User Transaction";
         transTable += ",User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
 
-        // Manual sección 7.5: configuración y stamps de push
+        // Manual sección 7.5: configuración y stamps de push (compatible con modo att y acc)
         var sessionId = Guid.NewGuid().ToString("N").ToUpper();
-        var response = $"ServerVersion=3.1.2\n" +
-                       $"ServerName=ADMS\n" +
-                       $"PushVersion=3.1.2\n" +
+        var response = $"GET OPTION FROM: {SN}\n" +
+                       $"Stamp={stamp}\n" +
+                       $"TransStamp={stamp}\n" +
+                       $"ATTLOGStamp={stamp}\n" +
+                       $"OpStamp=9999\n" +
+                       $"OPERLOGStamp=9999\n" +
+                       $"PhotoStamp=0\n" +
+                       $"ATTPHOTOStamp=0\n" +
                        $"ErrorDelay=60\n" +
+                       $"Delay=10\n" +
                        $"RequestDelay=5\n" +
                        $"TransTimes=00:00;14:00\n" +
                        $"TransInterval=1\n" +
@@ -169,9 +175,9 @@ public class AdmsController : ControllerBase
                        $"Realtime=1\n" +
                        $"SessionID={sessionId}\n" +
                        $"TimeoutSec=10\n" +
-                       $"ATTLOGStamp={stamp}\n" +
-                       $"OPERLOGStamp=9999\n" +
-                       $"ATTPHOTOStamp=0\n";
+                       $"ServerVersion=3.1.2\n" +
+                       $"ServerName=ADMS\n" +
+                       $"PushVersion=3.1.2\n";
 
         _logger.LogInformation("📋 Push Options {SN} stamp={Stamp} ({StampReadable}) mode={Mode}",
             SN, stamp,
