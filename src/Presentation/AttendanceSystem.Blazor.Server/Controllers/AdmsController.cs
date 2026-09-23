@@ -52,12 +52,17 @@ public class AdmsController : ControllerBase
         _jobScheduler = jobScheduler;
     }
 
-    // 1. GET /iclock/cdata — solo dice si está registrado o no
+    // 1. GET /iclock/cdata — opciones de configuración o verificación de registro
     [HttpGet("cdata")]
-    public async Task<IActionResult> CheckData([FromQuery] string SN, [FromQuery] string? options = null)
+    public async Task<IActionResult> CheckData(
+        [FromQuery] string SN,
+        [FromQuery] string? options = null,
+        [FromQuery] string? PushOptionsFlag = null,
+        [FromQuery] string? pushver = null)
     {
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
-        _logger.LogInformation("🔧 GET cdata {SN}", SN);
+        _logger.LogInformation("🔧 GET cdata {SN} (options: {Options}, pushver: {PushVer}, PushOptionsFlag: {PushOptionsFlag})",
+            SN, options ?? "null", pushver ?? "null", PushOptionsFlag ?? "null");
 
         if (!string.IsNullOrEmpty(SN))
         {
@@ -70,8 +75,14 @@ public class AdmsController : ControllerBase
             }
         }
 
-        // Si el dispositivo ya está en nuestra BD, le decimos que el registro es "ok" 
-        // para que proceda a pedir la configuración completa vía POST /push
+        // Si el dispositivo solicita las opciones del servidor (ej. tras CHECK o al inicializar pushver 3.x)
+        if (!string.IsNullOrEmpty(options) || !string.IsNullOrEmpty(PushOptionsFlag))
+        {
+            var optionsResponse = await BuildPushOptionsResponseAsync(SN);
+            return Content(optionsResponse, "text/plain;charset=ISO-8859-1");
+        }
+
+        // Registro inicial simple
         return Content("registry=ok\n", "text/plain");
     }
 
@@ -118,6 +129,12 @@ public class AdmsController : ControllerBase
 
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
 
+        var response = await BuildPushOptionsResponseAsync(SN);
+        return Content(response, "text/plain;charset=ISO-8859-1");
+    }
+
+    private async Task<string> BuildPushOptionsResponseAsync(string SN)
+    {
         var device = await _deviceRepository.GetBySerialNumberAsync(SN);
         if (device != null && device.Status != DeviceStatus.Online)
         {
@@ -139,7 +156,7 @@ public class AdmsController : ControllerBase
         var transTable = isAccessMode ? "Transaction" : "User Transaction";
         transTable += ",User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
 
-        // Manual sección 7.5: esta es la respuesta correcta al /push
+        // Manual sección 7.5: configuración y stamps de push
         var sessionId = Guid.NewGuid().ToString("N").ToUpper();
         var response = $"ServerVersion=3.1.2\n" +
                        $"ServerName=ADMS\n" +
@@ -152,16 +169,16 @@ public class AdmsController : ControllerBase
                        $"Realtime=1\n" +
                        $"SessionID={sessionId}\n" +
                        $"TimeoutSec=10\n" +
-                       $"ATTLOGStamp={stamp}\n" +    // ← aquí va el stamp, no en registry
+                       $"ATTLOGStamp={stamp}\n" +
                        $"OPERLOGStamp=9999\n" +
                        $"ATTPHOTOStamp=0\n";
 
-        _logger.LogInformation("📋 Push {SN} stamp={Stamp} ({StampReadable}) mode={Mode}",
+        _logger.LogInformation("📋 Push Options {SN} stamp={Stamp} ({StampReadable}) mode={Mode}",
             SN, stamp,
             lastLog.HasValue ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss") : "ninguno (0 - Full Sync)",
             isAccessMode ? "acc" : "att");
 
-        return Content(response, "text/plain;charset=ISO-8859-1");
+        return response;
     }
 
     // 4. POST /iclock/cdata — recibir datos (ATTLOG, rtlog, options, etc.)
