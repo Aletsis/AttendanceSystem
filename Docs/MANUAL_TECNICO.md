@@ -42,13 +42,13 @@ graph TD
         HikClock["Reloj Hikvision (Puerto 80/ISAPI)"]
     end
 
-    UserBrowser -->|HTTP/HTTPS (Puerto 8081 / 80)| UI
-    Infra -->|EF Core / Npgsql| Postgres
-    Hangfire -->|Cola de Descarga| Infra
-    AppLogic -->|Cliente gRPC (Puerto 5001 - HTTP)| gRPCServer
-    gRPCServer -->|Llamadas SDK x86| ZKSdk
-    ZKSdk -->|Protocolo UDP/TCP (Puerto 4370)| ZKClock
-    Infra -->|Llamadas directas HTTP/JSON (ISAPI)| HikClock
+    UserBrowser -->|"HTTP/HTTPS (Puerto 8081 / 80)"| UI
+    Infra -->|"EF Core / Npgsql"| Postgres
+    Hangfire -->|"Cola de Descarga"| Infra
+    AppLogic -->|"Cliente gRPC (Puerto 5001 - HTTP)"| gRPCServer
+    gRPCServer -->|"Llamadas SDK x86"| ZKSdk
+    ZKSdk -->|"Protocolo UDP/TCP (Puerto 4370)"| ZKClock
+    Infra -->|"Llamadas directas HTTP/JSON (ISAPI)"| HikClock
 ```
 
 ### 1.2 Flujo de Datos
@@ -72,31 +72,50 @@ graph TD
 
 ## 2. Requisitos Técnicos
 
-Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue debe cumplir con las siguientes especificaciones:
+Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue debe cumplir con las siguientes especificaciones reales y comprobadas:
 
 ### 2.1 Requisitos del Servidor (Hosting)
 
 | Componente | Requisito Mínimo | Requisito Recomendado |
 | :--- | :--- | :--- |
-| **Arquitectura de CPU** | Procesador x64 de 2 nucleos a 2.0 GHz | Procesador x64 de 4 nucleos o superior |
-| **Memoria RAM** | 8 GB | 16 GB |
-| **Almacenamiento** | 20 GB de espacio libre (SSD recomendado) | 50 GB de espacio libre (SSD NVMe) |
-| **Sistema Operativo** | Windows 10/11 Pro (64-bit) | Windows Server 2019/2022 Standard |
-| **Puertos de Red Abiertos**| **8081** (Web Self-Hosted), **5001** (gRPC Service) | **80/443** (IIS Web), **5001** (gRPC local), **5432** (PostgreSQL) |
+| **Arquitectura de CPU** | Procesador x64 de 2 núcleos a 2.0 GHz | Procesador x64 de 4 núcleos o superior (ej. Intel Core i5 / Xeon) |
+| **Memoria RAM** | 4 GB a 8 GB | 16 GB (especialmente para entornos con múltiples terminales y Hangfire jobs continuos) |
+| **Almacenamiento** | 20 GB de espacio libre (SSD) | 50 GB a 100 GB de espacio libre (SSD NVMe para BD y copias de seguridad) |
+| **Sistema Operativo** | Windows 10/11 Pro o Enterprise (64-bit) | Windows Server 2019 / 2022 / 2025 Standard o Datacenter (64-bit) |
+| **Puertos de Red Abiertos**| **8081** (Web Self-Hosted Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) | **80/443** (IIS Web), **8081** (Web Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) |
+
+> [!NOTE]
+> **Requisito Obligatorio de Windows (x64):** El servidor principal debe ser Windows de 64 bits debido a que el servicio puente de ZKTeco (`AttendanceSystem.ZKTeco.Service`) interactúa con librerías nativas COM/Win32 de 32 bits (`zkemkeeper.dll`) registradas en `SysWOW64`.
 
 ### 2.2 Requisitos de Conectividad (Red)
-* **Puertos de Dispositivos (Entrada/Salida):**
-  * **Puerto 4370 (TCP/UDP):** Puerto por defecto utilizado por los relojes ZKTeco para la comunicación vía SDK.
-  * **Puerto 80 / 443 (TCP):** Utilizado por los relojes Hikvision para la comunicación vía ISAPI HTTP/HTTPS.
-* **Segmentación:** Se recomienda que los relojes checadores estén en la misma subred (LAN) o comunicados mediante una VPN estable (WAN) con el servidor.
 
-### 2.3 Requisitos del Cliente (Usuario Final)
-* **Navegador Web:** Google Chrome (v110+), Microsoft Edge (v110+), Mozilla Firefox (v115+).
-* **Resolución de pantalla:** Mínima de 1280x720 (diseño responsive compatible con pantallas táctiles y tabletas).
+* **Puertos de Dispositivos (Entrada / Salida):**
+  * **Puerto 4370 (TCP / UDP):** Puerto estándar utilizado por terminales biométricas ZKTeco para comunicación bidireccional vía SDK nativo.
+  * **Puerto 80 / 443 (TCP):** Puerto utilizado por terminales biométricas y de control de acceso Hikvision para comunicación REST vía ISAPI HTTP/HTTPS.
+  * **Puerto 5001 (TCP - HTTP/2):** Puerto interno gRPC para la comunicación local entre la aplicación web (x64) y el servicio Windows ZKTeco (x86). No requiere exposición hacia redes externas.
+* **Soporte de WebSockets:**
+  * **Obligatorio** para la aplicación web Blazor Server (comunicación bidireccional en tiempo real con SignalR). Si se aloja en IIS, el rol `WebSockets` debe estar habilitado en el servidor.
+* **Segmentación de Red:** Se recomienda que los relojes checadores residan en la misma subred (LAN) o estén interconectados mediante una VPN corporativa estable (WAN) con latencias menores a 100 ms.
+
+### 2.3 Requisitos del Cliente (Navegadores y Dispositivos de Usuario)
+
+* **Navegadores Soportados:**
+  * Google Chrome 110+ (o superior)
+  * Microsoft Edge 110+ (o superior)
+  * Mozilla Firefox 115+ (o superior)
+  * Safari 16+ (macOS / iOS)
+* **Resolución de Pantalla:** Mínima recomendada de **1280x720** (interfaz responsiva adaptada para monitores de escritorio, computadoras portátiles y tabletas táctiles).
+* **JavaScript:** Habilitado (requerido para el motor de componentes MudBlazor y circuitos SignalR).
 
 ### 2.4 Software y Runtimes Requeridos
-* **PostgreSQL:** Versión mínima 14.x. Versión recomendada **16.x (x64)**.
-* **.NET Runtime:** ASP.NET Core Hosting Bundle **9.0.x** (necesario si se utiliza la opción de despliegue en IIS).
+
+* **Motor de Base de Datos:**
+  * **PostgreSQL:** Versión mínima **14.x**, versión recomendada **16.x (x64)**.
+* **.NET Runtimes:**
+  * **Modo Autocontenido (Self-Hosted Kestrel - Recomendado):** El instalador Todo-en-Uno ya incluye los binarios autocontenidos de **.NET 10.0**, por lo que **no es necesario** instalar el .NET SDK ni Runtime por separado.
+  * **Modo IIS:** Requiere el **ASP.NET Core Hosting Bundle 10.0.x** (proporciona el módulo nativo `AspNetCoreModuleV2` en IIS).
+* **Librerías de Soporte de C++ (x86):**
+  * **Visual C++ Redistributable 2015-2022 (x86 / 32-bit):** Requerido para la ejecución adecuada de las DLLs COM nativas de ZKTeco (`zkemkeeper.dll`, `commpro.dll`).
 
 ---
 
@@ -108,12 +127,12 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 1. Descargue el instalador y ejecútelo con **permisos de Administrador** (clic derecho $\rightarrow$ *Ejecutar como administrador*).
 2. El instalador detectará si los siguientes prerrequisitos ya se encuentran en el sistema:
    * **PostgreSQL:** Comprueba los registros en `SOFTWARE\PostgreSQL\Installations`.
-   * **ASP.NET Core Hosting Bundle:** Comprueba los registros en `SOFTWARE\Microsoft\ASP.NET Core\Shared Framework\v9.0`.
+   * **ASP.NET Core Hosting Bundle:** Comprueba los registros en `SOFTWARE\Microsoft\ASP.NET Core\Shared Framework\v10.0` (o `v9.0`).
    * Si falta alguno de los dos, el instalador procederá a ejecutarlos de forma desatendida desde sus instaladores temporales.
 
 ### 3.2 Paso a Paso de la Ejecución del Instalador
 1. **Selección de Idioma:** Ventana emergente inicial para configurar el instalador en idioma Español.
-2. **Pantalla de Bienvenida:** Presentación del asistente de instalación de *Attendance System [VERSION]*.
+2. **Pantalla de Bienvenida:** Presentación del asistente de instalación de *Attendance System v2.1.6*.
 3. **Selección de Carpeta de Destino:** Por defecto se establece `C:\Program Files\AttendanceSystem`.
 4. **Selección de Tareas Adicionales:**
    * checkbox **Configurar como servidor IIS:** Seleccione esta opción si está instalando en un Windows Server corporativo y desea que la aplicación Blazor se aloje dentro del Internet Information Services local en el puerto 80. Si no se marca, funcionará de manera independiente (Kestrel) en el puerto 8081.
@@ -123,7 +142,7 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 6. **Progreso de Instalación:**
    * Descompresión de archivos de la aplicación y el servicio.
    * Ejecución en segundo plano del instalador de PostgreSQL (`postgresql-installer.exe --mode unattended`).
-   * Ejecución del Hosting Bundle de .NET 9 (`dotnet-hosting.exe /install /quiet /norestart`).
+   * Ejecución del Hosting Bundle de .NET 10 (`dotnet-hosting.exe /install /quiet /norestart`).
    * Registro del SDK ZKTeco en Windows (`regsvr32.exe /s zkemkeeper.dll` tanto en `System32` como en `SysWOW64` para entornos de 64 bits).
    * Creación del Servicio de Windows mediante `sc.exe create AttendanceSystem.ZKTeco.Service`.
    * Configuración de la base de datos llamando a `configure_db.bat`.
@@ -358,13 +377,20 @@ Para instalar una nueva actualización de la aplicación:
 
 ---
 
-## INFORMACIÓN PENDIENTE POR PROPORCIONAR
+## 10. Información de Referencia del Sistema
 
-Para finalizar la personalización técnica de este manual, por favor proporcione los siguientes datos:
+* **Publicador / Desarrollador:** Aletsis
+* **Versión del Sistema:** `2.1.6` (.NET 10.0 / PostgreSQL 16.x)
+* **Repositorio y Soporte:** [https://github.com/Aletsis/AttendanceSystem](https://github.com/Aletsis/AttendanceSystem)
+* **Modelos de Dispositivos Validados:**
+  * **ZKTeco:** Serie MB (MB20, MB160, MB360, MB460), Serie K (K40, K20), Serie iClock, SilkBio y TF1700 (comunicación TCP/IP puerto 4370 vía Standalone SDK x86).
+  * **Hikvision:** Terminales de control de acceso y asistencia facial / biométrica de la serie DS-K1T (ej. DS-K1T804, DS-K1T341, DS-K1T671) vía protocolo ISAPI HTTP/HTTPS.
+* **Políticas de Retención de Logs:** 90 días para archivos de log en disco (`{app}\logs\`).
+* **Rutas Predeterminadas de Despliegue:**
+  * Carpeta Raíz: `C:\Program Files\AttendanceSystem`
+  * Aplicación Web: `C:\Program Files\AttendanceSystem\Web`
+  * Servicio Windows ZKTeco: `C:\Program Files\AttendanceSystem\Service`
+  * Base de Datos y Scripts: `C:\Program Files\AttendanceSystem\Database`
+  * Herramientas de Diagnóstico: `C:\Program Files\AttendanceSystem\Tools`
+  * Respaldos Locales: `C:\Program Files\AttendanceSystem\Backups`
 
-1. **[INSERTAR: marca/empresa de publicación]:** Nombre comercial de la empresa desarrolladora o proveedora del software.
-2. **[INSERTAR: versión oficial de la aplicación]:** Versión actual del instalador Inno Setup (ejemplo: `2.0.1`).
-3. **[INSERTAR: url de soporte técnico]:** Sitio web o correo de mesa de ayuda técnica corporativa.
-4. **[INSERTAR: modelos específicos de relojes soportados]:** Lista de los modelos exactos de relojes ZKTeco y HikVision que han sido validados por su equipo técnico.
-5. **[INSERTAR: políticas específicas de retención de base de datos]:** Tiempo establecido para depurar registros antiguos de asistencias o logs en producción (ejemplo: mantener datos por 5 años).
-6. **[INSERTAR: rutas específicas para backups automáticos]:** Ruta destino en red local o nube en donde se deberán alojar los archivos `.backup` generados por el script de respaldo.
