@@ -1,249 +1,453 @@
 # 📗 Manual de Operaciones - Attendance System
 
-Bienvenido al manual de usuario del **Attendance System**. Este manual está diseñado en un lenguaje accesible y práctico para guiar a los administradores de recursos humanos, supervisores de área, operadores de nómina y personal de seguridad en las tareas del día a día.
+Bienvenido al **Manual de Operaciones** oficial de **Attendance System**. Esta guía está diseñada para proporcionar a los administradores de recursos humanos, supervisores de área, operadores de nómina y personal de TI las instrucciones paso a paso para utilizar cada una de las funcionalidades de la aplicación web.
 
 ---
 
-## 1. Introducción
+## 📑 Tabla de Contenidos
 
-El **Attendance System** es una solución corporativa que simplifica y automatiza el control de asistencia de los trabajadores, recolectando en tiempo real las checadas realizadas en los dispositivos biométricos (huellas, rostros y tarjetas) y procesándolas bajo las reglas de negocio de su empresa para simplificar el cálculo de la nómina.
+1. [Introducción y Arquitectura Funcional](#1-introducción-y-arquitectura-funcional)
+2. [Acceso al Sistema y Seguridad](#2-acceso-al-sistema-y-seguridad)
+3. [Navegación y Dashboard Principal](#3-navegación-y-dashboard-principal)
+4. [Gestión de Personal](#4-gestión-de-personal)
+   * 4.1 [Empleados (Alta, Edición y Bajas)](#41-empleados-alta-edición-y-bajas)
+   * 4.2 [Enrolamiento y Parámetros Biométricos](#42-enrolamiento-y-parámetros-biométricos)
+   * 4.3 [Importación y Exportación de Empleados](#43-importación-y-exportación-de-empleados)
+   * 4.4 [Sucursales](#44-sucursales)
+   * 4.5 [Departamentos](#45-departamentos)
+   * 4.6 [Puestos de Trabajo](#46-puestos-de-trabajo)
+   * 4.7 [Horarios y Turnos](#47-horarios-y-turnos)
+5. [Dispositivos y Descargas](#5-dispositivos-y-descargas)
+   * 5.1 [Administración de Relojes Checadores](#51-administración-de-relojes-checadores)
+   * 5.2 [Métodos de Conexión: SDK (Pull) vs ADMS (Push)](#52-métodos-de-conexión-sdk-pull-vs-adms-push)
+   * 5.3 [Acciones de Diagnóstico y Control de Dispositivos](#53-acciones-de-diagnóstico-y-control-de-dispositivos)
+   * 5.4 [Descargas e Historial de Sincronización](#54-descargas-e-historial-de-sincronización)
+   * 5.5 [Registros Manuales de Asistencia](#55-registros-manuales-de-asistencia)
+   * 5.6 [Cálculo y Reprocesamiento de Asistencia](#56-cálculo-y-reprocesamiento-de-asistencia)
+6. [Reportes y Análisis](#6-reportes-y-análisis)
+   * 6.1 [Reporte de Asistencia (Kárdex General)](#61-reporte-de-asistencia-kárdex-general)
+   * 6.2 [Análisis de Ausentismo](#62-análisis-de-ausentismo)
+   * 6.3 [Análisis de Retardos](#63-análisis-de-retardos)
+   * 6.4 [Impresión de Checadores (Tarjetas de Asistencia)](#64-impresión-de-checadores-tarjetas-de-asistencia)
+   * 6.5 [Reportes Avanzados](#65-reportes-avanzados)
+   * 6.6 [Logs de Asistencia en Bruto](#66-logs-de-asistencia-en-bruto)
+7. [Configuración y Mantenimiento del Sistema](#7-configuración-y-mantenimiento-del-sistema)
+   * 7.1 [Configuración General y Parámetros Globales](#71-configuración-general-y-parámetros-globales)
+   * 7.2 [Respaldo y Restauración de Base de Datos](#72-respaldo-y-restauración-de-base-de-datos)
+   * 7.3 [Gestión de Usuarios y Roles](#73-gestión-de-usuarios-y-roles)
+   * 7.4 [Monitoreo de Tareas Programadas (Hangfire)](#74-monitoreo-de-tareas-programadas-hangfire)
+8. [Resolución de Problemas Frecuentes](#8-resolución-de-problemas-frecuentes)
+9. [Preguntas Frecuentes (FAQ)](#9-preguntas-frecuentes-faq)
 
-### 1.1 Roles de Usuario y Permisos
+---
 
-Para mantener la seguridad y la confidencialidad de la información, el sistema cuenta con los siguientes perfiles de acceso:
+## 1. Introducción y Arquitectura Funcional
 
-| Rol de Usuario | Permisos Principales |
+**Attendance System** es una plataforma integral de control de asistencia desarrollada sobre .NET 10 y Blazor Server. Automatiza la recolección de eventos biométricos (huella digital, reconocimiento facial, tarjeta de proximidad RFID y contraseña) desde dispositivos compatibles (ZKTeco y Hikvision), calculando las incidencias laborales bajo las políticas de la organización para alimentar la pre-nómina.
+
+### Roles de Usuario y Perfiles de Acceso
+
+El sistema implementa control de acceso basado en roles (RBAC) con **ASP.NET Core Identity**:
+
+| Rol | Alcance y Permisos |
 | :--- | :--- |
-| **Administrador del Sistema** | <ul><li>Acceso completo a todos los módulos.</li><li>Configuración técnica de relojes checadores.</li><li>Gestión de usuarios del sistema y asignación de roles.</li><li>Modificación de políticas generales de tolerancia e incidencias.</li></ul> |
-| **Operador de RH** | <ul><li>Alta, modificación y baja de empleados.</li><li>Asignación de turnos y horarios de trabajo.</li><li>Registro de justificaciones (vacaciones, incapacidades).</li><li>Generación y descarga de reportes para nómina.</li></ul> |
-| **Supervisor de Área** | <ul><li>Consulta exclusiva de los registros del personal de sus departamentos a cargo.</li><li>Autorización de horas extras.</li><li>Revisión de justificaciones pendientes de aprobación.</li></ul> |
+| **Administrador** | <ul><li>Control total de todos los módulos del sistema.</li><li>Gestión y diagnóstico de hardware (relojes checadores).</li><li>Administración de sucursales, configuración global y usuarios.</li><li>Registros manuales de checadas y reprocesamiento de cálculo.</li><li>Respaldos de base de datos y monitoreo de Hangfire.</li></ul> |
+| **Supervisor** | <ul><li>Gestión y consulta del personal a su cargo.</li><li>Revisión de departamentos, puestos, empleados y horarios.</li><li>Generación y exportación de reportes de asistencia y kárdex.</li><li>Impresión de tarjetas de control de checadores.</li></ul> |
+| **Usuario** | <ul><li>Consulta de reportes de asistencia y visualización de métricas generales en modo lectura.</li></ul> |
 
 ---
 
-## 2. Primeros Pasos
+## 2. Acceso al Sistema y Seguridad
 
-### 2.1 Acceso Inicial a la Aplicación
-1. Abra el navegador web en su computadora.
-2. Ingrese la dirección URL proporcionada por su departamento de TI (ejemplo: `http://localhost:8081` o la dirección IP del servidor en su red local).
-3. En la pantalla de inicio de sesión, introduzca las credenciales de administrador por defecto:
-   * **Usuario:** `admin`
-   * **Contraseña:** `Admin123!`
-4. Presione el botón **Iniciar Sesión**.
+### 2.1 Inicio de Sesión
+1. Abra su navegador web (Google Chrome, Microsoft Edge o Mozilla Firefox).
+2. Ingrese a la dirección web del sistema:
+   * Despliegue estándar: `http://localhost:8081` o la dirección IP asignada en su red corporativa (ej. `http://192.168.1.242:8081`).
+   * Despliegue en IIS: `http://servidor-asistencia` o `https://asistencia.suempresa.com`.
+3. Introduzca sus credenciales:
+   * **Usuario:** `admin` (o su nombre de usuario asignado).
+   * **Contraseña:** Su contraseña de acceso.
+4. Haga clic en **INGRESAR**.
 
-### 2.2 Cambio de Contraseña Inicial
-⚠️ **IMPORTANTE:** Por razones de seguridad corporativa, la primera vez que inicie sesión se le redirigirá automáticamente a la configuración de su perfil para cambiar la contraseña predeterminada.
-* Su nueva contraseña debe incluir al menos: **6 caracteres, 1 letra mayúscula, 1 letra minúscula y 1 número**.
-
-### 2.3 Recorrido por el Dashboard
-Una vez dentro del sistema, la pantalla principal (Dashboard) le mostrará información en tiempo real:
-* **Estado de Dispositivos:** Cantidad de relojes checadores que están "En Línea" y "Desconectados".
-* **Resumen de Asistencia del Día:** Gráficos dinámicos con el porcentaje de empleados que ya checaron entrada, retardos acumulados y faltas del día actual.
-* **Alertas Activas:** Notificaciones sobre pérdidas de conexión con los relojes checadores para una rápida respuesta técnica.
+> [!TIP]
+> Si olvida su contraseña o su cuenta es bloqueada por intentos fallidos, solicite a un usuario con rol de **Administrador** que restablezca su clave desde el módulo **Configuración $\rightarrow$ Usuarios**.
 
 ---
 
-## 3. Gestión de Empleados
+## 3. Navegación y Dashboard Principal
 
-Este módulo permite administrar la base de datos de los trabajadores del sistema.
+Al ingresar al sistema, accederá al **Panel de Control (Inicio)** (`/`), el cual presenta un panorama en tiempo real de la operación de asistencia de la empresa:
 
-### 3.1 Alta de un Nuevo Empleado
-1. En el menú lateral izquierdo, haga clic en **Empleados** y luego presione el botón **Nuevo Empleado**.
-2. Complete la pestaña **Datos Personales**:
-   * **Nombre(s)** y **Apellidos**.
-   * **Correo electrónico** y **Teléfono** (opcionales).
-   * **Fecha de Contratación** y **Género**.
-3. Complete la pestaña **Estructura Organizacional**:
-   * Asigne la **Sucursal**, **Departamento** y **Puesto** correspondiente.
-4. Presione **Guardar**.
+* **Métricas Principales (Tarjetas Superiores):**
+  * **Total de Empleados:** Número total de trabajadores registrados en el sistema.
+  * **Dispositivos Conectados:** Relojes checadores en estado *En Línea* frente al total registrado.
+  * **Asistencias del Día:** Cantidad de colaboradores que han registrado su entrada hoy.
+  * **Retardos del Día:** Empleados que registraron su entrada superando los minutos de tolerancia permitidos.
+  * **Ausencias:** Empleados programados para laborar hoy que no han registrado checada.
+* **Gráficos de Puntualidad y Estado:** Distribución porcentual entre Asistencias puntuales, Retardos y Faltas del día.
+* **Accesos Rápidos:** Enlaces directos a *Descargas de Dispositivos*, *Cálculo de Asistencia* y *Reportes*.
 
-### 3.2 Enrolamiento Biométrico y de Acceso (Paso a Paso)
-Una vez guardado el empleado en el sistema, es necesario registrar cómo se identificará físicamente ante los relojes checadores:
-
-#### A. Registro de Tarjeta de Proximidad
-1. Abra el registro del empleado en la web y navegue a la pestaña **Biometría y Acceso**.
-2. Capture el número grabado en la tarjeta física en el campo **Número de Tarjeta**.
-3. Guarde los cambios. El sistema enviará el número de tarjeta a todos los relojes de forma automática.
-
-#### B. Registro de Huella Digital y Rostro en el Reloj Físico
-1. Diríjase físicamente al reloj checador más cercano.
-2. Acceda al menú del reloj presionando la tecla **M/OK** (si está bloqueado, requerirá que el administrador del sistema coloque su huella de administrador).
-3. Vaya a **Usuarios** $\rightarrow$ **Gestionar** (o **Editar**).
-4. Busque al empleado por su número de ID asignado.
-5. Seleccione **Enrolar Huella** (Fingerprint) o **Enrolar Rostro** (Face).
-6. Siga las instrucciones de la pantalla del reloj checador (colocar el dedo 3 veces consecutivas sobre el lector, o mirar fijamente a la cámara).
-7. Guarde y salga. En la siguiente descarga automática o manual, las plantillas biométricas se respaldarán en la base de datos de la aplicación para seguridad.
-
-### 3.3 Edición y Baja de Empleados
-* **Baja de Empleado:** Para retirar a un empleado del sistema, abra su perfil, cambie el campo **Estado** a `Baja` y presione guardar. El sistema lo desactivará en la base de datos y ordenará al servicio la remoción del usuario en los relojes checadores en la próxima sincronización para impedir que continúe checando.
-
-### 3.4 Importación Masiva de Empleados
-Si requiere dar de alta a una gran cantidad de personal al inicio:
-1. Vaya a **Empleados** y presione **Importar (Excel/CSV)**.
-2. Descargue la plantilla de ejemplo disponible en el sistema.
-3. Rellene las columnas respetando los encabezados (ID, Nombre, Apellidos, Correo, Sucursal, Departamento, etc.).
-4. Cargue el archivo editado en la web del sistema y presione **Procesar Importación**.
+El menú lateral izquierdo organiza los módulos en cuatro secciones colapsables:
+1. **Gestión de personal**
+2. **Dispositivos y descargas**
+3. **Reportes y análisis**
+4. **Configuración** *(Solo Administrador)*
 
 ---
 
-## 4. Configuración de Horarios y Turnos
+## 4. Gestión de Personal
 
-Para que el sistema determine si un trabajador llegó a tiempo o acumuló horas extras, necesita saber en qué horario debe trabajar.
+### 4.1 Empleados (Alta, Edición y Bajas)
+Ubicación: **Gestión de personal $\rightarrow$ Empleados** (`/employees`)
 
-### 4.1 Creación de Horarios (Turnos)
-1. En el menú lateral, diríjase a **Horarios / Turnos**.
-2. Haga clic en **Crear Turno** y asigne un nombre (ejemplo: *Turno Matutino Oficina*).
-3. Defina los parámetros de tiempo:
-   * **Hora de Entrada:** Hora oficial de inicio de actividades (ejemplo: `08:00`).
-   * **Horas de Trabajo (Jornada):** Cantidad de horas a laborar (ejemplo: `09:00` horas para jornada de 8 horas + 1 hora de comida).
-   * **Tolerancia (Minutos):** Minutos de gracia permitidos antes de registrar un retardo (ejemplo: `15` minutos, por lo que a las `08:16` ya se considera retardo).
-4. Seleccione los días de la semana aplicables para el horario.
-5. Presione **Guardar**.
+La pantalla de empleados cuenta con un DataGrid interactivo con soporte de búsqueda global, ordenamiento por columnas y filtros avanzados por ID, Nombre, Sucursal, Departamento, Puesto y Estado.
 
-### 4.2 Asignación de Horarios
-* Abra el perfil del **Empleado**, vaya a la pestaña de configuración de horario y elija entre:
-  * **Turno Fijo:** Asignar un horario predeterminado (ejemplo: *Turno Matutino*).
-  * **Autorización de Horas Extras:** Marque la casilla correspondiente si el empleado tiene permitido acumular tiempo adicional; de lo contrario, cualquier checada fuera de su horario regular no generará pago de tiempo extra.
+#### Para dar de alta un nuevo empleado:
+1. Haga clic en el botón **+ Nuevo Empleado** (esquina superior derecha).
+2. Se abrirá el formulario de captura con 4 pestañas:
+
+#### Pestaña 1: Datos Personales
+* **ID / Número de Empleado:** Identificador único alfanumérico (ejemplo: `EMP001` o `1024`). Este ID debe coincidir con el ID configurado en el reloj checador.
+* **Nombre(s)** y **Apellidos:** Nombre completo del trabajador.
+* **Correo Electrónico** y **Teléfono:** Datos de contacto (opcionales).
+* **Fecha de Contratación:** Fecha de ingreso a la empresa.
+* **Género:** Masculino / Femenino / No especificado.
+
+#### Pestaña 2: Organización
+* **Sucursal:** Seleccione la sede o sucursal donde labora el empleado.
+* **Departamento:** Área organizativa a la que pertenece.
+* **Puesto:** Puesto de trabajo asignado.
+* **Estado:** `Activo`, `Inactivo` o `Baja`. *(Los empleados en estado Baja no son contemplados en los cálculos diarios de ausentismo).*
+
+#### Pestaña 3: Horario y Asistencia
+* **Tipo de Horario:** Seleccione entre *Turno Fijo* o *Rotativo*.
+* **Turno Asignado:** Seleccione el horario oficial que debe cumplir el colaborador (ej. *Turno Matutino 08:00 - 16:00*).
+* **Día de Descanso Semanal:** Día de la semana asignado como descanso oficial (ej. *Domingo*).
+* **Autorización de Horas Extras:** Active esta casilla si el trabajador tiene permitido devengar tiempo extra. Si la casilla está desactivada, el sistema ignorará cualquier excedente de tiempo laboral en los reportes de nómina.
+* **Cálculo de Horas Extra Antes de la Entrada:** Habilite si se reconocen horas extras previas al inicio de la jornada.
+* **Límite de Horas Extra:** Permite definir topes de tiempo extra (Diario / Semanal / Sin límite).
+
+#### Pestaña 4: Biometría y Credenciales
+* **Número de Tarjeta RFID:** Código numérico de la tarjeta de proximidad para el acceso.
+* **Contraseña en Dispositivo:** Clave numérica opcional para checar en el teclado del dispositivo.
+* **Privilegio en Dispositivo:** `Usuario normal` o `Administrador del reloj`.
+* **Indicadores Biométricos:** Muestra si el empleado tiene registradas huellas digitales o plantilla facial.
+
+3. Haga clic en **Guardar**.
 
 ---
 
-## 5. Gestión de Relojes Checadores
+### 4.2 Enrolamiento y Parámetros Biométricos
 
-Desde este panel supervisará el hardware encargado de capturar las asistencias.
+Para registrar las huellas digitales o el rostro de un colaborador:
 
-### 5.1 Panel de Dispositivos (Estado de Conexión)
-En el menú **Dispositivos** verá una cuadrícula con las tarjetas de cada reloj checador:
-* ✅ **En Línea (Verde):** El reloj está conectado a la red y comunicándose de forma correcta.
-* ❌ **Desconectado / Sin Conexión (Gris):** El reloj no tiene energía, no hay red LAN, o la dirección IP configurada ha cambiado.
-* ⚠️ **Error (Rojo):** Existe un fallo de comunicación interno en el reloj (memoria llena, fallo de credenciales, etc.).
+1. **Creación previa en el sistema:** Asegúrese de que el empleado esté registrado en el sistema con su **ID** correcto.
+2. **Registro en el Reloj Checador Físico:**
+   * En el dispositivo biométrico, acceda al menú presionando la tecla **M/OK**.
+   * Ingrese a **Usuarios $\rightarrow$ Nuevo Usuario** o **Editar Usuario**.
+   * Capture el mismo número de **ID** asignado en el sistema web.
+   * Seleccione **Huella** y coloque el dedo sobre el sensor 3 veces consecutivas, o seleccione **Rostro** y mire a la cámara siguiendo las indicaciones en pantalla.
+   * Guarde los cambios en el dispositivo.
+3. **Descarga y Respaldo:**
+   * En la aplicación web, vaya a **Dispositivos y descargas $\rightarrow$ Descargas e Historial** y ejecute una descarga de registros. Las plantillas quedarán vinculadas al ID del trabajador.
 
-### 5.2 Agregar un Reloj Checador
-1. Haga clic en **Agregar Dispositivo**.
-2. Ingrese los datos del reloj:
-   * **ID Único:** Código corto de identificación (ejemplo: `RELOJ_PLANTA_1`).
-   * **Nombre:** Nombre descriptivo (ejemplo: *Entrada Principal Recepción*).
-   * **IP del Reloj:** Dirección de red estática asignada (ejemplo: `192.168.1.100`).
-   * **Puerto:** Por defecto `4370` para ZKTeco.
-   * **Marca:** Seleccione `ZKTeco` o `Hikvision`.
-   * **Método de descarga:** `Sdk` (Pull - el sistema va por los datos) o `Adms` (Push - el reloj los envía).
+---
+
+### 4.3 Importación y Exportación de Empleados
+
+* **Importar Empleados:** Haga clic en **Importar** en la vista de empleados. Puede cargar un archivo Excel (`.xlsx`) respetando las columnas estándar:
+  `Id`, `FirstName`, `LastName`, `Email`, `PhoneNumber`, `BranchCode`, `DepartmentName`, `PositionName`, `CardNumber`.
+* **Exportar Lista:** Presione el botón **Exportar** para generar un archivo Excel (`.xlsx`) o PDF con todos los empleados filtrados en pantalla.
+
+---
+
+### 4.4 Sucursales
+Ubicación: **Gestión de personal $\rightarrow$ Sucursales** (`/branches`) *(Solo Administrador)*
+
+Permite gestionar las diferentes sedes físicas de la empresa:
+* **Código de Sucursal:** Código corto de 3 caracteres (ejemplo: `A01`, `MTZ`, `SUC`).
+* **Nombre:** Nombre identificador (ejemplo: *Planta Matriz*, *Sucursal Norte*).
+* **Dirección:** Ubicación física de la sucursal.
+* **Sucursal Externa:** Active esta opción si la sucursal es remota y se conecta vía API externa.
+
+---
+
+### 4.5 Departamentos
+Ubicación: **Gestión de personal $\rightarrow$ Departamentos** (`/departments`)
+
+Organiza las áreas funcionales de la empresa (ej. *Recursos Humanos*, *Sistemas*, *Producción*, *Ventas*):
+* Permite asociar de forma múltiple qué puestos de trabajo pertenecen a cada departamento.
+
+---
+
+### 4.6 Puestos de Trabajo
+Ubicación: **Gestión de personal $\rightarrow$ Puestos** (`/positions`)
+
+Cataloga los cargos laborales disponibles en la organización con su nombre y descripción de responsabilidades.
+
+---
+
+### 4.7 Horarios y Turnos
+Ubicación: **Gestión de personal $\rightarrow$ Horarios** (`/shifts`)
+
+Los turnos definen las reglas de tiempo con las que se evalúa la puntualidad de los colaboradores:
+
+* **Nombre del Turno:** Nombre descriptivo (ej. *Matutino 8h*, *Vespertino*, *Administrativo 08:00 a 16:00*).
+* **Tipo de Turno:** `Matutino`, `Vespertino`, `Nocturno` o `Mixto`.
+* **Hora de Entrada:** Hora programada de inicio de labores (ejemplo: `08:00:00`).
+* **Horas de Trabajo (Jornada):** Duración total en horas de la jornada regular (ejemplo: `08:00:00`).
+* **Tolerancia en Entrada (Minutos):** Margen de gracia permitido antes de considerar retardo (ejemplo: `10` minutos).
+  * *Regla de cálculo:* Si la entrada es a las `08:00` con `10` min de tolerancia, checar a las `08:10` es puntual. Si el empleado checa a las `08:11`, el sistema calcula **11 minutos de retardo** (el retardo se computa desde la hora oficial de entrada).
+* **Hora de Salida:** Se calcula automáticamente sumando la jornada a la hora de entrada.
+
+---
+
+## 5. Dispositivos y Descargas
+
+### 5.1 Administración de Relojes Checadores
+Ubicación: **Dispositivos y descargas $\rightarrow$ Dispositivos** (`/devices`) *(Solo Administrador)*
+
+Lista todos los relojes biométricos registrados mostrando su estado en tiempo real (**En línea** 🟢 / **Desconectado** 🔴), dirección IP, puerto, número de serie, modelo y método de comunicación.
+
+#### Para agregar un nuevo dispositivo:
+1. Haga clic en **+ Agregar Dispositivo**.
+2. Capture los datos de configuración:
+   * **ID del Dispositivo:** Identificador único (ej. `DEV-01`, `RELOJ-MATRIZ`).
+   * **Nombre:** Nombre amigable (ej. *Entrada Principal*).
+   * **Dirección IP:** IP estática asignada al reloj en la red LAN (ej. `192.168.1.201`).
+   * **Puerto:** Por defecto `4370` para comunicación directa TCP/UDP.
+   * **Número de Serie (SN):** Obligatorio para dispositivos que operen en modo ADMS (ej. `CKUH204160111`).
+   * **Método de Descarga:** Seleccione `Sdk` (Pull) o `Adms` (Push).
+   * **Tipo de Dispositivo:** `att` (Reloj checador de asistencia) o `acc` (Control de acceso / torniquetes).
+   * **Sucursal Asignada:** Sede en la que se encuentra instalado el hardware.
 3. Presione **Guardar**.
 
-### 5.3 Sincronización Manual y Automática
-* **Automática:** El sistema cuenta con un proceso en segundo plano que descarga de manera programada (ejemplo: cada 10 minutos) las asistencias de todos los relojes activos.
-* **Manual:** Si necesita la información de manera urgente en la web antes de la hora programada, vaya al menú **Dispositivos**, seleccione el reloj y haga clic en **Descargar Registros Ahora**.
+---
 
-### 5.4 Solución de Problemas Comunes con Relojes
-* **El Reloj aparece "Desconectado":**
-  1. Revise que la pantalla del reloj físico esté encendida.
-  2. Verifique que el cable de red ethernet esté bien conectado a la parte posterior del reloj.
-  3. Ejecute un "ping" a la dirección IP del reloj desde una computadora de la red para comprobar conectividad.
-* **La hora del reloj checador está desfasada (Incorrecta):**
-  * En el panel de control de dispositivos, haga clic en el botón **Sincronizar Hora** para forzar al reloj checador a adoptar la hora exacta del servidor de la aplicación.
+### 5.2 Métodos de Conexión: SDK (Pull) vs ADMS (Push)
+
+* **Modo SDK (Pull / Conexión Directa):**
+  * El servidor se conecta activamente a la IP del reloj a través del puerto `4370`.
+  * Ideal para relojes dentro de la misma red local (LAN) o con VPN directa.
+  * La comunicación se realiza mediante el servicio puente `AttendanceSystem.ZKTeco.Service`.
+* **Modo ADMS (Push / Cloud Server):**
+  * El reloj checador envía sus datos automáticamente al servidor web a través de peticiones HTTP en el puerto `8081` (rutas `/iclock/*`).
+  * Ideal para sucursales remotas conectadas por Internet sin necesidad de abrir puertos ni tener IP pública fija en las sucursales.
+  * En el reloj checador, configure:
+    * **Dirección de Servidor de Nube:** Dirección IP o dominio del servidor de la aplicación (ej. `192.168.1.242`).
+    * **Puerto de Servidor:** `8081` (o el puerto configurado en Kestrel/IIS).
+    * **Habilitar Proxy de Dominio / Servidor Web:** Activado.
 
 ---
 
-## 6. Registros de Asistencia
+### 5.3 Acciones de Diagnóstico y Control de Dispositivos
 
-Muestra el historial y estado de las checadas diarias de su personal.
+Al hacer clic en el botón de opciones o en **Ver Detalles** de cualquier reloj checador, podrá ejecutar:
 
-### 6.1 Consulta de Checadas
-1. Diríjase a **Asistencias** $\rightarrow$ **Registros de Entrada/Salida**.
-2. Utilice los filtros del panel superior para delimitar la búsqueda:
-   * **Fecha de Inicio y Fin**.
-   * **Departamento** o **Sucursal**.
-   * Nombre o número de **Empleado**.
-3. Presione **Buscar** para cargar la tabla de checadas en tiempo real.
-
-### 6.2 Justificación de Incidencias y Creación de Registros Manuales
-Si un empleado olvidó checar, llegó tarde justificadamente o no asistió por causas válidas:
-1. En la fila de la incidencia o desde la ficha de asistencia del día del empleado, haga clic en **Justificar / Editar**.
-2. **Si olvidó checar:** Ingrese la hora de checada faltante (registro manual).
-3. **Si es una falta / retardo justificado:** Elija el tipo de justificación:
-   * *Vacaciones*
-   * *Incapacidad Médica*
-   * *Permiso con goce de sueldo*
-   * *Permiso sin goce de sueldo*
-4. **Carga de Evidencia:** Suba un archivo PDF o imagen del justificante médico o documento oficial firmado.
-5. Ingrese una nota explicativa y haga clic en **Aplicar Justificación**. El sistema recalculará la asistencia diaria eliminando el retardo o la falta para fines de nómina.
+* 🕐 **Sincronizar Hora:** Ajusta de forma inmediata la fecha y hora interna del reloj checador para que coincida exactamente con la del servidor, configurando además la zona horaria correcta (`UTC-6`) y desactivando horario de verano para evitar desfases en las checadas.
+* 🔄 **Probar Conexión:** Verifica el enlace de red y la respuesta de comunicación del reloj.
+* 📋 **Consultar Opciones (Solo ADMS):** Envía el comando `DATA QUERY tablename=options` para inspeccionar la tabla de variables y parámetros internos reportados por el dispositivo.
+* 🧹 **Borrar Registros:** Limpia la memoria interna de checadas del reloj (utilizar solo tras haber respaldado y descargado todas las asistencias).
+* ⚙️ **Reinicio de Fábrica:** Restaura los parámetros de fábrica del hardware.
+* 🔍 **Descubrimiento en Red:** Herramienta para escanear el segmento de red local y detectar automáticamente checadores ZKTeco conectados.
 
 ---
 
-## 7. Incidencias y Excepciones
+### 5.4 Descargas e Historial de Sincronización
+Ubicación: **Dispositivos y descargas $\rightarrow$ Descargas e Historial** (`/attendance/download`)
 
-El sistema calcula de manera automática las incidencias diarias basándose en las checadas del personal contra su horario asignado.
+Permite ejecutar descargas manuales de asistencias y consultar el historial completo de descargas realizadas por el sistema:
 
-### 7.1 Tipos de Incidencias Automáticas
-* **Retardo:** Ocurre si el empleado realiza su checada de entrada después de la hora oficial más los minutos de tolerancia configurados.
-* **Falta:** Se genera automáticamente al finalizar el día si el empleado no tiene un registro de entrada y no existe ninguna justificación cargada previamente.
-* **Salida Anticipada:** Ocurre si la checada de salida se realiza antes de cumplir la jornada oficial de horas de trabajo establecidas en el turno.
-* **Horas Extras:** Horas acumuladas después de cumplir con su jornada regular. Solo se calcularán para aquellos empleados que tengan activa la casilla de autorización en sus perfiles.
-
----
-
-## 8. Reportes y Nómina
-
-Este módulo le permite obtener resúmenes de datos listos para el cálculo de su pre-nómina.
-
-### 8.1 Reportes Disponibles
-* **Reporte de Asistencia General (Kardex):** Muestra de forma matricial las entradas, salidas e incidencias diarias de todos los trabajadores de un departamento durante un periodo.
-* **Reporte de Faltas y Retardos:** Listado enfocado únicamente en las desviaciones de puntualidad y ausencias, útil para la aplicación de actas administrativas o descuentos.
-* **Reporte de Horas Extras Detalladas:** Detalle de los minutos y horas excedentes laborados, con campos para que el supervisor autorice de forma individual qué horas pasan a pago.
-* **Tarjeta de Tiempo Individual:** Resumen de un empleado en particular en un formato de hoja tamaño carta, ideal para impresión y firma física del trabajador.
-
-### 8.2 Exportación de Datos
-Todos los reportes generados en pantalla pueden exportarse haciendo clic en los botones superiores:
-* 📥 **Exportar a Excel (.xlsx):** Ideal para realizar filtrados adicionales, análisis de datos o importaciones en su sistema de nómina.
-* 📥 **Exportar a PDF:** Formato limpio y seguro listo para archivar de forma digital o imprimir.
+1. **Descarga Manual:**
+   * Seleccione si desea descargar de un **Dispositivo Específico** o de **Todos los Dispositivos**.
+   * Seleccione el modo de descarga:
+     * **Sincronización Completa:** Descarga todo el histórico de marcaciones almacenado en la memoria del reloj.
+     * **Rango de Fechas:** Descarga únicamente las checadas comprendidas en el intervalo seleccionado.
+   * Haga clic en **Descargar Registros Ahora**.
+2. **Historial de Descargas:**
+   * Tabla con el registro de cada evento de descarga: fecha/hora, dispositivo, método, cantidad de registros nuevos procesados, duración y estado (*Exitoso* o *Error*).
 
 ---
 
-## 9. Panel de Administración
+### 5.5 Registros Manuales de Asistencia
+Ubicación: **Dispositivos y descargas $\rightarrow$ Registros manuales** (`/attendance/manual-logs`) *(Solo Administrador)*
 
-*Módulo de uso exclusivo para Administradores de la aplicación.*
+Permite capturar o corregir checadas olvidadas por colaboradores:
 
-### 9.1 Configuración de la Empresa
-* Vaya a **Administración** $\rightarrow$ **Configuración de Empresa**.
-* Configure la Razón Social, cargue el logotipo de la empresa en formato PNG para personalizar los reportes impresos y ajuste la zona horaria del servidor.
+1. Haga clic en **+ Nuevo Registro Manual**.
+2. Seleccione el **Empleado**.
+3. Indique la **Fecha y Hora Exacta** de la checada.
+4. Seleccione el **Tipo de Marcación**: `Entrada` o `Salida`.
+5. Ingrese una **Observación / Motivo** justificando el registro manual.
+6. Presione **Guardar**.
 
-### 9.2 Gestión de Usuarios
-* **Agregar operadores del sistema:** Si necesita que más personal de RH o supervisores accedan a la aplicación, vaya a **Usuarios** $\rightarrow$ **Crear Usuario**, defina un nombre de usuario, contraseña provisional y asigne el Rol correspondiente (`Operador de RH` o `Supervisor`).
-
----
-
-## 10. Resolución de Problemas para Usuarios
-
-Guía de respuestas rápidas ante inconvenientes del día a día:
-
-### 10.1 "El reloj no lee mi huella o no reconoce mi rostro"
-* **Causa 1:** El dedo del trabajador está húmedo, muy seco, sucio o tiene alguna cortadura reciente.
-  * *Solución:* Limpie el lector del reloj y el dedo. Si el error persiste, enrole un segundo dedo (dedo de respaldo) desde el menú del reloj.
-* **Causa 2:** El empleado no ha sido enrolado de manera correcta en el dispositivo físico.
-  * *Solución:* Verifique en la interfaz web si el ID del empleado fue enviado al reloj. Vuelva a realizar el proceso de enrolamiento en el dispositivo físico.
-
-### 10.2 "Faltan checadas de un empleado en la web, pero él asegura que checó en el reloj"
-1. Ingrese a **Dispositivos** y verifique que el reloj checador esté "En Línea".
-2. Ejecute una descarga manual presionando el botón **Sincronizar Dispositivo** en el perfil de dicho reloj para asegurar que los datos viajen de inmediato.
-3. Si la descarga finaliza con éxito pero no aparece el registro, verifique si la hora interna del reloj checador es correcta. Si el reloj tiene una hora del pasado o del futuro, las asistencias podrían estar guardándose en fechas incorrectas. Sincronice la hora del reloj con la del servidor.
+> [!NOTE]
+> **Comportamiento inteligente de sobreescritura:**
+> Si ya existía una entrada o salida previa en esa fecha, el sistema desasignará automáticamente el registro anterior (regresándolo a estado pendiente) y asignará el nuevo registro manual, recalculando inmediatamente las métricas del día (retardo, salida anticipada y horas extra) sin generar duplicidades.
 
 ---
 
-## 11. Preguntas Frecuentes (FAQ)
+### 5.6 Cálculo y Reprocesamiento de Asistencia
+Ubicación: **Dispositivos y descargas $\rightarrow$ Cálculo de asistencia** (`/attendance/calculation`)
 
-### ¿Se pueden usar celulares o tabletas para entrar a la aplicación?
-**Sí.** La aplicación cuenta con una interfaz web totalmente responsive adaptada a pantallas móviles. Podrá revisar asistencias, justificar incidencias y descargar reportes cómodamente desde su tableta o teléfono celular estando conectado a la red de la empresa.
+El cálculo de asistencia procesa las checadas en bruto contra los turnos asignados para consolidar la tabla de asistencia diaria (`DailyAttendance`):
 
-### ¿Si el reloj checador se queda sin internet se pierden las asistencias?
-**No.** Los relojes checadores biométricos cuentan con una memoria de almacenamiento interna local capaz de retener miles de registros de asistencia de forma offline. Al momento de restablecerse el internet o la red LAN local, el sistema recuperará de forma automática y transparente todos los registros retenidos en la memoria del dispositivo.
-
-### ¿El sistema hace respaldos de información automáticamente?
-**Sí.** El instalador configura de forma automática una tarea diaria en el servidor que genera copias de seguridad de la base de datos a las 23:59 horas. Estas copias se almacenan en el directorio local de instalación.
+* **Cálculo por Día:** Seleccione una fecha específica y presione **Calcular Día**.
+* **Cálculo por Rango de Fechas:** Seleccione fecha inicial, fecha final, filtre opcionalmente por sucursal o empleado y presione **Calcular Rango**.
+* **Reglas aplicadas durante el cálculo:**
+  * Identificación de primer checada como Entrada y última como Salida.
+  * Cálculo de minutos de retardo si la entrada excede la tolerancia.
+  * Identificación de salidas tempranas frente a la jornada programada.
+  * Identificación de falta si transcurrió el día sin registro de entrada.
+  * Detección de trabajo en día de descanso semanal (`WorkedOnRestDay`) y cómputo de horas extras para el personal autorizado sobre la jornada base de 8 horas.
 
 ---
 
-## INFORMACIÓN PENDIENTE POR PROPORCIONAR
+## 6. Reportes y Análisis
 
-Para complementar este manual de operaciones, solicite a su área de soporte técnico o TI los siguientes datos específicos:
+### 6.1 Reporte de Asistencia (Kárdex General)
+Ubicación: **Reportes y análisis $\rightarrow$ Reporte de Asistencia** (`/attendance/reports`)
 
-1. **[INSERTAR: URL de la aplicación web en producción]:** Dirección web de acceso definitiva para que los usuarios la guarden en sus favoritos (ejemplo: `http://192.168.10.25:8081` o `http://asistencia.miempresa.local`).
-2. **[INSERTAR: Formato exacto de archivo Excel para importación masiva]:** Descripción del formato y orden de las columnas requeridas para cargar los empleados desde Excel.
-3. **[INSERTAR: Logotipo de la empresa]:** Imagen oficial que debe subirse al sistema en el módulo de empresa para la cabecera de los reportes.
-4. **[INSERTAR: Contacto de soporte interno (teléfono/correo)]:** Teléfonos y correos del personal interno de TI que da soporte a las incidencias de los relojes checadores o accesos al sistema.
+Reporte principal para la revisión de la pre-nómina:
+
+* **Filtros:** Rango de fechas (Desde / Hasta), Sucursal, Departamento y Selección de Empleado (o Todos).
+* **Columnas del Reporte:**
+  * Fecha, ID, Nombre Completo, Departamento, Turno programado.
+  * Hora de Entrada programada vs Entrada Real.
+  * Hora de Salida programada vs Salida Real.
+  * Minutos de Retardo, Salida Anticipada y Horas Extras calculadas.
+  * Estado de la jornada: `Asistencia`, `Retardo`, `Falta`, `Salida Anticipada`, `Descanso Laborado`.
+* **Exportación:** Botones para descargar en formato **Excel (.xlsx)**, **PDF** o imprimir directamente.
+
+---
+
+### 6.2 Análisis de Ausentismo
+Ubicación: **Reportes y análisis $\rightarrow$ Análisis de Ausentismo** (`/attendance/absenteeism-analysis`)
+
+Permite visualizar métricas estadísticas y gráficas sobre inasistencias:
+* Tasa global de ausentismo por periodo.
+* Desglose de faltas agrupadas por departamento.
+* Identificación de colaboradores con mayor recurrencia de faltas injustificadas.
+
+---
+
+### 6.3 Análisis de Retardos
+Ubicación: **Reportes y análisis $\rightarrow$ Análisis de Retardos** (`/attendance/tardiness-analysis`)
+
+Módulo analítico enfocado en la puntualidad organizacional:
+* Minutos totales de retardo acumulados en la empresa.
+* Top de departamentos y empleados con mayor índice de impuntualidad.
+* Gráfico de dispersión de horas de llegada.
+
+---
+
+### 6.4 Impresión de Checadores (Tarjetas de Asistencia)
+Ubicación: **Reportes y análisis $\rightarrow$ Impresión de Checadores** (`/attendance/cards`)
+
+Genera el formato tradicional de **Tarjeta de Tiempo** quincenal o mensual para cada trabajador, optimizado para impresión:
+
+* Encabezado con logotipo de la empresa, datos del colaborador, sucursal, departamento y periodo evaluado.
+* Tabla día por día con Entrada, Salida, Horas Ordinarias, Horas Extras e Incidencias.
+* Leyenda de conformidad y recuadros para firma física del trabajador y supervisor inmediato.
+* Soporte para impresión en lote (un salto de página automático por empleado).
+
+---
+
+### 6.5 Reportes Avanzados
+Ubicación: **Reportes y análisis $\rightarrow$ Reportes avanzados** (`/attendance/advanced-reports`)
+
+Generación de reportes analíticos personalizados:
+* Reporte especializado de **Horas Extras Acumuladas**.
+* Reporte de **Días de Descanso y Festivos Laborados**.
+* Reporte consolidado de tiempos muertos y permisos.
+
+---
+
+### 6.6 Logs de Asistencia en Bruto
+Ubicación: **Reportes y análisis $\rightarrow$ Logs de Asistencia** (`/attendance/logs`)
+
+Muestra la bitácora pura de marcaciones (`AttendanceRecord`) recolectadas directamente del hardware:
+* ID del Empleado, Fecha y Hora exacta del evento.
+* Tipo de verificación (Huella, Rostro, Tarjeta, Contraseña o Manual).
+* Dispositivo de origen e IP.
+* Estado de procesamiento interno (`Pending`, `Processed`, `Ignored`).
+
+---
+
+## 7. Configuración y Mantenimiento del Sistema
+
+### 7.1 Configuración General y Parámetros Globales
+Ubicación: **Configuración $\rightarrow$ Configuración** (`/settings`) *(Solo Administrador)*
+
+Permite parametrizar las variables operativas de la plataforma:
+* **Nombre de la Empresa y Razón Social.**
+* **Tolerancia Global de Entrada (Minutos):** Valor por defecto para turnos que no definan tolerancia propia.
+* **Tolerancia de Salida Anticipada (Minutos).**
+* **Directorio de Respaldos:** Ruta local donde se almacenarán las copias de seguridad automáticas de PostgreSQL.
+* **Configuración de Correo Electrónico (SMTP):** Servidor, puerto, usuario, contraseña y SSL para el envío automático de notificaciones de asistencia y reportes.
+
+---
+
+### 7.2 Respaldo y Restauración de Base de Datos
+Ubicación: **Configuración $\rightarrow$ Respaldo y Restauración** (`/backup`) *(Solo Administrador)*
+
+Garantiza la seguridad y disponibilidad de la información histórica:
+
+* **Crear Respaldo Ahora:** Genera de forma instantánea una copia de seguridad comprimida (`.backup`) de la base de datos PostgreSQL.
+* **Listado de Respaldos:** Muestra los archivos disponibles con su tamaño y fecha de creación, permitiendo su **Descarga Directa** al equipo del usuario.
+* **Restaurar Respaldo:** Permite seleccionar un archivo de respaldo local o subir uno desde su computadora para restablecer el estado del sistema en caso de contingencia.
+
+---
+
+### 7.3 Gestión de Usuarios y Roles
+Ubicación: **Configuración $\rightarrow$ Usuarios** (`/users`) *(Solo Administrador)*
+
+Permite administrar el personal con acceso a la plataforma web:
+* **Crear Usuario:** Capture el Nombre de Usuario, Correo Electrónico, Contraseña inicial y asigne el Rol (`Administrador`, `Supervisor` o `Usuario`).
+* **Editar / Cambiar Rol:** Modifique los roles asignados a una cuenta existente.
+* **Restablecer Contraseña:** Permite asignar una nueva contraseña segura a un usuario en caso de olvido.
+* **Activar / Desactivar:** Bloquee el acceso a colaboradores que hayan dejado de laborar en la empresa sin eliminar su historial de auditoría.
+
+---
+
+### 7.4 Monitoreo de Tareas Programadas (Hangfire)
+Ubicación: **Configuración $\rightarrow$ Hangfire** (`/hangfire`) *(Solo Administrador)*
+
+Abre el panel de control del motor de procesamiento en segundo plano **Hangfire**:
+* **Trabajos Recurrentes:** Muestra las tareas automatizadas (descarga programada de checadores cada 10 min, cálculo nocturno de asistencias y respaldo diario de base de datos a las 23:59).
+* **Trabajos en Cola y Procesamiento:** Permite verificar si existen tareas pendientes, trabajos fallidos o reintentar sincronizaciones manualmente.
+
+---
+
+## 8. Resolución de Problemas Frecuentes
+
+### 1. El reloj checador aparece como "Desconectado" en la web
+* **Para relojes en modo SDK (Pull):**
+  1. Compruebe que el reloj esté encendido y que el cable de red esté conectado (luz verde/ámbar en el puerto Ethernet).
+  2. En una terminal de comandos, ejecute `ping [IP_DEL_RELOJ]` (ej. `ping 192.168.1.201`). Si no hay respuesta, contacte a TI para revisar la red local.
+  3. Verifique que el servicio de Windows `AttendanceSystem.ZKTeco.Service` esté en ejecución (`services.msc`).
+* **Para relojes en modo ADMS (Push):**
+  1. Revise en el menú del reloj checador que la opción de **Servidor Cloud / ADMS** esté activa y apuntando a la IP y puerto correctos del servidor web (`8081`).
+  2. Verifique que el firewall del servidor permita tráfico entrante en el puerto `8081` TCP.
+
+### 2. La hora en las checadas aparece desfasada
+* En el menú **Dispositivos**, localice el reloj checador, haga clic en opciones y seleccione **Sincronizar Hora**. Esto configurará la hora del servidor y asegurará que la zona horaria esté en `UTC-6` sin horario de verano.
+
+### 3. Las horas extras no aparecen en el reporte de un empleado
+* Ingrese a **Empleados**, edite al trabajador, vaya a la pestaña **Horario y Asistencia** y verifique que la casilla **Autorización de Horas Extras** esté activada. Tras activarla, ejecute el cálculo de asistencia en **Cálculo de Asistencia** para el periodo deseado.
+
+### 4. Un empleado checó pero el sistema marca falta
+* Verifique si la marcación llegó a **Logs de Asistencia** (`/attendance/logs`). Si está registrada pero no calculada, vaya a **Cálculo de Asistencia** y ejecute el cálculo para esa fecha específica.
+
+---
+
+## 9. Preguntas Frecuentes (FAQ)
+
+### ¿Se pueden conectar diferentes modelos de relojes checadores simultáneamente?
+**Sí.** El sistema soporta simultáneamente dispositivos ZKTeco (tanto en modo SDK por red local como en modo ADMS Push para sucursales remotas) y dispositivos Hikvision mediante protocolo ISAPI.
+
+### ¿Qué sucede si se interrumpe la conexión de red o internet?
+Los relojes checadores continúan operando normalmente de forma autónoma almacenando las checadas en su memoria interna. En cuanto se restablece la comunicación, el sistema sincroniza automáticamente todos los registros pendientes sin pérdida de información.
+
+### ¿Se pueden exportar los reportes para alimentar sistemas de nómina externos?
+**Sí.** Todos los reportes cuentan con exportación nativa a **Excel (.xlsx)** estructurado, facilitando su importación o procesamiento en sistemas como CONTPAQi Nóminas, Aspel NOI, SAP u otros sistemas ERP.
