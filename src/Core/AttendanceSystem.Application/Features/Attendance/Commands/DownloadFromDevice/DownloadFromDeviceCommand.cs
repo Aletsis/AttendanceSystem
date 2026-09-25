@@ -141,28 +141,53 @@ public sealed class DownloadFromDeviceCommandHandler
                     return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene número de serie registrado.");
                 }
 
+                var isAccess = device.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true;
+
                 if (command.ForceFullSync || !filterDate.HasValue)
                 {
-                    // Forzar sincronización completa: Resetear stamp en BD para que el próximo push entregue todo desde el inicio
+                    // Forzar sincronización completa: Resetear stamp en BD para que el próximo push entregue todo desde el inicio (Stamp=0)
                     await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                    _logger.LogInformation("ADMS: Sincronización completa forzada (CHECK + LOG + Stamp=1970-01-01) para SN:{SerialNumber}", sn);
+                    _logger.LogInformation("ADMS: Sincronización completa forzada (CHECK + DATA QUERY + LOG + Stamp=0) para SN:{SerialNumber} (Modo: {Mode})",
+                        sn, isAccess ? "acc" : "att");
 
-                    // CHECK actualiza opciones y stamps en el dispositivo; LOG fuerza la subida inmediata de registros
+                    // 1. CHECK actualiza opciones y stamps en el dispositivo (reinicio a Stamp=0 / TransStamp=0)
                     _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
+
+                    // 2. DATA QUERY para forzar lectura de logs históricos en dispositivos Visible Light / SpeedFace
+                    if (isAccess)
+                    {
+                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY\tTABLE=Transaction");
+                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=Transaction,fields=*");
+                    }
+                    _admsCommandService.EnqueueCommand(sn!, "DATA QUERY\tTABLE=ATTLOG");
+                    _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=ATTLOG,fields=*");
+
+                    // 3. LOG fuerza la subida inmediata de buffer
                     _admsCommandService.EnqueueCommand(sn!, "LOG");
                 }
                 else
                 {
                     var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
+                    var toStr = (command.ToDate ?? DateTime.Now).ToString("yyyy-MM-dd HH:mm:ss");
 
                     // Actualizar stamp para que /push responda con la fecha requerida
                     await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, filterDate.Value, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                    _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} para SN:{SerialNumber} (CHECK + LOG)", fromStr, sn);
+                    _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} hasta {ToDate} para SN:{SerialNumber} (CHECK + DATA QUERY + LOG)",
+                        fromStr, toStr, sn);
                     _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
+
+                    if (isAccess)
+                    {
+                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY\tTABLE=Transaction\tStartTime={fromStr}\tEndTime={toStr}");
+                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=Transaction,starttime={fromStr},endtime={toStr}");
+                    }
+                    _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY\tTABLE=ATTLOG\tStartTime={fromStr}\tEndTime={toStr}");
+                    _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=ATTLOG,starttime={fromStr},endtime={toStr}");
+
                     _admsCommandService.EnqueueCommand(sn!, "LOG");
                 }
 

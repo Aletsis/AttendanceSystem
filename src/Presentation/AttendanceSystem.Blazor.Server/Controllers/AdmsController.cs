@@ -145,25 +145,25 @@ public class AdmsController : ControllerBase
 
         var isAccessMode = device?.DeviceType == "acc";
 
-        // Obtener último timestamp de logs para este dispositivo (formato estándar con espacio: yyyy-MM-dd HH:mm:ss)
+        // Obtener último timestamp de logs para este dispositivo (formato estándar: yyyy-MM-dd HH:mm:ss o 0 para resincronización completa)
         var lastLog = await _deviceRepository.GetLastAttLogTimestampAsync(SN);
         var stamp = lastLog.HasValue
             ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss")
-            : "1970-01-01 00:00:00";
+            : "0";
 
         // TransTables compatible con ambos modos (Transaction y User Transaction)
         var transTable = "Transaction,User Transaction,User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
 
         var tzOffsetHours = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
 
-        // Manual sección 7.5: configuración y stamps de push (compatible con modo att y acc)
+        // Manual sección 7.5: configuración y stamps de push (compatible con modo att y acc, Push 2.0 y 3.x)
         var sessionId = Guid.NewGuid().ToString("N").ToUpper();
         var response = $"GET OPTION FROM: {SN}\n" +
                        $"Stamp={stamp}\n" +
                        $"TransStamp={stamp}\n" +
                        $"ATTLOGStamp={stamp}\n" +
-                       $"OpStamp=9999\n" +
-                       $"OPERLOGStamp=9999\n" +
+                       $"OpStamp=0\n" +
+                       $"OPERLOGStamp=0\n" +
                        $"PhotoStamp=0\n" +
                        $"ATTPHOTOStamp=0\n" +
                        $"TimeZone={tzOffsetHours}\n" +
@@ -186,7 +186,7 @@ public class AdmsController : ControllerBase
 
         _logger.LogInformation("📋 Push Options {SN} stamp={Stamp} ({StampReadable}) mode={Mode}",
             SN, stamp,
-            lastLog.HasValue ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss") : "ninguno (0 - Full Sync)",
+            lastLog.HasValue ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss") : "0 (Full Sync)",
             isAccessMode ? "acc" : "att");
 
         return response;
@@ -258,9 +258,11 @@ public class AdmsController : ControllerBase
 
         if (targetTable.Equals("ATTLOG", StringComparison.OrdinalIgnoreCase) ||
             targetTable.Equals("Transaction", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("User Transaction", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("USERTRANSACTION", StringComparison.OrdinalIgnoreCase) ||
             targetTable.Equals("rtlog", StringComparison.OrdinalIgnoreCase))
         {
-            var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            var lines = body.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
             var count = await ProcessAttLogs(lines, SN);
             return Content($"OK: {count}", "text/plain");
         }
@@ -466,10 +468,11 @@ public class AdmsController : ControllerBase
 
                 // El formato en modo acceso u opciones de rtlog viene como "time=xxx\tpin=xxx"
                 // mientras que en ATTLOG clásico es por posiciones "78\t2022-11-14 13:46:27\t0\t15"
-                if (line.Contains("time=") || line.Contains("pin="))
+                if (line.Contains("=") || line.Contains("time", StringComparison.OrdinalIgnoreCase) || line.Contains("pin", StringComparison.OrdinalIgnoreCase))
                 {
                     var logData = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var part in parts)
+                    var tokens = line.Contains('\t') ? line.Split('\t') : line.Split(',');
+                    foreach (var part in tokens)
                     {
                         var kvp = part.Split('=', 2);
                         if (kvp.Length == 2)
@@ -478,30 +481,68 @@ public class AdmsController : ControllerBase
                         }
                     }
 
-                    if (logData.TryGetValue("pin", out pin) &&
-                        logData.TryGetValue("time", out var timeStr) &&
-                        DateTime.TryParse(timeStr, out checkTime))
+                    // Extraer PIN / Identificador de empleado
+                    if (!logData.TryGetValue("pin", out pin) || string.IsNullOrWhiteSpace(pin))
+                    {
+                        if (!logData.TryGetValue("user_id", out pin) || string.IsNullOrWhiteSpace(pin))
+                        {
+                            if (!logData.TryGetValue("userid", out pin) || string.IsNullOrWhiteSpace(pin))
+                            {
+                                logData.TryGetValue("cardno", out pin);
+                            }
+                        }
+                    }
+
+                    // Extraer fecha y hora de la checada
+                    if (!logData.TryGetValue("time", out var timeStr) || string.IsNullOrWhiteSpace(timeStr))
+                    {
+                        if (!logData.TryGetValue("time_second", out timeStr) || string.IsNullOrWhiteSpace(timeStr))
+                        {
+                            logData.TryGetValue("logtime", out timeStr);
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(pin) && !string.IsNullOrWhiteSpace(timeStr) && DateTime.TryParse(timeStr, out checkTime))
                     {
                         // En Access Control (Transaction / rtlog):
                         // 0..19 y 200..255: Eventos normales / verificaciones concedidas (0=Normal, 3=Multi/Punch normal, 14=Normal verify, etc.)
                         // 20..99: Acceso denegado / Errores (tarjeta no válida, PIN incorrecto, fuera de horario)
                         // 100..199: Alarmas (puerta abierta, coacción, sabotaje)
-                        if (logData.TryGetValue("event", out var eventStr) && int.TryParse(eventStr, out var eventCode))
+                        string? eventStr = null;
+                        if (logData.TryGetValue("event", out eventStr) ||
+                            logData.TryGetValue("eventtype", out eventStr) ||
+                            logData.TryGetValue("event_type", out eventStr))
                         {
-                            bool isDeniedOrAlarm = (eventCode >= 20 && eventCode <= 199);
-                            if (isDeniedOrAlarm)
+                            if (int.TryParse(eventStr, out var eventCode))
                             {
-                                _logger.LogInformation("ADMS: Evento de acceso denegado o alarma ignorado (EventCode={EventCode}, PIN={Pin}, SN={SN})", eventCode, pin, SN);
-                                continue;
+                                bool isDeniedOrAlarm = (eventCode >= 20 && eventCode <= 199);
+                                if (isDeniedOrAlarm)
+                                {
+                                    _logger.LogInformation("ADMS: Evento de acceso denegado o alarma ignorado (EventCode={EventCode}, PIN={Pin}, SN={SN})", eventCode, pin, SN);
+                                    continue;
+                                }
                             }
                         }
 
                         // Intentar sacar status y método
-                        if (logData.TryGetValue("inoutstatus", out var inoutStr) && int.TryParse(inoutStr, out var s))
-                            checkType = s;
+                        string? inoutStr = null;
+                        if (logData.TryGetValue("inoutstatus", out inoutStr) ||
+                            logData.TryGetValue("inoutstate", out inoutStr) ||
+                            logData.TryGetValue("state", out inoutStr) ||
+                            logData.TryGetValue("status", out inoutStr))
+                        {
+                            if (int.TryParse(inoutStr, out var s))
+                                checkType = s;
+                        }
 
-                        if (logData.TryGetValue("verifytype", out var vTypeStr) && int.TryParse(vTypeStr, out var v))
-                            verifyMethod = v == 0 ? 3 : v;
+                        string? vTypeStr = null;
+                        if (logData.TryGetValue("verifytype", out vTypeStr) ||
+                            logData.TryGetValue("verified", out vTypeStr) ||
+                            logData.TryGetValue("verifystyle", out vTypeStr))
+                        {
+                            if (int.TryParse(vTypeStr, out var v))
+                                verifyMethod = v == 0 ? 3 : v;
+                        }
 
                         isValid = true;
                     }
@@ -511,7 +552,7 @@ public class AdmsController : ControllerBase
                     // Formato posicional
                     if (parts.Length >= 2 && DateTime.TryParse(parts[1], out checkTime))
                     {
-                        pin = parts[0];
+                        pin = parts[0].Trim();
                         checkType = parts.Length > 2 && int.TryParse(parts[2], out var s) ? s : 0;
                         verifyMethod = parts.Length > 3 && int.TryParse(parts[3], out var v) ? (v == 0 ? 3 : v) : 3;
                         isValid = true;
