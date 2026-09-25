@@ -146,11 +146,11 @@ public class AdmsController : ControllerBase
 
         var isAccessMode = device?.DeviceType == "acc";
 
-        // Obtener último timestamp de logs para este dispositivo (formato estándar: yyyy-MM-dd HH:mm:ss o 0 para resincronización completa)
+        // Obtener último timestamp de logs para este dispositivo (formato estándar: yyyy-MM-dd HH:mm:ss o 1970-01-01 00:00:00 para resincronización completa)
         var lastLog = await _deviceRepository.GetLastAttLogTimestampAsync(SN);
         var stamp = lastLog.HasValue
             ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss")
-            : "0";
+            : "1970-01-01 00:00:00";
 
         // TransTables compatible con ambos modos (Transaction y User Transaction)
         var transTable = "Transaction,User Transaction,User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
@@ -187,7 +187,7 @@ public class AdmsController : ControllerBase
 
         _logger.LogInformation("📋 Push Options {SN} stamp={Stamp} ({StampReadable}) mode={Mode}",
             SN, stamp,
-            lastLog.HasValue ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss") : "0 (Full Sync)",
+            lastLog.HasValue ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss") : "1970-01-01 00:00:00 (Full Sync)",
             isAccessMode ? "acc" : "att");
 
         return response;
