@@ -503,7 +503,7 @@ public class AdmsController : ControllerBase
                         }
                     }
 
-                    if (!string.IsNullOrWhiteSpace(pin) && !string.IsNullOrWhiteSpace(timeStr) && DateTime.TryParse(timeStr, out checkTime))
+                    if (!string.IsNullOrWhiteSpace(pin) && !string.IsNullOrWhiteSpace(timeStr) && TryParseZkDateTime(timeStr, out checkTime))
                     {
                         // En Access Control (Transaction / rtlog):
                         // 0..19 y 200..255: Eventos normales / verificaciones concedidas (0=Normal, 3=Multi/Punch normal, 14=Normal verify, etc.)
@@ -551,7 +551,7 @@ public class AdmsController : ControllerBase
                 else
                 {
                     // Formato posicional
-                    if (parts.Length >= 2 && DateTime.TryParse(parts[1], out checkTime))
+                    if (parts.Length >= 2 && TryParseZkDateTime(parts[1], out checkTime))
                     {
                         pin = parts[0].Trim();
                         checkType = parts.Length > 2 && int.TryParse(parts[2], out var s) ? s : 0;
@@ -720,5 +720,71 @@ public class AdmsController : ControllerBase
             }
         }
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Intenta parsear una fecha/hora proveniente de dispositivos ZKTeco, soportando
+    /// texto estándar (yyyy-MM-dd HH:mm:ss), formato comprimido time_second (base 2000) o timestamp Unix.
+    /// </summary>
+    private static bool TryParseZkDateTime(string? timeStr, out DateTime checkTime)
+    {
+        checkTime = default;
+        if (string.IsNullOrWhiteSpace(timeStr))
+            return false;
+
+        timeStr = timeStr.Trim();
+
+        // 1. Intento estándar DateTime.TryParse
+        if (DateTime.TryParse(timeStr, CultureInfo.InvariantCulture, DateTimeStyles.None, out checkTime) ||
+            DateTime.TryParse(timeStr, out checkTime))
+        {
+            return true;
+        }
+
+        // 2. Si viene como número (time_second de ZKTeco en segundos comprimidos o Unix timestamp)
+        if (long.TryParse(timeStr, out var timeSec) && timeSec > 0)
+        {
+            // Decodificación algoritmo ZKTeco (segundos base año 2000 con meses de 31 días)
+            try
+            {
+                long temp = timeSec;
+                int second = (int)(temp % 60);
+                temp /= 60;
+                int minute = (int)(temp % 60);
+                temp /= 60;
+                int hour = (int)(temp % 24);
+                temp /= 24;
+                int day = (int)(temp % 31) + 1;
+                temp /= 31;
+                int month = (int)(temp % 12) + 1;
+                int year = (int)(temp / 12) + 2000;
+
+                if (year >= 2000 && year <= 2099 && month >= 1 && month <= 12 && day >= 1 && day <= DateTime.DaysInMonth(year, month))
+                {
+                    checkTime = new DateTime(year, month, day, hour, minute, second);
+                    return true;
+                }
+            }
+            catch
+            {
+                // Fallback si falla el cálculo
+            }
+
+            // Fallback: Unix epoch (1970)
+            try
+            {
+                if (timeSec >= 946684800 && timeSec <= 4102444800)
+                {
+                    checkTime = DateTimeOffset.FromUnixTimeSeconds(timeSec).LocalDateTime;
+                    return true;
+                }
+            }
+            catch
+            {
+                // Ignorar
+            }
+        }
+
+        return false;
     }
 }
