@@ -139,11 +139,10 @@ public class AdmsDeviceClient : IDeviceClient
             }
         }
 
-        // Para equipos modernos (especialmente Visible Light), la sintaxis suele ser 'DATA QUERY TABLE=NombreTabla'
-        // Intentamos esta versión para resolver el error -629.
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=USERINFO");
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=USERPIC");
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY\tTABLE=BIODATA");
+        // Encolar consulta de usuarios, fotos y biometría usando sintaxis estándar Push 3.x
+        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=USERINFO,fields=*");
+        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=USERPIC,fields=*");
+        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=BIODATA,fields=*");
 
         _logger.LogInformation("Comandos de consulta de datos encolados para dispositivo ADMS {SN}", _serialNumber);
 

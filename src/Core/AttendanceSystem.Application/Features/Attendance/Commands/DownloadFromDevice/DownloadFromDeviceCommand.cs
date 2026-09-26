@@ -158,11 +158,12 @@ public sealed class DownloadFromDeviceCommandHandler
                     // 2. DATA QUERY para forzar lectura de logs históricos en dispositivos Visible Light / SpeedFace
                     if (isAccess)
                     {
-                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY\tTABLE=Transaction");
                         _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=Transaction,fields=*");
                     }
-                    _admsCommandService.EnqueueCommand(sn!, "DATA QUERY\tTABLE=ATTLOG");
-                    _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=ATTLOG,fields=*");
+                    else
+                    {
+                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=ATTLOG,fields=*");
+                    }
 
                     // 3. LOG fuerza la subida inmediata de buffer
                     _admsCommandService.EnqueueCommand(sn!, "LOG");
@@ -182,11 +183,12 @@ public sealed class DownloadFromDeviceCommandHandler
 
                     if (isAccess)
                     {
-                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY\tTABLE=Transaction\tStartTime={fromStr}\tEndTime={toStr}");
                         _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=Transaction,starttime={fromStr},endtime={toStr}");
                     }
-                    _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY\tTABLE=ATTLOG\tStartTime={fromStr}\tEndTime={toStr}");
-                    _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=ATTLOG,starttime={fromStr},endtime={toStr}");
+                    else
+                    {
+                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=ATTLOG,starttime={fromStr},endtime={toStr}");
+                    }
 
                     _admsCommandService.EnqueueCommand(sn!, "LOG");
                 }

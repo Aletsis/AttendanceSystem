@@ -152,8 +152,8 @@ public class AdmsController : ControllerBase
             ? lastLog.Value.ToString("yyyy-MM-dd HH:mm:ss")
             : "1970-01-01 00:00:00";
 
-        // TransTables compatible con ambos modos (Transaction y User Transaction)
-        var transTable = "Transaction,User Transaction,User,UserPic,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA";
+        // TransTables compatible con ambos modos (Transaction y User Transaction, Push 2.0 y 3.x)
+        var transTable = "Transaction,User Transaction,User,UserPic,BioPhoto,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA,BIOPHOTO,templatev10";
 
         var tzOffsetHours = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
 
@@ -217,7 +217,12 @@ public class AdmsController : ControllerBase
         if (table?.Equals("USER", StringComparison.OrdinalIgnoreCase) == true ||
             table?.Equals("USERINFO", StringComparison.OrdinalIgnoreCase) == true ||
             table?.Equals("USERPIC", StringComparison.OrdinalIgnoreCase) == true ||
-            table?.Equals("BIODATA", StringComparison.OrdinalIgnoreCase) == true)
+            table?.Equals("BIOPHOTO", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("BIODATA", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("TEMPLATEV10", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("FINGERPRINT", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("FINGERTMP", StringComparison.OrdinalIgnoreCase) == true ||
+            table?.Equals("TEMPLATE", StringComparison.OrdinalIgnoreCase) == true)
         {
             var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             await ProcessDeviceData(lines, SN, table);
@@ -264,14 +269,21 @@ public class AdmsController : ControllerBase
             targetTable.Equals("rtlog", StringComparison.OrdinalIgnoreCase))
         {
             var lines = body.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var count = await ProcessAttLogs(lines, SN);
-            return Content($"OK: {count}", "text/plain");
+            await ProcessAttLogs(lines, SN);
+            // Protocolo Push de ZKTeco: en /iclock/querydata el dispositivo requiere estrictamente la respuesta "OK"
+            // para confirmar el paquete recibido (packidx) y proceder a enviar los siguientes paquetes (hasta packcnt).
+            return Content("OK", "text/plain");
         }
 
         if (targetTable.Equals("USER", StringComparison.OrdinalIgnoreCase) ||
             targetTable.Equals("USERINFO", StringComparison.OrdinalIgnoreCase) ||
             targetTable.Equals("USERPIC", StringComparison.OrdinalIgnoreCase) ||
-            targetTable.Equals("BIODATA", StringComparison.OrdinalIgnoreCase))
+            targetTable.Equals("BIOPHOTO", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("BIODATA", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("TEMPLATEV10", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("FINGERPRINT", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("FINGERTMP", StringComparison.OrdinalIgnoreCase) ||
+            targetTable.Equals("TEMPLATE", StringComparison.OrdinalIgnoreCase))
         {
             var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
             await ProcessDeviceData(lines, SN, targetTable);
@@ -478,7 +490,13 @@ public class AdmsController : ControllerBase
                         var kvp = part.Split('=', 2);
                         if (kvp.Length == 2)
                         {
-                            logData[kvp[0].Trim()] = kvp[1].Trim();
+                            var key = kvp[0].Trim();
+                            var spaceIdx = key.LastIndexOf(' ');
+                            if (spaceIdx >= 0)
+                            {
+                                key = key.Substring(spaceIdx + 1).Trim();
+                            }
+                            logData[key] = kvp[1].Trim();
                         }
                     }
 
@@ -659,10 +677,20 @@ public class AdmsController : ControllerBase
                 foreach (var part in parts)
                 {
                     var kvp = part.Split('=', 2);
-                    if (kvp.Length == 2) data[kvp[0].Trim()] = kvp[1].Trim();
+                    if (kvp.Length == 2)
+                    {
+                        var key = kvp[0].Trim();
+                        // El primer token suele traer el prefijo de la tabla, ej: "biodata pin=187" o "user uid=1" o "biophoto pin=1056"
+                        var spaceIndex = key.LastIndexOf(' ');
+                        if (spaceIndex >= 0)
+                        {
+                            key = key.Substring(spaceIndex + 1).Trim();
+                        }
+                        data[key] = kvp[1].Trim();
+                    }
                 }
 
-                if (!data.TryGetValue("PIN", out var pin)) continue;
+                if (!data.TryGetValue("PIN", out var pin) || string.IsNullOrWhiteSpace(pin)) continue;
 
                 var employeeId = EmployeeId.From(pin);
                 var employee = await _employeeRepository.GetByIdAsync(employeeId);
@@ -672,43 +700,138 @@ public class AdmsController : ControllerBase
                     continue;
                 }
 
-                if (table.Equals("USERPIC", StringComparison.OrdinalIgnoreCase))
+                if (table.Equals("USERPIC", StringComparison.OrdinalIgnoreCase) ||
+                    table.Equals("BIOPHOTO", StringComparison.OrdinalIgnoreCase))
                 {
-                    // protocol can be FileName=... Content=...
-                    if (data.TryGetValue("Content", out var base64))
+                    // protocol can be FileName=... Content=... or tmp=...
+                    string? photoContent = null;
+                    if (data.TryGetValue("Content", out var c) && !string.IsNullOrWhiteSpace(c))
+                        photoContent = c;
+                    else if (data.TryGetValue("tmp", out var t) && !string.IsNullOrWhiteSpace(t))
+                        photoContent = t;
+
+                    if (!string.IsNullOrWhiteSpace(photoContent))
                     {
-                        _logger.LogInformation("📸 ADMS: Recibida foto de perfil para {Pin} ({SN})", pin, SN);
-                        employee.UpdateBiometrics(photo: base64);
+                        _logger.LogInformation("📸 ADMS: Recibida foto ({Table}) para {Pin} ({SN})", table, pin, SN);
+                        employee.UpdateBiometrics(photo: photoContent);
                     }
                 }
                 else if (table.Equals("BIODATA", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (data.TryGetValue("Type", out var typeStr) && int.TryParse(typeStr, out var type) && data.TryGetValue("Content", out var content))
+                    int type = 0;
+                    if (data.TryGetValue("Type", out var typeStr) && int.TryParse(typeStr, out var parsedType))
+                    {
+                        type = parsedType;
+                    }
+
+                    // En ZK Push, la plantilla biométrica puede venir en tmp=, Content= o template=
+                    string? templateContent = null;
+                    if (data.TryGetValue("tmp", out var tmp) && !string.IsNullOrWhiteSpace(tmp))
+                        templateContent = tmp;
+                    else if (data.TryGetValue("Content", out var c) && !string.IsNullOrWhiteSpace(c))
+                        templateContent = c;
+                    else if (data.TryGetValue("template", out var tmpl) && !string.IsNullOrWhiteSpace(tmpl))
+                        templateContent = tmpl;
+
+                    if (!string.IsNullOrWhiteSpace(templateContent))
                     {
                         if (type == 0) // Fingerprint
                         {
                             int index = data.TryGetValue("Index", out var idxStr) && int.TryParse(idxStr, out var idx) ? idx : 0;
                             var fingerprints = new List<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeFingerprint>
                             {
-                                new(index, content)
+                                new(index, templateContent)
                             };
                             employee.UpdateBiometrics(fingerprints: fingerprints);
                             _logger.LogInformation("☝️ ADMS: Recibida huella {Index} para {Pin} ({SN})", index, pin, SN);
                         }
                         else if (type == 9) // Face
                         {
-                            employee.UpdateBiometrics(faceTemplate: content);
+                            employee.UpdateBiometrics(faceTemplate: templateContent);
                             _logger.LogInformation("👤 ADMS: Recibido rostro para {Pin} ({SN})", pin, SN);
                         }
+                    }
+                }
+                else if (table.Equals("TEMPLATEV10", StringComparison.OrdinalIgnoreCase) ||
+                         table.Equals("FINGERPRINT", StringComparison.OrdinalIgnoreCase) ||
+                         table.Equals("FINGERTMP", StringComparison.OrdinalIgnoreCase) ||
+                         table.Equals("TEMPLATE", StringComparison.OrdinalIgnoreCase))
+                {
+                    // templatev10 size=892	uid=1	pin=4	fingerid=6	valid=1	template=...
+                    int index = 0;
+                    if (data.TryGetValue("fingerid", out var fIdStr) && int.TryParse(fIdStr, out var fId))
+                        index = fId;
+                    else if (data.TryGetValue("finger_id", out var fIdStr2) && int.TryParse(fIdStr2, out var fId2))
+                        index = fId2;
+                    else if (data.TryGetValue("Index", out var idxStr) && int.TryParse(idxStr, out var idx))
+                        index = idx;
+
+                    string? templateContent = null;
+                    if (data.TryGetValue("template", out var tmpl) && !string.IsNullOrWhiteSpace(tmpl))
+                        templateContent = tmpl;
+                    else if (data.TryGetValue("tmp", out var tmp) && !string.IsNullOrWhiteSpace(tmp))
+                        templateContent = tmp;
+                    else if (data.TryGetValue("Content", out var c) && !string.IsNullOrWhiteSpace(c))
+                        templateContent = c;
+
+                    if (!string.IsNullOrWhiteSpace(templateContent))
+                    {
+                        var fingerprints = new List<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeFingerprint>
+                        {
+                            new(index, templateContent)
+                        };
+                        employee.UpdateBiometrics(fingerprints: fingerprints);
+                        _logger.LogInformation("☝️ ADMS: Recibida huella v10 dedo {Index} para {Pin} ({SN})", index, pin, SN);
                     }
                 }
                 else if (table.Equals("USER", StringComparison.OrdinalIgnoreCase) ||
                          table.Equals("USERINFO", StringComparison.OrdinalIgnoreCase))
                 {
-                    string? card = data.TryGetValue("Card", out var c) ? c : null;
-                    string? pass = data.TryGetValue("Password", out var p) ? p : null;
+                    string? card = null;
+                    if (data.TryGetValue("cardno", out var cNo) && !string.IsNullOrWhiteSpace(cNo)) card = cNo;
+                    else if (data.TryGetValue("card", out var c) && !string.IsNullOrWhiteSpace(c)) card = c;
+
+                    string? pass = null;
+                    if (data.TryGetValue("Password", out var p) && !string.IsNullOrWhiteSpace(p)) pass = p;
 
                     employee.UpdateBiometrics(cardNumber: card, devicePassword: pass);
+
+                    // Privilegio del dispositivo (privilege=14 admin/superadmin, 0 usuario)
+                    if (data.TryGetValue("privilege", out var privStr) && int.TryParse(privStr, out var priv))
+                    {
+                        var devPrivilege = (priv == 14 || priv == 3) ? DevicePrivilege.SuperAdmin :
+                                           (priv == 2) ? DevicePrivilege.Admin :
+                                           (priv == 1) ? DevicePrivilege.Registrar : DevicePrivilege.User;
+
+                        if (employee.DevicePrivilege != devPrivilege)
+                        {
+                            employee.Update(
+                                employee.FirstName,
+                                employee.LastName,
+                                employee.Email,
+                                employee.PhoneNumber,
+                                employee.HireDate,
+                                employee.Gender,
+                                employee.Status,
+                                employee.BranchId,
+                                employee.DepartmentId,
+                                employee.PositionId,
+                                employee.ShiftType,
+                                employee.ScheduleId,
+                                employee.RestDay,
+                                employee.OvertimeAuthorized,
+                                employee.OvertimeCalculationMethod,
+                                employee.OvertimeCapType,
+                                employee.OvertimeCapMinutes,
+                                employee.CalculateOvertimeBeforeEntry,
+                                employee.CardNumber,
+                                employee.DevicePassword,
+                                employee.Photo,
+                                devPrivilege
+                            );
+                        }
+                    }
+
                     _logger.LogInformation("📝 ADMS: Recibida info de usuario para {Pin} ({SN})", pin, SN);
                 }
 
