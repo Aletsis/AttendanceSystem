@@ -18,7 +18,7 @@ public class RestoreStateServiceTests
     public void EnterRestoreMode_ShouldSetIsRestoreInProgressToTrue()
     {
         var service = new RestoreStateService(NullLogger<RestoreStateService>.Instance);
-        
+
         service.EnterRestoreMode();
         service.IsRestoreInProgress.Should().BeTrue();
     }
@@ -27,7 +27,7 @@ public class RestoreStateServiceTests
     public void ExitRestoreMode_ShouldSetIsRestoreInProgressToFalse()
     {
         var service = new RestoreStateService(NullLogger<RestoreStateService>.Instance);
-        
+
         service.EnterRestoreMode();
         service.IsRestoreInProgress.Should().BeTrue();
 
