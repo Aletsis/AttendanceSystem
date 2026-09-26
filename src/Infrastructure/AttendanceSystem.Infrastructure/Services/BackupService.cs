@@ -7,6 +7,7 @@ using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Repositories;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using Npgsql;
 
 namespace AttendanceSystem.Infrastructure.Services;
 
@@ -15,6 +16,7 @@ public class BackupService : IBackupService
     private readonly IConfiguration _configuration;
     private readonly ILogger<BackupService> _logger;
     private readonly ISystemConfigurationRepository _systemConfigRepository;
+    private readonly string _connectionString;
     private readonly string _postgresHost = string.Empty;
     private readonly string _postgresPort = string.Empty;
     private readonly string _postgresDatabase = string.Empty;
@@ -34,6 +36,7 @@ public class BackupService : IBackupService
         var connectionString = configuration.GetConnectionString("AttendanceDb")
             ?? throw new InvalidOperationException("Connection string 'AttendanceDb' no encontrada en la configuración.");
 
+        _connectionString = connectionString;
 
         var connParams = ParseConnectionString(connectionString);
         _postgresHost = GetValueWithAliases(connParams, "Host", "Server", "Data Source") ?? "";
@@ -782,6 +785,10 @@ public class BackupService : IBackupService
         {
             return "Permiso denegado por el sistema de archivos o PostgreSQL.";
         }
+        if (lower.Contains("depende de") || lower.Contains("depends on") || lower.Contains("drop ... cascade"))
+        {
+            return "Conflicto de dependencias en la base de datos: Existen restricciones o tablas con claves foráneas dependientes. Se requiere eliminación en cascada previa.";
+        }
 
         return rawError.Trim();
     }
@@ -963,6 +970,14 @@ public class BackupService : IBackupService
                 return (false, $"El archivo de respaldo a restaurar no existe: {backupFilePath}");
             }
 
+            _logger.LogInformation("Preparando la base de datos {Database} para la restauración (limpieza de esquemas con CASCADE)...", _postgresDatabase);
+            var prepResult = await PrepareDatabaseForRestoreAsync(cancellationToken);
+            if (!prepResult.Success)
+            {
+                _logger.LogError("Error al preparar la base de datos para la restauración: {Message}", prepResult.Message);
+                return (false, $"No se pudo preparar la base de datos para la restauración: {prepResult.Message}");
+            }
+
             _logger.LogWarning("Iniciando restauración en base de datos {Database} con transacción atómica (--single-transaction)...", _postgresDatabase);
 
             // -w: no contraseña interactiva
@@ -1060,6 +1075,79 @@ public class BackupService : IBackupService
         {
             _logger.LogError(ex, "Error al ejecutar pg_restore");
             return (false, $"Excepción al ejecutar restauración: {ex.Message}");
+        }
+    }
+
+    private async Task<(bool Success, string Message)> PrepareDatabaseForRestoreAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            _logger.LogInformation("Iniciando preparación de base de datos para restauración...");
+            NpgsqlConnection.ClearAllPools();
+
+            var builder = new NpgsqlConnectionStringBuilder(_connectionString)
+            {
+                Pooling = false,
+                Timeout = 15,
+                CommandTimeout = 60
+            };
+
+            await using var connection = new NpgsqlConnection(builder.ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            // 1. Terminar conexiones activas de otros clientes a esta base de datos para prevenir bloqueos
+            try
+            {
+                var terminateSql = @"
+                    SELECT pg_terminate_backend(pid) 
+                    FROM pg_stat_activity 
+                    WHERE datname = current_database() 
+                      AND pid <> pg_backend_pid();";
+
+                await using var termCmd = new NpgsqlCommand(terminateSql, connection);
+                await termCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Aviso: No se pudieron terminar algunas conexiones activas previas a la base de datos.");
+            }
+
+            // 2. Eliminar todos los esquemas de usuario existentes con CASCADE para eliminar
+            // completamente dependencias cruzadas (como FKs entre tablas de Hangfire)
+            var dropSchemasSql = @"
+                DO $$ 
+                DECLARE 
+                    r RECORD;
+                BEGIN 
+                    FOR r IN (
+                        SELECT schema_name 
+                        FROM information_schema.schemata 
+                        WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
+                          AND schema_name NOT LIKE 'pg_toast%' 
+                          AND schema_name NOT LIKE 'pg_temp%'
+                    ) 
+                    LOOP 
+                        EXECUTE 'DROP SCHEMA IF EXISTS ' || quote_ident(r.schema_name) || ' CASCADE';
+                    END LOOP; 
+                END $$;
+                CREATE SCHEMA public;
+                GRANT ALL ON SCHEMA public TO CURRENT_USER;
+                GRANT ALL ON SCHEMA public TO public;";
+
+            await using var dropCmd = new NpgsqlCommand(dropSchemasSql, connection);
+            await dropCmd.ExecuteNonQueryAsync(cancellationToken);
+
+            _logger.LogInformation("Base de datos preparada y esquemas limpios exitosamente para la restauración.");
+            return (true, string.Empty);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error preparando base de datos para restauración.");
+            return (false, ex.Message);
+        }
+        finally
+        {
+            NpgsqlConnection.ClearAllPools();
         }
     }
 
