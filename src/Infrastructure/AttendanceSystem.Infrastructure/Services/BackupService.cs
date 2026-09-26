@@ -16,6 +16,10 @@ public class BackupService : IBackupService
     private readonly IConfiguration _configuration;
     private readonly ILogger<BackupService> _logger;
     private readonly ISystemConfigurationRepository _systemConfigRepository;
+    private readonly IRestoreStateService _restoreStateService;
+    private readonly IBackgroundJobControlService _backgroundJobControlService;
+    private readonly TimeSpan _dumpStallTimeout;
+    private readonly TimeSpan _restoreStallTimeout;
     private readonly string _connectionString;
     private readonly string _postgresHost = string.Empty;
     private readonly string _postgresPort = string.Empty;
@@ -26,11 +30,20 @@ public class BackupService : IBackupService
     public BackupService(
         IConfiguration configuration,
         ILogger<BackupService> logger,
-        ISystemConfigurationRepository systemConfigRepository)
+        ISystemConfigurationRepository systemConfigRepository,
+        IRestoreStateService? restoreStateService = null,
+        IBackgroundJobControlService? backgroundJobControlService = null)
     {
         _configuration = configuration;
         _logger = logger;
         _systemConfigRepository = systemConfigRepository;
+        _restoreStateService = restoreStateService ?? new RestoreStateService(new Microsoft.Extensions.Logging.Abstractions.NullLogger<RestoreStateService>());
+        _backgroundJobControlService = backgroundJobControlService ?? new NullBackgroundJobControlService();
+
+        var dumpTimeoutSec = configuration.GetValue<int>("Backup:DumpStallTimeoutSeconds", 600);
+        var restoreTimeoutSec = configuration.GetValue<int>("Backup:RestoreStallTimeoutSeconds", 900);
+        _dumpStallTimeout = TimeSpan.FromSeconds(Math.Max(dumpTimeoutSec, 60));
+        _restoreStallTimeout = TimeSpan.FromSeconds(Math.Max(restoreTimeoutSec, 120));
 
         // Parsear connection string de PostgreSQL
         var connectionString = configuration.GetConnectionString("AttendanceDb")
@@ -296,6 +309,17 @@ public class BackupService : IBackupService
             Directory.CreateDirectory(tempDir);
             _logger.LogInformation("Directorio temporal creado");
 
+            // Activar modo de mantenimiento y pausar tareas en segundo plano
+            _restoreStateService.EnterRestoreMode();
+            try
+            {
+                await _backgroundJobControlService.PauseBackgroundJobsAsync(cancellationToken);
+            }
+            catch (Exception bgEx)
+            {
+                _logger.LogWarning(bgEx, "Aviso: No se pudieron pausar los trabajos en segundo plano antes de la restauración.");
+            }
+
             // Determinar tipo de respaldo
             var isZipFile = backupFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
             _logger.LogInformation("Tipo de respaldo: {BackupType}", isZipFile ? "Completo (ZIP)" : "Solo Base de Datos");
@@ -438,6 +462,19 @@ public class BackupService : IBackupService
             }
             finally
             {
+                try
+                {
+                    await _backgroundJobControlService.ResumeBackgroundJobsAsync(CancellationToken.None);
+                }
+                catch (Exception resumeEx)
+                {
+                    _logger.LogWarning(resumeEx, "Aviso: Error al reanudar los trabajos en segundo plano tras la restauración.");
+                }
+                finally
+                {
+                    _restoreStateService.ExitRestoreMode();
+                }
+
                 // Limpiar directorio temporal (excepto archivos de config para revisión manual)
                 if (Directory.Exists(tempDir) && !isZipFile)
                 {
@@ -850,7 +887,8 @@ public class BackupService : IBackupService
             var outputBuilder = new StringBuilder();
             var errorBuilder = new StringBuilder();
             var lastActivityTime = DateTime.UtcNow;
-            var stallTimeout = TimeSpan.FromSeconds(90); // 90 segundos sin actividad indica proceso colgado
+            var lastHeartbeatLog = DateTime.UtcNow;
+            var stallTimeout = _dumpStallTimeout;
 
             process.OutputDataReceived += (sender, e) =>
             {
@@ -875,7 +913,7 @@ public class BackupService : IBackupService
             process.BeginErrorReadLine();
             process.StandardInput.Close();
 
-            _logger.LogInformation("Proceso pg_dump iniciado con PID: {ProcessId}", process.Id);
+            _logger.LogInformation("Proceso pg_dump iniciado con PID: {ProcessId} (Timeout inactividad: {TimeoutSeconds}s)", process.Id, (int)stallTimeout.TotalSeconds);
 
             long previousFileSize = 0;
             while (!process.HasExited)
@@ -896,6 +934,19 @@ public class BackupService : IBackupService
                             previousFileSize = currentLength;
                             lastActivityTime = DateTime.UtcNow;
                         }
+                    }
+                    catch { }
+                }
+
+                if (DateTime.UtcNow - lastHeartbeatLog >= TimeSpan.FromSeconds(30))
+                {
+                    lastHeartbeatLog = DateTime.UtcNow;
+                    try
+                    {
+                        var elapsed = DateTime.UtcNow - process.StartTime.ToUniversalTime();
+                        var inactive = DateTime.UtcNow - lastActivityTime;
+                        _logger.LogInformation("pg_dump sigue en ejecución (PID: {ProcessId}). Tiempo transcurrido: {Elapsed:mm\\:ss}. Última actividad hace {Inactive:mm\\:ss} (Límite: {TimeoutSeconds}s)",
+                            process.Id, elapsed, inactive, (int)stallTimeout.TotalSeconds);
                     }
                     catch { }
                 }
@@ -1005,7 +1056,8 @@ public class BackupService : IBackupService
             var outputBuilder = new StringBuilder();
             var errorBuilder = new StringBuilder();
             var lastActivityTime = DateTime.UtcNow;
-            var stallTimeout = TimeSpan.FromSeconds(120); // 120s de inactividad para restore
+            var lastHeartbeatLog = DateTime.UtcNow;
+            var stallTimeout = _restoreStallTimeout;
 
             process.OutputDataReceived += (sender, e) =>
             {
@@ -1030,7 +1082,7 @@ public class BackupService : IBackupService
             process.BeginErrorReadLine();
             process.StandardInput.Close();
 
-            _logger.LogInformation("Proceso pg_restore iniciado con PID: {ProcessId}", process.Id);
+            _logger.LogInformation("Proceso pg_restore iniciado con PID: {ProcessId} (Timeout inactividad: {TimeoutSeconds}s)", process.Id, (int)stallTimeout.TotalSeconds);
 
             while (!process.HasExited)
             {
@@ -1038,6 +1090,19 @@ public class BackupService : IBackupService
                 {
                     try { process.Kill(true); } catch { }
                     return (false, "Operación cancelada por el usuario.");
+                }
+
+                if (DateTime.UtcNow - lastHeartbeatLog >= TimeSpan.FromSeconds(30))
+                {
+                    lastHeartbeatLog = DateTime.UtcNow;
+                    try
+                    {
+                        var elapsed = DateTime.UtcNow - process.StartTime.ToUniversalTime();
+                        var inactive = DateTime.UtcNow - lastActivityTime;
+                        _logger.LogInformation("pg_restore sigue en ejecución (PID: {ProcessId}). Tiempo transcurrido: {Elapsed:mm\\:ss}. Última actividad hace {Inactive:mm\\:ss} (Límite: {TimeoutSeconds}s)",
+                            process.Id, elapsed, inactive, (int)stallTimeout.TotalSeconds);
+                    }
+                    catch { }
                 }
 
                 if (DateTime.UtcNow - lastActivityTime > stallTimeout)

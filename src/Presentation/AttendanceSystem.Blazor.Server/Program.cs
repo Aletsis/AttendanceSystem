@@ -15,6 +15,7 @@ using AttendanceSystem.Infrastructure.Persistence.Repositories;
 using AttendanceSystem.Infrastructure.Adapters;
 using AttendanceSystem.Infrastructure.Services;
 using AttendanceSystem.Blazor.Server.Services;
+using AttendanceSystem.Blazor.Server.Middleware;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
 using AttendanceSystem.ZKTeco.Grpc;
 using QuestPDF.Infrastructure;
@@ -152,6 +153,8 @@ try
     builder.Services.AddScoped<IEmailService, SmtpEmailService>();
     builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
     builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
+    builder.Services.AddSingleton<IRestoreStateService, RestoreStateService>();
+    builder.Services.AddSingleton<IBackgroundJobControlService, HangfireJobControlService>();
     builder.Services.AddScoped<IBackupService, BackupService>();
     builder.Services.AddScoped<ILogTransferService, LogTransferService>();
 
@@ -292,6 +295,9 @@ try
     app.UseStaticFiles();
     app.MapStaticAssets(); // Obligatorio para .NET 9 / MudBlazor 8
     app.UseRouting();
+
+    // Middleware para aislar el sistema y responder 503 a peticiones ADMS/API durante la restauración de BD
+    app.UseMiddleware<RestoreMaintenanceMiddleware>();
 
     // ===== AUTHENTICATION & AUTHORIZATION =====
     app.UseAuthentication();

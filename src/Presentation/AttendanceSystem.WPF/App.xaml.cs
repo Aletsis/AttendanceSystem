@@ -114,6 +114,8 @@ namespace AttendanceSystem.WPF
             // Add Services
             services.AddScoped<IImportService, ImportService>();
             services.AddScoped<IReportExportService, ReportExportService>();
+            services.AddSingleton<IRestoreStateService, RestoreStateService>();
+            services.AddSingleton<IBackgroundJobControlService, NullBackgroundJobControlService>();
             services.AddScoped<IBackupService, BackupService>();
 
             // Add JobScheduler implementation for WPF Client (No-Op)
