@@ -25,3 +25,13 @@ public class RestoreResultDto
     public string Message { get; set; } = string.Empty;
     public DateTime? RestoredAt { get; set; }
 }
+
+public class DatabaseConnectionInfoDto
+{
+    public string Host { get; set; } = string.Empty;
+    public int Port { get; set; } = 5432;
+    public string Database { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Engine { get; set; } = "PostgreSQL";
+}
+

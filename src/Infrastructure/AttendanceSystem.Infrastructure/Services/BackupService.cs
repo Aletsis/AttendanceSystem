@@ -45,34 +45,38 @@ public class BackupService : IBackupService
         _dumpStallTimeout = TimeSpan.FromSeconds(Math.Max(dumpTimeoutSec, 60));
         _restoreStallTimeout = TimeSpan.FromSeconds(Math.Max(restoreTimeoutSec, 120));
 
-        // Parsear connection string de PostgreSQL
+        // Parsear connection string de PostgreSQL de forma robusta con NpgsqlConnectionStringBuilder
         var connectionString = configuration.GetConnectionString("AttendanceDb")
             ?? throw new InvalidOperationException("Connection string 'AttendanceDb' no encontrada en la configuración.");
 
         _connectionString = connectionString;
 
-        var connParams = ParseConnectionString(connectionString);
-        _postgresHost = GetValueWithAliases(connParams, "Host", "Server", "Data Source") ?? "";
-        _postgresPort = GetValueWithAliases(connParams, "Port") ?? "5432";
-        _postgresDatabase = GetValueWithAliases(connParams, "Database", "Initial Catalog") ?? "";
-        _postgresUser = GetValueWithAliases(connParams, "Username", "User Id", "UserId", "User") ?? "";
-        _postgresPassword = GetValueWithAliases(connParams, "Password", "Pwd") ?? "";
+        var builder = new NpgsqlConnectionStringBuilder(connectionString);
+        _postgresHost = builder.Host ?? "localhost";
+        _postgresPort = builder.Port.ToString();
+        _postgresDatabase = builder.Database ?? "";
+        _postgresUser = builder.Username ?? "";
+        _postgresPassword = builder.Password ?? "";
 
         if (string.IsNullOrEmpty(_postgresHost) || string.IsNullOrEmpty(_postgresDatabase) || string.IsNullOrEmpty(_postgresUser))
         {
             _logger.LogError("Faltan parámetros críticos en la cadena de conexión para el respaldo: Host={Host}, DB={DB}, User={User}",
-                _postgresHost ?? "NULO", _postgresDatabase ?? "NULO", _postgresUser ?? "NULO");
+                _postgresHost, _postgresDatabase, _postgresUser);
         }
     }
 
-    private string? GetValueWithAliases(Dictionary<string, string> dict, params string[] aliases)
+    public DatabaseConnectionInfoDto GetDatabaseConnectionInfo()
     {
-        foreach (var alias in aliases)
+        return new DatabaseConnectionInfoDto
         {
-            if (dict.TryGetValue(alias, out var value)) return value;
-        }
-        return null;
+            Host = _postgresHost,
+            Port = int.TryParse(_postgresPort, out var p) ? p : 5432,
+            Database = _postgresDatabase,
+            Username = _postgresUser,
+            Engine = "PostgreSQL"
+        };
     }
+
 
     private async Task<string> GetBackupDirectoryAsync()
     {
@@ -207,6 +211,16 @@ public class BackupService : IBackupService
                 _logger.LogInformation("Archivo: {FileName}", fileInfo.Name);
                 _logger.LogInformation("Ubicación: {FilePath}", backupFilePath);
 
+                // Purgar respaldos antiguos según la política de retención
+                try
+                {
+                    await PruneOldBackupsAsync(cancellationToken: cancellationToken);
+                }
+                catch (Exception pruneEx)
+                {
+                    _logger.LogWarning(pruneEx, "Aviso: No se pudo completar la purga de respaldos antiguos tras crear el respaldo.");
+                }
+
                 return new BackupResultDto
                 {
                     Success = true,
@@ -216,6 +230,7 @@ public class BackupService : IBackupService
                     CreatedAt = DateTime.Now
                 };
             }
+
             finally
             {
                 // Limpiar directorio temporal
@@ -264,6 +279,16 @@ public class BackupService : IBackupService
 
             var fileInfo = new FileInfo(backupFilePath);
 
+            // Purgar respaldos antiguos según la política de retención
+            try
+            {
+                await PruneOldBackupsAsync(cancellationToken: cancellationToken);
+            }
+            catch (Exception pruneEx)
+            {
+                _logger.LogWarning(pruneEx, "Aviso: No se pudo completar la purga de respaldos antiguos tras crear el respaldo.");
+            }
+
             return new BackupResultDto
             {
                 Success = true,
@@ -273,6 +298,7 @@ public class BackupService : IBackupService
                 CreatedAt = DateTime.Now
             };
         }
+
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al crear respaldo de base de datos");
@@ -744,6 +770,64 @@ public class BackupService : IBackupService
         }
     }
 
+    public async Task<int> PruneOldBackupsAsync(int? keepCount = null, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var retention = keepCount ?? _configuration.GetValue<int>("Backup:KeepLastNBackups", 10);
+            if (retention <= 0)
+            {
+                return 0;
+            }
+
+            var backupDir = await GetBackupDirectoryAsync();
+            if (!Directory.Exists(backupDir))
+            {
+                return 0;
+            }
+
+            var backups = (await GetAvailableBackupsAsync(cancellationToken)).ToList();
+            if (backups.Count <= retention)
+            {
+                return 0;
+            }
+
+            var toDelete = backups.OrderByDescending(b => b.CreatedAt).Skip(retention).ToList();
+            var deletedCount = 0;
+
+            foreach (var backup in toDelete)
+            {
+                _logger.LogInformation("Eliminando respaldo antiguo por política de retención (manteniendo los {Retention} más recientes): {Path}",
+                    retention, backup.FilePath);
+
+                if (File.Exists(backup.FilePath))
+                {
+                    try
+                    {
+                        File.Delete(backup.FilePath);
+                        deletedCount++;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "No se pudo eliminar el archivo de respaldo antiguo: {Path}", backup.FilePath);
+                    }
+                }
+            }
+
+            if (deletedCount > 0)
+            {
+                _logger.LogInformation("Purga completada: {Count} respaldos antiguos eliminados", deletedCount);
+            }
+
+            return deletedCount;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al purgar los respaldos antiguos");
+            return 0;
+        }
+    }
+
     #region Private Methods
 
     private (bool Valid, string Message) ValidateStoragePrerequisites(string directoryPath, long requiredBytes = 100 * 1024 * 1024)
@@ -1122,17 +1206,26 @@ public class BackupService : IBackupService
 
             _logger.LogInformation("pg_restore código de salida: {ExitCode}", process.ExitCode);
 
-            if (process.ExitCode != 0)
+            if (process.ExitCode > 1)
             {
-                _logger.LogWarning("pg_restore finalizó con código {ExitCode}. Analizando errores...", process.ExitCode);
+                _logger.LogError("pg_restore finalizó con código de error crítico {ExitCode}.", process.ExitCode);
+                var diagnosis = DiagnosePostgreSQLError(error, process.ExitCode);
+                return (false, $"pg_restore falló: {diagnosis}");
+            }
+            else if (process.ExitCode == 1)
+            {
+                _logger.LogWarning("pg_restore finalizó con código 1 (advertencias o avisos). Analizando detalles...");
 
                 if (error.Contains("fatal:", StringComparison.OrdinalIgnoreCase) || error.Contains("error:", StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogError("Se detectaron errores críticos en la restauración.");
+                    _logger.LogError("Se detectaron errores en la salida de pg_restore (código 1).");
                     var diagnosis = DiagnosePostgreSQLError(error, process.ExitCode);
                     return (false, $"pg_restore falló: {diagnosis}");
                 }
+
+                _logger.LogInformation("pg_restore finalizó con advertencias no críticas ignorables (roles, extensiones o comentarios preexistentes).");
             }
+
 
             return (true, "Éxito");
         }
@@ -1216,83 +1309,71 @@ public class BackupService : IBackupService
         }
     }
 
-    private string? FindPgDumpPath()
+    internal string FindPgToolPath(string baseToolName)
     {
-        // Buscar pg_dump en ubicaciones comunes
-        var commonPaths = new[]
-        {
-            @"C:\Program Files\PostgreSQL\16\bin\pg_dump.exe",
-            @"C:\Program Files\PostgreSQL\15\bin\pg_dump.exe",
-            @"C:\Program Files\PostgreSQL\14\bin\pg_dump.exe",
-            @"C:\Program Files\PostgreSQL\13\bin\pg_dump.exe",
-            @"C:\Program Files (x86)\PostgreSQL\16\bin\pg_dump.exe",
-            @"C:\Program Files (x86)\PostgreSQL\15\bin\pg_dump.exe",
-            @"C:\Program Files (x86)\PostgreSQL\14\bin\pg_dump.exe",
-        };
+        var isWindows = OperatingSystem.IsWindows();
+        var toolName = isWindows ? $"{baseToolName}.exe" : baseToolName;
 
-        foreach (var path in commonPaths)
+        // 1. Verificar si está en la configuración (soporta "Backup:PostgresBinPath" o "DatabaseBackup:PostgresBinPath")
+        var configPath = _configuration["Backup:PostgresBinPath"] ?? _configuration["DatabaseBackup:PostgresBinPath"];
+        if (!string.IsNullOrEmpty(configPath))
         {
-            if (File.Exists(path))
+            var fullPath = Path.Combine(configPath, toolName);
+            if (File.Exists(fullPath)) return fullPath;
+        }
+
+        // 2. Verificar rutas de instalación estándar
+        if (isWindows)
+        {
+            var standardVersions = new[] { "17", "16", "15", "14", "13", "12" };
+            foreach (var version in standardVersions)
             {
-                return path;
+                var standardPath = Path.Combine(@"C:\Program Files\PostgreSQL", version, "bin", toolName);
+                if (File.Exists(standardPath)) return standardPath;
+
+                var x86Path = Path.Combine(@"C:\Program Files (x86)\PostgreSQL", version, "bin", toolName);
+                if (File.Exists(x86Path)) return x86Path;
+            }
+        }
+        else
+        {
+            var standardPaths = new[] { "/usr/bin", "/usr/local/bin", "/usr/local/pgsql/bin" };
+            foreach (var path in standardPaths)
+            {
+                var fullPath = Path.Combine(path, toolName);
+                if (File.Exists(fullPath)) return fullPath;
             }
         }
 
-        // Intentar encontrar en PATH
+        // 3. Buscar en el PATH del sistema
         var pathEnv = Environment.GetEnvironmentVariable("PATH");
-        if (pathEnv != null)
+        if (!string.IsNullOrEmpty(pathEnv))
         {
-            var paths = pathEnv.Split(';');
+            var paths = pathEnv.Split(Path.PathSeparator);
             foreach (var path in paths)
             {
-                var pgDumpPath = Path.Combine(path, "pg_dump.exe");
-                if (File.Exists(pgDumpPath))
-                {
-                    return pgDumpPath;
-                }
+                var fullPath = Path.Combine(path.Trim(), toolName);
+                if (File.Exists(fullPath)) return fullPath;
             }
         }
 
-        return null;
+        return string.Empty;
+    }
+
+    private string? FindPgDumpPath()
+    {
+        var path = FindPgToolPath("pg_dump");
+        return string.IsNullOrEmpty(path) ? null : path;
     }
 
     private string? FindPgRestorePath()
     {
-        var pgDumpPath = FindPgDumpPath();
-        if (pgDumpPath != null)
-        {
-            var dir = Path.GetDirectoryName(pgDumpPath);
-            if (dir != null)
-            {
-                var pgRestorePath = Path.Combine(dir, "pg_restore.exe");
-                if (File.Exists(pgRestorePath))
-                {
-                    return pgRestorePath;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private Dictionary<string, string> ParseConnectionString(string connectionString)
-    {
-        var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        var parts = connectionString.Split(';', StringSplitOptions.RemoveEmptyEntries);
-
-        foreach (var part in parts)
-        {
-            var keyValue = part.Split('=', 2);
-            if (keyValue.Length == 2)
-            {
-                result[keyValue[0].Trim()] = keyValue[1].Trim();
-            }
-        }
-
-        return result;
+        var path = FindPgToolPath("pg_restore");
+        return string.IsNullOrEmpty(path) ? null : path;
     }
 
     #endregion
+
 
     private class BackupMetadata
     {

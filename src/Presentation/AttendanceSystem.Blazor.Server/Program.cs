@@ -154,7 +154,6 @@ try
     builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
     builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
     builder.Services.AddSingleton<IRestoreStateService, RestoreStateService>();
-    builder.Services.AddSingleton<IBackgroundJobControlService, HangfireJobControlService>();
     builder.Services.AddScoped<IBackupService, BackupService>();
     builder.Services.AddScoped<ILogTransferService, LogTransferService>();
 
@@ -219,7 +218,10 @@ try
         .UsePostgreSqlStorage(c =>
             c.UseNpgsqlConnection(builder.Configuration.GetConnectionString("HangfireDb"))));
 
-    builder.Services.AddHangfireServer();
+    // Servidor de Hangfire administrado como Singleton e IHostedService para permitir pausa/reanudación atómica durante restauraciones
+    builder.Services.AddSingleton<HangfireJobControlService>();
+    builder.Services.AddSingleton<IBackgroundJobControlService>(sp => sp.GetRequiredService<HangfireJobControlService>());
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<HangfireJobControlService>());
 
     builder.Services.AddScoped<IAttendanceJobScheduler, HangfireAttendanceJobScheduler>();
     builder.Services.AddScoped<AttendanceJobs>();

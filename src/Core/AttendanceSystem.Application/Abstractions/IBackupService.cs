@@ -43,4 +43,15 @@ public interface IBackupService
     /// Obtiene la ruta física segura de un archivo de respaldo dado su nombre
     /// </summary>
     Task<string?> GetBackupFilePathAsync(string fileName, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Purga respaldos antiguos conservando los N más recientes
+    /// </summary>
+    Task<int> PruneOldBackupsAsync(int? keepCount = null, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Obtiene información de la conexión de base de datos activa
+    /// </summary>
+    DatabaseConnectionInfoDto GetDatabaseConnectionInfo();
 }
+
