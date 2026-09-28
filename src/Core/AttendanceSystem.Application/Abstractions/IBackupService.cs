@@ -15,9 +15,10 @@ public interface IBackupService
     Task<BackupResultDto> CreateDatabaseBackupAsync(string? description = null, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Restaura desde un archivo de respaldo
+    /// Restaura desde un archivo de respaldo con reporte opcional de progreso y logs en tiempo real
     /// </summary>
-    Task<RestoreResultDto> RestoreBackupAsync(string backupFilePath, CancellationToken cancellationToken = default);
+    Task<RestoreResultDto> RestoreBackupAsync(string backupFilePath, IProgress<RestoreProgressReport>? progress = null, CancellationToken cancellationToken = default);
+
 
     /// <summary>
     /// Lista todos los respaldos disponibles

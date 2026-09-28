@@ -310,7 +310,7 @@ public class BackupService : IBackupService
         }
     }
 
-    public async Task<RestoreResultDto> RestoreBackupAsync(string backupFilePath, CancellationToken cancellationToken = default)
+    public async Task<RestoreResultDto> RestoreBackupAsync(string backupFilePath, IProgress<RestoreProgressReport>? progress = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("=== INICIANDO RESTAURACIÓN DE RESPALDO ===");
         _logger.LogInformation("Archivo de respaldo: {BackupFilePath}", backupFilePath);
@@ -320,6 +320,7 @@ public class BackupService : IBackupService
             if (!File.Exists(backupFilePath))
             {
                 _logger.LogError("El archivo de respaldo no existe: {BackupFilePath}", backupFilePath);
+                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Error", "El archivo de respaldo no existe", IsError: true));
                 return new RestoreResultDto
                 {
                     Success = false,
@@ -334,6 +335,8 @@ public class BackupService : IBackupService
             _logger.LogInformation("Directorio temporal: {TempDir}", tempDir);
             Directory.CreateDirectory(tempDir);
             _logger.LogInformation("Directorio temporal creado");
+
+            progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Iniciando modo de mantenimiento y pausando tareas concurrentes...", ProgressPercentage: 5));
 
             // Activar modo de mantenimiento y pausar tareas en segundo plano
             _restoreStateService.EnterRestoreMode();
@@ -356,6 +359,7 @@ public class BackupService : IBackupService
 
             try
             {
+                progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Generando snapshot de seguridad previo para rollback automático...", ProgressPercentage: 15));
                 var backupDirectory = await GetBackupDirectoryAsync();
                 safetyBackupFile = Path.Combine(backupDirectory, $".safety_snapshot_{DateTime.Now:yyyyMMdd_HHmmss}.backup");
                 _logger.LogInformation("Generando snapshot de seguridad previo en: {SafetyBackupFile}", safetyBackupFile);
@@ -364,16 +368,19 @@ public class BackupService : IBackupService
                 {
                     safetyBackupCreated = true;
                     _logger.LogInformation("Snapshot de seguridad previo creado exitosamente.");
+                    progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Snapshot de seguridad previo generado exitosamente.", ProgressPercentage: 25));
                 }
                 else
                 {
                     _logger.LogWarning("No se pudo generar el snapshot de seguridad previo: {Message}. Se continuará con precaución.", safetyResult.Message);
+                    progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", $"Aviso: No se pudo generar snapshot previo ({safetyResult.Message}). Continuando con precaución.", IsError: false, ProgressPercentage: 25));
                 }
             }
             catch (Exception snapEx)
             {
                 _logger.LogWarning(snapEx, "Excepción al intentar crear snapshot de seguridad previo");
             }
+
 
             try
             {
@@ -383,6 +390,7 @@ public class BackupService : IBackupService
                 {
                     // Respaldo completo
                     _logger.LogInformation("[1/3] Extrayendo respaldo completo...");
+                    progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Preparación de Base de Datos", "Extrayendo archivos del paquete de respaldo completo (.zip)...", ProgressPercentage: 28));
                     ZipFile.ExtractToDirectory(backupFilePath, tempDir);
                     _logger.LogInformation("Extracción completada");
 
@@ -398,6 +406,7 @@ public class BackupService : IBackupService
                         _logger.LogInformation("  Descripción: {Description}", metadata?.Description);
                         _logger.LogInformation("  Fecha de creación: {CreatedAt}", metadata?.CreatedAt);
                         _logger.LogInformation("  Base de datos: {DatabaseName}", metadata?.DatabaseName);
+                        progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Preparación de Base de Datos", $"Metadata leída: {metadata?.Description ?? "Sin descripción"} ({metadata?.CreatedAt:dd/MM/yyyy HH:mm})", ProgressPercentage: 30));
                     }
 
                     // Restaurar base de datos
@@ -408,7 +417,7 @@ public class BackupService : IBackupService
                         var dbFileInfo = new FileInfo(dbBackupFile);
                         _logger.LogInformation("Archivo de BD: {DbBackupFile} ({SizeMB:F2} MB)", dbBackupFile, dbFileInfo.Length / 1024.0 / 1024.0);
 
-                        dbRestoreResult = await RestoreDatabaseFromFileAsync(dbBackupFile, cancellationToken);
+                        dbRestoreResult = await RestoreDatabaseFromFileAsync(dbBackupFile, progress, cancellationToken);
                     }
                     else
                     {
@@ -428,23 +437,26 @@ public class BackupService : IBackupService
                 {
                     // Respaldo solo de base de datos
                     _logger.LogInformation("[1/1] Restaurando base de datos desde archivo .backup...");
-                    dbRestoreResult = await RestoreDatabaseFromFileAsync(backupFilePath, cancellationToken);
+                    dbRestoreResult = await RestoreDatabaseFromFileAsync(backupFilePath, progress, cancellationToken);
                 }
 
                 if (!dbRestoreResult.Success)
                 {
                     _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
+                    progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Restauración Fallida", $"Fallo en restauración: {dbRestoreResult.Message}", IsError: true));
 
                     // Si falló y tenemos snapshot de seguridad, revertir la base de datos
                     if (safetyBackupCreated && !string.IsNullOrEmpty(safetyBackupFile) && File.Exists(safetyBackupFile))
                     {
                         _logger.LogWarning("Iniciando reversión automática (Rollback) al estado previo usando el snapshot de seguridad...");
+                        progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Rollback Automático", "Iniciando reversión automática al estado previo usando el snapshot de seguridad...", IsError: true));
                         try
                         {
-                            var rollbackResult = await RestoreDatabaseFromFileAsync(safetyBackupFile, cancellationToken);
+                            var rollbackResult = await RestoreDatabaseFromFileAsync(safetyBackupFile, progress, cancellationToken);
                             if (rollbackResult.Success)
                             {
                                 _logger.LogInformation("Rollback completado con éxito. La base de datos se mantiene en su estado previo original.");
+                                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Rollback Completado", "La base de datos fue revertida exitosamente a su estado original previo.", IsError: true));
                                 return new RestoreResultDto
                                 {
                                     Success = false,
@@ -470,6 +482,7 @@ public class BackupService : IBackupService
                 }
 
                 // Restauración exitosa: limpiar snapshot de seguridad previo
+                progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Finalización del Sistema", "Limpiando archivos temporales y snapshot de seguridad...", ProgressPercentage: 90));
                 if (safetyBackupCreated && !string.IsNullOrEmpty(safetyBackupFile) && File.Exists(safetyBackupFile))
                 {
                     try { File.Delete(safetyBackupFile); } catch { }
@@ -479,6 +492,8 @@ public class BackupService : IBackupService
                 _logger.LogInformation("=== RESTAURACIÓN COMPLETADA EXITOSAMENTE ===");
                 _logger.LogInformation("IMPORTANTE: Debe reiniciar la aplicación para que los cambios surtan efecto");
 
+                progress?.Report(new RestoreProgressReport(RestoreStage.Completed, "Restauración Completada", "Base de datos restaurada exitosamente. Por favor reinicie la aplicación.", ProgressPercentage: 100));
+
                 return new RestoreResultDto
                 {
                     Success = true,
@@ -486,6 +501,7 @@ public class BackupService : IBackupService
                     RestoredAt = DateTime.Now
                 };
             }
+
             finally
             {
                 try
@@ -1090,7 +1106,10 @@ public class BackupService : IBackupService
         }
     }
 
-    private async Task<(bool Success, string Message)> RestoreDatabaseFromFileAsync(string backupFilePath, CancellationToken cancellationToken)
+    private async Task<(bool Success, string Message)> RestoreDatabaseFromFileAsync(
+        string backupFilePath,
+        IProgress<RestoreProgressReport>? progress,
+        CancellationToken cancellationToken)
     {
         try
         {
@@ -1106,6 +1125,7 @@ public class BackupService : IBackupService
             }
 
             _logger.LogInformation("Preparando la base de datos {Database} para la restauración (limpieza de esquemas con CASCADE)...", _postgresDatabase);
+            progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Preparación de Base de Datos", "Terminando conexiones activas y limpiando esquemas en PostgreSQL...", ProgressPercentage: 35));
             var prepResult = await PrepareDatabaseForRestoreAsync(cancellationToken);
             if (!prepResult.Success)
             {
@@ -1114,6 +1134,7 @@ public class BackupService : IBackupService
             }
 
             _logger.LogWarning("Iniciando restauración en base de datos {Database} con transacción atómica (--single-transaction)...", _postgresDatabase);
+            progress?.Report(new RestoreProgressReport(RestoreStage.ExecutingPgRestore, "Ejecución pg_restore", "Iniciando proceso pg_restore con transacción atómica (--single-transaction)...", ProgressPercentage: 45));
 
             // -w: no contraseña interactiva
             // --single-transaction: ejecuta todo en una sola transacción BEGIN ... COMMIT (si falla, hace rollback automático)
@@ -1145,23 +1166,38 @@ public class BackupService : IBackupService
 
             process.OutputDataReceived += (sender, e) =>
             {
-                if (e.Data != null)
+                if (!string.IsNullOrWhiteSpace(e.Data))
                 {
                     lastActivityTime = DateTime.UtcNow;
                     outputBuilder.AppendLine(e.Data);
+                    _logger.LogInformation("[pg_restore] {Line}", e.Data);
+                    progress?.Report(new RestoreProgressReport(
+                        RestoreStage.ExecutingPgRestore,
+                        "Ejecución pg_restore",
+                        e.Data,
+                        ProgressPercentage: 65));
                 }
             };
 
             process.ErrorDataReceived += (sender, e) =>
             {
-                if (e.Data != null)
+                if (!string.IsNullOrWhiteSpace(e.Data))
                 {
                     lastActivityTime = DateTime.UtcNow;
                     errorBuilder.AppendLine(e.Data);
+                    _logger.LogInformation("[pg_restore] {Line}", e.Data);
+                    var isErr = e.Data.Contains("fatal:", StringComparison.OrdinalIgnoreCase) || e.Data.Contains("error:", StringComparison.OrdinalIgnoreCase);
+                    progress?.Report(new RestoreProgressReport(
+                        RestoreStage.ExecutingPgRestore,
+                        "Ejecución pg_restore",
+                        e.Data,
+                        IsError: isErr,
+                        ProgressPercentage: 65));
                 }
             };
 
             process.Start();
+
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             process.StandardInput.Close();

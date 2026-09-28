@@ -14,8 +14,10 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject NavigationManager NavigationManager
+@inject IJSRuntime JSRuntime
 
 <PageTitle>Respaldo y Restauración</PageTitle>
+
 
 <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
     <MudText Typo="Typo.h4" Class="mb-4">
@@ -241,6 +243,124 @@
 
         <!-- Lista de Respaldos -->
         <MudItem xs="12" md="8">
+            <!-- Panel de Progreso y Logs de Restauración en Vivo -->
+            @if (_showRestoreProgress)
+            {
+                <MudCard Elevation="4" Class="mb-4 rounded-lg border-solid border-2 border-primary">
+                    <MudCardHeader Class="pb-2">
+                        <CardHeaderAvatar>
+                            @if (_isRestoring)
+                            {
+                                <MudProgressCircular Size="Size.Small" Indeterminate="true" Color="Color.Primary" />
+                            }
+                            else if (_restoreStage == RestoreStage.Completed)
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Success" />
+                            }
+                            else
+                            {
+                                <MudIcon Icon="@Icons.Material.Filled.Error" Color="Color.Error" />
+                            }
+                        </CardHeaderAvatar>
+                        <CardHeaderContent>
+                            <MudText Typo="Typo.h6" Class="font-weight-bold">
+                                Restauración en Vivo: @_currentRestoringFile
+                            </MudText>
+                            <MudText Typo="Typo.body2" Color="Color.Secondary">
+                                Estado: <span class="font-weight-bold" style="@(_restoreStage == RestoreStage.Failed ? "color: var(--mud-palette-error);" : (_restoreStage == RestoreStage.Completed ? "color: var(--mud-palette-success);" : "color: var(--mud-palette-primary);"))">@_restoreStatusText</span>
+                            </MudText>
+                        </CardHeaderContent>
+                        <CardHeaderActions>
+                            @if (!_isRestoring)
+                            {
+                                <MudIconButton Icon="@Icons.Material.Filled.Close" Color="Color.Default" OnClick="() => _showRestoreProgress = false" title="Cerrar panel de progreso" />
+                            }
+                        </CardHeaderActions>
+                    </MudCardHeader>
+                    <MudCardContent Class="pt-0">
+                        <!-- Barra de Progreso Linear -->
+                        <MudProgressLinear Color="@GetProgressColor()"
+                                           Value="@_restorePercentage"
+                                           Indeterminate="@(_isRestoring && _restoreStage == RestoreStage.ExecutingPgRestore)"
+                                           Striped="true"
+                                           Size="Size.Medium"
+                                           Class="my-3 rounded" />
+
+                        <!-- MudTimeline de Etapas de Restauración -->
+                        <MudTimeline TimelineOrientation="TimelineOrientation.Horizontal" TimelinePosition="TimelinePosition.Top" Class="my-4">
+                            <MudTimelineItem Color="@GetStageColor(RestoreStage.SafetySnapshot)" Variant="Variant.Filled">
+                                <ItemOpposite>
+                                    <MudText Typo="Typo.caption" Class="font-weight-bold">Paso 1</MudText>
+                                </ItemOpposite>
+                                <ItemContent>
+                                    <MudText Typo="Typo.body2" Class="font-weight-bold">Snapshot Previo</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Respaldo rollback</MudText>
+                                </ItemContent>
+                            </MudTimelineItem>
+                            <MudTimelineItem Color="@GetStageColor(RestoreStage.PreparingDatabase)" Variant="Variant.Filled">
+                                <ItemOpposite>
+                                    <MudText Typo="Typo.caption" Class="font-weight-bold">Paso 2</MudText>
+                                </ItemOpposite>
+                                <ItemContent>
+                                    <MudText Typo="Typo.body2" Class="font-weight-bold">Preparación BD</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Limpieza esquemas</MudText>
+                                </ItemContent>
+                            </MudTimelineItem>
+                            <MudTimelineItem Color="@GetStageColor(RestoreStage.ExecutingPgRestore)" Variant="Variant.Filled">
+                                <ItemOpposite>
+                                    <MudText Typo="Typo.caption" Class="font-weight-bold">Paso 3</MudText>
+                                </ItemOpposite>
+                                <ItemContent>
+                                    <MudText Typo="Typo.body2" Class="font-weight-bold">pg_restore</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Streaming objetos</MudText>
+                                </ItemContent>
+                            </MudTimelineItem>
+                            <MudTimelineItem Color="@GetStageColor(RestoreStage.Finalizing)" Variant="Variant.Filled">
+                                <ItemOpposite>
+                                    <MudText Typo="Typo.caption" Class="font-weight-bold">Paso 4</MudText>
+                                </ItemOpposite>
+                                <ItemContent>
+                                    <MudText Typo="Typo.body2" Class="font-weight-bold">Finalización</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary">Reanudación tareas</MudText>
+                                </ItemContent>
+                            </MudTimelineItem>
+                        </MudTimeline>
+
+                        <!-- Consola de Logs en Vivo -->
+                        <div class="d-flex justify-space-between align-center mt-3 mb-1">
+                            <MudText Typo="Typo.subtitle2" Class="font-weight-bold">
+                                <MudIcon Icon="@Icons.Material.Filled.Terminal" Size="Size.Small" Class="mr-1" />
+                                Consola de Salida en Vivo (@_liveLogs.Count líneas)
+                            </MudText>
+                            <div>
+                                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.ContentCopy" OnClick="CopyLogsToClipboard">
+                                    Copiar Logs
+                                </MudButton>
+                                <MudButton Variant="Variant.Text" Size="Size.Small" StartIcon="@Icons.Material.Filled.Clear" OnClick="ClearLogs">
+                                    Limpiar
+                                </MudButton>
+                            </div>
+                        </div>
+
+                        <div id="restoreLogContainer" style="background-color: #0f172a; color: #4ade80; font-family: 'Consolas', 'Courier New', monospace; font-size: 0.82rem; height: 230px; overflow-y: scroll; padding: 12px; border-radius: 6px; border: 1px solid #1e293b;">
+                            @if (!_liveLogs.Any())
+                            {
+                                <span style="color: #64748b;">Esperando mensajes del proceso de pg_restore...</span>
+                            }
+                            else
+                            {
+                                @foreach (var log in _liveLogs)
+                                {
+                                    <div style="white-space: pre-wrap; line-height: 1.4; @(log.IsError ? "color: #f87171;" : "")">
+                                        <span style="color: #94a3b8;">[@log.Timestamp.ToString("HH:mm:ss")]</span> @log.Message
+                                    </div>
+                                }
+                            }
+                        </div>
+                    </MudCardContent>
+                </MudCard>
+            }
+
             <MudCard Elevation="2">
                 <MudCardHeader>
                     <CardHeaderContent>
@@ -353,6 +473,70 @@
     private bool _isSavingDirectory = false;
     private DatabaseConnectionInfoDto? _dbInfo;
     private int _retentionLimit = 10;
+
+    // Estado del seguimiento de restauración en vivo
+    private bool _showRestoreProgress = false;
+    private string _currentRestoringFile = string.Empty;
+    private RestoreStage _restoreStage = RestoreStage.NotStarted;
+    private RestoreStage _failedAtStage = RestoreStage.NotStarted;
+    private int _restorePercentage = 0;
+    private string _restoreStatusText = string.Empty;
+    private readonly List<RestoreLogEntry> _liveLogs = new();
+
+    private class RestoreLogEntry
+    {
+        public DateTime Timestamp { get; set; } = DateTime.Now;
+        public string Message { get; set; } = string.Empty;
+        public bool IsError { get; set; }
+    }
+
+    private Color GetStageColor(RestoreStage stage)
+    {
+        if (_restoreStage == RestoreStage.Failed)
+        {
+            return _failedAtStage == stage ? Color.Error : (_restoreStage > stage ? Color.Success : Color.Default);
+        }
+
+        if (_restoreStage == stage)
+        {
+            return Color.Primary;
+        }
+
+        if (_restoreStage > stage || _restoreStage == RestoreStage.Completed)
+        {
+            return Color.Success;
+        }
+
+        return Color.Default;
+    }
+
+    private Color GetProgressColor()
+    {
+        if (_restoreStage == RestoreStage.Failed) return Color.Error;
+        if (_restoreStage == RestoreStage.Completed) return Color.Success;
+        return Color.Primary;
+    }
+
+    private async Task CopyLogsToClipboard()
+    {
+        if (!_liveLogs.Any()) return;
+        var fullText = string.Join(Environment.NewLine, _liveLogs.Select(l => $"[{l.Timestamp:HH:mm:ss}] {l.Message}"));
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText", fullText);
+            Snackbar.Add("Logs copiados al portapapeles", Severity.Success);
+        }
+        catch
+        {
+            Snackbar.Add("No se pudo copiar automáticamente al portapapeles", Severity.Warning);
+        }
+    }
+
+    private void ClearLogs()
+    {
+        _liveLogs.Clear();
+    }
+
 
     protected override async Task OnInitializedAsync()
     {
@@ -538,17 +722,66 @@
         if (dialogResult is not null && !dialogResult.Canceled)
         {
             _isRestoring = true;
+            _showRestoreProgress = true;
+            _currentRestoringFile = backup.FileName;
+            _restoreStage = RestoreStage.SafetySnapshot;
+            _failedAtStage = RestoreStage.NotStarted;
+            _restorePercentage = 5;
+            _restoreStatusText = "Iniciando proceso de restauración...";
+            _liveLogs.Clear();
+            await InvokeAsync(StateHasChanged);
+
             try
             {
-                Snackbar.Add("Iniciando restauración... Por favor espere.", Severity.Info);
-                
-                var command = new RestoreBackupCommand(backup.FilePath);
+                Snackbar.Add("Iniciando restauración... Puede seguir el avance en el panel en vivo.", Severity.Info);
+
+                var progressReporter = new Progress<RestoreProgressReport>(report =>
+                {
+                    _restoreStage = report.Stage;
+                    if (!string.IsNullOrWhiteSpace(report.StageTitle))
+                    {
+                        _restoreStatusText = report.StageTitle;
+                    }
+                    if (report.ProgressPercentage.HasValue)
+                    {
+                        _restorePercentage = report.ProgressPercentage.Value;
+                    }
+                    if (!string.IsNullOrWhiteSpace(report.LogLine))
+                    {
+                        _liveLogs.Add(new RestoreLogEntry
+                        {
+                            Timestamp = report.EventTime,
+                            Message = report.LogLine,
+                            IsError = report.IsError
+                        });
+
+                        if (_liveLogs.Count > 1000)
+                        {
+                            _liveLogs.RemoveAt(0);
+                        }
+                    }
+                    if (report.IsError)
+                    {
+                        _failedAtStage = report.Stage;
+                    }
+
+                    _ = InvokeAsync(() =>
+                    {
+                        StateHasChanged();
+                        _ = JSRuntime.InvokeVoidAsync("eval", "var el = document.getElementById('restoreLogContainer'); if(el) el.scrollTop = el.scrollHeight;");
+                    });
+                });
+
+                var command = new RestoreBackupCommand(backup.FilePath, progressReporter);
                 var result = await Mediator.Send(command);
 
                 if (result.Success)
                 {
+                    _restoreStage = RestoreStage.Completed;
+                    _restorePercentage = 100;
+                    _restoreStatusText = "Restauración completada exitosamente";
                     Snackbar.Add("✓ Restauración completada exitosamente", Severity.Success);
-                    
+
                     // Mostrar diálogo informando que debe reiniciar
                     var restartParams = new DialogParameters
                     {
@@ -561,19 +794,21 @@
                         ["Color"] = Color.Success
                     };
                     await DialogService.ShowAsync<ConfirmationDialog>("✓ Restauración Exitosa", restartParams);
-                    
+
                     await LoadBackups(); // Recargar lista
                 }
                 else
                 {
+                    _restoreStage = RestoreStage.Failed;
+                    _restoreStatusText = $"Fallo: {result.Message}";
                     Snackbar.Add($"✗ Error al restaurar: {result.Message}", Severity.Error);
-                    
+
                     // Mostrar diálogo con detalles del error
                     var errorParams = new DialogParameters
                     {
                         ["ContentText"] = $"No se pudo completar la restauración.\n\n" +
                                         $"Error: {result.Message}\n\n" +
-                                        $"Por favor, revise los logs de la aplicación para más detalles.",
+                                        $"Por favor, revise la consola de logs en vivo para más detalles.",
                         ["ButtonText"] = "Cerrar",
                         ["Color"] = Color.Error
                     };
@@ -582,8 +817,10 @@
             }
             catch (Exception ex)
             {
+                _restoreStage = RestoreStage.Failed;
+                _restoreStatusText = $"Excepción: {ex.Message}";
                 Snackbar.Add($"✗ Error inesperado: {ex.Message}", Severity.Error);
-                
+
                 // Mostrar diálogo con error inesperado
                 var errorParams = new DialogParameters
                 {
@@ -598,9 +835,11 @@
             finally
             {
                 _isRestoring = false;
+                await InvokeAsync(StateHasChanged);
             }
         }
     }
+
 
     private async Task DeleteBackup(BackupDto backup)
     {

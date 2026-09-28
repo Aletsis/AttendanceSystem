@@ -3,7 +3,10 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Backup.Commands;
 
-public record RestoreBackupCommand(string BackupFilePath) : IRequest<RestoreResultDto>;
+public record RestoreBackupCommand(
+    string BackupFilePath,
+    IProgress<RestoreProgressReport>? Progress = null
+) : IRequest<RestoreResultDto>;
 
 public class RestoreBackupCommandHandler : IRequestHandler<RestoreBackupCommand, RestoreResultDto>
 {
@@ -35,7 +38,8 @@ public class RestoreBackupCommandHandler : IRequestHandler<RestoreBackupCommand,
                 };
             }
 
-            var result = await _backupService.RestoreBackupAsync(request.BackupFilePath, cancellationToken);
+            var result = await _backupService.RestoreBackupAsync(request.BackupFilePath, request.Progress, cancellationToken);
+
 
             if (result.Success)
             {

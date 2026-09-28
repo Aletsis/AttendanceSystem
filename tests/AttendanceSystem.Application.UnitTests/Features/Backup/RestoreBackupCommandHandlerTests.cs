@@ -40,7 +40,7 @@ public class RestoreBackupCommandHandlerTests
         // Assert
         result.Success.Should().BeFalse();
         result.Message.Should().Contain("no es válido o está corrupto");
-        _backupServiceMock.Verify(s => s.RestoreBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never);
+        _backupServiceMock.Verify(s => s.RestoreBackupAsync(It.IsAny<string>(), It.IsAny<IProgress<RestoreProgressReport>?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -54,7 +54,7 @@ public class RestoreBackupCommandHandlerTests
             .ReturnsAsync(true);
 
         _backupServiceMock
-            .Setup(s => s.RestoreBackupAsync("/backups/valid_backup.zip", It.IsAny<CancellationToken>()))
+            .Setup(s => s.RestoreBackupAsync("/backups/valid_backup.zip", It.IsAny<IProgress<RestoreProgressReport>?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new RestoreResultDto { Success = true, Message = "Restaurado con éxito" });
 
         // Act
@@ -63,6 +63,7 @@ public class RestoreBackupCommandHandlerTests
         // Assert
         result.Success.Should().BeTrue();
         result.Message.Should().Be("Restaurado con éxito");
-        _backupServiceMock.Verify(s => s.RestoreBackupAsync("/backups/valid_backup.zip", It.IsAny<CancellationToken>()), Times.Once);
+        _backupServiceMock.Verify(s => s.RestoreBackupAsync("/backups/valid_backup.zip", It.IsAny<IProgress<RestoreProgressReport>?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }
+
