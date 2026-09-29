@@ -112,16 +112,16 @@ La pantalla de empleados cuenta con un DataGrid interactivo con soporte de búsq
 * **Correo Electrónico** y **Teléfono:** Datos de contacto (opcionales).
 * **Fecha de Contratación:** Fecha de ingreso a la empresa.
 * **Género:** Masculino / Femenino / No especificado.
+* **Estado:** `Alta`, `Vacaciones` o `Baja`. *(Los empleados en estado Baja no son contemplados en los cálculos diarios de asistencia).*
 
 #### Pestaña 2: Organización
 * **Sucursal:** Seleccione la sede o sucursal donde labora el empleado.
 * **Departamento:** Área organizativa a la que pertenece.
 * **Puesto:** Puesto de trabajo asignado.
-* **Estado:** `Activo`, `Inactivo` o `Baja`. *(Los empleados en estado Baja no son contemplados en los cálculos diarios de ausentismo).*
 
 #### Pestaña 3: Horario y Asistencia
-* **Tipo de Horario:** Seleccione entre *Turno Fijo* o *Rotativo*.
-* **Turno Asignado:** Seleccione el horario oficial que debe cumplir el colaborador (ej. *Turno Matutino 08:00 - 16:00*).
+* **Tipo de Horario:** Seleccione entre *Matutino*, *Vespertino*, *Nocturno* o *Abierto*.
+* **Turno Asignado:** Seleccione el horario oficial que debe cumplir el colaborador (ej. *08:00 - 16:00*).
 * **Día de Descanso Semanal:** Día de la semana asignado como descanso oficial (ej. *Domingo*).
 * **Autorización de Horas Extras:** Active esta casilla si el trabajador tiene permitido devengar tiempo extra. Si la casilla está desactivada, el sistema ignorará cualquier excedente de tiempo laboral en los reportes de nómina.
 * **Cálculo de Horas Extra Antes de la Entrada:** Habilite si se reconocen horas extras previas al inicio de la jornada.
@@ -141,6 +141,7 @@ La pantalla de empleados cuenta con un DataGrid interactivo con soporte de búsq
 
 Para registrar las huellas digitales o el rostro de un colaborador:
 
+#### Opcion 1
 1. **Creación previa en el sistema:** Asegúrese de que el empleado esté registrado en el sistema con su **ID** correcto.
 2. **Registro en el Reloj Checador Físico:**
    * En el dispositivo biométrico, acceda al menú presionando la tecla **M/OK**.
@@ -195,10 +196,10 @@ Los turnos definen las reglas de tiempo con las que se evalúa la puntualidad de
 * **Nombre del Turno:** Nombre descriptivo (ej. *Matutino 8h*, *Vespertino*, *Administrativo 08:00 a 16:00*).
 * **Tipo de Turno:** `Matutino`, `Vespertino`, `Nocturno` o `Mixto`.
 * **Hora de Entrada:** Hora programada de inicio de labores (ejemplo: `08:00:00`).
-* **Horas de Trabajo (Jornada):** Duración total en horas de la jornada regular (ejemplo: `08:00:00`).
+* **Hora de Salida:** Hora programada de final de labores (ej. `16:00:00`).
+* **Horas de Trabajo (Jornada Objetivo):** Duración total en horas de la jornada regular (ejemplo: `8`).
 * **Tolerancia en Entrada (Minutos):** Margen de gracia permitido antes de considerar retardo (ejemplo: `10` minutos).
   * *Regla de cálculo:* Si la entrada es a las `08:00` con `10` min de tolerancia, checar a las `08:10` es puntual. Si el empleado checa a las `08:11`, el sistema calcula **11 minutos de retardo** (el retardo se computa desde la hora oficial de entrada).
-* **Hora de Salida:** Se calcula automáticamente sumando la jornada a la hora de entrada.
 
 ---
 
