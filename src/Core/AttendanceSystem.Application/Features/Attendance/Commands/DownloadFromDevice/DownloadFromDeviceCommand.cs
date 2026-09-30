@@ -228,6 +228,7 @@ public sealed class DownloadFromDeviceCommandHandler
         var username = device.Username;
         var password = device.Password;
         var shouldClear = device.ShouldClearAfterDownload;
+        var deviceSerialNumber = device.HardwareInfo?.SerialNumber;
 
         // LIMPIAR EL TRACKER COMPLETO
         // Esto asegura que no hay entidades "viejas" o "sucias" trackeadas.
@@ -293,7 +294,7 @@ public sealed class DownloadFromDeviceCommandHandler
                         _logger.LogInformation("Log detectado para sucursal externa {Code}. Almacenando localmente y transfiriendo empleado {Id} a Cloud DB",
                             branchCode, actualEmployeeId);
 
-                        var deviceSerial = device?.HardwareInfo?.SerialNumber ?? command.DeviceId;
+                        var deviceSerial = deviceSerialNumber ?? command.DeviceId;
                         var localExtLog = ExternalAttendanceLog.Create(
                             branchCode,
                             actualEmployeeId,
