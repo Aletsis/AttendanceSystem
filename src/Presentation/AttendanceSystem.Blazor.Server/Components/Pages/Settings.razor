@@ -8,6 +8,7 @@
 @using AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs
 @using AttendanceSystem.Domain.Enumerations
 @using AttendanceSystem.Application.Abstractions
+@using Npgsql
 @using MediatR
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
@@ -217,14 +218,61 @@
                         <MudText Typo="Typo.h6" Class="mb-4">Base de Datos Central en la Nube</MudText>
                         <MudStack Spacing="3">
                             <MudSwitch T="bool" @bind-Value="_isCloudSyncEnabled" Color="Color.Primary" Label="Habilitar Sincronización en la Nube" />
-                            <MudTextField Label="Cadena de Conexión PostgreSQL (Nube)" @bind-Value="_cloudDbConnectionString" 
-                                          Variant="Variant.Outlined" Margin="Margin.Dense" 
-                                          Placeholder="Host=...;Port=...;Database=...;Username=...;Password=...;SSL Mode=Require;"
-                                          HelperText="Cadena de conexión al cluster central (Aiven / AWS RDS / etc.)"
-                                          InputType="@(_showCloudPassword ? InputType.Text : InputType.Password)"
-                                          Adornment="Adornment.End" 
-                                          AdornmentIcon="@(_showCloudPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
-                                          OnAdornmentClick="@(() => _showCloudPassword = !_showCloudPassword)" />
+                            
+                            <MudGrid Spacing="2">
+                                <MudItem xs="8">
+                                    <MudTextField Label="Servidor / Host" @bind-Value="_cloudDbHost" 
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" 
+                                                  Placeholder="ej. pg-cloud.aivencloud.com" 
+                                                  Disabled="@(!_isCloudSyncEnabled)" />
+                                </MudItem>
+                                <MudItem xs="4">
+                                    <MudNumericField Label="Puerto" @bind-Value="_cloudDbPort" 
+                                                     Variant="Variant.Outlined" Margin="Margin.Dense" 
+                                                     Min="1" Max="65535" 
+                                                     Disabled="@(!_isCloudSyncEnabled)" />
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudTextField Label="Base de Datos" @bind-Value="_cloudDbDatabase" 
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" 
+                                                  Placeholder="defaultdb" 
+                                                  Disabled="@(!_isCloudSyncEnabled)" />
+                                </MudItem>
+                                <MudItem xs="6">
+                                    <MudTextField Label="Usuario" @bind-Value="_cloudDbUsername" 
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" 
+                                                  Placeholder="avnadmin" 
+                                                  Disabled="@(!_isCloudSyncEnabled)" />
+                                </MudItem>
+                                <MudItem xs="12">
+                                    <MudTextField Label="Contraseña" @bind-Value="_cloudDbPassword" 
+                                                  InputType="@(_showCloudPassword ? InputType.Text : InputType.Password)" 
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" 
+                                                  Adornment="Adornment.End" 
+                                                  AdornmentIcon="@(_showCloudPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                                  OnAdornmentClick="@(() => _showCloudPassword = !_showCloudPassword)"
+                                                  Disabled="@(!_isCloudSyncEnabled)" />
+                                </MudItem>
+                                <MudItem xs="12">
+                                    <MudSwitch T="bool" @bind-Value="_cloudDbSsl" Color="Color.Primary" 
+                                               Label="Requerir SSL / TLS (Recomendado para servidores en la nube)" 
+                                               Disabled="@(!_isCloudSyncEnabled)" />
+                                </MudItem>
+                            </MudGrid>
+
+                            <MudExpansionPanels Dense="true" Elevation="0">
+                                <MudExpansionPanel Text="Pegar cadena o URL completa (postgres://...)">
+                                    <MudTextField Label="Pegar Cadena de Conexión o URL postgres://" 
+                                                  @bind-Value="_rawConnectionStringToImport" 
+                                                  Variant="Variant.Outlined" Margin="Margin.Dense" 
+                                                  Placeholder="postgres://user:pass@host:port/dbname?sslmode=require" />
+                                    <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" 
+                                               Class="mt-2" OnClick="ImportConnectionString">
+                                        Importar y rellenar campos
+                                    </MudButton>
+                                </MudExpansionPanel>
+                            </MudExpansionPanels>
+
                             <MudAlert Severity="Severity.Info" Dense="true">
                                 Los registros de empleados externos recibidos en esta sucursal se guardan localmente para contingencia y se sincronizan a esta base de datos en la nube. Asimismo, esta sucursal descargará periódicamente las checadas realizadas por sus propios empleados en otras sedes.
                             </MudAlert>
@@ -330,7 +378,13 @@
 
     // Cloud Sync Fields
     private bool _isCloudSyncEnabled = true;
-    private string? _cloudDbConnectionString;
+    private string _cloudDbHost = "";
+    private int _cloudDbPort = 5432;
+    private string _cloudDbDatabase = "";
+    private string _cloudDbUsername = "";
+    private string _cloudDbPassword = "";
+    private bool _cloudDbSsl = true;
+    private string? _rawConnectionStringToImport;
     private bool _isTestingCloud = false;
     private bool _isSyncingCloud = false;
     private bool _showCloudPassword = false;
@@ -410,7 +464,7 @@
 
                 // Cloud Sync
                 _isCloudSyncEnabled = config.IsCloudSyncEnabled;
-                _cloudDbConnectionString = config.CloudDbConnectionString;
+                ParseCloudConnectionString(config.CloudDbConnectionString);
             }
             else
             {
@@ -465,7 +519,7 @@
                 _autoReportEmails,
                 _autoReportForToday,
                 _isCloudSyncEnabled,
-                _cloudDbConnectionString
+                BuildCloudConnectionString()
             );
 
             var result = await Mediator.Send(command);
@@ -489,12 +543,90 @@
         }
     }
 
+    private void ParseCloudConnectionString(string? connStr)
+    {
+        if (string.IsNullOrWhiteSpace(connStr))
+            return;
+
+        try
+        {
+            if (connStr.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) || 
+                connStr.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+            {
+                var uri = new Uri(connStr);
+                _cloudDbHost = uri.Host;
+                _cloudDbPort = uri.Port > 0 ? uri.Port : 5432;
+                _cloudDbDatabase = uri.AbsolutePath.Trim('/');
+                
+                var userInfo = uri.UserInfo;
+                var colonIndex = userInfo.IndexOf(':');
+                if (colonIndex >= 0)
+                {
+                    _cloudDbUsername = Uri.UnescapeDataString(userInfo.Substring(0, colonIndex));
+                    _cloudDbPassword = Uri.UnescapeDataString(userInfo.Substring(colonIndex + 1));
+                }
+                else
+                {
+                    _cloudDbUsername = Uri.UnescapeDataString(userInfo);
+                }
+
+                _cloudDbSsl = connStr.Contains("sslmode=require", StringComparison.OrdinalIgnoreCase) ||
+                              connStr.Contains("ssl=true", StringComparison.OrdinalIgnoreCase);
+            }
+            else
+            {
+                var builder = new NpgsqlConnectionStringBuilder(connStr);
+                _cloudDbHost = builder.Host ?? "";
+                _cloudDbPort = builder.Port > 0 ? builder.Port : 5432;
+                _cloudDbDatabase = builder.Database ?? "";
+                _cloudDbUsername = builder.Username ?? "";
+                _cloudDbPassword = builder.Password ?? "";
+                _cloudDbSsl = builder.SslMode == SslMode.Require || builder.SslMode == SslMode.Prefer;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Aviso al analizar cadena de conexión: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private string BuildCloudConnectionString()
+    {
+        if (string.IsNullOrWhiteSpace(_cloudDbHost))
+            return string.Empty;
+
+        var builder = new NpgsqlConnectionStringBuilder
+        {
+            Host = _cloudDbHost.Trim(),
+            Port = _cloudDbPort > 0 ? _cloudDbPort : 5432,
+            Database = _cloudDbDatabase?.Trim() ?? "",
+            Username = _cloudDbUsername?.Trim() ?? "",
+            Password = _cloudDbPassword ?? "",
+            SslMode = _cloudDbSsl ? SslMode.Require : SslMode.Disable
+        };
+
+        return builder.ConnectionString;
+    }
+
+    private void ImportConnectionString()
+    {
+        if (string.IsNullOrWhiteSpace(_rawConnectionStringToImport))
+        {
+            Snackbar.Add("Ingrese una cadena de conexión para importar", Severity.Info);
+            return;
+        }
+
+        ParseCloudConnectionString(_rawConnectionStringToImport);
+        Snackbar.Add("Datos de conexión importados correctamente a los campos.", Severity.Success);
+    }
+
     private async Task TestCloudConnection()
     {
         _isTestingCloud = true;
         try
         {
-            var command = new TestCloudConnectionCommand(_cloudDbConnectionString);
+            var connStr = BuildCloudConnectionString();
+            var command = new TestCloudConnectionCommand(connStr);
             var result = await Mediator.Send(command);
 
             if (result.IsSuccess)
