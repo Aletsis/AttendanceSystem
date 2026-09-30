@@ -180,7 +180,9 @@ public sealed record SystemConfigurationDto(
     bool IsAutoReportEnabled = false,
     TimeSpan? AutoReportTime = null,
     string? AutoReportEmails = null,
-    bool AutoReportForToday = false)
+    bool AutoReportForToday = false,
+    bool IsCloudSyncEnabled = true,
+    string? CloudDbConnectionString = null)
 {
     public SystemConfigurationDto() : this(string.Empty, null, TimeSpan.Zero, TimeSpan.Zero, false, false, null, false) { }
 }

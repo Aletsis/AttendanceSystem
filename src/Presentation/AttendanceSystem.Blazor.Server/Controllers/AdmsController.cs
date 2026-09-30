@@ -8,6 +8,7 @@ using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using Microsoft.Extensions.Logging;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
 using System.Globalization;
 
 namespace AttendanceSystem.Blazor.Server.Controllers;
@@ -27,6 +28,7 @@ public class AdmsController : ControllerBase
     private readonly IBranchRepository _branchRepository;
     private readonly ILogTransferService _logTransferService;
     private readonly IAttendanceJobScheduler _jobScheduler;
+    private readonly IExternalAttendanceLogRepository _externalLogRepository;
 
     public AdmsController(
         ILogger<AdmsController> logger,
@@ -38,7 +40,8 @@ public class AdmsController : ControllerBase
         IDownloadLogRepository downloadLogRepository,
         IBranchRepository branchRepository,
         ILogTransferService logTransferService,
-        IAttendanceJobScheduler jobScheduler)
+        IAttendanceJobScheduler jobScheduler,
+        IExternalAttendanceLogRepository externalLogRepository)
     {
         _logger = logger;
         _mediator = mediator;
@@ -50,6 +53,7 @@ public class AdmsController : ControllerBase
         _branchRepository = branchRepository;
         _logTransferService = logTransferService;
         _jobScheduler = jobScheduler;
+        _externalLogRepository = externalLogRepository;
     }
 
     // 1. GET /iclock/cdata — opciones de configuración o verificación de registro
@@ -591,15 +595,39 @@ public class AdmsController : ControllerBase
                             isExternal = true;
                             var actualEmployeeId = pin.Substring(3);
 
-                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}",
-                                branchCode, actualEmployeeId, externalBranch.ExternalHost);
+                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Almacenando localmente y transfiriendo empleado {Id} a Cloud DB",
+                                branchCode, actualEmployeeId);
 
-                            await _logTransferService.TransferLogAsync(
-                                externalBranch.ExternalHost!,
+                            var localExtLog = ExternalAttendanceLog.Create(
+                                branchCode,
                                 actualEmployeeId,
                                 checkTime,
                                 verifyMethod,
-                                checkType);
+                                checkType,
+                                SN);
+
+                            await _externalLogRepository.AddAsync(localExtLog);
+                            await _unitOfWork.SaveChangesAsync();
+
+                            var transferResult = await _logTransferService.TransferLogAsync(
+                                branchCode,
+                                actualEmployeeId,
+                                checkTime,
+                                verifyMethod,
+                                checkType,
+                                SN);
+
+                            if (transferResult.IsSuccess)
+                            {
+                                localExtLog.MarkAsTransferred();
+                            }
+                            else
+                            {
+                                localExtLog.MarkAsFailed(transferResult.Error);
+                            }
+
+                            await _externalLogRepository.UpdateAsync(localExtLog);
+                            await _unitOfWork.SaveChangesAsync();
                         }
                     }
 

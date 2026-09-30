@@ -74,5 +74,12 @@ public class SystemConfigurationConfiguration : IEntityTypeConfiguration<SystemC
         builder.Property(c => c.AutoReportForToday)
             .IsRequired()
             .HasDefaultValue(false);
+
+        // Cloud Sync Settings
+        builder.Property(c => c.IsCloudSyncEnabled)
+            .IsRequired()
+            .HasDefaultValue(true);
+        builder.Property(c => c.CloudDbConnectionString)
+            .IsRequired(false);
     }
 }

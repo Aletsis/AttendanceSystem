@@ -4,6 +4,8 @@
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
+@using AttendanceSystem.Application.Features.CloudSync.Commands.TestCloudConnection
+@using AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs
 @using AttendanceSystem.Domain.Enumerations
 @using AttendanceSystem.Application.Abstractions
 @using MediatR
@@ -208,6 +210,60 @@
                     </MudItem>
                 </MudGrid>
             </MudTabPanel>
+
+            <MudTabPanel Text="Nube / Sucursales" Icon="@Icons.Material.Filled.CloudSync">
+                <MudGrid>
+                    <MudItem xs="12" md="7">
+                        <MudText Typo="Typo.h6" Class="mb-4">Base de Datos Central en la Nube</MudText>
+                        <MudStack Spacing="3">
+                            <MudSwitch T="bool" @bind-Value="_isCloudSyncEnabled" Color="Color.Primary" Label="Habilitar Sincronización en la Nube" />
+                            <MudTextField Label="Cadena de Conexión PostgreSQL (Nube)" @bind-Value="_cloudDbConnectionString" 
+                                          Variant="Variant.Outlined" Margin="Margin.Dense" 
+                                          Placeholder="Host=...;Port=...;Database=...;Username=...;Password=...;SSL Mode=Require;"
+                                          HelperText="Cadena de conexión al cluster central (Aiven / AWS RDS / etc.)"
+                                          InputType="@(_showCloudPassword ? InputType.Text : InputType.Password)"
+                                          Adornment="Adornment.End" 
+                                          AdornmentIcon="@(_showCloudPassword ? Icons.Material.Filled.Visibility : Icons.Material.Filled.VisibilityOff)"
+                                          OnAdornmentClick="@(() => _showCloudPassword = !_showCloudPassword)" />
+                            <MudAlert Severity="Severity.Info" Dense="true">
+                                Los registros de empleados externos recibidos en esta sucursal se guardan localmente para contingencia y se sincronizan a esta base de datos en la nube. Asimismo, esta sucursal descargará periódicamente las checadas realizadas por sus propios empleados en otras sedes.
+                            </MudAlert>
+                        </MudStack>
+                    </MudItem>
+                    <MudItem xs="12" md="5">
+                        <MudText Typo="Typo.h6" Class="mb-4">Acciones de Sincronización</MudText>
+                        <MudPaper Outlined="true" Class="pa-4">
+                            <MudStack Spacing="3">
+                                <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.NetworkCheck" 
+                                           OnClick="TestCloudConnection" Disabled="@(_isTestingCloud || _isSyncingCloud)">
+                                    @if (_isTestingCloud)
+                                    {
+                                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                                        <MudText Class="ms-2">Probando...</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText>Probar Conexión Nube</MudText>
+                                    }
+                                </MudButton>
+
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Sync" 
+                                           OnClick="SyncCloudNow" Disabled="@(_isTestingCloud || _isSyncingCloud)">
+                                    @if (_isSyncingCloud)
+                                    {
+                                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/>
+                                        <MudText Class="ms-2">Sincronizando...</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText>Sincronizar Ahora</MudText>
+                                    }
+                                </MudButton>
+                            </MudStack>
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+            </MudTabPanel>
         </MudTabs>
 
         <MudPaper Elevation="4" Class="pa-4 mt-4 d-flex justify-end" Style="border-radius: 0 0 12px 12px;">
@@ -271,6 +327,13 @@
     private int _fortnightFirstDay;
     private int _fortnightSecondDay;
     private int _monthlyStartDay;
+
+    // Cloud Sync Fields
+    private bool _isCloudSyncEnabled = true;
+    private string? _cloudDbConnectionString;
+    private bool _isTestingCloud = false;
+    private bool _isSyncingCloud = false;
+    private bool _showCloudPassword = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -344,6 +407,10 @@
                 _fortnightFirstDay = config.FortnightFirstDay;
                 _fortnightSecondDay = config.FortnightSecondDay;
                 _monthlyStartDay = config.MonthlyStartDay;
+
+                // Cloud Sync
+                _isCloudSyncEnabled = config.IsCloudSyncEnabled;
+                _cloudDbConnectionString = config.CloudDbConnectionString;
             }
             else
             {
@@ -396,7 +463,9 @@
                 _isAutoReportEnabled,
                 _autoReportTime,
                 _autoReportEmails,
-                _autoReportForToday
+                _autoReportForToday,
+                _isCloudSyncEnabled,
+                _cloudDbConnectionString
             );
 
             var result = await Mediator.Send(command);
@@ -417,6 +486,60 @@
         finally
         {
             _isSaving = false;
+        }
+    }
+
+    private async Task TestCloudConnection()
+    {
+        _isTestingCloud = true;
+        try
+        {
+            var command = new TestCloudConnectionCommand(_cloudDbConnectionString);
+            var result = await Mediator.Send(command);
+
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("¡Conexión a la base de datos en la nube exitosa!", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Fallo de conexión a la nube: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error probando conexión: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isTestingCloud = false;
+        }
+    }
+
+    private async Task SyncCloudNow()
+    {
+        _isSyncingCloud = true;
+        try
+        {
+            var command = new SyncCloudLogsCommand();
+            var result = await Mediator.Send(command);
+
+            if (result.IsSuccess)
+            {
+                Snackbar.Add($"Sincronización finalizada: {result.Value.DownloadedLogsCount} logs descargados, {result.Value.UploadedLogsCount} logs locales subidos.", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Error en sincronización: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error ejecutando sincronización: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isSyncingCloud = false;
         }
     }
 

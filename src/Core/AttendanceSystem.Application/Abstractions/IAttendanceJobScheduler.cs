@@ -10,6 +10,7 @@ public interface IAttendanceJobScheduler
     void ScheduleAutoReport(TimeSpan timeOfDay);
     void DisableAutoReport();
     void ScheduleDeviceHeartbeat();
+    void ScheduleCloudSync();
     void EnqueueBiometricSync(string deviceId, string employeeId);
     void EnqueueAttendanceProcessing(DateTime startDate, DateTime endDate, string? employeeId = null);
 }

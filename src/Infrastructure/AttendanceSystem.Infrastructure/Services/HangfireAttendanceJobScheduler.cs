@@ -97,6 +97,15 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
             "*/10 * * * *");
     }
 
+    public void ScheduleCloudSync()
+    {
+        // Every 5 minutes
+        _recurringJobManager.AddOrUpdate<AttendanceJobs>(
+            "cloud-log-sync",
+            jobs => jobs.SyncCloudLogs(),
+            "*/5 * * * *");
+    }
+
     public void EnqueueBiometricSync(string deviceId, string employeeId)
     {
         _backgroundJobClient.Enqueue<AttendanceJobs>(
@@ -153,6 +162,12 @@ public class AttendanceJobs
     public async Task SyncEmployeeBiometrics(string deviceId, string employeeId)
     {
         await _mediator.Send(new AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics.SyncEmployeeBiometricsCommand(deviceId, employeeId));
+    }
+
+    [JobDisplayName("Sync Logs with Cloud DB")]
+    public async Task SyncCloudLogs()
+    {
+        await _mediator.Send(new AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs.SyncCloudLogsCommand());
     }
 
     [JobDisplayName("Process Attendance for Employee {2} from {0:yyyy-MM-dd} to {1:yyyy-MM-dd}")]

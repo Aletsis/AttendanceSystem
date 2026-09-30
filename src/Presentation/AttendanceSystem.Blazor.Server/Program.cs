@@ -175,6 +175,8 @@ try
     builder.Services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
     builder.Services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
     builder.Services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
+    builder.Services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
+    builder.Services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();
 
     // ===== IDENTITY & AUTHENTICATION =====
     builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -318,6 +320,7 @@ try
         var scheduler = scope.ServiceProvider.GetRequiredService<IAttendanceJobScheduler>();
         scheduler.ScheduleCriticalAbsenceCheck();
         scheduler.ScheduleDeviceHeartbeat();
+        scheduler.ScheduleCloudSync();
     }
 
     app.UseAntiforgery();

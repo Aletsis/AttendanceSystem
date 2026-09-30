@@ -38,7 +38,9 @@ public sealed record UpdateSystemConfigurationCommand(
     bool IsAutoReportEnabled = false,
     TimeSpan? AutoReportTime = null,
     string? AutoReportEmails = null,
-    bool AutoReportForToday = false) : IRequest<Result<Guid>>;
+    bool AutoReportForToday = false,
+    bool IsCloudSyncEnabled = true,
+    string? CloudDbConnectionString = null) : IRequest<Result<Guid>>;
 
 public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<UpdateSystemConfigurationCommand, Result<Guid>>
 {
@@ -100,6 +102,10 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.FortnightFirstDay,
             command.FortnightSecondDay,
             command.MonthlyStartDay);
+
+        config.UpdateCloudSyncSettings(
+            command.IsCloudSyncEnabled,
+            command.CloudDbConnectionString);
 
         // Actualizar la programación de trabajos según la nueva configuración
         if (config.IsAutoDownloadEnabled && config.AutoDownloadTime.HasValue)

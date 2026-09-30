@@ -10,6 +10,8 @@ using Microsoft.Extensions.Logging;
 using AttendanceSystem.Domain.Services;
 using AttendanceSystem.Domain.Enumerations;
 
+using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
+
 namespace AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
 
 public sealed record DownloadFromDeviceCommand(
@@ -38,6 +40,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly ILogTransferService _logTransferService;
     private readonly IAttendanceJobScheduler _jobScheduler;
     private readonly IEmployeeRepository _employeeRepository;
+    private readonly IExternalAttendanceLogRepository _externalLogRepository;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -53,7 +56,8 @@ public sealed class DownloadFromDeviceCommandHandler
         IBranchRepository branchRepository,
         ILogTransferService logTransferService,
         IAttendanceJobScheduler jobScheduler,
-        IEmployeeRepository employeeRepository)
+        IEmployeeRepository employeeRepository,
+        IExternalAttendanceLogRepository externalLogRepository)
     {
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -69,6 +73,7 @@ public sealed class DownloadFromDeviceCommandHandler
         _logTransferService = logTransferService;
         _jobScheduler = jobScheduler;
         _employeeRepository = employeeRepository;
+        _externalLogRepository = externalLogRepository;
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
@@ -285,17 +290,40 @@ public sealed class DownloadFromDeviceCommandHandler
                         isExternal = true;
                         var actualEmployeeId = raw.UserId.Substring(3);
 
-                        _logger.LogInformation("Log detectado para sucursal externa {Code}. Transfiriendo empleado {Id} a {Host}",
-                            branchCode, actualEmployeeId, externalBranch.ExternalHost);
+                        _logger.LogInformation("Log detectado para sucursal externa {Code}. Almacenando localmente y transfiriendo empleado {Id} a Cloud DB",
+                            branchCode, actualEmployeeId);
 
-                        // Transferir log (esto podría ser asíncrono en segundo plano si son muchos)
-                        await _logTransferService.TransferLogAsync(
-                            externalBranch.ExternalHost!,
+                        var localExtLog = ExternalAttendanceLog.Create(
+                            branchCode,
                             actualEmployeeId,
                             raw.CheckTime,
                             raw.VerifyMethod,
                             raw.InOutMode,
+                            device.HardwareInfo?.SerialNumber ?? command.DeviceId);
+
+                        await _externalLogRepository.AddAsync(localExtLog, cancellationToken);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                        var transferResult = await _logTransferService.TransferLogAsync(
+                            branchCode,
+                            actualEmployeeId,
+                            raw.CheckTime,
+                            raw.VerifyMethod,
+                            raw.InOutMode,
+                            device.HardwareInfo?.SerialNumber ?? command.DeviceId,
                             cancellationToken);
+
+                        if (transferResult.IsSuccess)
+                        {
+                            localExtLog.MarkAsTransferred();
+                        }
+                        else
+                        {
+                            localExtLog.MarkAsFailed(transferResult.Error);
+                        }
+
+                        await _externalLogRepository.UpdateAsync(localExtLog, cancellationToken);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
                     }
                 }
 

@@ -26,6 +26,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate.SystemConfiguration> SystemConfigurations => Set<AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate.SystemConfiguration>();
     public DbSet<AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog> DownloadLogs => Set<AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog>();
     public DbSet<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert> SystemAlerts => Set<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert>();
+    public DbSet<AttendanceSystem.Domain.Aggregates.ExternalLogAggregate.ExternalAttendanceLog> ExternalAttendanceLogs => Set<AttendanceSystem.Domain.Aggregates.ExternalLogAggregate.ExternalAttendanceLog>();
 
 
 

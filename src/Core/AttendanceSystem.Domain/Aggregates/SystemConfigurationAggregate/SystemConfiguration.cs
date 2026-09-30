@@ -54,6 +54,10 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public string? SmtpPassword { get; private set; }
     public bool SmtpEnableSsl { get; private set; }
 
+    // Cloud Sync Settings
+    public bool IsCloudSyncEnabled { get; private set; }
+    public string? CloudDbConnectionString { get; private set; }
+
     private SystemConfiguration() { } // For EF
 
     public static SystemConfiguration CreateDefault()
@@ -88,7 +92,9 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
             LateAlertEmails = null,
             SystemFailureAlertEmails = null,
             SmtpPort = 587,
-            SmtpEnableSsl = true
+            SmtpEnableSsl = true,
+            IsCloudSyncEnabled = false,
+            CloudDbConnectionString = null
         };
     }
 
@@ -167,5 +173,11 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         FortnightFirstDay = fortnightFirstDay;
         FortnightSecondDay = fortnightSecondDay;
         MonthlyStartDay = monthlyStartDay;
+    }
+
+    public void UpdateCloudSyncSettings(bool isCloudSyncEnabled, string? cloudDbConnectionString)
+    {
+        IsCloudSyncEnabled = isCloudSyncEnabled;
+        CloudDbConnectionString = cloudDbConnectionString;
     }
 }

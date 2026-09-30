@@ -29,6 +29,7 @@ public class AdmsControllerTests
     private readonly Mock<IBranchRepository> _branchRepositoryMock = new();
     private readonly Mock<ILogTransferService> _logTransferServiceMock = new();
     private readonly Mock<IAttendanceJobScheduler> _jobSchedulerMock = new();
+    private readonly Mock<IExternalAttendanceLogRepository> _externalLogRepositoryMock = new();
 
     private readonly AdmsController _controller;
     private readonly Employee _employee;
@@ -46,7 +47,8 @@ public class AdmsControllerTests
             _downloadLogRepositoryMock.Object,
             _branchRepositoryMock.Object,
             _logTransferServiceMock.Object,
-            _jobSchedulerMock.Object
+            _jobSchedulerMock.Object,
+            _externalLogRepositoryMock.Object
         );
 
         _employee = Employee.Create(
