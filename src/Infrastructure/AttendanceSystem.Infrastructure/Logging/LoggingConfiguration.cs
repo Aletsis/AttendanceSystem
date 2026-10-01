@@ -22,7 +22,7 @@ public static class LoggingConfiguration
 
     /// <summary>
     /// Configura Serilog con sub-loggers especializados por funcionalidad,
-    /// enriquecedores y sinks para archivo, consola y base de datos.
+    /// enriquecedores y sinks para archivo y consola.
     /// </summary>
     public static LoggerConfiguration ConfigureAttendanceLogging(
         this LoggerConfiguration loggerConfiguration,

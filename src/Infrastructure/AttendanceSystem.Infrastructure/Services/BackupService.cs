@@ -961,7 +961,8 @@ public class BackupService : IBackupService
 
             // -w: No interactivo (falla si pide pass)
             // --lock-wait-timeout=30000: Falla en 30s si hay un lock en vez de congelarse
-            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -w --lock-wait-timeout=30000 -F c -b -v -f \"{outputPath}\" \"{_postgresDatabase}\"";
+            // -T "logs" -T "Logs": Excluye tablas de logging para mantener respaldos ligeros y evitar tiempos excesivos
+            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -w --lock-wait-timeout=30000 -T \"logs\" -T \"Logs\" -F c -b -v -f \"{outputPath}\" \"{_postgresDatabase}\"";
             _logger.LogInformation("Configuración de conexión: Host={Host}, Port={Port}, User={User}, DB={Database}",
                 _postgresHost, _postgresPort, _postgresUser, _postgresDatabase);
             _logger.LogInformation("Comando: pg_dump {Arguments}", arguments.Replace(_postgresPassword, "***"));
@@ -1203,6 +1204,7 @@ public class BackupService : IBackupService
             process.StandardInput.Close();
 
             _logger.LogInformation("Proceso pg_restore iniciado con PID: {ProcessId} (Timeout inactividad: {TimeoutSeconds}s)", process.Id, (int)stallTimeout.TotalSeconds);
+            TimeSpan previousCpuTime = TimeSpan.Zero;
 
             while (!process.HasExited)
             {
@@ -1211,6 +1213,19 @@ public class BackupService : IBackupService
                     try { process.Kill(true); } catch { }
                     return (false, "Operación cancelada por el usuario.");
                 }
+
+                // Si el proceso está consumiendo CPU activamente (descomprimiendo o enviando datos),
+                // actualizamos la actividad para no cancelar operaciones largas legítimas sin salida de consola.
+                try
+                {
+                    var currentCpu = process.TotalProcessorTime;
+                    if (currentCpu > previousCpuTime)
+                    {
+                        previousCpuTime = currentCpu;
+                        lastActivityTime = DateTime.UtcNow;
+                    }
+                }
+                catch { }
 
                 if (DateTime.UtcNow - lastHeartbeatLog >= TimeSpan.FromSeconds(30))
                 {
