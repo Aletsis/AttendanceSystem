@@ -540,7 +540,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await Task.WhenAll(LoadBackups(), LoadDirectoryConfig(), LoadDbInfo());
+        await LoadBackups();
+        await LoadDirectoryConfig();
+        await LoadDbInfo();
     }
 
     private async Task LoadDbInfo()
