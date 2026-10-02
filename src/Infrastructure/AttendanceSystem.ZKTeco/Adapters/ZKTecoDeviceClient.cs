@@ -6,7 +6,7 @@ namespace AttendanceSystem.ZKTeco.Adapters;
 
 // Esta es la implementación del puerto IDeviceClient
 // Vive en Infrastructure pero se compila como x86
-public class ZKTecoDeviceClient : IDeviceClient
+public class ZKTecoDeviceClient : IDeviceClient, IDisposable
 {
     private readonly zkemkeeper.CZKEMClass _device;
     private readonly ILogger<ZKTecoDeviceClient> _logger;
@@ -828,6 +828,31 @@ public class ZKTecoDeviceClient : IDeviceClient
         {
             return name;
         }
+    }
+
+    public void Dispose()
+    {
+        try
+        {
+            if (_isConnected)
+            {
+                _device.Disconnect();
+                _isConnected = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error al desconectar dispositivo durante Dispose");
+        }
+        finally
+        {
+            if (OperatingSystem.IsWindows() && System.Runtime.InteropServices.Marshal.IsComObject(_device))
+            {
+                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(_device);
+            }
+            _lock.Dispose();
+        }
+        GC.SuppressFinalize(this);
     }
 }
 

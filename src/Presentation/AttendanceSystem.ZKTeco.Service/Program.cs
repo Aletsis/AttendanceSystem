@@ -7,7 +7,6 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.ZKTeco.Adapters;
 using Serilog;
 using Serilog.Events;
-
 using AttendanceSystem.ZKTeco.Service.Interceptors;
 
 namespace AttendanceSystem.ZKTeco.Service;
@@ -32,12 +31,20 @@ public class Program
             // Si falla la creación inicial, Serilog lo intentará o reportará en SelfLog
         }
 
-        // Habilitar diagnóstico interno de Serilog para capturar fallos de escritura si ocurren
+        // Habilitar diagnóstico interno de Serilog con control de tamaño máximo (5 MB)
+        var internalLogPath = Path.Combine(logsFolder, "serilog-internal.log");
         Serilog.Debugging.SelfLog.Enable(msg =>
         {
             try
             {
-                File.AppendAllText(Path.Combine(logsFolder, "serilog-internal.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {msg}{Environment.NewLine}");
+                var fileInfo = new FileInfo(internalLogPath);
+                if (fileInfo.Exists && fileInfo.Length > 5 * 1024 * 1024)
+                {
+                    var backupPath = Path.Combine(logsFolder, "serilog-internal.old.log");
+                    File.Copy(internalLogPath, backupPath, overwrite: true);
+                    File.Delete(internalLogPath);
+                }
+                File.AppendAllText(internalLogPath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {msg}{Environment.NewLine}");
             }
             catch
             {
@@ -67,7 +74,7 @@ public class Program
             });
 
             // ===== CONFIGURACIÓN DE GRACEFUL SHUTDOWN =====
-            var shutdownTimeoutSeconds = builder.Configuration.GetValue<int>("ShutdownTimeoutSeconds", 30);
+            var shutdownTimeoutSeconds = builder.Configuration.GetValue<int>("ShutdownTimeoutSeconds", 15);
             builder.Host.ConfigureHostOptions(options =>
             {
                 options.ShutdownTimeout = TimeSpan.FromSeconds(shutdownTimeoutSeconds);
@@ -105,20 +112,26 @@ public class Program
                         rollOnFileSizeLimit: true,
                         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")));
 
-            // Agregar el worker (necesario para que funcione como servicio de Windows)
+            // Agregar el worker para monitoreo y tareas de ciclo de vida
             builder.Services.AddHostedService<Worker>();
 
-            // Configurar gRPC Server con Interceptor de Autenticación
+            // Configurar gRPC Server con límites de mensaje ampliados (32 MB) e interceptor de autenticación
             builder.Services.AddGrpc(options =>
             {
+                options.MaxReceiveMessageSize = 32 * 1024 * 1024; // 32 MB
+                options.MaxSendMessageSize = 32 * 1024 * 1024;    // 32 MB
+                options.EnableDetailedErrors = builder.Environment.IsDevelopment();
                 options.Interceptors.Add<ApiKeyAuthInterceptor>();
             });
 
-            // ZKTeco SDK Service registration
-            builder.Services.AddSingleton<IDeviceClient, ZKTecoDeviceClient>();
+            // Servicio de salud gRPC estándar (grpc.health.v1.Health)
+            builder.Services.AddGrpcHealthChecks();
+
+            // Registro de gestor de sesiones ZKTeco (conexiones bajo demanda con aislamiento por reloj)
+            builder.Services.AddSingleton<IZKTecoSessionManager, ZKTecoSessionManager>();
             builder.Services.AddSingleton<IDeviceDiscoveryService, ZKTecoDiscoveryService>();
 
-            // Configurar Kestrel explícitamente si es necesario, o usar appsettings
+            // Configurar Kestrel para gRPC en HTTP/2 sin TLS (h2c)
             builder.WebHost.ConfigureKestrel(options =>
             {
                 var port = builder.Configuration.GetValue<int>("GrpcPort", 5001);
@@ -130,8 +143,9 @@ public class Program
 
             var app = builder.Build();
 
+            // Mapeo de endpoints gRPC y salud
             app.MapGrpcService<ZKTecoGrpcService>();
-            app.MapGet("/", () => "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
+            app.MapGrpcHealthChecksService();
 
             Log.Information("Servicio ZKTeco configurado correctamente");
             app.Run();

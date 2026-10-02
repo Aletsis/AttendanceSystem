@@ -23,35 +23,44 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
             {
                 _logger.LogInformation("Iniciando búsqueda de dispositivos ZKTeco en la red local...");
 
-                // Usamos el objeto COM para la búsqueda
-                // Nota: Algunos SDKs requieren que el objeto sea CZKEMClass
-                var sdk = new zkemkeeper.CZKEMClass();
-
-                string buffer = "";
-                // El método SearchDevice suele devolver una cadena con el formato:
-                // "IP=192.168.1.201,MAC=00:17:61:11:22:33,SN=8888888888888,DeviceName=iClock980,Ver=6.60,Port=4370\r\n..."
-                if (sdk.SearchDevice("UDP", "255.255.255.255", out buffer, 65536))
+                zkemkeeper.CZKEMClass? sdk = null;
+                try
                 {
-                    _logger.LogInformation("Dispositivos encontrados:\n{Buffer}", buffer);
+                    sdk = new zkemkeeper.CZKEMClass();
 
-                    var lines = buffer.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
-                    foreach (var line in lines)
+                    string buffer = "";
+                    // El método SearchDevice suele devolver una cadena con el formato:
+                    // "IP=192.168.1.201,MAC=00:17:61:11:22:33,SN=8888888888888,DeviceName=iClock980,Ver=6.60,Port=4370\r\n..."
+                    if (sdk.SearchDevice("UDP", "255.255.255.255", out buffer, 65536))
                     {
-                        var device = ParseDeviceString(line);
-                        if (device != null)
+                        _logger.LogInformation("Dispositivos encontrados:\n{Buffer}", buffer);
+
+                        var lines = buffer.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                        foreach (var line in lines)
                         {
-                            // Enriquecer el dispositivo con S/N y nombre real si faltan
-                            if (!string.IsNullOrWhiteSpace(device.IpAddress))
+                            var device = ParseDeviceString(line);
+                            if (device != null)
                             {
-                                device = EnrichDeviceDetails(device);
+                                // Enriquecer el dispositivo con S/N y nombre real si faltan
+                                if (!string.IsNullOrWhiteSpace(device.IpAddress))
+                                {
+                                    device = EnrichDeviceDetails(device);
+                                }
+                                devices.Add(device);
                             }
-                            devices.Add(device);
                         }
                     }
+                    else
+                    {
+                        _logger.LogWarning("No se encontraron dispositivos ZKTeco en la red local.");
+                    }
                 }
-                else
+                finally
                 {
-                    _logger.LogWarning("No se encontraron dispositivos ZKTeco en la red local.");
+                    if (OperatingSystem.IsWindows() && sdk != null && Marshal.IsComObject(sdk))
+                    {
+                        Marshal.FinalReleaseComObject(sdk);
+                    }
                 }
             }
             catch (Exception ex)
@@ -144,11 +153,12 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
             return device;
         }
 
+        zkemkeeper.CZKEMClass? querySdk = null;
         try
         {
             _logger.LogInformation("Conectando temporalmente a {Ip}:{Port} para obtener número de serie y modelo...", device.IpAddress, device.Port);
 
-            var querySdk = new zkemkeeper.CZKEMClass();
+            querySdk = new zkemkeeper.CZKEMClass();
             if (querySdk.Connect_Net(device.IpAddress, device.Port))
             {
                 try
@@ -233,6 +243,13 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Error al consultar información detallada de {Ip}:{Port}", device.IpAddress, device.Port);
+        }
+        finally
+        {
+            if (OperatingSystem.IsWindows() && querySdk != null && Marshal.IsComObject(querySdk))
+            {
+                Marshal.FinalReleaseComObject(querySdk);
+            }
         }
 
         // Si falló la conexión (ej. firewall o contraseña), proporcionar un nombre amigable por defecto

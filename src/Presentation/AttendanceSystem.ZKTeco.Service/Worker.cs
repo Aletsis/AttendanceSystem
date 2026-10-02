@@ -1,23 +1,28 @@
+using AttendanceSystem.ZKTeco.Adapters;
+
 namespace AttendanceSystem.ZKTeco.Service;
 
 /// <summary>
 /// Worker que mantiene el servicio gRPC activo y proporciona monitoreo.
-/// Implementa graceful shutdown para detener el servicio de manera ordenada.
+/// Implementa graceful shutdown para detener el servicio y liberar conexiones de manera ordenada.
 /// </summary>
 public class Worker : BackgroundService
 {
     private readonly ILogger<Worker> _logger;
     private readonly IConfiguration _configuration;
     private readonly IHostApplicationLifetime _applicationLifetime;
+    private readonly IZKTecoSessionManager _sessionManager;
 
     public Worker(
         ILogger<Worker> logger,
         IConfiguration configuration,
-        IHostApplicationLifetime applicationLifetime)
+        IHostApplicationLifetime applicationLifetime,
+        IZKTecoSessionManager sessionManager)
     {
         _logger = logger;
         _configuration = configuration;
         _applicationLifetime = applicationLifetime;
+        _sessionManager = sessionManager;
     }
 
     public override Task StartAsync(CancellationToken cancellationToken)
@@ -43,33 +48,23 @@ public class Worker : BackgroundService
         _logger.LogInformation("========================================");
         _logger.LogInformation("");
 
-        // El servicio gRPC se configura en Program.cs
-        // Este worker proporciona monitoreo y health checks
-
         var healthCheckInterval = TimeSpan.FromMinutes(5);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             try
             {
-                _logger.LogDebug("💚 Servicio activo - Health check en: {Time}", DateTimeOffset.Now);
-
-                // Aquí podrías agregar health checks adicionales
-                // Por ejemplo: verificar conectividad con dispositivos, memoria, etc.
-
+                _logger.LogDebug("💚 Servicio activo - Heartbeat en: {Time}", DateTimeOffset.Now);
                 await Task.Delay(healthCheckInterval, stoppingToken);
             }
             catch (OperationCanceledException)
             {
-                // Cancelación normal durante el shutdown
                 _logger.LogInformation("⏹️ Cancelación de servicio solicitada");
                 break;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "❌ Error en el worker del servicio");
-
-                // Esperar un poco antes de continuar para evitar loops rápidos en caso de error
+                _logger.LogError(ex, "❌ Error en el loop del worker");
                 try
                 {
                     await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
@@ -81,7 +76,7 @@ public class Worker : BackgroundService
             }
         }
 
-        _logger.LogInformation("🛑 Servicio ZKTeco finalizando ejecución normal");
+        _logger.LogInformation("🛑 Servicio ZKTeco finalizando ejecución");
     }
 
     public override async Task StopAsync(CancellationToken cancellationToken)
@@ -90,21 +85,17 @@ public class Worker : BackgroundService
 
         try
         {
-            // Dar tiempo para que las operaciones en curso terminen
-            var gracePeriod = TimeSpan.FromSeconds(5);
-            _logger.LogInformation("⏳ Esperando {Seconds} segundos para operaciones en curso...", gracePeriod.TotalSeconds);
-
-            await Task.Delay(gracePeriod, cancellationToken);
-
-            _logger.LogInformation("✅ Período de gracia completado");
+            _logger.LogInformation("Cerrando y liberando conexiones activas hacia dispositivos ZKTeco...");
+            await _sessionManager.CloseAllSessionsAsync(cancellationToken);
+            _logger.LogInformation("✅ Conexiones de dispositivos cerradas limpiamente.");
         }
         catch (OperationCanceledException)
         {
-            _logger.LogWarning("⏱️ Timeout alcanzado durante el apagado");
+            _logger.LogWarning("⏱️ Timeout alcanzado durante el cierre de sesiones");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "❌ Error durante el apagado del servicio");
+            _logger.LogError(ex, "❌ Error durante el apagado del servicio y liberación de sesiones");
         }
 
         await base.StopAsync(cancellationToken);

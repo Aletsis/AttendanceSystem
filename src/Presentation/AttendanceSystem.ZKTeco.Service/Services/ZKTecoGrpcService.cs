@@ -1,46 +1,62 @@
 using Grpc.Core;
 using AttendanceSystem.ZKTeco.Grpc;
-
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.ZKTeco.Adapters;
+using System.Globalization;
 
 namespace AttendanceSystem.ZKTeco.Service.Services;
 
 public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTecoServiceBase
 {
     private readonly ILogger<ZKTecoGrpcService> _logger;
-    // We instantiate the client directly or via DI if possible, but since ZKTecoDeviceClient lives in Infrastructure.ZKTeco...
-    // Let's assume DI is set up in Program.cs to inject IDeviceClient implementation.
-    private readonly IDeviceClient _zkClient;
+    private readonly IZKTecoSessionManager _sessionManager;
     private readonly IDeviceDiscoveryService _discoveryService;
 
     public ZKTecoGrpcService(
         ILogger<ZKTecoGrpcService> logger,
-        IDeviceClient zkClient,
+        IZKTecoSessionManager sessionManager,
         IDeviceDiscoveryService discoveryService)
     {
         _logger = logger;
-        _zkClient = zkClient;
+        _sessionManager = sessionManager;
         _discoveryService = discoveryService;
+    }
+
+    private string GetSessionId(ServerCallContext context)
+    {
+        var sessionHeader = context.RequestHeaders.Get("x-session-id");
+        return !string.IsNullOrWhiteSpace(sessionHeader?.Value) ? sessionHeader.Value : "default-session";
     }
 
     public override async Task<ConnectDeviceResponse> ConnectDevice(ConnectDeviceRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Conectando a {IpAddress}:{Port}...", request.IpAddress, request.Port);
+        var sessionId = GetSessionId(context);
+        var timeout = request.TimeoutSeconds > 0 ? request.TimeoutSeconds : 10;
+        _logger.LogInformation("Sesión {SessionId}: Conectando a {IpAddress}:{Port} (Timeout: {Timeout}s)...",
+            sessionId, request.IpAddress, request.Port, timeout);
 
         try
         {
-            var connected = await _zkClient.ConnectAsync(request.IpAddress, request.Port, cancellationToken: context.CancellationToken);
+            var client = await _sessionManager.ConnectSessionAsync(
+                sessionId,
+                request.IpAddress,
+                request.Port,
+                timeout,
+                context.CancellationToken);
+
+            var info = await client.GetDeviceInfoAsync(context.CancellationToken);
 
             return new ConnectDeviceResponse
             {
-                Success = connected,
-                Message = connected ? "Conexión exitosa" : "Error al conectar con el dispositivo",
-                DeviceSerialNumber = "UNKNOWN" // TODO: Get serial if needed
+                Success = true,
+                Message = "Conexión exitosa",
+                DeviceSerialNumber = info?.SerialNumber ?? "UNKNOWN"
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Excepción al conectar con dispositivo");
+            _logger.LogError(ex, "Sesión {SessionId}: Excepción al conectar con dispositivo {Ip}:{Port}",
+                sessionId, request.IpAddress, request.Port);
             return new ConnectDeviceResponse
             {
                 Success = false,
@@ -51,23 +67,26 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
 
     public override async Task<GetAttendanceLogsResponse> GetAttendanceLogs(GetAttendanceLogsRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Obteniendo logs de {DeviceId}...", request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Obteniendo logs de {DeviceId}...", sessionId, request.DeviceId);
 
         try
         {
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+
             DateTime? fromDate = null;
-            if (!string.IsNullOrEmpty(request.FromDate) && DateTime.TryParse(request.FromDate, out var fDate))
+            if (!string.IsNullOrEmpty(request.FromDate) && DateTime.TryParse(request.FromDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var fDate))
             {
                 fromDate = fDate;
             }
 
             DateTime? toDate = null;
-            if (!string.IsNullOrEmpty(request.ToDate) && DateTime.TryParse(request.ToDate, out var tDate))
+            if (!string.IsNullOrEmpty(request.ToDate) && DateTime.TryParse(request.ToDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var tDate))
             {
                 toDate = tDate;
             }
 
-            var logs = await _zkClient.GetAttendanceLogsAsync(request.DeviceId, fromDate, toDate, context.CancellationToken);
+            var logs = await client.GetAttendanceLogsAsync(request.DeviceId, fromDate, toDate, context.CancellationToken);
 
             var response = new GetAttendanceLogsResponse
             {
@@ -93,7 +112,7 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obteniendo logs");
+            _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo logs", sessionId);
             return new GetAttendanceLogsResponse
             {
                 Success = false,
@@ -104,23 +123,26 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
 
     public override async Task<ClearDeviceLogsResponse> ClearDeviceLogs(ClearDeviceLogsRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Limpiando logs de {DeviceId}...", request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Limpiando logs de {DeviceId}...", sessionId, request.DeviceId);
 
         try
         {
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+
             DateTime? fromDate = null;
-            if (!string.IsNullOrEmpty(request.FromDate) && DateTime.TryParse(request.FromDate, out var fDate))
+            if (!string.IsNullOrEmpty(request.FromDate) && DateTime.TryParse(request.FromDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var fDate))
             {
                 fromDate = fDate;
             }
 
             DateTime? toDate = null;
-            if (!string.IsNullOrEmpty(request.ToDate) && DateTime.TryParse(request.ToDate, out var tDate))
+            if (!string.IsNullOrEmpty(request.ToDate) && DateTime.TryParse(request.ToDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var tDate))
             {
                 toDate = tDate;
             }
 
-            var success = await _zkClient.ClearLogsAsync(request.DeviceId, fromDate, toDate, context.CancellationToken);
+            var success = await client.ClearLogsAsync(request.DeviceId, fromDate, toDate, context.CancellationToken);
             return new ClearDeviceLogsResponse
             {
                 Success = success,
@@ -129,7 +151,7 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error limpiando logs");
+            _logger.LogError(ex, "Sesión {SessionId}: Error limpiando logs", sessionId);
             return new ClearDeviceLogsResponse
             {
                 Success = false,
@@ -140,25 +162,29 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
 
     public override async Task<DisconnectDeviceResponse> DisconnectDevice(DisconnectDeviceRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Desconectando dispositivo...");
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Desconectando dispositivo...", sessionId);
         try
         {
-            await _zkClient.DisconnectAsync(context.CancellationToken);
+            await _sessionManager.DisconnectSessionAsync(sessionId, context.CancellationToken);
             return new DisconnectDeviceResponse { Success = true, Message = "Desconectado" };
         }
         catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Sesión {SessionId}: Error desconectando sesión", sessionId);
             return new DisconnectDeviceResponse { Success = false, Message = ex.Message };
         }
     }
 
     public override async Task<GetDeviceInfoResponse> GetDeviceInfo(GetDeviceInfoRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Obteniendo información del dispositivo...");
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Obteniendo información del dispositivo...", sessionId);
 
         try
         {
-            var deviceInfo = await _zkClient.GetDeviceInfoAsync(context.CancellationToken);
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            var deviceInfo = await client.GetDeviceInfoAsync(context.CancellationToken);
 
             if (deviceInfo == null)
             {
@@ -195,7 +221,7 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al obtener información del dispositivo");
+            _logger.LogError(ex, "Sesión {SessionId}: Error al obtener información del dispositivo", sessionId);
             return new GetDeviceInfoResponse
             {
                 Success = false,
@@ -203,12 +229,16 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
             };
         }
     }
+
     public override async Task<DeleteEmployeeResponse> DeleteEmployee(DeleteEmployeeRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Eliminando empleado {EmployeeId} de {DeviceId}...", request.EmployeeId, request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Eliminando empleado {EmployeeId} de {DeviceId}...",
+            sessionId, request.EmployeeId, request.DeviceId);
         try
         {
-            var success = await _zkClient.DeleteUserAsync(request.EmployeeId, context.CancellationToken);
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            var success = await client.DeleteUserAsync(request.EmployeeId, context.CancellationToken);
             return new DeleteEmployeeResponse
             {
                 Success = success,
@@ -217,17 +247,20 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error eliminando empleado");
+            _logger.LogError(ex, "Sesión {SessionId}: Error eliminando empleado", sessionId);
             return new DeleteEmployeeResponse { Success = false, Message = ex.Message };
         }
     }
 
     public override async Task<GetEmployeeResponse> GetEmployee(GetEmployeeRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Obteniendo empleado {EmployeeId} de {DeviceId}...", request.EmployeeId, request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Obteniendo empleado {EmployeeId} de {DeviceId}...",
+            sessionId, request.EmployeeId, request.DeviceId);
         try
         {
-            var user = await _zkClient.GetUserAsync(request.EmployeeId, context.CancellationToken);
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            var user = await client.GetUserAsync(request.EmployeeId, context.CancellationToken);
 
             if (user == null)
             {
@@ -264,17 +297,19 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error al obtener empleado");
+            _logger.LogError(ex, "Sesión {SessionId}: Error al obtener empleado", sessionId);
             return new GetEmployeeResponse { Success = false, Message = ex.Message };
         }
     }
 
     public override async Task<GetAllUsersResponse> GetAllUsers(GetAllUsersRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Obteniendo usuarios de {DeviceId}...", request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Obteniendo usuarios de {DeviceId}...", sessionId, request.DeviceId);
         try
         {
-            var users = await _zkClient.GetAllUsersAsync(context.CancellationToken);
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            var users = await client.GetAllUsersAsync(context.CancellationToken);
             var response = new GetAllUsersResponse
             {
                 Success = true,
@@ -308,17 +343,20 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obteniendo usuarios");
+            _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo usuarios", sessionId);
             return new GetAllUsersResponse { Success = false, Message = ex.Message };
         }
     }
 
     public override async Task<DeleteUserFingerprintsResponse> DeleteUserFingerprints(DeleteUserFingerprintsRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Eliminando huellas de {UserId} en {DeviceId}...", request.UserId, request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Eliminando huellas de {UserId} en {DeviceId}...",
+            sessionId, request.UserId, request.DeviceId);
         try
         {
-            var success = await _zkClient.DeleteUserFingerprintsAsync(request.UserId, context.CancellationToken);
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            var success = await client.DeleteUserFingerprintsAsync(request.UserId, context.CancellationToken);
             return new DeleteUserFingerprintsResponse
             {
                 Success = success,
@@ -327,17 +365,19 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error eliminando huellas");
+            _logger.LogError(ex, "Sesión {SessionId}: Error eliminando huellas", sessionId);
             return new DeleteUserFingerprintsResponse { Success = false, Message = ex.Message };
         }
     }
 
     public override async Task<ResetToFactorySettingsResponse> ResetToFactorySettings(ResetToFactorySettingsRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Restableciendo valores de fábrica en {DeviceId}...", request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Restableciendo valores de fábrica en {DeviceId}...", sessionId, request.DeviceId);
         try
         {
-            var success = await _zkClient.ResetToFactorySettingsAsync(context.CancellationToken);
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            var success = await client.ResetToFactorySettingsAsync(context.CancellationToken);
             return new ResetToFactorySettingsResponse
             {
                 Success = success,
@@ -346,22 +386,24 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error restableciendo valores de fábrica");
+            _logger.LogError(ex, "Sesión {SessionId}: Error restableciendo valores de fábrica", sessionId);
             return new ResetToFactorySettingsResponse { Success = false, Message = ex.Message };
         }
     }
 
     public override async Task<SetDeviceTimeResponse> SetDeviceTime(SetDeviceTimeRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Configurando hora en {DeviceId}...", request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Configurando hora en {DeviceId}...", sessionId, request.DeviceId);
         try
         {
-            if (!DateTime.TryParse(request.DateTime, out var dt))
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            if (!DateTime.TryParse(request.DateTime, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
             {
                 return new SetDeviceTimeResponse { Success = false, Message = "Formato de fecha inválido" };
             }
 
-            var success = await _zkClient.SetDeviceTimeAsync(dt, context.CancellationToken);
+            var success = await client.SetDeviceTimeAsync(dt, context.CancellationToken);
             return new SetDeviceTimeResponse
             {
                 Success = success,
@@ -370,16 +412,19 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error configurando hora");
+            _logger.LogError(ex, "Sesión {SessionId}: Error configurando hora", sessionId);
             return new SetDeviceTimeResponse { Success = false, Message = ex.Message };
         }
     }
 
     public override async Task<RegisterEmployeeResponse> RegisterEmployee(RegisterEmployeeRequest request, ServerCallContext context)
     {
-        _logger.LogInformation("Registrando usuario {UserId} ({Name}) en {DeviceId}...", request.EmployeeId, request.Name, request.DeviceId);
+        var sessionId = GetSessionId(context);
+        _logger.LogInformation("Sesión {SessionId}: Registrando usuario {UserId} ({Name}) en {DeviceId}...",
+            sessionId, request.EmployeeId, request.Name, request.DeviceId);
         try
         {
+            var client = await _sessionManager.GetSessionAsync(sessionId);
             var userDto = new Application.DTOs.DeviceUserDto(
                request.EmployeeId,
                request.Name,
@@ -391,17 +436,17 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
                string.IsNullOrEmpty(request.FaceTemplate) ? null : request.FaceTemplate,
                Photo: string.IsNullOrEmpty(request.Photo) ? null : request.Photo);
 
-            var success = await _zkClient.SetUserAsync(userDto, context.CancellationToken);
+            var success = await client.SetUserAsync(userDto, context.CancellationToken);
 
             return new RegisterEmployeeResponse
             {
                 Success = success,
-                Message = success ? "Usuario registrado/actualizado correctamnte" : "Fallo al registrar usuario"
+                Message = success ? "Usuario registrado/actualizado correctamente" : "Fallo al registrar usuario"
             };
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error registrando usuario {UserId}", request.EmployeeId);
+            _logger.LogError(ex, "Sesión {SessionId}: Error registrando usuario {UserId}", sessionId, request.EmployeeId);
             return new RegisterEmployeeResponse { Success = false, Message = ex.Message };
         }
     }

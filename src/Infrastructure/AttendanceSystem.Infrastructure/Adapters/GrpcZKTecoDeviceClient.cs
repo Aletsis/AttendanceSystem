@@ -1,6 +1,6 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
-using AttendanceSystem.ZKTeco.Grpc; // Generated namespace
+using AttendanceSystem.ZKTeco.Grpc;
 using Grpc.Core;
 using Microsoft.Extensions.Logging;
 
@@ -8,11 +8,13 @@ namespace AttendanceSystem.Infrastructure.Adapters;
 
 /// <summary>
 /// Implementación real del cliente ZKTeco usando gRPC para comunicarse con el servicio Windows.
+/// Utiliza un identificador de sesión por instancia para garantizar concurrencia multidispositivo.
 /// </summary>
 public class GrpcZKTecoDeviceClient : IDeviceClient
 {
     private readonly ZKTecoService.ZKTecoServiceClient _client;
     private readonly ILogger<GrpcZKTecoDeviceClient> _logger;
+    private readonly string _sessionId = Guid.NewGuid().ToString("N");
 
     public GrpcZKTecoDeviceClient(
         ZKTecoService.ZKTecoServiceClient client,
@@ -22,36 +24,41 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         _logger = logger;
     }
 
+    private Metadata CreateHeaders() => new()
+    {
+        { "x-session-id", _sessionId }
+    };
+
     public async Task<bool> ConnectAsync(string ipAddress, int port, string? username = null, string? password = null, CancellationToken cancellationToken = default)
     {
         try
         {
-            _logger.LogInformation("Conectando a {IpAddress}:{Port} vía gRPC...", ipAddress, port);
+            _logger.LogInformation("Sesión {SessionId}: Conectando a {IpAddress}:{Port} vía gRPC...", _sessionId, ipAddress, port);
 
             var request = new ConnectDeviceRequest
             {
                 IpAddress = ipAddress,
                 Port = port,
-                TimeoutSeconds = 10
+                TimeoutSeconds = 30
             };
 
-            var response = await _client.ConnectDeviceAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.ConnectDeviceAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
 
             if (!response.Success)
             {
-                _logger.LogWarning("Fallo al conectar: {Message}", response.Message);
+                _logger.LogWarning("Sesión {SessionId}: Fallo al conectar: {Message}", _sessionId, response.Message);
             }
 
             return response.Success;
         }
         catch (RpcException ex)
         {
-            _logger.LogError(ex, "Error gRPC al conectar con {IpAddress}:{Port}", ipAddress, port);
+            _logger.LogError(ex, "Sesión {SessionId}: Error gRPC al conectar con {IpAddress}:{Port}", _sessionId, ipAddress, port);
             return false;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error inesperado al conectar con {IpAddress}:{Port}", ipAddress, port);
+            _logger.LogError(ex, "Sesión {SessionId}: Error inesperado al conectar con {IpAddress}:{Port}", _sessionId, ipAddress, port);
             return false;
         }
     }
@@ -67,15 +74,15 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
             var request = new GetAttendanceLogsRequest
             {
                 DeviceId = deviceId,
-                FromDate = fromDate?.ToString("o") ?? "", // ISO 8601
+                FromDate = fromDate?.ToString("o") ?? "",
                 ToDate = (toDate ?? DateTime.UtcNow).ToString("o")
             };
 
-            var response = await _client.GetAttendanceLogsAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.GetAttendanceLogsAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
 
             if (!response.Success)
             {
-                _logger.LogWarning("Error al obtener logs: {Message}", response.Message);
+                _logger.LogWarning("Sesión {SessionId}: Error al obtener logs: {Message}", _sessionId, response.Message);
                 return Array.Empty<RawAttendanceRecord>();
             }
 
@@ -89,7 +96,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obteniendo logs del dispositivo {DeviceId}", deviceId);
+            _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo logs del dispositivo {DeviceId}", _sessionId, deviceId);
             return Array.Empty<RawAttendanceRecord>();
         }
     }
@@ -109,12 +116,12 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
                 ToDate = toDate?.ToString("o") ?? ""
             };
 
-            var response = await _client.ClearDeviceLogsAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.ClearDeviceLogsAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
             return response.Success;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error limpiando logs del dispositivo {DeviceId}", deviceId);
+            _logger.LogError(ex, "Sesión {SessionId}: Error limpiando logs del dispositivo {DeviceId}", _sessionId, deviceId);
             return false;
         }
     }
@@ -123,11 +130,11 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
     {
         try
         {
-            await _client.DisconnectDeviceAsync(new DisconnectDeviceRequest(), cancellationToken: cancellationToken);
+            await _client.DisconnectDeviceAsync(new DisconnectDeviceRequest(), headers: CreateHeaders(), cancellationToken: cancellationToken);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error desconectando");
+            _logger.LogError(ex, "Sesión {SessionId}: Error desconectando", _sessionId);
         }
     }
 
@@ -135,14 +142,14 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
     {
         try
         {
-            _logger.LogInformation("Obteniendo información del dispositivo vía gRPC...");
+            _logger.LogInformation("Sesión {SessionId}: Obteniendo información del dispositivo vía gRPC...", _sessionId);
 
             var request = new GetDeviceInfoRequest();
-            var response = await _client.GetDeviceInfoAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.GetDeviceInfoAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
 
             if (!response.Success || response.DeviceInfo == null)
             {
-                _logger.LogWarning("Error al obtener información: {Message}", response.Message);
+                _logger.LogWarning("Sesión {SessionId}: Error al obtener información: {Message}", _sessionId, response.Message);
                 return null;
             }
 
@@ -166,7 +173,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obteniendo información del dispositivo");
+            _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo información del dispositivo", _sessionId);
             return null;
         }
     }
@@ -175,27 +182,14 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
     {
         try
         {
-            _logger.LogInformation("Solicitando lista de usuarios gRPC...");
-            var request = new GetAllUsersRequest { DeviceId = "" }; // DeviceId might be irrelevant if handled by connection context, but proto has it.
-                                                                    // Wait, looking at proto, GetAllUsersRequest has device_id.
-                                                                    // In Grpc service, we might need it if we manage multiple connections.
-                                                                    // But currently the service seems stateful per connection?
-                                                                    // Checking Proto... Yes, device_id is field 1.
-                                                                    // In ConnectDeviceRequest we pass IP/Port.
-                                                                    // The service seems to keep one connection open?
-                                                                    // Looking at ZKTecoGrpcService.cs, it uses _zkClient.ConnectAsync.
-                                                                    // If the service is a Singleton wrapping a single device client, then it's stateful.
-                                                                    // If the service is Scoped, it's per request? 
-                                                                    // Usually gRPC services are Scoped or Singleton.
-                                                                    // ZKTecoGrpcService inherits ZKTecoServiceBase. 
-                                                                    // In `Program.cs` of ZKTeco.Service, how is it registered?
-                                                                    // Assuming it maintains state.
+            _logger.LogInformation("Sesión {SessionId}: Solicitando lista de usuarios gRPC...", _sessionId);
+            var request = new GetAllUsersRequest { DeviceId = "" };
 
-            var response = await _client.GetAllUsersAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.GetAllUsersAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
 
             if (!response.Success)
             {
-                _logger.LogWarning("Fallo al obtener usuarios: {Message}", response.Message);
+                _logger.LogWarning("Sesión {SessionId}: Fallo al obtener usuarios: {Message}", _sessionId, response.Message);
                 return Array.Empty<DeviceUserDto>();
             }
 
@@ -213,7 +207,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obteniendo usuarios");
+            _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo usuarios", _sessionId);
             return Array.Empty<DeviceUserDto>();
         }
     }
@@ -223,12 +217,12 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         try
         {
             var request = new DeleteEmployeeRequest { EmployeeId = userId };
-            var response = await _client.DeleteEmployeeAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.DeleteEmployeeAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
             return response.Success;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error eliminando usuario {UserId}", userId);
+            _logger.LogError(ex, "Sesión {SessionId}: Error eliminando usuario {UserId}", _sessionId, userId);
             return false;
         }
     }
@@ -238,12 +232,12 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         try
         {
             var request = new DeleteUserFingerprintsRequest { UserId = userId };
-            var response = await _client.DeleteUserFingerprintsAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.DeleteUserFingerprintsAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
             return response.Success;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error eliminando huellas de {UserId}", userId);
+            _logger.LogError(ex, "Sesión {SessionId}: Error eliminando huellas de {UserId}", _sessionId, userId);
             return false;
         }
     }
@@ -253,12 +247,12 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         try
         {
             var request = new ResetToFactorySettingsRequest();
-            var response = await _client.ResetToFactorySettingsAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.ResetToFactorySettingsAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
             return response.Success;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error solicitando restablecimiento de fábrica");
+            _logger.LogError(ex, "Sesión {SessionId}: Error solicitando restablecimiento de fábrica", _sessionId);
             return false;
         }
     }
@@ -268,12 +262,12 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         try
         {
             var request = new SetDeviceTimeRequest { DateTime = dateTime.ToString("o") };
-            var response = await _client.SetDeviceTimeAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.SetDeviceTimeAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
             return response.Success;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error configurando hora");
+            _logger.LogError(ex, "Sesión {SessionId}: Error configurando hora", _sessionId);
             return false;
         }
     }
@@ -304,12 +298,12 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
                 }));
             }
 
-            var response = await _client.RegisterEmployeeAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.RegisterEmployeeAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
             return response.Success;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error enviando usuario {UserId} vía gRPC", user.UserId);
+            _logger.LogError(ex, "Sesión {SessionId}: Error enviando usuario {UserId} vía gRPC", _sessionId, user.UserId);
             return false;
         }
     }
@@ -319,7 +313,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         try
         {
             var request = new GetEmployeeRequest { EmployeeId = userId };
-            var response = await _client.GetEmployeeAsync(request, cancellationToken: cancellationToken);
+            var response = await _client.GetEmployeeAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
 
             if (!response.Success || response.Employee == null)
             {
@@ -341,7 +335,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obteniendo usuario {UserId} vía gRPC", userId);
+            _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo usuario {UserId} vía gRPC", _sessionId, userId);
             return null;
         }
     }

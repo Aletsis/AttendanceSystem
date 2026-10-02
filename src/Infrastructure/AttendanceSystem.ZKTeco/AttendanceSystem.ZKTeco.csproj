@@ -35,10 +35,11 @@
     </Reference>
   </ItemGroup>
 
-  <!-- Copiar todas las DLLs de lib al directorio de salida -->
+  <!-- Copiar todas las DLLs de lib al directorio de salida y publicación -->
   <ItemGroup>
     <None Include="lib\*.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 
