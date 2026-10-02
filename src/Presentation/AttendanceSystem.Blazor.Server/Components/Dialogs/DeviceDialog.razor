@@ -12,27 +12,39 @@
             <MudNumericField @bind-Value="Port" Label="Puerto" Required="true" Min="1" Max="65535" />
             <MudTextField @bind-Value="Location" Label="Ubicación" />
             
-            <MudSelect T="DeviceBrand" Label="Marca" @bind-Value="Brand" Required="true" Class="mb-3">
+            <MudSelect T="DeviceBrand" Label="Marca" Value="Brand" ValueChanged="OnBrandChanged" Required="true" Class="mb-3">
                 <MudSelectItem Value="@DeviceBrand.ZKTeco">ZKTeco</MudSelectItem>
                 <MudSelectItem Value="@DeviceBrand.Hikvision">Hikvision</MudSelectItem>
             </MudSelect>
 
-            <MudTextField @bind-Value="SerialNumber" Label="Número de Serie (Requerido para ADMS)" 
-                          HelperText="Para dispositivos ADMS (Push), ingrese el número de serie exacto."
-                          Required="@(DownloadMethod == DeviceDownloadMethod.Adms)" 
-                          RequiredError="Para ADMS, el número de serie es obligatorio." />
-            
-            <MudSelect T="DeviceDownloadMethod" Label="Método de Descarga" @bind-Value="DownloadMethod" Required="true" Class="mb-3">
-                <MudSelectItem Value="@DeviceDownloadMethod.Sdk">SDK (Pull)</MudSelectItem>
-                <MudSelectItem Value="@DeviceDownloadMethod.Adms">ADMS (Push)</MudSelectItem>
-            </MudSelect>
+            @if (Brand == DeviceBrand.ZKTeco)
+            {
+                <MudSelect T="DeviceDownloadMethod" Label="Método de Descarga" Value="DownloadMethod" ValueChanged="OnDownloadMethodChanged" Required="true" Class="mb-3">
+                    <MudSelectItem Value="@DeviceDownloadMethod.Sdk">SDK (Pull)</MudSelectItem>
+                    <MudSelectItem Value="@DeviceDownloadMethod.Adms">ADMS (Push)</MudSelectItem>
+                </MudSelect>
+            }
 
-            <MudSwitch @bind-Value="ShouldClearAfterDownload" Label="Borrar registros después de descargar" Color="Color.Secondary" />
+            @if (Brand == DeviceBrand.ZKTeco && DownloadMethod == DeviceDownloadMethod.Adms)
+            {
+                <MudTextField @bind-Value="SerialNumber" Label="Número de Serie (Requerido para ADMS)" 
+                              HelperText="Para dispositivos ADMS (Push), ingrese el número de serie exacto."
+                              Required="true" 
+                              RequiredError="Para ADMS, el número de serie es obligatorio." />
+            }
 
-            <MudDivider Class="my-4" />
-            <MudText Typo="Typo.subtitle2" Class="mb-2">Credenciales (Solo SDK / Hikvision)</MudText>
-            <MudTextField @bind-Value="Username" Label="Usuario" HelperText="Por defecto 'admin' para Hikvision" />
-            <MudTextField @bind-Value="Password" Label="Contraseña" InputType="InputType.Password" />
+            @if (DownloadMethod == DeviceDownloadMethod.Sdk)
+            {
+                <MudSwitch @bind-Value="ShouldClearAfterDownload" Label="Borrar registros después de descargar" Color="Color.Secondary" Class="mt-2" />
+            }
+
+            @if (Brand == DeviceBrand.Hikvision)
+            {
+                <MudDivider Class="my-4" />
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Credenciales (Hikvision)</MudText>
+                <MudTextField @bind-Value="Username" Label="Usuario" HelperText="Por defecto 'admin' para Hikvision" />
+                <MudTextField @bind-Value="Password" Label="Contraseña" InputType="InputType.Password" />
+            }
         </MudForm>
     </DialogContent>
     <DialogActions>
@@ -59,6 +71,47 @@
     private bool success;
     private MudForm form = default!;
 
+    protected override void OnInitialized()
+    {
+        if (Brand == DeviceBrand.Hikvision)
+        {
+            DownloadMethod = DeviceDownloadMethod.Sdk;
+            if (string.IsNullOrWhiteSpace(Username) && string.IsNullOrEmpty(DeviceId))
+            {
+                Username = "admin";
+            }
+        }
+    }
+
+    private void OnBrandChanged(DeviceBrand newBrand)
+    {
+        Brand = newBrand;
+        if (Brand == DeviceBrand.Hikvision)
+        {
+            DownloadMethod = DeviceDownloadMethod.Sdk;
+            if (Port == 4370)
+            {
+                Port = 80;
+            }
+            if (string.IsNullOrWhiteSpace(Username))
+            {
+                Username = "admin";
+            }
+        }
+        else if (Brand == DeviceBrand.ZKTeco)
+        {
+            if (Port == 80)
+            {
+                Port = 4370;
+            }
+        }
+    }
+
+    private void OnDownloadMethodChanged(DeviceDownloadMethod newMethod)
+    {
+        DownloadMethod = newMethod;
+    }
+
     private void Cancel() => MudDialog.Cancel();
 
     private async Task Submit()
@@ -67,13 +120,19 @@
 
         if (success)
         {
+            var finalSerialNumber = (Brand == DeviceBrand.ZKTeco && DownloadMethod == DeviceDownloadMethod.Adms)
+                ? SerialNumber
+                : (string.IsNullOrEmpty(DeviceId) ? SerialNumber : null);
+            var finalUsername = Brand == DeviceBrand.Hikvision ? Username : null;
+            var finalPassword = Brand == DeviceBrand.Hikvision ? Password : null;
+
             if (string.IsNullOrEmpty(DeviceId))
             {
-                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, SerialNumber, Username, Password)));
+                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword)));
             }
             else
             {
-                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, SerialNumber, Username, Password)));
+                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword)));
             }
         }
     }
