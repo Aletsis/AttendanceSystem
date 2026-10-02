@@ -34,12 +34,17 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
                 {
                     _logger.LogInformation("Dispositivos encontrados:\n{Buffer}", buffer);
 
-                    var lines = buffer.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                    var lines = buffer.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries);
                     foreach (var line in lines)
                     {
                         var device = ParseDeviceString(line);
                         if (device != null)
                         {
+                            // Enriquecer el dispositivo con S/N y nombre real si faltan
+                            if (!string.IsNullOrWhiteSpace(device.IpAddress))
+                            {
+                                device = EnrichDeviceDetails(device);
+                            }
                             devices.Add(device);
                         }
                     }
@@ -62,21 +67,181 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
     {
         try
         {
-            // Ejemplo: IP=192.168.1.201,MAC=00:17:61:11:22:33,SN=8888888888888,DeviceName=iClock980,Ver=6.60,Port=4370
-            var parts = line.Split(',').Select(p => p.Split('=')).ToDictionary(kv => kv[0].Trim(), kv => kv.Length > 1 ? kv[1].Trim() : "");
+            if (string.IsNullOrWhiteSpace(line)) return null;
+
+            // Formatos comunes devueltos por el SDK:
+            // "MAC=00:17:61:11:22:33,IPAddress=192.168.1.201,Netmask=255.255.255.0,GateWay=192.168.1.1"
+            // "IP=192.168.1.201,MAC=00:17:61:11:22:33,SN=8888888888888,DeviceName=iClock980,Ver=6.60,Port=4370"
+            // "~SerialNumber=BAZR192360015 ~IPAddress=192.168.1.10 ~DeviceName=Main Gate ~MAC=00:17:61:12:34:56"
+            var parts = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            var separators = line.Contains(',') ? new[] { ',' } : (line.Contains(';') ? new[] { ';' } : new[] { ' ', '\t' });
+            var tokens = line.Split(separators, StringSplitOptions.RemoveEmptyEntries);
+
+            foreach (var token in tokens)
+            {
+                var idx = token.IndexOf('=');
+                if (idx > 0)
+                {
+                    var key = token.Substring(0, idx).Trim().TrimStart('~');
+                    var val = token.Substring(idx + 1).Trim();
+                    parts[key] = val;
+                }
+            }
+
+            string GetFirstValue(params string[] keys)
+            {
+                foreach (var k in keys)
+                {
+                    if (parts.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v))
+                        return v;
+                }
+                return "";
+            }
+
+            var ip = GetFirstValue("IPAddress", "IP", "ipaddress", "ip_address", "Host");
+            var sn = GetFirstValue("SN", "SerialNumber", "serial", "serialno", "sn_no");
+            var name = GetFirstValue("DeviceName", "DevName", "Device", "Name", "Model", "Product");
+            var mac = GetFirstValue("MAC", "MacAddress", "mac_addr");
+            var ver = GetFirstValue("Ver", "Firmware", "FirmwareVersion", "Version", "FWVersion");
+            var portStr = GetFirstValue("Port", "port");
+
+            // Si no contiene ni IP ni MAC, no es una respuesta válida de dispositivo
+            if (string.IsNullOrWhiteSpace(ip) && string.IsNullOrWhiteSpace(mac))
+            {
+                return null;
+            }
+
+            int port = 4370;
+            if (!string.IsNullOrWhiteSpace(portStr) && int.TryParse(portStr, out var p) && p > 0)
+            {
+                port = p;
+            }
 
             return new DiscoveredDeviceDto(
-                IpAddress: parts.GetValueOrDefault("IP", ""),
-                SerialNumber: parts.GetValueOrDefault("SN", ""),
-                DeviceName: parts.GetValueOrDefault("DeviceName", "Unknown"),
-                MacAddress: parts.GetValueOrDefault("MAC", ""),
-                FirmwareVersion: parts.GetValueOrDefault("Ver", ""),
-                Port: int.TryParse(parts.GetValueOrDefault("Port", "4370"), out var p) ? p : 4370
+                IpAddress: ip,
+                SerialNumber: sn,
+                DeviceName: !string.IsNullOrWhiteSpace(name) ? name : "Unknown",
+                MacAddress: mac,
+                FirmwareVersion: ver,
+                Port: port
             );
         }
-        catch
+        catch (Exception ex)
         {
+            _logger.LogWarning(ex, "Error al parsear línea de dispositivo: {Line}", line);
             return null;
         }
     }
+
+    private DiscoveredDeviceDto EnrichDeviceDetails(DiscoveredDeviceDto device)
+    {
+        // Si ya tenemos S/N y un DeviceName específico, no es necesario conectar
+        if (!string.IsNullOrWhiteSpace(device.SerialNumber) &&
+            !string.IsNullOrWhiteSpace(device.DeviceName) &&
+            device.DeviceName != "Unknown")
+        {
+            return device;
+        }
+
+        try
+        {
+            _logger.LogInformation("Conectando temporalmente a {Ip}:{Port} para obtener número de serie y modelo...", device.IpAddress, device.Port);
+
+            var querySdk = new zkemkeeper.CZKEMClass();
+            if (querySdk.Connect_Net(device.IpAddress, device.Port))
+            {
+                try
+                {
+                    // 1. Número de serie
+                    string sn = "";
+                    if (querySdk.GetSerialNumber(1, out sn) && !string.IsNullOrWhiteSpace(sn))
+                    {
+                        sn = sn.Replace("\0", "").Trim();
+                    }
+
+                    // 2. Nombre / Modelo del dispositivo
+                    string devName = "";
+                    if (querySdk.GetSysOption(1, "~DeviceName", out devName) && !string.IsNullOrWhiteSpace(devName))
+                    {
+                        devName = devName.Replace("\0", "").Trim();
+                    }
+                    else if (querySdk.GetSysOption(1, "DeviceName", out devName) && !string.IsNullOrWhiteSpace(devName))
+                    {
+                        devName = devName.Replace("\0", "").Trim();
+                    }
+                    else
+                    {
+                        string platform = "";
+                        if (querySdk.GetPlatform(1, ref platform) && !string.IsNullOrWhiteSpace(platform))
+                        {
+                            devName = platform.Replace("\0", "").Trim();
+                        }
+                        else
+                        {
+                            string product = "";
+                            if (querySdk.GetProductCode(1, out product) && !string.IsNullOrWhiteSpace(product))
+                            {
+                                devName = product.Replace("\0", "").Trim();
+                            }
+                        }
+                    }
+
+                    // 3. Versión de firmware
+                    string fw = device.FirmwareVersion;
+                    if (string.IsNullOrWhiteSpace(fw))
+                    {
+                        string fwVal = "";
+                        if (querySdk.GetFirmwareVersion(1, ref fwVal) && !string.IsNullOrWhiteSpace(fwVal))
+                        {
+                            fw = fwVal.Replace("\0", "").Trim();
+                        }
+                    }
+
+                    // 4. MAC address
+                    string mac = device.MacAddress;
+                    if (string.IsNullOrWhiteSpace(mac))
+                    {
+                        string sMac = "";
+                        if (querySdk.GetSysOption(1, "MAC", out sMac) && !string.IsNullOrWhiteSpace(sMac))
+                            mac = sMac.Replace("\0", "").Trim();
+                        else if (querySdk.GetSysOption(1, "~MAC", out sMac) && !string.IsNullOrWhiteSpace(sMac))
+                            mac = sMac.Replace("\0", "").Trim();
+                    }
+
+                    _logger.LogInformation("Detalles obtenidos para {Ip}: S/N={SerialNumber}, Nombre={DeviceName}, MAC={Mac}, FW={Firmware}",
+                        device.IpAddress, sn, devName, mac, fw);
+
+                    return device with
+                    {
+                        SerialNumber = !string.IsNullOrWhiteSpace(sn) ? sn : device.SerialNumber,
+                        DeviceName = !string.IsNullOrWhiteSpace(devName) ? devName : (device.DeviceName == "Unknown" ? "Dispositivo ZKTeco" : device.DeviceName),
+                        FirmwareVersion = fw,
+                        MacAddress = mac
+                    };
+                }
+                finally
+                {
+                    try { querySdk.Disconnect(); } catch { }
+                }
+            }
+            else
+            {
+                _logger.LogWarning("No se pudo conectar a {Ip}:{Port} para consultar información detallada (¿clave de comunicación establecida?)", device.IpAddress, device.Port);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Error al consultar información detallada de {Ip}:{Port}", device.IpAddress, device.Port);
+        }
+
+        // Si falló la conexión (ej. firewall o contraseña), proporcionar un nombre amigable por defecto
+        if (device.DeviceName == "Unknown")
+        {
+            return device with { DeviceName = "Dispositivo ZKTeco" };
+        }
+
+        return device;
+    }
 }
+

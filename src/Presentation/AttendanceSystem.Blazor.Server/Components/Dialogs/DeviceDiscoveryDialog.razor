@@ -26,18 +26,46 @@
         }
         else
         {
-            <MudTable Items="@_discoveredDevices" Hover="true" Dense="true" FixedHeader="true" Height="300px" SelectionChangeable="true" T="DiscoveredDeviceDto" @bind-SelectedItem="_selectedDevice">
+            <MudTable Items="@_discoveredDevices" Hover="true" Dense="true" FixedHeader="true" Height="300px" 
+                      T="DiscoveredDeviceDto" 
+                      RowClassFunc="@((item, rowIdx) => item == _selectedDevice ? "mud-alert-info" : "")"
+                      OnRowClick="@((TableRowClickEventArgs<DiscoveredDeviceDto> args) => _selectedDevice = args.Item)">
                 <HeaderContent>
+                    <MudTh Style="width: 40px; text-align: center;"></MudTh>
                     <MudTh>Nombre</MudTh>
                     <MudTh>IP</MudTh>
                     <MudTh>Puerto</MudTh>
                     <MudTh>S/N</MudTh>
+                    <MudTh>MAC</MudTh>
                 </HeaderContent>
                 <RowTemplate>
-                    <MudTd DataLabel="Nombre">@context.DeviceName</MudTd>
-                    <MudTd DataLabel="IP">@context.IpAddress</MudTd>
+                    <MudTd Style="width: 40px; text-align: center;">
+                        @if (context == _selectedDevice)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.CheckCircle" Color="Color.Primary" Size="Size.Small" />
+                        }
+                        else
+                        {
+                            <MudIcon Icon="@Icons.Material.Outlined.RadioButtonUnchecked" Color="Color.Default" Size="Size.Small" />
+                        }
+                    </MudTd>
+                    <MudTd DataLabel="Nombre">
+                        <MudText Typo="Typo.body2" Style="font-weight: 500;">
+                            @(string.IsNullOrWhiteSpace(context.DeviceName) || context.DeviceName == "Unknown" ? "Dispositivo ZKTeco" : context.DeviceName)
+                        </MudText>
+                    </MudTd>
+                    <MudTd DataLabel="IP">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">
+                            @(string.IsNullOrWhiteSpace(context.IpAddress) ? "(Sin IP)" : context.IpAddress)
+                        </MudChip>
+                    </MudTd>
                     <MudTd DataLabel="Puerto">@context.Port</MudTd>
-                    <MudTd DataLabel="S/N">@context.SerialNumber</MudTd>
+                    <MudTd DataLabel="S/N">
+                        @(string.IsNullOrWhiteSpace(context.SerialNumber) ? "(No disponible)" : context.SerialNumber)
+                    </MudTd>
+                    <MudTd DataLabel="MAC">
+                        @(string.IsNullOrWhiteSpace(context.MacAddress) ? "-" : context.MacAddress)
+                    </MudTd>
                 </RowTemplate>
             </MudTable>
         }
@@ -71,6 +99,12 @@
         {
             var results = await DiscoveryService.DiscoverDevicesAsync();
             _discoveredDevices = results.ToList();
+            
+            // Pre-seleccionar si solo se encontró un dispositivo
+            if (_discoveredDevices.Count == 1)
+            {
+                _selectedDevice = _discoveredDevices[0];
+            }
         }
         catch (Exception ex)
         {
