@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Server.Kestrel.Core;
@@ -15,28 +16,67 @@ public class Program
 {
     public static void Main(string[] args)
     {
+        // Garantizar que el directorio actual de trabajo sea el del ejecutable (crítico para Servicios de Windows)
+        Directory.SetCurrentDirectory(AppContext.BaseDirectory);
+
         // Registrar proveedores de codificación para soportar ANSI/CodePages (necesario para ZKTeco SDK en .NET Core)
         System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+
+        var logsFolder = Path.Combine(AppContext.BaseDirectory, "logs");
+        try
+        {
+            Directory.CreateDirectory(logsFolder);
+        }
+        catch
+        {
+            // Si falla la creación inicial, Serilog lo intentará o reportará en SelfLog
+        }
+
+        // Habilitar diagnóstico interno de Serilog para capturar fallos de escritura si ocurren
+        Serilog.Debugging.SelfLog.Enable(msg =>
+        {
+            try
+            {
+                File.AppendAllText(Path.Combine(logsFolder, "serilog-internal.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss} {msg}{Environment.NewLine}");
+            }
+            catch
+            {
+                // ignored
+            }
+        });
 
         // ===== BOOTSTRAP LOGGER =====
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
             .Enrich.FromLogContext()
             .WriteTo.Console()
-            .WriteTo.File("logs/bootstrap/zkteco-service-bootstrap-.txt", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 7)
+            .WriteTo.File(
+                path: Path.Combine(logsFolder, "bootstrap", "zkteco-service-bootstrap-.txt"),
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 7)
             .CreateBootstrapLogger();
 
         try
         {
-            Log.Information("Iniciando servicio ZKTeco...");
+            Log.Information("Iniciando servicio ZKTeco desde: {BaseDirectory}", AppContext.BaseDirectory);
 
-            var builder = WebApplication.CreateBuilder(args);
+            var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+            {
+                Args = args,
+                ContentRootPath = AppContext.BaseDirectory
+            });
 
             // ===== CONFIGURACIÓN DE GRACEFUL SHUTDOWN =====
             var shutdownTimeoutSeconds = builder.Configuration.GetValue<int>("ShutdownTimeoutSeconds", 30);
             builder.Host.ConfigureHostOptions(options =>
             {
                 options.ShutdownTimeout = TimeSpan.FromSeconds(shutdownTimeoutSeconds);
+            });
+
+            // ===== CONFIGURAR COMO SERVICIO DE WINDOWS =====
+            builder.Host.UseWindowsService(options =>
+            {
+                options.ServiceName = "AttendanceSystem.ZKTeco.Service";
             });
 
             // ===== LOGGING CON SERILOG =====
@@ -49,7 +89,7 @@ public class Program
                 .Enrich.WithProperty("Application", "ZKTecoService")
                 .WriteTo.Logger(zkLogger => zkLogger
                     .WriteTo.File(
-                        path: "logs/zkteco/zkteco-service-.log",
+                        path: Path.Combine(logsFolder, "zkteco", "zkteco-service-.log"),
                         rollingInterval: RollingInterval.Day,
                         retainedFileCountLimit: 30,
                         fileSizeLimitBytes: 10485760,
@@ -58,19 +98,12 @@ public class Program
                 .WriteTo.Logger(errLogger => errLogger
                     .Filter.ByIncludingOnly(e => e.Level >= LogEventLevel.Error)
                     .WriteTo.File(
-                        path: "logs/errors/zkteco-errors-.log",
+                        path: Path.Combine(logsFolder, "errors", "zkteco-errors-.log"),
                         rollingInterval: RollingInterval.Day,
                         retainedFileCountLimit: 90,
                         fileSizeLimitBytes: 10485760,
                         rollOnFileSizeLimit: true,
                         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")));
-
-
-            // ===== CONFIGURAR COMO SERVICIO DE WINDOWS =====
-            builder.Services.AddWindowsService(options =>
-            {
-                options.ServiceName = "AttendanceSystem.ZKTeco.Service";
-            });
 
             // Agregar el worker (necesario para que funcione como servicio de Windows)
             builder.Services.AddHostedService<Worker>();
