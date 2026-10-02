@@ -72,8 +72,8 @@ public class LogTransferService : ILogTransferService
                 VALUES (@id, @branchCode, @employeeId, @checkTime, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE);";
 
             var logId = Guid.NewGuid();
-            var utcCheckTime = checkTime.Kind == DateTimeKind.Utc 
-                ? checkTime 
+            var utcCheckTime = checkTime.Kind == DateTimeKind.Utc
+                ? checkTime
                 : DateTime.SpecifyKind(checkTime, DateTimeKind.Utc);
 
             await using var cmd = new NpgsqlCommand(insertSql, conn);

@@ -51,20 +51,20 @@
                     </MudTd>
                     <MudTd DataLabel="Nombre">
                         <MudText Typo="Typo.body2" Style="font-weight: 500;">
-                            @(string.IsNullOrWhiteSpace(context.DeviceName) || context.DeviceName == "Unknown" ? "Dispositivo ZKTeco" : context.DeviceName)
+                            @(string.IsNullOrWhiteSpace(context.DeviceName) || context.DeviceName == "Unknown" || context.DeviceName.Equals("null", StringComparison.OrdinalIgnoreCase) ? "Dispositivo ZKTeco" : context.DeviceName)
                         </MudText>
                     </MudTd>
                     <MudTd DataLabel="IP">
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Primary">
-                            @(string.IsNullOrWhiteSpace(context.IpAddress) ? "(Sin IP)" : context.IpAddress)
+                            @(string.IsNullOrWhiteSpace(context.IpAddress) || context.IpAddress.Equals("null", StringComparison.OrdinalIgnoreCase) ? "(Sin IP)" : context.IpAddress)
                         </MudChip>
                     </MudTd>
                     <MudTd DataLabel="Puerto">@context.Port</MudTd>
                     <MudTd DataLabel="S/N">
-                        @(string.IsNullOrWhiteSpace(context.SerialNumber) ? "(No disponible)" : context.SerialNumber)
+                        @(string.IsNullOrWhiteSpace(context.SerialNumber) || context.SerialNumber.Equals("null", StringComparison.OrdinalIgnoreCase) ? "(No disponible)" : context.SerialNumber)
                     </MudTd>
                     <MudTd DataLabel="MAC">
-                        @(string.IsNullOrWhiteSpace(context.MacAddress) ? "-" : context.MacAddress)
+                        @(string.IsNullOrWhiteSpace(context.MacAddress) || context.MacAddress.Equals("null", StringComparison.OrdinalIgnoreCase) ? "-" : context.MacAddress)
                     </MudTd>
                 </RowTemplate>
             </MudTable>

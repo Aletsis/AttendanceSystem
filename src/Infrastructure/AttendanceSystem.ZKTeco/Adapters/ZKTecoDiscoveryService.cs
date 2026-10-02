@@ -102,13 +102,18 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
             {
                 foreach (var k in keys)
                 {
-                    if (parts.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v))
-                        return v;
+                    if (parts.TryGetValue(k, out var v) &&
+                        !string.IsNullOrWhiteSpace(v) &&
+                        !v.Equals("null", StringComparison.OrdinalIgnoreCase) &&
+                        !v.Equals("none", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return v.Trim();
+                    }
                 }
                 return "";
             }
 
-            var ip = GetFirstValue("IPAddress", "IP", "ipaddress", "ip_address", "Host");
+            var ip = GetFirstValue("tcpip", "IPAddress", "IP", "ipaddress", "ip_address", "Host");
             var sn = GetFirstValue("SN", "SerialNumber", "serial", "serialno", "sn_no");
             var name = GetFirstValue("DeviceName", "DevName", "Device", "Name", "Model", "Product");
             var mac = GetFirstValue("MAC", "MacAddress", "mac_addr");
@@ -145,10 +150,11 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
 
     private DiscoveredDeviceDto EnrichDeviceDetails(DiscoveredDeviceDto device)
     {
-        // Si ya tenemos S/N y un DeviceName específico, no es necesario conectar
-        if (!string.IsNullOrWhiteSpace(device.SerialNumber) &&
-            !string.IsNullOrWhiteSpace(device.DeviceName) &&
-            device.DeviceName != "Unknown")
+        // Si ya tenemos S/N válido y un DeviceName específico, no es necesario conectar
+        bool hasValidSn = !string.IsNullOrWhiteSpace(device.SerialNumber) && !device.SerialNumber.Equals("null", StringComparison.OrdinalIgnoreCase);
+        bool hasValidName = !string.IsNullOrWhiteSpace(device.DeviceName) && !device.DeviceName.Equals("null", StringComparison.OrdinalIgnoreCase) && device.DeviceName != "Unknown";
+
+        if (hasValidSn && hasValidName)
         {
             return device;
         }
@@ -168,6 +174,7 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
                     if (querySdk.GetSerialNumber(1, out sn) && !string.IsNullOrWhiteSpace(sn))
                     {
                         sn = sn.Replace("\0", "").Trim();
+                        if (sn.Equals("null", StringComparison.OrdinalIgnoreCase)) sn = "";
                     }
 
                     // 2. Nombre / Modelo del dispositivo
@@ -197,19 +204,28 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
                         }
                     }
 
+                    if (devName.Equals("null", StringComparison.OrdinalIgnoreCase)) devName = "";
+
                     // 3. Versión de firmware
-                    string fw = device.FirmwareVersion;
+                    string fw = (!string.IsNullOrWhiteSpace(device.FirmwareVersion) && !device.FirmwareVersion.Equals("null", StringComparison.OrdinalIgnoreCase))
+                        ? device.FirmwareVersion
+                        : "";
+
                     if (string.IsNullOrWhiteSpace(fw))
                     {
                         string fwVal = "";
                         if (querySdk.GetFirmwareVersion(1, ref fwVal) && !string.IsNullOrWhiteSpace(fwVal))
                         {
                             fw = fwVal.Replace("\0", "").Trim();
+                            if (fw.Equals("null", StringComparison.OrdinalIgnoreCase)) fw = "";
                         }
                     }
 
                     // 4. MAC address
-                    string mac = device.MacAddress;
+                    string mac = (!string.IsNullOrWhiteSpace(device.MacAddress) && !device.MacAddress.Equals("null", StringComparison.OrdinalIgnoreCase))
+                        ? device.MacAddress
+                        : "";
+
                     if (string.IsNullOrWhiteSpace(mac))
                     {
                         string sMac = "";
@@ -217,17 +233,22 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
                             mac = sMac.Replace("\0", "").Trim();
                         else if (querySdk.GetSysOption(1, "~MAC", out sMac) && !string.IsNullOrWhiteSpace(sMac))
                             mac = sMac.Replace("\0", "").Trim();
+
+                        if (mac.Equals("null", StringComparison.OrdinalIgnoreCase)) mac = "";
                     }
 
                     _logger.LogInformation("Detalles obtenidos para {Ip}: S/N={SerialNumber}, Nombre={DeviceName}, MAC={Mac}, FW={Firmware}",
                         device.IpAddress, sn, devName, mac, fw);
 
+                    string finalSn = !string.IsNullOrWhiteSpace(sn) ? sn : (hasValidSn ? device.SerialNumber : "");
+                    string finalName = !string.IsNullOrWhiteSpace(devName) ? devName : (hasValidName ? device.DeviceName : "Dispositivo ZKTeco");
+
                     return device with
                     {
-                        SerialNumber = !string.IsNullOrWhiteSpace(sn) ? sn : device.SerialNumber,
-                        DeviceName = !string.IsNullOrWhiteSpace(devName) ? devName : (device.DeviceName == "Unknown" ? "Dispositivo ZKTeco" : device.DeviceName),
+                        SerialNumber = finalSn,
+                        DeviceName = finalName,
                         FirmwareVersion = fw,
-                        MacAddress = mac
+                        MacAddress = !string.IsNullOrWhiteSpace(mac) ? mac : device.MacAddress
                     };
                 }
                 finally
@@ -252,13 +273,16 @@ public class ZKTecoDiscoveryService : IDeviceDiscoveryService
             }
         }
 
-        // Si falló la conexión (ej. firewall o contraseña), proporcionar un nombre amigable por defecto
-        if (device.DeviceName == "Unknown")
-        {
-            return device with { DeviceName = "Dispositivo ZKTeco" };
-        }
+        // Si falló la conexión (ej. firewall o contraseña), proporcionar un nombre amigable por defecto y limpiar "null"
+        string fallbackName = (!string.IsNullOrWhiteSpace(device.DeviceName) && !device.DeviceName.Equals("null", StringComparison.OrdinalIgnoreCase) && device.DeviceName != "Unknown")
+            ? device.DeviceName
+            : "Dispositivo ZKTeco";
 
-        return device;
+        string fallbackSn = (!string.IsNullOrWhiteSpace(device.SerialNumber) && !device.SerialNumber.Equals("null", StringComparison.OrdinalIgnoreCase))
+            ? device.SerialNumber
+            : "";
+
+        return device with { DeviceName = fallbackName, SerialNumber = fallbackSn };
     }
 }
 
