@@ -64,7 +64,10 @@ public class RefreshDeviceInfoCommandHandler : IRequestHandler<RefreshDeviceInfo
                 info.UserCapacity,
                 info.FingerprintCapacity,
                 info.FaceCapacity,
-                info.AttendanceRecordCapacity);
+                info.AttendanceRecordCapacity,
+                info.PushVersion,
+                info.SdkVersion,
+                info.MacAddress);
 
             // 3. Actualizar entidad
             device.UpdateDeviceInfo(hardwareInfo);

@@ -45,7 +45,11 @@ public sealed record DeviceDto(
     int? FaceCapacity = null,
     int? AttendanceRecordCapacity = null,
     string? Username = null,
-    string? Password = null)
+    string? Password = null,
+    string? DeviceType = null,
+    string? PushVersion = null,
+    string? SdkVersion = null,
+    string? MacAddress = null)
 {
     public DeviceDto() : this(string.Empty, string.Empty, string.Empty, 4370, null, true, "Active", DeviceBrand.ZKTeco, DeviceDownloadMethod.Sdk, null, 0) { }
 }
@@ -74,7 +78,10 @@ public sealed record DeviceInfoDto(
     int UserCapacity,
     int FingerprintCapacity,
     int FaceCapacity,
-    int AttendanceRecordCapacity);
+    int AttendanceRecordCapacity,
+    string? PushVersion = null,
+    string? SdkVersion = null,
+    string? MacAddress = null);
 
 public sealed record UpdateDeviceDto(
     string Name,

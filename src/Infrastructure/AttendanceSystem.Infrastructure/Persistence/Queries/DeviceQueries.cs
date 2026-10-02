@@ -49,7 +49,11 @@ public class DeviceQueries : IDeviceQueries
             d.HardwareInfo.FaceCapacity,
             d.HardwareInfo.AttendanceRecordCapacity,
             d.Username,
-            d.Password
+            d.Password,
+            d.DeviceType,
+            d.HardwareInfo.PushVersion,
+            d.HardwareInfo.SdkVersion,
+            d.HardwareInfo.MacAddress
         ));
 
     }
@@ -92,7 +96,11 @@ public class DeviceQueries : IDeviceQueries
             device.HardwareInfo.FaceCapacity,
             device.HardwareInfo.AttendanceRecordCapacity,
             device.Username,
-            device.Password
+            device.Password,
+            device.DeviceType,
+            device.HardwareInfo.PushVersion,
+            device.HardwareInfo.SdkVersion,
+            device.HardwareInfo.MacAddress
         );
     }
 }

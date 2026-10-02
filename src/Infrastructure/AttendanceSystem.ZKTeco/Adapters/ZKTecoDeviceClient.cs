@@ -372,9 +372,54 @@ public class ZKTecoDeviceClient : IDeviceClient
                 if (faceCapacity <= faceCount && faceCount > 0) faceCapacity = Math.Max(faceCount > 1500 ? 3000 : 1500, faceCount);
                 if (recordCapacity <= recordCount) recordCapacity = Math.Max(recordCount > 50000 ? 100000 : 50000, recordCount);
 
+                // --- OBTENER VERSIÓN SDK, PUSH Y MAC ---
+                string sdkVersion = string.Empty;
+                try
+                {
+                    _device.GetSDKVersion(ref sdkVersion);
+                    sdkVersion = sdkVersion?.Replace("\0", "").Trim() ?? string.Empty;
+                }
+                catch { }
+                if (string.IsNullOrWhiteSpace(sdkVersion))
+                {
+                    string sVal = "";
+                    if (_device.GetSysOption(1, "~SDKVersion", out sVal)) sdkVersion = sVal?.Replace("\0", "").Trim() ?? "";
+                }
+
+                string pushVersion = string.Empty;
+                try
+                {
+                    string sVal = "";
+                    if (_device.GetSysOption(1, "PushVersion", out sVal) && !string.IsNullOrWhiteSpace(sVal))
+                        pushVersion = sVal.Replace("\0", "").Trim();
+                    else if (_device.GetSysOption(1, "PushProtVer", out sVal) && !string.IsNullOrWhiteSpace(sVal))
+                        pushVersion = sVal.Replace("\0", "").Trim();
+                    else if (_device.GetSysOption(1, "~PushVersion", out sVal) && !string.IsNullOrWhiteSpace(sVal))
+                        pushVersion = sVal.Replace("\0", "").Trim();
+                }
+                catch { }
+
+                string macAddress = string.Empty;
+                try
+                {
+                    string sVal = "";
+                    if (_device.GetSysOption(1, "MAC", out sVal) && !string.IsNullOrWhiteSpace(sVal))
+                        macAddress = sVal.Replace("\0", "").Trim();
+                    else if (_device.GetSysOption(1, "~MAC", out sVal) && !string.IsNullOrWhiteSpace(sVal))
+                        macAddress = sVal.Replace("\0", "").Trim();
+                }
+                catch { }
+
+                if (string.IsNullOrWhiteSpace(deviceName))
+                {
+                    string sVal = "";
+                    if (_device.GetSysOption(1, "~DeviceName", out sVal) && !string.IsNullOrWhiteSpace(sVal))
+                        deviceName = sVal.Replace("\0", "").Trim();
+                }
+
                 _logger.LogInformation(
-                    "Estadísticas del Dispositivo: Usuarios={UserCount}/{UserCapacity}, Huellas={FingerprintCount}/{FingerprintCapacity}, Rostros={FaceCount}/{FaceCapacity}, Registros={RecordCount}/{RecordCapacity}",
-                    userCount, userCapacity, fingerprintCount, fingerprintCapacity, faceCount, faceCapacity, recordCount, recordCapacity);
+                    "Estadísticas del Dispositivo: Usuarios={UserCount}/{UserCapacity}, Huellas={FingerprintCount}/{FingerprintCapacity}, Rostros={FaceCount}/{FaceCapacity}, Registros={RecordCount}/{RecordCapacity}, SDK={SdkVersion}, Push={PushVersion}, MAC={MacAddress}",
+                    userCount, userCapacity, fingerprintCount, fingerprintCapacity, faceCount, faceCapacity, recordCount, recordCapacity, sdkVersion, pushVersion, macAddress);
 
                 return new DeviceInfoDto(
                     serialNumber,
@@ -388,7 +433,10 @@ public class ZKTecoDeviceClient : IDeviceClient
                     userCapacity,
                     fingerprintCapacity,
                     faceCapacity,
-                    recordCapacity
+                    recordCapacity,
+                    pushVersion,
+                    sdkVersion,
+                    macAddress
                 );
             }
             catch (Exception ex)

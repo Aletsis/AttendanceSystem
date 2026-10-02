@@ -45,7 +45,11 @@ public sealed class GetActiveDevicesQueryHandler : IRequestHandler<GetActiveDevi
             d.HardwareInfo.FaceCapacity,
             d.HardwareInfo.AttendanceRecordCapacity,
             d.Username,
-            d.Password
+            d.Password,
+            d.DeviceType,
+            d.HardwareInfo.PushVersion,
+            d.HardwareInfo.SdkVersion,
+            d.HardwareInfo.MacAddress
         ));
 
         return Result<IEnumerable<DeviceDto>>.Success(dtos);

@@ -75,6 +75,10 @@ public class DeviceConfiguration : IEntityTypeConfiguration<Device>
             hardware.Property(p => p.FingerprintCapacity).HasColumnName("FingerprintCapacity");
             hardware.Property(p => p.FaceCapacity).HasColumnName("FaceCapacity");
             hardware.Property(p => p.AttendanceRecordCapacity).HasColumnName("AttendanceRecordCapacity");
+
+            hardware.Property(p => p.PushVersion).HasColumnName("PushVersion").HasMaxLength(100);
+            hardware.Property(p => p.SdkVersion).HasColumnName("SdkVersion").HasMaxLength(100);
+            hardware.Property(p => p.MacAddress).HasColumnName("MacAddress").HasMaxLength(50);
         });
 
         // Ignorar eventos de dominio (no se persisten)

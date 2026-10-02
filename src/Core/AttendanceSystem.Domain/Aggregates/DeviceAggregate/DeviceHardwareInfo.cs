@@ -11,7 +11,10 @@ public record DeviceHardwareInfo(
     int? UserCapacity,
     int? FingerprintCapacity,
     int? FaceCapacity,
-    int? AttendanceRecordCapacity)
+    int? AttendanceRecordCapacity,
+    string? PushVersion = null,
+    string? SdkVersion = null,
+    string? MacAddress = null)
 {
-    public static DeviceHardwareInfo Empty => new(null, null, null, null, null, null, null, null, null, null, null);
+    public static DeviceHardwareInfo Empty => new(null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 }

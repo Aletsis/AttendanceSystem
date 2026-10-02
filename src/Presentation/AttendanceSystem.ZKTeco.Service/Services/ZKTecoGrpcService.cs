@@ -186,7 +186,10 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
                     UserCapacity = deviceInfo.UserCapacity,
                     FingerprintCapacity = deviceInfo.FingerprintCapacity,
                     FaceCapacity = deviceInfo.FaceCapacity,
-                    AttendanceRecordCapacity = deviceInfo.AttendanceRecordCapacity
+                    AttendanceRecordCapacity = deviceInfo.AttendanceRecordCapacity,
+                    PushVersion = deviceInfo.PushVersion ?? string.Empty,
+                    SdkVersion = deviceInfo.SdkVersion ?? string.Empty,
+                    MacAddress = deviceInfo.MacAddress ?? string.Empty
                 }
             };
         }

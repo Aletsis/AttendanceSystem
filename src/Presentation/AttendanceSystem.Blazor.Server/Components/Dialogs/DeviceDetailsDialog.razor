@@ -8,81 +8,258 @@
 @using AttendanceSystem.Application.Features.Devices.Commands.ResetDeviceToFactory
 @using AttendanceSystem.Application.Features.Devices.Commands.ClearDeviceLogs
 @using AttendanceSystem.Application.Features.Devices.Commands.QueryDeviceOptions
+@using AttendanceSystem.Application.Features.Devices.Commands.RefreshDeviceInfo
+@using AttendanceSystem.Application.Features.Devices.Queries
 @inject ISender Sender
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject IDeviceQueries DeviceQueries
 
 <MudDialog>
     <DialogContent>
         <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pa-6">
             <MudTabPanel Text="Información" Icon="@Icons.Material.Filled.Info">
                 <MudGrid>
+                    <!-- Encabezado con estado y acción de refrescar -->
                     <MudItem xs="12">
-                        <MudText Typo="Typo.h6" Class="mb-4">Información del Dispositivo</MudText>
-                    </MudItem>
-
-                    <!-- Información Básica -->
-                    <MudItem xs="12">
-                        <MudPaper Elevation="0" Class="pa-4 mb-4" Outlined="true">
-                            <MudText Typo="Typo.subtitle1" Class="mb-3" Color="Color.Primary">
-                                <MudIcon Icon="@Icons.Material.Filled.Info" Class="mr-2" />
-                                Información Básica
-                            </MudText>
-                            <MudGrid>
-                                <MudItem xs="6">
-                                    <MudText Typo="Typo.body2" Color="Color.Secondary">Nombre:</MudText>
-                                    <MudText Typo="Typo.body1" Class="font-weight-bold">@Device.Name</MudText>
-                                </MudItem>
-                                <MudItem xs="6">
-                                    <MudText Typo="Typo.body2" Color="Color.Secondary">Estado:</MudText>
-                                    <MudChip T="string" Size="Size.Small" Color="@(Device.IsActive ? Color.Success : Color.Default)">
-                                        @(Device.IsActive ? "Activo" : "Inactivo")
-                                    </MudChip>
-                                </MudItem>
-                                <MudItem xs="6">
-                                    <MudText Typo="Typo.body2" Color="Color.Secondary">Ubicación:</MudText>
-                                    <MudText Typo="Typo.body1">@(Device.Location ?? "No especificada")</MudText>
-                                </MudItem>
-                                <MudItem xs="6">
-                                    <MudText Typo="Typo.body2" Color="Color.Secondary">IP:</MudText>
-                                    <MudText Typo="Typo.body1" Class="font-weight-bold">@Device.IpAddress : @Device.Port</MudText>
-                                </MudItem>
-                            </MudGrid>
+                        <MudPaper Elevation="0" Class="pa-4 mb-2" Outlined="true" Style="border-left: 5px solid var(--mud-palette-primary);">
+                            <div class="d-flex align-center justify-space-between flex-wrap gap-3">
+                                <div>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudText Typo="Typo.h5" Class="font-weight-bold">@Device.Name</MudText>
+                                        <MudChip T="string" Size="Size.Small" Color="@GetStatusColor(Device.Status)">
+                                            @Device.Status
+                                        </MudChip>
+                                        <MudChip T="string" Size="Size.Small" Color="@(Device.IsActive ? Color.Success : Color.Default)" Variant="Variant.Outlined">
+                                            @(Device.IsActive ? "Activo" : "Inactivo")
+                                        </MudChip>
+                                    </div>
+                                    <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                        Marca: <b>@Device.Brand</b> &bull; Método: <b>@Device.DownloadMethod</b> &bull; IP: <b>@Device.IpAddress:@Device.Port</b>
+                                    </MudText>
+                                </div>
+                                <MudButton Variant="Variant.Filled" 
+                                           Color="Color.Primary" 
+                                           StartIcon="@Icons.Material.Filled.Refresh" 
+                                           OnClick="RefreshInfo" 
+                                           Disabled="@_refreshingInfo" 
+                                           Size="Size.Small">
+                                    @if (_refreshingInfo)
+                                    {
+                                        <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                                        <MudText Class="ms-2">Consultando...</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudText>Actualizar Información</MudText>
+                                    }
+                                </MudButton>
+                            </div>
                         </MudPaper>
                     </MudItem>
 
-                    <!-- Capacidades -->
-                     <MudItem xs="12">
-                        <MudSimpleTable Style="overflow-x: auto;" Dense="true" Hover="true" Striped="true">
-                            <thead>
-                                <tr>
-                                    <th>Tipo de Dato</th>
-                                    <th style="text-align:center">Usado</th>
-                                    <th style="text-align:center">Capacidad</th>
-                                    <th style="text-align:right">% Uso</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1"/> Usuarios</td>
-                                    <td style="text-align:center">@(Device.UserCount?.ToString() ?? "-")</td>
-                                    <td style="text-align:center">@(Device.UserCapacity?.ToString() ?? "-")</td>
-                                    <td style="text-align:right">@GetUsagePercentage(Device.UserCount, Device.UserCapacity)</td>
-                                </tr>
-                                <tr>
-                                    <td><MudIcon Icon="@Icons.Material.Filled.Fingerprint" Size="Size.Small" Class="mr-1"/> Huellas</td>
-                                    <td style="text-align:center">@(Device.FingerprintCount?.ToString() ?? "-")</td>
-                                    <td style="text-align:center">@(Device.FingerprintCapacity?.ToString() ?? "-")</td>
-                                    <td style="text-align:right">@GetUsagePercentage(Device.FingerprintCount, Device.FingerprintCapacity)</td>
-                                </tr>
-                                <tr>
-                                    <td><MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Small" Class="mr-1"/> Registros</td>
-                                    <td style="text-align:center">@(Device.AttendanceRecordCount?.ToString() ?? "-")</td>
-                                    <td style="text-align:center">@(Device.AttendanceRecordCapacity?.ToString() ?? "-")</td>
-                                    <td style="text-align:right">@GetUsagePercentage(Device.AttendanceRecordCount, Device.AttendanceRecordCapacity)</td>
-                                </tr>
-                            </tbody>
-                        </MudSimpleTable>
+                    <!-- Firmware, Sistema y Hardware -->
+                    <MudItem xs="12" md="6">
+                        <MudPaper Elevation="0" Class="pa-4 h-100" Outlined="true">
+                            <MudText Typo="Typo.subtitle1" Class="mb-3 font-weight-bold" Color="Color.Primary">
+                                <MudIcon Icon="@Icons.Material.Filled.Memory" Class="mr-2" Size="Size.Small" />
+                                Sistema y Hardware
+                            </MudText>
+                            <MudSimpleTable Dense="true" Hover="false" Outlined="false" Class="mud-width-full">
+                                <tbody>
+                                    <tr>
+                                        <td class="font-weight-medium" style="width: 48%;">Número de Serie:</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(Device.SerialNumber))
+                                            {
+                                                <code class="font-weight-bold">@Device.SerialNumber</code>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No disponible</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Versión de Firmware:</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(Device.FirmwareVersion))
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">@Device.FirmwareVersion</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No disponible</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Versión de SDK:</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(Device.SdkVersion))
+                                            {
+                                                <span class="font-weight-bold">@Device.SdkVersion</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No disponible</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Versión de ADMS (Push):</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(Device.PushVersion))
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Color="Color.Primary" Variant="Variant.Text">@Device.PushVersion</MudChip>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No disponible</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Plataforma / Hardware:</td>
+                                        <td>@(Device.Platform ?? "No disponible")</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Tipo de Dispositivo:</td>
+                                        <td>
+                                            @(Device.DeviceType switch
+                                            {
+                                                "acc" => "Control de Acceso (acc)",
+                                                "att" => "Control de Asistencia (att)",
+                                                null or "" => "No especificado",
+                                                var t => t
+                                            })
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Dirección MAC:</td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(Device.MacAddress))
+                                            {
+                                                <code>@Device.MacAddress</code>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">No disponible</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudPaper>
+                    </MudItem>
+
+                    <!-- Conectividad y Red -->
+                    <MudItem xs="12" md="6">
+                        <MudPaper Elevation="0" Class="pa-4 h-100" Outlined="true">
+                            <MudText Typo="Typo.subtitle1" Class="mb-3 font-weight-bold" Color="Color.Primary">
+                                <MudIcon Icon="@Icons.Material.Filled.SettingsEthernet" Class="mr-2" Size="Size.Small" />
+                                Red y Sincronización
+                            </MudText>
+                            <MudSimpleTable Dense="true" Hover="false" Outlined="false" Class="mud-width-full">
+                                <tbody>
+                                    <tr>
+                                        <td class="font-weight-medium" style="width: 48%;">Dirección IP:</td>
+                                        <td class="font-weight-bold">@Device.IpAddress</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Puerto de Conexión:</td>
+                                        <td>@Device.Port</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Ubicación Asignada:</td>
+                                        <td>@(Device.Location ?? "No especificada")</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Método de Descarga:</td>
+                                        <td>
+                                            <MudChip T="string" Size="Size.Small" Color="@(Device.DownloadMethod == AttendanceSystem.Domain.Enumerations.DeviceDownloadMethod.Adms ? Color.Primary : Color.Secondary)">
+                                                @Device.DownloadMethod
+                                            </MudChip>
+                                        </td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Última Sincronización:</td>
+                                        <td>@(Device.LastDownloadAt?.ToString("g") ?? "Nunca")</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Total de Descargas:</td>
+                                        <td>@Device.TotalDownloadCount</td>
+                                    </tr>
+                                    <tr>
+                                        <td class="font-weight-medium">Limpieza tras Descarga:</td>
+                                        <td>
+                                            <MudChip T="string" Size="Size.Small" Color="@(Device.ShouldClearAfterDownload ? Color.Warning : Color.Default)" Variant="Variant.Outlined">
+                                                @(Device.ShouldClearAfterDownload ? "Activada" : "Desactivada")
+                                            </MudChip>
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudPaper>
+                    </MudItem>
+
+                    <!-- Capacidades y Almacenamiento -->
+                    <MudItem xs="12">
+                        <MudPaper Elevation="0" Class="pa-4" Outlined="true">
+                            <MudText Typo="Typo.subtitle1" Class="mb-3 font-weight-bold" Color="Color.Primary">
+                                <MudIcon Icon="@Icons.Material.Filled.Storage" Class="mr-2" Size="Size.Small" />
+                                Capacidades y Almacenamiento
+                            </MudText>
+                            <MudSimpleTable Style="overflow-x: auto;" Dense="true" Hover="true" Striped="true">
+                                <thead>
+                                    <tr>
+                                        <th>Tipo de Dato</th>
+                                        <th style="text-align:center">Usado</th>
+                                        <th style="text-align:center">Capacidad</th>
+                                        <th style="width: 30%;">Nivel de Uso</th>
+                                        <th style="text-align:right">% Uso</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><MudIcon Icon="@Icons.Material.Filled.Person" Size="Size.Small" Class="mr-1" Color="Color.Primary" /> Usuarios</td>
+                                        <td style="text-align:center" class="font-weight-bold">@(Device.UserCount?.ToString() ?? "-")</td>
+                                        <td style="text-align:center">@(Device.UserCapacity?.ToString() ?? "-")</td>
+                                        <td>
+                                            <MudProgressLinear Color="@GetUsageColor(Device.UserCount, Device.UserCapacity)" Value="@GetUsageValue(Device.UserCount, Device.UserCapacity)" Rounded="true" Size="Size.Medium" />
+                                        </td>
+                                        <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.UserCount, Device.UserCapacity)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><MudIcon Icon="@Icons.Material.Filled.Fingerprint" Size="Size.Small" Class="mr-1" Color="Color.Secondary" /> Huellas Digitales</td>
+                                        <td style="text-align:center" class="font-weight-bold">@(Device.FingerprintCount?.ToString() ?? "-")</td>
+                                        <td style="text-align:center">@(Device.FingerprintCapacity?.ToString() ?? "-")</td>
+                                        <td>
+                                            <MudProgressLinear Color="@GetUsageColor(Device.FingerprintCount, Device.FingerprintCapacity)" Value="@GetUsageValue(Device.FingerprintCount, Device.FingerprintCapacity)" Rounded="true" Size="Size.Medium" />
+                                        </td>
+                                        <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.FingerprintCount, Device.FingerprintCapacity)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><MudIcon Icon="@Icons.Material.Filled.Face" Size="Size.Small" Class="mr-1" Color="Color.Info" /> Rostros</td>
+                                        <td style="text-align:center" class="font-weight-bold">@(Device.FaceCount?.ToString() ?? "-")</td>
+                                        <td style="text-align:center">@(Device.FaceCapacity?.ToString() ?? "-")</td>
+                                        <td>
+                                            <MudProgressLinear Color="@GetUsageColor(Device.FaceCount, Device.FaceCapacity)" Value="@GetUsageValue(Device.FaceCount, Device.FaceCapacity)" Rounded="true" Size="Size.Medium" />
+                                        </td>
+                                        <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.FaceCount, Device.FaceCapacity)</td>
+                                    </tr>
+                                    <tr>
+                                        <td><MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Small" Class="mr-1" Color="Color.Warning" /> Registros de Asistencia</td>
+                                        <td style="text-align:center" class="font-weight-bold">@(Device.AttendanceRecordCount?.ToString() ?? "-")</td>
+                                        <td style="text-align:center">@(Device.AttendanceRecordCapacity?.ToString() ?? "-")</td>
+                                        <td>
+                                            <MudProgressLinear Color="@GetUsageColor(Device.AttendanceRecordCount, Device.AttendanceRecordCapacity)" Value="@GetUsageValue(Device.AttendanceRecordCount, Device.AttendanceRecordCapacity)" Rounded="true" Size="Size.Medium" />
+                                        </td>
+                                        <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.AttendanceRecordCount, Device.AttendanceRecordCapacity)</td>
+                                    </tr>
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudPaper>
                     </MudItem>
                 </MudGrid>
             </MudTabPanel>
@@ -414,6 +591,76 @@
              
              _processingAction = false;
         }
+    }
+
+    private bool _refreshingInfo = false;
+
+    private async Task RefreshInfo()
+    {
+        _refreshingInfo = true;
+        try
+        {
+            if (Device.DownloadMethod == AttendanceSystem.Domain.Enumerations.DeviceDownloadMethod.Adms)
+            {
+                var cmdResult = await Sender.Send(new QueryDeviceOptionsCommand(Device.DeviceId));
+                if (cmdResult.IsSuccess)
+                {
+                    Snackbar.Add("Solicitud de consulta de opciones enviada al reloj ADMS. El dispositivo responderá en su siguiente sincronización.", Severity.Info);
+                }
+                else
+                {
+                    Snackbar.Add($"Aviso ADMS: {cmdResult.Error}", Severity.Warning);
+                }
+            }
+            else
+            {
+                var refreshResult = await Sender.Send(new RefreshDeviceInfoCommand(Guid.Parse(Device.DeviceId)));
+                if (refreshResult.IsSuccess)
+                {
+                    Snackbar.Add("Información del dispositivo actualizada en tiempo real vía SDK.", Severity.Success);
+                }
+                else
+                {
+                    Snackbar.Add($"No se pudo conectar directamente con el dispositivo: {refreshResult.Error}", Severity.Warning);
+                }
+            }
+
+            var updated = await DeviceQueries.GetDeviceByIdAsync(Device.DeviceId);
+            if (updated != null)
+            {
+                Device = updated;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al actualizar: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _refreshingInfo = false;
+        }
+    }
+
+    Color GetStatusColor(string status) => status?.ToLowerInvariant() switch
+    {
+        "online" or "en línea" => Color.Success,
+        "error" => Color.Error,
+        _ => Color.Default
+    };
+
+    Color GetUsageColor(int? count, int? capacity)
+    {
+        if (!count.HasValue || !capacity.HasValue || capacity.Value == 0) return Color.Default;
+        double pc = (double)count.Value / capacity.Value * 100;
+        if (pc < 70) return Color.Success;
+        if (pc < 90) return Color.Warning;
+        return Color.Error;
+    }
+
+    double GetUsageValue(int? count, int? capacity)
+    {
+        if (!count.HasValue || !capacity.HasValue || capacity.Value == 0) return 0;
+        return Math.Round((double)count.Value / capacity.Value * 100, 1);
     }
 
     string GetUsagePercentage(int? count, int? capacity)

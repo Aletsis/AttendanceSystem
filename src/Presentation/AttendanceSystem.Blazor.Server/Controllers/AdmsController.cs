@@ -71,11 +71,24 @@ public class AdmsController : ControllerBase
         if (!string.IsNullOrEmpty(SN))
         {
             var device = await _deviceRepository.GetBySerialNumberAsync(SN);
-            if (device != null && device.Status != DeviceStatus.Online)
+            if (device != null)
             {
-                device.MarkAsOnline();
-                await _deviceRepository.UpdateAsync(device);
-                await _unitOfWork.SaveChangesAsync();
+                bool changed = false;
+                if (!string.IsNullOrEmpty(pushver) && device.HardwareInfo?.PushVersion != pushver)
+                {
+                    device.UpdateDeviceInfo((device.HardwareInfo ?? DeviceHardwareInfo.Empty) with { PushVersion = pushver });
+                    changed = true;
+                }
+                if (device.Status != DeviceStatus.Online)
+                {
+                    device.MarkAsOnline();
+                    changed = true;
+                }
+                if (changed)
+                {
+                    await _deviceRepository.UpdateAsync(device);
+                    await _unitOfWork.SaveChangesAsync();
+                }
             }
         }
 
@@ -237,6 +250,7 @@ public class AdmsController : ControllerBase
             table?.Equals("tabledata", StringComparison.OrdinalIgnoreCase) == true)
         {
             _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en cdata para SN: {SN}:\n{Body}", SN, body);
+            await ProcessDeviceOptions(body, SN);
             return Content("OK", "text/plain");
         }
 
@@ -263,6 +277,7 @@ public class AdmsController : ControllerBase
             targetTable.Equals("tabledata", StringComparison.OrdinalIgnoreCase))
         {
             _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en querydata para SN: {SN}:\n{Body}", SN, body);
+            await ProcessDeviceOptions(body, SN);
             return Content("OK", "text/plain");
         }
 
@@ -937,5 +952,104 @@ public class AdmsController : ControllerBase
         }
 
         return false;
+    }
+
+    private async Task ProcessDeviceOptions(string body, string SN)
+    {
+        if (string.IsNullOrWhiteSpace(SN) || string.IsNullOrWhiteSpace(body)) return;
+
+        try
+        {
+            var device = await _deviceRepository.GetBySerialNumberAsync(SN);
+            if (device == null) return;
+
+            var lines = body.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var line in lines)
+            {
+                var parts = line.Split('=', 2);
+                if (parts.Length == 2)
+                {
+                    var key = parts[0].Trim();
+                    var val = parts[1].Trim();
+                    if (!dict.ContainsKey(key))
+                    {
+                        dict[key] = val;
+                    }
+                }
+            }
+
+            string? GetVal(params string[] keys)
+            {
+                foreach (var k in keys)
+                {
+                    if (dict.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v))
+                        return v;
+                }
+                return null;
+            }
+
+            int? GetInt(params string[] keys)
+            {
+                var v = GetVal(keys);
+                if (int.TryParse(v, out var n)) return n;
+                return null;
+            }
+
+            var fw = GetVal("FirmwareVersion", "~FirmwareVersion", "FWVersion");
+            var platform = GetVal("Platform", "~Platform");
+            var pushVer = GetVal("PushVersion", "PushProtVer", "pushver", "~PushVersion");
+            var sdkVer = GetVal("SDKVersion", "~SDKVersion");
+            var mac = GetVal("MAC", "~MAC", "MacAddress");
+            var devType = GetVal("DeviceType", "~DeviceType");
+
+            var userCount = GetInt("UserCount", "~UserCount");
+            var fpCount = GetInt("FPCount", "FingerCount", "~FingerCount");
+            var faceCount = GetInt("FaceCount", "~FaceCount");
+            var attCount = GetInt("AttLogCount", "RecordCount", "~AttLogCount");
+
+            var userCap = GetInt("~MaxUserCount", "MaxUser", "MaxUserCapacity");
+            var fpCap = GetInt("~MaxFingerCount", "MaxFinger", "MaxFingerCapacity");
+            var faceCap = GetInt("~MaxFaceCount", "MaxFace", "MaxFaceCapacity");
+            var attCap = GetInt("~MaxAttLogCount", "MaxAttLog", "MaxAttLogCapacity");
+
+            var currentHw = device.HardwareInfo ?? DeviceHardwareInfo.Empty;
+
+            var updatedHw = currentHw with
+            {
+                FirmwareVersion = fw ?? currentHw.FirmwareVersion,
+                Platform = platform ?? currentHw.Platform,
+                PushVersion = pushVer ?? currentHw.PushVersion,
+                SdkVersion = sdkVer ?? currentHw.SdkVersion,
+                MacAddress = mac ?? currentHw.MacAddress,
+                UserCount = userCount ?? currentHw.UserCount,
+                FingerprintCount = fpCount ?? currentHw.FingerprintCount,
+                FaceCount = faceCount ?? currentHw.FaceCount,
+                AttendanceRecordCount = attCount ?? currentHw.AttendanceRecordCount,
+                UserCapacity = userCap ?? currentHw.UserCapacity,
+                FingerprintCapacity = fpCap ?? currentHw.FingerprintCapacity,
+                FaceCapacity = faceCap ?? currentHw.FaceCapacity,
+                AttendanceRecordCapacity = attCap ?? currentHw.AttendanceRecordCapacity
+            };
+
+            device.UpdateDeviceInfo(updatedHw);
+
+            if (!string.IsNullOrWhiteSpace(devType))
+            {
+                device.SetDeviceType(devType);
+            }
+
+            device.MarkAsOnline();
+            await _deviceRepository.UpdateAsync(device);
+            await _unitOfWork.SaveChangesAsync();
+
+            _logger.LogInformation("✅ [ADMS] Información del dispositivo {SN} actualizada desde opciones: FW={FW}, PushVer={PushVer}, SDKVer={SDKVer}, Platform={Platform}, MAC={MAC}, Users={Users}/{UserCap}",
+                SN, updatedHw.FirmwareVersion, updatedHw.PushVersion, updatedHw.SdkVersion, updatedHw.Platform, updatedHw.MacAddress, updatedHw.UserCount, updatedHw.UserCapacity);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al procesar opciones de dispositivo ADMS para SN {SN}", SN);
+        }
     }
 }

@@ -158,7 +158,10 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
                 response.DeviceInfo.UserCapacity,
                 response.DeviceInfo.FingerprintCapacity,
                 response.DeviceInfo.FaceCapacity,
-                response.DeviceInfo.AttendanceRecordCapacity
+                response.DeviceInfo.AttendanceRecordCapacity,
+                string.IsNullOrWhiteSpace(response.DeviceInfo.PushVersion) ? null : response.DeviceInfo.PushVersion,
+                string.IsNullOrWhiteSpace(response.DeviceInfo.SdkVersion) ? null : response.DeviceInfo.SdkVersion,
+                string.IsNullOrWhiteSpace(response.DeviceInfo.MacAddress) ? null : response.DeviceInfo.MacAddress
             );
         }
         catch (Exception ex)
