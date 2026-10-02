@@ -842,7 +842,7 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.HasIndex("PositionsId");
 
-                    b.ToTable("DepartmentPositions");
+                    b.ToTable("DepartmentPositions", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRole", b =>
@@ -1013,10 +1013,25 @@ namespace AttendanceSystem.Infrastructure.Migrations
                                 .HasColumnType("character varying(100)")
                                 .HasColumnName("FirmwareVersion");
 
+                            b1.Property<string>("MacAddress")
+                                .HasMaxLength(50)
+                                .HasColumnType("character varying(50)")
+                                .HasColumnName("MacAddress");
+
                             b1.Property<string>("Platform")
                                 .HasMaxLength(100)
                                 .HasColumnType("character varying(100)")
                                 .HasColumnName("Platform");
+
+                            b1.Property<string>("PushVersion")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("PushVersion");
+
+                            b1.Property<string>("SdkVersion")
+                                .HasMaxLength(100)
+                                .HasColumnType("character varying(100)")
+                                .HasColumnName("SdkVersion");
 
                             b1.Property<string>("SerialNumber")
                                 .HasMaxLength(100)
@@ -1033,7 +1048,7 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                             b1.HasKey("DeviceId");
 
-                            b1.ToTable("Devices");
+                            b1.ToTable("Devices", (string)null);
 
                             b1.WithOwner()
                                 .HasForeignKey("DeviceId");
