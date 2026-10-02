@@ -173,6 +173,11 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         DevicePrivilege = devicePrivilege;
     }
 
+    public void UpdateDevicePrivilege(DevicePrivilege devicePrivilege)
+    {
+        DevicePrivilege = devicePrivilege;
+    }
+
     public void Deactivate()
     {
         Status = EmployeeStatus.Baja;

@@ -842,9 +842,7 @@ public class AdmsController : ControllerBase
                     // Privilegio del dispositivo (privilege=14 admin/superadmin, 0 usuario)
                     if (data.TryGetValue("privilege", out var privStr) && int.TryParse(privStr, out var priv))
                     {
-                        var devPrivilege = (priv == 14 || priv == 3) ? DevicePrivilege.SuperAdmin :
-                                           (priv == 2) ? DevicePrivilege.Admin :
-                                           (priv == 1) ? DevicePrivilege.Registrar : DevicePrivilege.User;
+                        var devPrivilege = DevicePrivilegeMapper.MapFromProtocolValue(DeviceBrand.ZKTeco, DeviceDownloadMethod.Adms, priv);
 
                         if (employee.DevicePrivilege != devPrivilege)
                         {

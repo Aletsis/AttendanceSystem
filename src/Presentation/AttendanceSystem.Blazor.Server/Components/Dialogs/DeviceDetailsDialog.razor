@@ -1,5 +1,6 @@
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Domain.Enumerations
 @using MediatR
 @using AttendanceSystem.Application.Features.Devices.Queries.GetDeviceUsers
 @using AttendanceSystem.Application.Features.Devices.Commands.DeleteDeviceUser
@@ -271,10 +272,10 @@
                         
                         <MudSelect T="int?" Label="Filtrar por Rol" @bind-Value="_selectedPrivilegeFilter" Style="max-width: 200px;" Dense="true" Margin="Margin.Dense" Variant="Variant.Outlined">
                             <MudSelectItem T="int?" Value="@((int?)null)">Todos</MudSelectItem>
-                            <MudSelectItem T="int?" Value="@((int?)0)">Usuario</MudSelectItem>
-                            <MudSelectItem T="int?" Value="@((int?)1)">Registrador</MudSelectItem>
-                            <MudSelectItem T="int?" Value="@((int?)2)">Admin</MudSelectItem>
-                            <MudSelectItem T="int?" Value="@((int?)3)">Super Admin</MudSelectItem>
+                            @foreach (var opt in DevicePrivilegeMapper.GetSupportedPrivileges(Device.Brand, Device.DownloadMethod))
+                            {
+                                <MudSelectItem T="int?" Value="@((int?)opt.Value)">@opt.DisplayName</MudSelectItem>
+                            }
                         </MudSelect>
 
                         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadUsers" Disabled="@_loadingUsers">
@@ -302,14 +303,18 @@
                                  <MudTd DataLabel="ID">@context.UserId</MudTd>
                                  <MudTd DataLabel="Nombre">@context.Name</MudTd>
                                  <MudTd DataLabel="Privilegio">
-                                     @(context.Privilege switch
-                                     {
-                                         3 => "Super Admin",
-                                         2 => "Admin",
-                                         14 => "Admin",
-                                         1 => "Registrador",
-                                         _ => "Usuario"
-                                     })
+                                     @{
+                                         var priv = DevicePrivilegeMapper.MapFromProtocolValue(Device.Brand, Device.DownloadMethod, context.Privilege);
+                                         var dispName = DevicePrivilegeMapper.GetDisplayName(Device.Brand, priv, Device.DownloadMethod);
+                                     }
+                                     <MudChip T="string" Size="Size.Small" Color="@(priv switch {
+                                         DevicePrivilege.SuperAdmin => Color.Error,
+                                         DevicePrivilege.Admin => Color.Warning,
+                                         DevicePrivilege.Registrar => Color.Info,
+                                         _ => Color.Default
+                                     })">
+                                         @dispName
+                                     </MudChip>
                                  </MudTd>
                                  <MudTd DataLabel="Habilitado">
                                      <MudCheckBox T="bool" Value="@context.Enabled" ReadOnly="true" Dense="true" Size="Size.Small"></MudCheckBox>
@@ -449,13 +454,10 @@
             if (!_selectedPrivilegeFilter.HasValue)
                 return _users;
 
-            return _users.Where(u => _selectedPrivilegeFilter.Value switch
+            return _users.Where(u =>
             {
-                0 => u.Privilege == 0,
-                1 => u.Privilege == 1,
-                2 => u.Privilege == 2 || u.Privilege == 14,
-                3 => u.Privilege == 3,
-                _ => true
+                var userPriv = DevicePrivilegeMapper.MapFromProtocolValue(Device.Brand, Device.DownloadMethod, u.Privilege);
+                return (int)userPriv == _selectedPrivilegeFilter.Value;
             });
         }
     }

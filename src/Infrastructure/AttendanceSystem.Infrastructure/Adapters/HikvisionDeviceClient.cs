@@ -1,5 +1,6 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
+using AttendanceSystem.Domain.Enumerations;
 using Microsoft.Extensions.Logging;
 using System.Net.Http;
 
@@ -239,7 +240,8 @@ public class HikvisionDeviceClient : IDeviceClient
             var userXml = xml[pos..(end + 11)];
             var pin = ExtractXmlValue(userXml, "employeeNo");
             var name = ExtractXmlValue(userXml, "name");
-            var privilege = ExtractXmlValue(userXml, "userType") == "admin" ? 3 : 0;
+            var userType = ExtractXmlValue(userXml, "userType");
+            var privilege = (int)DevicePrivilegeMapper.MapFromHikvisionUserType(userType);
 
             string? photo = null;
             if (pin != null && faceDict?.TryGetValue(pin, out photo) == true)
@@ -343,10 +345,11 @@ public class HikvisionDeviceClient : IDeviceClient
 
     public async Task<bool> SetUserAsync(DeviceUserDto user, CancellationToken cancellationToken = default)
     {
+        var userType = DevicePrivilegeMapper.MapToHikvisionUserType((DevicePrivilege)user.Privilege);
         var userXml = $@"<UserInfo>
             <employeeNo>{user.UserId}</employeeNo>
             <name>{user.Name}</name>
-            <userType>{(user.Privilege >= 3 ? "admin" : "normal")}</userType>
+            <userType>{userType}</userType>
             <Valid>
                 <beginTime>2023-01-01T00:00:00</beginTime>
                 <endTime>2099-12-31T23:59:59</endTime>

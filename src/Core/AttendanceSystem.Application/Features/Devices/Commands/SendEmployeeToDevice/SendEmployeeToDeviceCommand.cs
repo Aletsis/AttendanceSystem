@@ -8,7 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.SendEmployeeToDevice;
 
-public sealed record SendEmployeeToDeviceCommand(string EmployeeId, string DeviceId) : IRequest<Result<bool>>;
+public sealed record SendEmployeeToDeviceCommand(string EmployeeId, string DeviceId, DevicePrivilege? DevicePrivilege = null) : IRequest<Result<bool>>;
 
 public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeToDeviceCommand, Result<bool>>
 {
@@ -16,6 +16,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
     private readonly IDeviceRepository _deviceRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IBranchRepository _branchRepository;
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<SendEmployeeToDeviceCommandHandler> _logger;
 
     public SendEmployeeToDeviceCommandHandler(
@@ -23,12 +24,14 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
         IDeviceRepository deviceRepository,
         IEmployeeRepository employeeRepository,
         IBranchRepository branchRepository,
+        IUnitOfWork unitOfWork,
         ILogger<SendEmployeeToDeviceCommandHandler> logger)
     {
         _deviceClientFactory = deviceClientFactory;
         _deviceRepository = deviceRepository;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
+        _unitOfWork = unitOfWork;
         _logger = logger;
     }
 
@@ -53,6 +56,17 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
 
             try
             {
+                if (request.DevicePrivilege.HasValue)
+                {
+                    var normalizedPrivilege = DevicePrivilegeMapper.NormalizeForDevice(device.Brand, request.DevicePrivilege.Value);
+                    if (employee.DevicePrivilege != normalizedPrivilege)
+                    {
+                        employee.UpdateDevicePrivilege(normalizedPrivilege);
+                        _employeeRepository.Update(employee);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    }
+                }
+
                 var employeeBranch = await _branchRepository.GetByIdAsync(employee.BranchId, cancellationToken);
                 string deviceUserId = employee.Id.Value;
 

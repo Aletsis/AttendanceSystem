@@ -260,7 +260,8 @@ public class AdmsDeviceClient : IDeviceClient
         _logger.LogInformation("Enviando usuario {UserId} vía ADMS para {SN}", user.UserId, _serialNumber);
 
         // 1. Información de Usuario
-        var userCmd = $"PIN={user.UserId}\tName={user.Name}\tPrivilege=0"; // 0 = Usuario normal
+        var admsPrivilege = DevicePrivilegeMapper.MapToProtocolValue(DeviceBrand.ZKTeco, DeviceDownloadMethod.Adms, (DevicePrivilege)user.Privilege);
+        var userCmd = $"PIN={user.UserId}\tName={user.Name}\tPrivilege={admsPrivilege}";
         if (!string.IsNullOrEmpty(user.Password)) userCmd += $"\tPassword={user.Password}";
         if (!string.IsNullOrEmpty(user.CardNumber)) userCmd += $"\tCard={user.CardNumber}";
 

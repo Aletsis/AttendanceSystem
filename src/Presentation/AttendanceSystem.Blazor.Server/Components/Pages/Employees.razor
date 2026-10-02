@@ -239,7 +239,12 @@ else
         var parameters = new DialogParameters { { "EmployeeId", employee.Id } };
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
         
-        await DialogService.ShowAsync<EmployeeDetailsDialog>("Detalles del Empleado", parameters, options);
+        var dialog = await DialogService.ShowAsync<EmployeeDetailsDialog>("Detalles del Empleado", parameters, options);
+        var result = await dialog.Result;
+        if (result is not null && !result.Canceled)
+        {
+            await LoadEmployees();
+        }
     }
 
     private async Task OpenEditDialog(EmployeeDto employee)

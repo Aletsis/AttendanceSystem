@@ -1,6 +1,7 @@
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Employees
 @using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Employees.Commands
 @using AttendanceSystem.Application.Features.Devices.Queries.GetAllDevices
 @using AttendanceSystem.Application.Features.Devices.Commands.SendEmployeeToDevice
 @using AttendanceSystem.Domain.Enumerations
@@ -91,7 +92,12 @@
                         </MudItem>
                         <MudItem xs="12" sm="6">
                             <MudText Typo="Typo.subtitle2">Privilegio en Checador</MudText>
-                            <MudText>
+                            <MudChip T="string" Color="@(_employee.DevicePrivilege switch {
+                                DevicePrivilege.SuperAdmin => Color.Error,
+                                DevicePrivilege.Admin => Color.Warning,
+                                DevicePrivilege.Registrar => Color.Info,
+                                _ => Color.Default
+                            })" Size="Size.Small">
                                 @(_employee.DevicePrivilege switch
                                 {
                                     DevicePrivilege.User => "Usuario Normal",
@@ -100,28 +106,88 @@
                                     DevicePrivilege.SuperAdmin => "Super Administrador",
                                     _ => _employee.DevicePrivilege.ToString()
                                 })
-                            </MudText>
+                            </MudChip>
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
                 <MudTabPanel Text="Sincronización">
-                    <MudText Typo="Typo.body1" Class="mb-4">Enviar datos de este empleado (incluyendo biometría) a un dispositivo:</MudText>
+                    <MudText Typo="Typo.body1" Class="mb-3">Enviar datos de este empleado (incluyendo biometría y privilegios) a un reloj checador:</MudText>
                     
                     <MudGrid>
+                        <!-- Selección de Dispositivo -->
                         <MudItem xs="12">
-                             <MudSelect T="string" Label="Seleccionar Dispositivo" @bind-Value="_selectedDeviceId" AnchorOrigin="Origin.BottomCenter">
+                             <MudSelect T="string" Label="Seleccionar Reloj Checador de Destino" Value="_selectedDeviceId" ValueChanged="OnSelectedDeviceChanged" AnchorOrigin="Origin.BottomCenter" Required="true">
                                 @foreach (var device in _devices)
                                 {
                                     var statusIcon = device.Status == "En Línea" ? "🟢" : "🔴";
-                                    <MudSelectItem Value="@device.DeviceId">@statusIcon @device.Name (@device.IpAddress) - @device.Status</MudSelectItem>
+                                    var brandBadge = device.Brand == DeviceBrand.Hikvision ? "[Hikvision]" : (device.DownloadMethod == DeviceDownloadMethod.Adms ? "[ZKTeco ADMS]" : "[ZKTeco SDK]");
+                                    <MudSelectItem Value="@device.DeviceId">@statusIcon @brandBadge @device.Name (@device.IpAddress) - @device.Status</MudSelectItem>
                                 }
                             </MudSelect>
                         </MudItem>
-                        <MudItem xs="12" Class="d-flex justify-end">
+
+                        @if (SelectedDevice != null)
+                        {
+                            <MudItem xs="12">
+                                <MudPaper Class="pa-3 mb-2" Elevation="0" Outlined="true" Style="background-color: var(--mud-palette-background-grey);">
+                                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                                        <div class="d-flex align-center gap-2">
+                                            <MudChip T="string" Size="Size.Small" Color="@(SelectedDevice.Brand == DeviceBrand.Hikvision ? Color.Info : Color.Primary)" Variant="Variant.Filled">
+                                                @SelectedDevice.Brand
+                                            </MudChip>
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">
+                                                @(SelectedDevice.Brand == DeviceBrand.Hikvision ? "Protocolo ISAPI" : (SelectedDevice.DownloadMethod == DeviceDownloadMethod.Adms ? "Protocolo ADMS (Push Cloud)" : "SDK Standalone (TCP 4370)"))
+                                            </MudChip>
+                                            @if (!string.IsNullOrEmpty(SelectedDevice.DeviceType))
+                                            {
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text">
+                                                    @(SelectedDevice.DeviceType == "acc" ? "Control de Acceso" : "Control de Asistencia")
+                                                </MudChip>
+                                            }
+                                        </div>
+                                        <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                            IP: @SelectedDevice.IpAddress | Estado: @SelectedDevice.Status
+                                        </MudText>
+                                    </div>
+                                </MudPaper>
+                            </MudItem>
+                        }
+
+                        <!-- Selección de Rol / Privilegio según la marca del reloj -->
+                        <MudItem xs="12" sm="7">
+                            <MudSelect T="DevicePrivilege" @bind-Value="_devicePrivilege" Label="Rol / Privilegio en este Reloj" AnchorOrigin="Origin.BottomCenter" HelperText="@CurrentPrivilegeOption?.Description">
+                                @foreach (var opt in AvailablePrivileges)
+                                {
+                                    <MudSelectItem Value="@opt.Value">@opt.DisplayName</MudSelectItem>
+                                }
+                            </MudSelect>
+                        </MudItem>
+                        <MudItem xs="12" sm="5" Class="d-flex align-center">
+                            @if (_employee != null && _devicePrivilege != _employee.DevicePrivilege)
+                            {
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Size="Size.Small"
+                                           StartIcon="@Icons.Material.Filled.Save"
+                                           OnClick="SavePrivilege"
+                                           Disabled="@(_savingPrivilege || _sending)">
+                                    @(_savingPrivilege ? "Guardando..." : "Guardar Privilegio")
+                                </MudButton>
+                            }
+                        </MudItem>
+
+                        @if (SelectedDevice != null && SelectedDevice.Brand == DeviceBrand.Hikvision && (_employee?.DevicePrivilege == DevicePrivilege.SuperAdmin || _employee?.DevicePrivilege == DevicePrivilege.Registrar))
+                        {
+                            <MudItem xs="12">
+                                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-1">
+                                    Nota: Los terminales <strong>Hikvision</strong> únicamente admiten roles de <strong>Usuario Normal</strong> y <strong>Administrador</strong>. El rol se ha mapeado automáticamente a <strong>@CurrentPrivilegeOption?.DisplayName</strong>.
+                                </MudAlert>
+                            </MudItem>
+                        }
+
+                        <MudItem xs="12" Class="d-flex justify-end mt-2">
                             <MudButton Variant="Variant.Filled" Color="Color.Primary" 
                                        StartIcon="@Icons.Material.Filled.Send" 
                                        OnClick="SendToDevice" 
-                                       Disabled="@(string.IsNullOrEmpty(_selectedDeviceId) || _sending)">
+                                       Disabled="@(string.IsNullOrEmpty(_selectedDeviceId) || _sending || _savingPrivilege)">
                                 @(_sending ? "Enviando..." : "Enviar a Dispositivo")
                             </MudButton>
                         </MudItem>
@@ -144,6 +210,32 @@
     private bool _loading = true;
     private string _selectedDeviceId = "";
     private bool _sending = false;
+    private DevicePrivilege _devicePrivilege = DevicePrivilege.User;
+    private bool _savingPrivilege = false;
+    private bool _hasUpdated = false;
+
+    private DeviceDto? SelectedDevice => _devices.FirstOrDefault(d => d.DeviceId == _selectedDeviceId);
+
+    private IReadOnlyList<DevicePrivilegeOption> AvailablePrivileges =>
+        SelectedDevice != null
+            ? DevicePrivilegeMapper.GetSupportedPrivileges(SelectedDevice.Brand, SelectedDevice.DownloadMethod)
+            : DevicePrivilegeMapper.GetSupportedPrivileges(DeviceBrand.ZKTeco);
+
+    private DevicePrivilegeOption? CurrentPrivilegeOption =>
+        AvailablePrivileges.FirstOrDefault(p => p.Value == _devicePrivilege);
+
+    private void OnSelectedDeviceChanged(string deviceId)
+    {
+        _selectedDeviceId = deviceId;
+        if (SelectedDevice != null)
+        {
+            var normalized = DevicePrivilegeMapper.NormalizeForDevice(SelectedDevice.Brand, _devicePrivilege);
+            if (_devicePrivilege != normalized)
+            {
+                _devicePrivilege = normalized;
+            }
+        }
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -159,6 +251,7 @@
         if (empResult.IsSuccess)
         {
             _employee = empResult.Value;
+            _devicePrivilege = _employee.DevicePrivilege;
         }
         else
         {
@@ -172,9 +265,46 @@
         if (devResult.IsSuccess)
         {
             _devices = devResult.Value.Where(d => d.IsActive).ToList();
+            if (_devices.Any() && string.IsNullOrEmpty(_selectedDeviceId))
+            {
+                _selectedDeviceId = _devices.First().DeviceId;
+                OnSelectedDeviceChanged(_selectedDeviceId);
+            }
         }
 
         _loading = false;
+    }
+
+    private async Task SavePrivilege()
+    {
+        if (_employee == null) return;
+
+        _savingPrivilege = true;
+        StateHasChanged();
+
+        try
+        {
+            var result = await Sender.Send(new UpdateEmployeeDevicePrivilegeCommand(EmployeeId, _devicePrivilege));
+            if (result.IsSuccess)
+            {
+                _employee = _employee with { DevicePrivilege = _devicePrivilege };
+                _hasUpdated = true;
+                Snackbar.Add("Privilegio de reloj actualizado correctamente", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Error al actualizar privilegio: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Excepción: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _savingPrivilege = false;
+            StateHasChanged();
+        }
     }
 
     private async Task SendToDevice()
@@ -188,10 +318,15 @@
         
         try
         {
-            var result = await Sender.Send(new SendEmployeeToDeviceCommand(EmployeeId, _selectedDeviceId));
+            var result = await Sender.Send(new SendEmployeeToDeviceCommand(EmployeeId, _selectedDeviceId, _devicePrivilege));
             
             if (result.IsSuccess)
             {
+                if (_employee != null)
+                {
+                    _employee = _employee with { DevicePrivilege = _devicePrivilege };
+                }
+                _hasUpdated = true;
                 Snackbar.Add($"Empleado enviado exitosamente a {device?.Name}", Severity.Success);
             }
             else
@@ -210,5 +345,15 @@
         }
     }
 
-    private void Cancel() => MudDialog.Cancel();
+    private void Cancel()
+    {
+        if (_hasUpdated)
+        {
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        else
+        {
+            MudDialog.Cancel();
+        }
+    }
 }

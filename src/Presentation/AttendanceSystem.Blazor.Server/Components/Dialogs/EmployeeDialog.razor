@@ -193,23 +193,6 @@
                         <MudItem xs="12" sm="6">
                             <MudTextField @bind-Value="DevicePassword" Label="Contraseña PIN" HelperText="Máximo 8 dígitos" InputType="InputType.Password" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Lock" />
                         </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudSelect T="DevicePrivilegeEnum" @bind-Value="DevicePrivilege" Label="Privilegio en Checador" Required="true" RequiredError="El privilegio es requerido">
-                                @foreach (var privilege in Enum.GetValues<DevicePrivilegeEnum>())
-                                {
-                                    <MudSelectItem T="DevicePrivilegeEnum" Value="@privilege">
-                                        @(privilege switch
-                                        {
-                                            DevicePrivilegeEnum.User => "Usuario Normal",
-                                            DevicePrivilegeEnum.Registrar => "Registrador",
-                                            DevicePrivilegeEnum.Admin => "Administrador",
-                                            DevicePrivilegeEnum.SuperAdmin => "Super Administrador",
-                                            _ => privilege.ToString()
-                                        })
-                                    </MudSelectItem>
-                                }
-                            </MudSelect>
-                        </MudItem>
                     </MudGrid>
                 </MudTabPanel>
             </MudTabs>
