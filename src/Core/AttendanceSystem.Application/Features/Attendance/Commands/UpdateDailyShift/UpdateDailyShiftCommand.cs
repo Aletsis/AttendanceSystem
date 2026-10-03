@@ -72,7 +72,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             }
         }
 
-        bool isCrossDay = dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Continuo;
+        bool isCrossDay = dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible;
         if (isCrossDay)
         {
             searchEndDate = searchStartDate.AddDays(1);
@@ -117,7 +117,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
 
             if (isCrossDay)
             {
-                if (shift.ShiftType == ShiftType.Continuo)
+                if (shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible)
                 {
                     var potentialIn = records
                         .Where(r => r.CheckTime.Date == date.Date && (r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)))

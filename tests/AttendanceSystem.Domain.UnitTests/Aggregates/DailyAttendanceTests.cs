@@ -325,4 +325,179 @@ public class DailyAttendanceTests
         // Reference duration: 19:20 - 10:30 = 530 min. Overtime = 530 - 480 = 50 min.
         da.OvertimeMinutes.Should().Be(50);
     }
+
+    [Fact]
+    public void Create_FlexibleShift_ArrivalWithinWindow_ShouldHaveZeroLateMinutesAndDynamicScheduledCheckOut()
+    {
+        // Arrange: Ventana 07:30 a 09:30, 8 horas objetivo, 30 min comida
+        var flexShift = Shift.Create(
+            name: "Flexible 7:30-9:30",
+            startTime: new TimeSpan(7, 30, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            lunchBreakMinutes: 30,
+            flexWindowEndTime: new TimeSpan(9, 30, 0));
+
+        // Llega a las 08:15 (dentro de la ventana) y sale a las 16:45 (8h trabajo + 30m comida = 8h30m)
+        var checkIn = _date.Add(new TimeSpan(8, 15, 0));
+        var checkOut = _date.Add(new TimeSpan(16, 45, 0));
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false);
+
+        // Assert
+        da.LateMinutes.Should().Be(0);
+        da.DynamicScheduledCheckOut.Should().Be(_date.Add(new TimeSpan(16, 15, 0))); // Sin comida formal aplicada aún
+        da.EarlyDepartureMinutes.Should().Be(0);
+        da.OvertimeMinutes.Should().Be(30); // 16:45 - 8:15 = 510 min. 510 - 480 = 30 min
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_ArrivalAfterWindowWithinTolerance_ShouldHaveZeroLateMinutes()
+    {
+        // Arrange: Ventana hasta 09:30, tolerancia 10 min. Llega a las 09:38.
+        var flexShift = Shift.Create(
+            name: "Flexible 7:30-9:30",
+            startTime: new TimeSpan(7, 30, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            flexWindowEndTime: new TimeSpan(9, 30, 0));
+
+        var checkIn = _date.Add(new TimeSpan(9, 38, 0));
+        var checkOut = _date.Add(new TimeSpan(18, 0, 0));
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false);
+
+        // Assert: 9:38 es después de 9:30 por 8 min, pero <= 10 min tolerancia -> no genera retardo
+        da.LateMinutes.Should().Be(0);
+        da.DynamicScheduledCheckOut.Should().Be(_date.Add(new TimeSpan(17, 38, 0)));
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_ArrivalAfterWindowExceedingTolerance_ShouldGenerateLateMinutes()
+    {
+        // Arrange: Ventana hasta 09:30, tolerancia 10 min. Llega a las 09:45.
+        var flexShift = Shift.Create(
+            name: "Flexible 7:30-9:30",
+            startTime: new TimeSpan(7, 30, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            flexWindowEndTime: new TimeSpan(9, 30, 0));
+
+        var checkIn = _date.Add(new TimeSpan(9, 45, 0));
+        var checkOut = _date.Add(new TimeSpan(18, 0, 0));
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false);
+
+        // Assert: 9:45 - 9:30 = 15 min > 10 min -> Retardo de 15 minutos
+        da.LateMinutes.Should().Be(15);
+        da.DynamicScheduledCheckOut.Should().Be(_date.Add(new TimeSpan(17, 45, 0)));
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_DynamicCheckOut_EarlyDepartureAndOvertimeCalculation()
+    {
+        // Arrange: Entró 08:30, jornada objetivo 8h -> salida esperada 16:30.
+        var flexShift = Shift.Create(
+            name: "Flexible 8:00-9:30",
+            startTime: new TimeSpan(8, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            flexWindowEndTime: new TimeSpan(9, 30, 0));
+
+        // Sale a las 16:10 -> 20 minutos de salida anticipada
+        var checkIn = _date.Add(new TimeSpan(8, 30, 0));
+        var checkOutEarly = _date.Add(new TimeSpan(16, 10, 0));
+
+        // Act
+        var daEarly = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn,
+            checkOut: checkOutEarly,
+            isRestDay: false);
+
+        // Assert
+        daEarly.DynamicScheduledCheckOut.Should().Be(_date.Add(new TimeSpan(16, 30, 0)));
+        daEarly.EarlyDepartureMinutes.Should().Be(20);
+        daEarly.OvertimeMinutes.Should().Be(0);
+
+        // Sale a las 17:30 -> tiempo extra de 60 minutos
+        var checkOutOvertime = _date.Add(new TimeSpan(17, 30, 0));
+        var daOvertime = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn,
+            checkOut: checkOutOvertime,
+            isRestDay: false,
+            overtimeAuthorized: true);
+
+        daOvertime.EarlyDepartureMinutes.Should().Be(0);
+        daOvertime.OvertimeMinutes.Should().Be(60);
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_WithRoundingEnabled_ShouldRoundReferenceEntry()
+    {
+        // Arrange: Redondeo de 15 minutos, tolerancia 5 min
+        var flexShift = Shift.Create(
+            name: "Flexible Con Redondeo",
+            startTime: new TimeSpan(8, 0, 0),
+            toleranceMinutes: 5,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            roundingsEnabled: true,
+            roundingInterval: 15,
+            flexWindowEndTime: new TimeSpan(9, 30, 0));
+
+        // Llega 08:04 -> redondea a 08:00
+        var checkIn1 = _date.Add(new TimeSpan(8, 4, 0));
+        var da1 = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn1,
+            checkOut: _date.Add(new TimeSpan(16, 0, 0)));
+
+        da1.GetReferenceEntry().Should().Be(_date.Add(new TimeSpan(8, 0, 0)));
+        da1.DynamicScheduledCheckOut.Should().Be(_date.Add(new TimeSpan(16, 0, 0)));
+
+        // Llega 08:08 -> redondea a 08:15
+        var checkIn2 = _date.Add(new TimeSpan(8, 8, 0));
+        var da2 = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn2,
+            checkOut: _date.Add(new TimeSpan(16, 15, 0)));
+
+        da2.GetReferenceEntry().Should().Be(_date.Add(new TimeSpan(8, 15, 0)));
+        da2.DynamicScheduledCheckOut.Should().Be(_date.Add(new TimeSpan(16, 15, 0)));
+    }
 }

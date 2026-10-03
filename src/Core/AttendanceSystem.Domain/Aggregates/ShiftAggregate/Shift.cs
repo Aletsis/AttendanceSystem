@@ -15,6 +15,10 @@ public class Shift : AggregateRoot<ShiftId>
     public int LunchBreakMinutes { get; private set; }
     public bool RoundingsEnabled { get; private set; }
     public int RoundingInterval { get; private set; }
+    /// <summary>Hora límite de la ventana de llegada para turnos flexibles (null si no es flexible).</summary>
+    public TimeSpan? FlexWindowEndTime { get; private set; }
+    /// <summary>Horas objetivo semanales para cálculo de bolsa de horas acumulada (opcional).</summary>
+    public TimeSpan? WeeklyWorkHours { get; private set; }
 
     private readonly List<ShiftDay> _days = new();
     public IReadOnlyCollection<ShiftDay> Days => _days.AsReadOnly();
@@ -30,8 +34,21 @@ public class Shift : AggregateRoot<ShiftId>
         IEnumerable<ShiftDay>? days = null,
         int lunchBreakMinutes = 0,
         bool roundingsEnabled = false,
-        int roundingInterval = 0)
+        int roundingInterval = 0,
+        TimeSpan? flexWindowEndTime = null,
+        TimeSpan? weeklyWorkHours = null)
     {
+        if (shiftType == ShiftType.Flexible)
+        {
+            flexWindowEndTime ??= startTime;
+            if (flexWindowEndTime.Value < startTime)
+                throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+        }
+        else
+        {
+            flexWindowEndTime = null;
+        }
+
         var shift = new Shift
         {
             Id = ShiftId.CreateNew(),
@@ -43,7 +60,9 @@ public class Shift : AggregateRoot<ShiftId>
             LunchBreakMinutes = lunchBreakMinutes < 0 ? 0 : lunchBreakMinutes,
             EndTime = NormalizeTime(startTime.Add(workHours)),
             RoundingsEnabled = roundingsEnabled,
-            RoundingInterval = roundingInterval
+            RoundingInterval = roundingInterval,
+            FlexWindowEndTime = flexWindowEndTime,
+            WeeklyWorkHours = weeklyWorkHours
         };
 
         if (days != null && days.Any())
@@ -68,12 +87,25 @@ public class Shift : AggregateRoot<ShiftId>
         IEnumerable<ShiftDay>? days = null,
         int lunchBreakMinutes = 0,
         bool roundingsEnabled = false,
-        int roundingInterval = 0)
+        int roundingInterval = 0,
+        TimeSpan? flexWindowEndTime = null,
+        TimeSpan? weeklyWorkHours = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del turno es requerido.");
         if (toleranceMinutes < 0)
             throw new DomainException("El tiempo de tolerancia no puede ser negativo.");
+
+        if (shiftType == ShiftType.Flexible)
+        {
+            flexWindowEndTime ??= startTime;
+            if (flexWindowEndTime.Value < startTime)
+                throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+        }
+        else
+        {
+            flexWindowEndTime = null;
+        }
 
         Name = name;
         StartTime = startTime;
@@ -84,6 +116,8 @@ public class Shift : AggregateRoot<ShiftId>
         EndTime = NormalizeTime(startTime.Add(workHours));
         RoundingsEnabled = roundingsEnabled;
         RoundingInterval = roundingInterval;
+        FlexWindowEndTime = flexWindowEndTime;
+        WeeklyWorkHours = weeklyWorkHours;
 
         _days.Clear();
         if (days != null && days.Any())

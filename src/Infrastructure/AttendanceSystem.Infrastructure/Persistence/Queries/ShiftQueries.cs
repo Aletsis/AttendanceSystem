@@ -31,6 +31,8 @@ public class ShiftQueries : IShiftQueries
                 s.ShiftType,
                 s.Days.Select(d => new ShiftDayDto(d.DayOfWeek, d.StartTime, d.EndTime, d.WorkHours, d.ShiftType)).ToList(),
                 s.RoundingsEnabled,
-                s.RoundingInterval));
+                s.RoundingInterval,
+                s.FlexWindowEndTime,
+                s.WeeklyWorkHours));
     }
 }

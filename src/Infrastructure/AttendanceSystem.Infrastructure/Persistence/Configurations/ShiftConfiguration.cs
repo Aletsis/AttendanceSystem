@@ -50,6 +50,12 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             .IsRequired()
             .HasDefaultValue(0);
 
+        builder.Property(s => s.FlexWindowEndTime)
+            .IsRequired(false);
+
+        builder.Property(s => s.WeeklyWorkHours)
+            .IsRequired(false);
+
         builder.OwnsMany(s => s.Days, d =>
         {
             d.ToTable("ShiftDays");

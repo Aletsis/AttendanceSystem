@@ -32,6 +32,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public int ToleranceMinutes { get; private set; }
     public bool RoundingsEnabled { get; private set; }
     public int RoundingInterval { get; private set; }
+    public TimeSpan? FlexWindowEndTime { get; private set; }
+    public TimeSpan? WorkHours { get; private set; }
+    public DateTime? DynamicScheduledCheckOut { get; private set; }
 
     // Actual Data
     public DateTime? ActualCheckIn { get; private set; }
@@ -127,6 +130,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             attendance.ToleranceMinutes = shift.ToleranceMinutes;
             attendance.RoundingsEnabled = shift.RoundingsEnabled;
             attendance.RoundingInterval = shift.RoundingInterval;
+            attendance.FlexWindowEndTime = shift.FlexWindowEndTime;
+            attendance.WorkHours = shift.WorkHours;
         }
 
         // 2. Set Actual Times
@@ -195,6 +200,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         ToleranceMinutes = shift.ToleranceMinutes;
         RoundingsEnabled = shift.RoundingsEnabled;
         RoundingInterval = shift.RoundingInterval;
+        FlexWindowEndTime = shift.FlexWindowEndTime;
+        WorkHours = shift.WorkHours;
 
         // If updating shift, it's likely not a Rest Day anymore unless strict override, but usually shift implies work day.
         IsRestDay = false;
@@ -257,6 +264,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         MissingCheckIn = false;
         MissingCheckOut = false;
         WorkedOnRestDay = false;
+        DynamicScheduledCheckOut = null;
 
         // If Rest Day
         if (IsRestDay)
@@ -319,6 +327,28 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 // In Continuo or No-Shift mode, there are no lates.
                 LateMinutes = 0;
             }
+            else if (ShiftType == Enumerations.ShiftType.Flexible)
+            {
+                // Ventana de llegada: No genera retardo si llega dentro de la ventana (StartTime .. FlexWindowEndTime)
+                var windowEnd = FlexWindowEndTime ?? ScheduledCheckIn.Value;
+                var windowEndDateTime = Date.Add(windowEnd);
+                var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+
+                if (checkInNoSeconds > windowEndDateTime)
+                {
+                    var diff = (checkInNoSeconds - windowEndDateTime).TotalMinutes;
+                    int delayMinutes = (int)diff;
+
+                    if (delayMinutes > ToleranceMinutes)
+                    {
+                        LateMinutes = delayMinutes;
+                    }
+                }
+                else
+                {
+                    LateMinutes = 0;
+                }
+            }
             else
             {
                 var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
@@ -332,14 +362,33 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
         }
 
+        // Calcular salida esperada dinámica para turnos flexibles o continuos
+        if ((ShiftType == Enumerations.ShiftType.Flexible || ShiftType == Enumerations.ShiftType.Continuo) && ActualCheckIn.HasValue)
+        {
+            DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
+            var targetWorkHours = WorkHours ?? (ScheduledCheckOut.HasValue && ScheduledCheckIn.HasValue
+                ? (ScheduledCheckOut.Value >= ScheduledCheckIn.Value ? ScheduledCheckOut.Value - ScheduledCheckIn.Value : ScheduledCheckOut.Value.Add(TimeSpan.FromDays(1)) - ScheduledCheckIn.Value)
+                : TimeSpan.FromHours(8));
+            DynamicScheduledCheckOut = referenceEntry.Add(targetWorkHours).AddMinutes(LunchBreakMinutesApplied);
+        }
+
         // EARLY DEPARTURE & OVERTIME
         if (ActualCheckOut.HasValue)
         {
-            var scheduledOutDateTime = Date.Add(ScheduledCheckOut.Value);
+            DateTime scheduledOutDateTime;
 
-            if (ScheduledCheckOut <= ScheduledCheckIn)
+            if ((ShiftType == Enumerations.ShiftType.Flexible || ShiftType == Enumerations.ShiftType.Continuo) && DynamicScheduledCheckOut.HasValue)
             {
-                scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
+                scheduledOutDateTime = DynamicScheduledCheckOut.Value;
+            }
+            else
+            {
+                scheduledOutDateTime = Date.Add(ScheduledCheckOut.Value);
+
+                if (ScheduledCheckOut <= ScheduledCheckIn)
+                {
+                    scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
+                }
             }
 
             if (ActualCheckOut.Value < scheduledOutDateTime)
@@ -351,7 +400,18 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             if (ActualCheckIn.HasValue)
             {
                 // Calculate scheduled work duration
-                var scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
+                double scheduledMinutes;
+                if (ShiftType == Enumerations.ShiftType.Flexible || ShiftType == Enumerations.ShiftType.Continuo)
+                {
+                    var targetWorkHours = WorkHours ?? (ScheduledCheckOut.HasValue && ScheduledCheckIn.HasValue
+                        ? (ScheduledCheckOut.Value >= ScheduledCheckIn.Value ? ScheduledCheckOut.Value - ScheduledCheckIn.Value : ScheduledCheckOut.Value.Add(TimeSpan.FromDays(1)) - ScheduledCheckIn.Value)
+                        : TimeSpan.FromHours(8));
+                    scheduledMinutes = targetWorkHours.TotalMinutes;
+                }
+                else
+                {
+                    scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
+                }
 
                 // 1. Determine Reference Entry & Exit
                 DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
@@ -411,7 +471,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public DateTime? GetReferenceEntry()
     {
         if (!ActualCheckIn.HasValue) return null;
-        if (ShiftType == Enumerations.ShiftType.Continuo)
+        if (ShiftType == Enumerations.ShiftType.Continuo || ShiftType == Enumerations.ShiftType.Flexible)
         {
             if (RoundingsEnabled && RoundingInterval > 0)
             {
@@ -443,7 +503,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public DateTime? GetReferenceExit()
     {
         if (!ActualCheckOut.HasValue) return null;
-        if (ShiftType == Enumerations.ShiftType.Continuo)
+        if (ShiftType == Enumerations.ShiftType.Continuo || ShiftType == Enumerations.ShiftType.Flexible)
         {
             if (RoundingsEnabled && RoundingInterval > 0)
             {

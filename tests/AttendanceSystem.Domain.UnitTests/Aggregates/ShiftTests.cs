@@ -95,4 +95,57 @@ public class ShiftTests
         shift.EndTime.Should().Be(new TimeSpan(16, 0, 0));
         shift.ShiftType.Should().Be(ShiftType.Vespertino);
     }
+
+    [Fact]
+    public void Create_FlexibleShift_ShouldSetWindowAndWeeklyHours()
+    {
+        // Arrange
+        var startTime = new TimeSpan(7, 30, 0);
+        var windowEnd = new TimeSpan(9, 30, 0);
+        var workHours = new TimeSpan(8, 0, 0);
+        var weeklyHours = new TimeSpan(40, 0, 0);
+
+        // Act
+        var shift = Shift.Create(
+            name: "Horario Flexible IT",
+            startTime: startTime,
+            toleranceMinutes: 10,
+            workHours: workHours,
+            shiftType: ShiftType.Flexible,
+            lunchBreakMinutes: 30,
+            roundingsEnabled: true,
+            roundingInterval: 15,
+            flexWindowEndTime: windowEnd,
+            weeklyWorkHours: weeklyHours);
+
+        // Assert
+        shift.ShiftType.Should().Be(ShiftType.Flexible);
+        shift.StartTime.Should().Be(startTime);
+        shift.FlexWindowEndTime.Should().Be(windowEnd);
+        shift.WorkHours.Should().Be(workHours);
+        shift.WeeklyWorkHours.Should().Be(weeklyHours);
+        shift.RoundingsEnabled.Should().BeTrue();
+        shift.RoundingInterval.Should().Be(15);
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_WhenWindowEndBeforeStart_ShouldThrowDomainException()
+    {
+        // Arrange
+        var startTime = new TimeSpan(9, 0, 0);
+        var windowEnd = new TimeSpan(8, 0, 0);
+
+        // Act
+        Action act = () => Shift.Create(
+            name: "Flexible Invalido",
+            startTime: startTime,
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            flexWindowEndTime: windowEnd);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*no puede ser anterior a la hora de inicio*");
+    }
 }

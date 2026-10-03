@@ -159,6 +159,66 @@
                             <ItemsControl ItemsSource="{Binding Days}" ItemTemplate="{StaticResource DayConfigTemplate}"/>
                         </Border>
                     </StackPanel>
+
+                    <!-- Flexible Shift -->
+                    <StackPanel Visibility="{Binding IsFlexibleShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
+                        <Grid Margin="0,5,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Inicio Ventana Llegada" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:TimePicker SelectedDateTime="{Binding StartDateTime}" 
+                                                mah:TextBoxHelper.Watermark="8:00 AM"
+                                                Culture="es-MX" IsClockVisible="False"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Fin Ventana Llegada" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:TimePicker SelectedDateTime="{Binding FlexWindowEndDateTime}" 
+                                                mah:TextBoxHelper.Watermark="9:30 AM"
+                                                Culture="es-MX" IsClockVisible="False"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Horas Diarias Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:NumericUpDown Value="{Binding TargetHours}" Minimum="1" Maximum="24" Interval="1"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Horas Semanales (Bolsa)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:NumericUpDown Value="{Binding WeeklyHours}" Minimum="0" Maximum="168" Interval="1"/>
+                            </StackPanel>
+                        </Grid>
+                        
+                        <CheckBox Content="Habilitar Redondeos en Entrada" IsChecked="{Binding RoundingsEnabled}" Foreground="#4E5D78" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        
+                        <StackPanel Visibility="{Binding RoundingsEnabled, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="Intervalo de Redondeo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <ComboBox SelectedValue="{Binding RoundingInterval}" SelectedValuePath="Tag" Height="30" VerticalContentAlignment="Center">
+                                <ComboBoxItem Content="15 minutos">
+                                    <ComboBoxItem.Tag>
+                                        <sys:Int32>15</sys:Int32>
+                                    </ComboBoxItem.Tag>
+                                </ComboBoxItem>
+                                <ComboBoxItem Content="30 minutos">
+                                    <ComboBoxItem.Tag>
+                                        <sys:Int32>30</sys:Int32>
+                                    </ComboBoxItem.Tag>
+                                </ComboBoxItem>
+                                <ComboBoxItem Content="1 hora (60 minutos)">
+                                    <ComboBoxItem.Tag>
+                                        <sys:Int32>60</sys:Int32>
+                                    </ComboBoxItem.Tag>
+                                </ComboBoxItem>
+                            </ComboBox>
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
 

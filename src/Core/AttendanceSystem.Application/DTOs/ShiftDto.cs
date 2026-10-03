@@ -12,8 +12,10 @@ public record ShiftDto(
     ShiftType ShiftType,
     IEnumerable<ShiftDayDto> Days,
     bool RoundingsEnabled,
-    int RoundingInterval
+    int RoundingInterval,
+    TimeSpan? FlexWindowEndTime = null,
+    TimeSpan? WeeklyWorkHours = null
 )
 {
-    public ShiftDto() : this(Guid.Empty, string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0, TimeSpan.Zero, ShiftType.Matutino, Enumerable.Empty<ShiftDayDto>(), false, 0) { }
+    public ShiftDto() : this(Guid.Empty, string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0, TimeSpan.Zero, ShiftType.Matutino, Enumerable.Empty<ShiftDayDto>(), false, 0, null, null) { }
 }

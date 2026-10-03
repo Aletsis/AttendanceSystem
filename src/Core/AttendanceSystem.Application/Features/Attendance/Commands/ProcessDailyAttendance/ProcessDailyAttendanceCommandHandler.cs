@@ -189,14 +189,14 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                             dayStartTime = dayConfig.StartTime;
                             dayEndTime = dayConfig.EndTime;
 
-                            // Si dayConfig es Nocturno o Continuo, o si endTime <= startTime, cruza el día
-                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo)
+                            // Si dayConfig es Nocturno, Continuo o Flexible, o si endTime <= startTime, cruza el día
+                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible)
                             {
                                 isCrossDay = true;
                             }
                         }
                     }
-                    else if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo)
+                    else if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible)
                     {
                         isCrossDay = true;
                     }
@@ -251,6 +251,15 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 else if (shift.ShiftType == ShiftType.Continuo)
                 {
                     await _sender.Send(new ProcessContinuousAttendanceCommand(
+                        employee,
+                        date,
+                        shift,
+                        records,
+                        isRestDay), cancellationToken);
+                }
+                else if (shift.ShiftType == ShiftType.Flexible)
+                {
+                    await _sender.Send(new ProcessFlexibleAttendanceCommand(
                         employee,
                         date,
                         shift,

@@ -84,6 +84,15 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.IsRestDay), cancellationToken);
                 break;
 
+            case ShiftType.Flexible:
+                await _sender.Send(new ProcessFlexibleAttendanceCommand(
+                    request.Employee,
+                    request.Date,
+                    request.Shift,
+                    request.Records,
+                    request.IsRestDay), cancellationToken);
+                break;
+
             default:
                 // Fallback por seguridad
                 _logger.LogWarning("Tipo de turno desconocido o no soportado en turno mixto diario: {Type}. Usando regular.", dayShiftType);

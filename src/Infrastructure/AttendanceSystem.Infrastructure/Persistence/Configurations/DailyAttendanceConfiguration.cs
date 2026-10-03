@@ -48,6 +48,12 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.RoundingInterval)
             .IsRequired()
             .HasDefaultValue(0);
+        builder.Property(x => x.FlexWindowEndTime)
+            .IsRequired(false);
+        builder.Property(x => x.WorkHours)
+            .IsRequired(false);
+        builder.Property(x => x.DynamicScheduledCheckOut)
+            .IsRequired(false);
 
         // Actuals
         builder.Property(x => x.ActualCheckIn);
