@@ -52,6 +52,8 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
             .IsRequired(false);
         builder.Property(x => x.WorkHours)
             .IsRequired(false);
+        builder.Property(x => x.WeeklyWorkHours)
+            .IsRequired(false);
         builder.Property(x => x.DynamicScheduledCheckOut)
             .IsRequired(false);
 

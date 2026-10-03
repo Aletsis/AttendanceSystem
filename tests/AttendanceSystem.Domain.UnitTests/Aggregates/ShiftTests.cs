@@ -97,22 +97,51 @@ public class ShiftTests
     }
 
     [Fact]
-    public void Create_FlexibleShift_ShouldSetWindowAndWeeklyHours()
+    public void Create_FlexibleShift_WithDailyHoursOnly_ShouldSucceed()
     {
         // Arrange
         var startTime = new TimeSpan(7, 30, 0);
         var windowEnd = new TimeSpan(9, 30, 0);
         var workHours = new TimeSpan(8, 0, 0);
-        var weeklyHours = new TimeSpan(40, 0, 0);
 
         // Act
         var shift = Shift.Create(
-            name: "Horario Flexible IT",
+            name: "Horario Flexible Diario",
             startTime: startTime,
             toleranceMinutes: 10,
             workHours: workHours,
             shiftType: ShiftType.Flexible,
             lunchBreakMinutes: 30,
+            roundingsEnabled: true,
+            roundingInterval: 15,
+            flexWindowEndTime: windowEnd);
+
+        // Assert
+        shift.ShiftType.Should().Be(ShiftType.Flexible);
+        shift.StartTime.Should().Be(startTime);
+        shift.FlexWindowEndTime.Should().Be(windowEnd);
+        shift.WorkHours.Should().Be(workHours);
+        shift.WeeklyWorkHours.Should().BeNull();
+        shift.RoundingsEnabled.Should().BeTrue();
+        shift.RoundingInterval.Should().Be(15);
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_WithWeeklyHoursOnly_ShouldSucceed()
+    {
+        // Arrange
+        var startTime = new TimeSpan(7, 30, 0);
+        var windowEnd = new TimeSpan(9, 30, 0);
+        var weeklyHours = new TimeSpan(40, 0, 0);
+
+        // Act
+        var shift = Shift.Create(
+            name: "Horario Flexible Semanal",
+            startTime: startTime,
+            toleranceMinutes: 10,
+            workHours: TimeSpan.Zero,
+            shiftType: ShiftType.Flexible,
+            lunchBreakMinutes: 0,
             roundingsEnabled: true,
             roundingInterval: 15,
             flexWindowEndTime: windowEnd,
@@ -122,10 +151,48 @@ public class ShiftTests
         shift.ShiftType.Should().Be(ShiftType.Flexible);
         shift.StartTime.Should().Be(startTime);
         shift.FlexWindowEndTime.Should().Be(windowEnd);
-        shift.WorkHours.Should().Be(workHours);
+        shift.WorkHours.Should().Be(TimeSpan.Zero);
         shift.WeeklyWorkHours.Should().Be(weeklyHours);
-        shift.RoundingsEnabled.Should().BeTrue();
-        shift.RoundingInterval.Should().Be(15);
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_WithBothDailyAndWeeklyHours_ShouldThrowDomainException()
+    {
+        // Arrange
+        var startTime = new TimeSpan(8, 0, 0);
+
+        // Act
+        Action act = () => Shift.Create(
+            name: "Flexible Ambiguo",
+            startTime: startTime,
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            weeklyWorkHours: new TimeSpan(40, 0, 0));
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*pero no ambas*");
+    }
+
+    [Fact]
+    public void Create_FlexibleShift_WithNeitherDailyNorWeeklyHours_ShouldThrowDomainException()
+    {
+        // Arrange
+        var startTime = new TimeSpan(8, 0, 0);
+
+        // Act
+        Action act = () => Shift.Create(
+            name: "Flexible Sin Horas",
+            startTime: startTime,
+            toleranceMinutes: 10,
+            workHours: TimeSpan.Zero,
+            shiftType: ShiftType.Flexible,
+            weeklyWorkHours: null);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*debe especificarse las horas objetivo diarias o las horas objetivo semanales*");
     }
 
     [Fact]

@@ -181,20 +181,23 @@
                             </StackPanel>
                         </Grid>
 
-                        <Grid Margin="0,0,0,15">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Margin="0,0,10,0">
-                                <TextBlock Text="Horas Diarias Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                                <mah:NumericUpDown Value="{Binding TargetHours}" Minimum="1" Maximum="24" Interval="1"/>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1">
-                                <TextBlock Text="Horas Semanales (Bolsa)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                                <mah:NumericUpDown Value="{Binding WeeklyHours}" Minimum="0" Maximum="168" Interval="1"/>
-                            </StackPanel>
-                        </Grid>
+                        <TextBlock Text="Esquema de Horas Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <RadioButton Content="Por Día (Horas Diarias)" IsChecked="{Binding IsDailyFlexibleMode}" GroupName="FlexTargetGroup" Margin="0,0,20,0" Foreground="#4E5D78"/>
+                            <RadioButton Content="Por Semana (Bolsa de Horas)" IsChecked="{Binding IsWeeklyFlexibleMode}" GroupName="FlexTargetGroup" Foreground="#4E5D78"/>
+                        </StackPanel>
+
+                        <StackPanel Visibility="{Binding IsDailyFlexibleMode, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
+                            <TextBlock Text="Horas Diarias Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <mah:NumericUpDown Value="{Binding TargetHours}" Minimum="1" Maximum="24" Interval="1"/>
+                            <TextBlock Text="Horas requeridas por cada día laborable." FontSize="11" Foreground="#858796" Margin="0,2,0,0" FontStyle="Italic"/>
+                        </StackPanel>
+
+                        <StackPanel Visibility="{Binding IsWeeklyFlexibleMode, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
+                            <TextBlock Text="Horas Semanales Objetivo (Bolsa)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <mah:NumericUpDown Value="{Binding WeeklyHours}" Minimum="1" Maximum="168" Interval="1"/>
+                            <TextBlock Text="Meta acumulada de horas a cumplir durante la semana." FontSize="11" Foreground="#858796" Margin="0,2,0,0" FontStyle="Italic"/>
+                        </StackPanel>
                         
                         <CheckBox Content="Habilitar Redondeos en Entrada" IsChecked="{Binding RoundingsEnabled}" Foreground="#4E5D78" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         

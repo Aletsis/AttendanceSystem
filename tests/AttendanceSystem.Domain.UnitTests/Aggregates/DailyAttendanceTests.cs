@@ -500,4 +500,39 @@ public class DailyAttendanceTests
         da2.GetReferenceEntry().Should().Be(_date.Add(new TimeSpan(8, 15, 0)));
         da2.DynamicScheduledCheckOut.Should().Be(_date.Add(new TimeSpan(16, 15, 0)));
     }
+
+    [Fact]
+    public void Create_FlexibleShift_WithWeeklyHours_ShouldNotHaveDynamicCheckOutNorDailyEarlyDeparture()
+    {
+        // Arrange
+        var flexShift = Shift.Create(
+            name: "Flexible Bolsa Semanal",
+            startTime: new TimeSpan(8, 0, 0),
+            toleranceMinutes: 10,
+            workHours: TimeSpan.Zero,
+            shiftType: ShiftType.Flexible,
+            flexWindowEndTime: new TimeSpan(10, 0, 0),
+            weeklyWorkHours: new TimeSpan(40, 0, 0));
+
+        // Llega 08:45, sale 14:00 (5h 15m trabajadas)
+        var checkIn = _date.Add(new TimeSpan(8, 45, 0));
+        var checkOut = _date.Add(new TimeSpan(14, 0, 0));
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: flexShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false);
+
+        // Assert
+        da.WeeklyWorkHours.Should().Be(TimeSpan.FromHours(40));
+        da.WorkHours.Should().BeNull();
+        da.LateMinutes.Should().Be(0); // Dentro de ventana 8:00 - 10:00
+        da.DynamicScheduledCheckOut.Should().BeNull(); // Sin salida fija diaria
+        da.EarlyDepartureMinutes.Should().Be(0); // Sin salida temprana diaria
+        da.OvertimeMinutes.Should().Be(0); // Las horas se acumulan a la bolsa semanal
+    }
 }

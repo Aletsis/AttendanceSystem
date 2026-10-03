@@ -127,6 +127,31 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             set => SetProperty(ref _roundingInterval, value);
         }
 
+        private bool _isWeeklyFlexibleMode;
+        public bool IsWeeklyFlexibleMode
+        {
+            get => _isWeeklyFlexibleMode;
+            set
+            {
+                if (SetProperty(ref _isWeeklyFlexibleMode, value))
+                {
+                    RaisePropertyChanged(nameof(IsDailyFlexibleMode));
+                }
+            }
+        }
+
+        public bool IsDailyFlexibleMode
+        {
+            get => !_isWeeklyFlexibleMode;
+            set
+            {
+                if (SetProperty(ref _isWeeklyFlexibleMode, !value))
+                {
+                    RaisePropertyChanged(nameof(IsWeeklyFlexibleMode));
+                }
+            }
+        }
+
         public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Continuo && SelectedShiftType.Key != ShiftType.Flexible;
         public bool IsContinuousShift => SelectedShiftType.Key == ShiftType.Continuo;
         public bool IsMixedShift => SelectedShiftType.Key == ShiftType.Mixto;
@@ -198,9 +223,26 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             if (durationEnd <= startTime)
                 durationEnd = durationEnd.Add(TimeSpan.FromHours(24));
 
-            TimeSpan workHours = SelectedShiftType.Key == ShiftType.Flexible
-                ? TimeSpan.FromHours(TargetHours)
-                : durationEnd - startTime;
+            TimeSpan workHours;
+            TimeSpan? weekly = null;
+
+            if (SelectedShiftType.Key == ShiftType.Flexible)
+            {
+                if (IsDailyFlexibleMode)
+                {
+                    workHours = TimeSpan.FromHours(TargetHours);
+                    weekly = null;
+                }
+                else
+                {
+                    workHours = TimeSpan.Zero;
+                    weekly = TimeSpan.FromHours(WeeklyHours);
+                }
+            }
+            else
+            {
+                workHours = durationEnd - startTime;
+            }
 
             var dayDtos = new List<ShiftDayDto>();
             if (SelectedShiftType.Key == ShiftType.Mixto)
@@ -217,9 +259,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
             TimeSpan? flexEnd = SelectedShiftType.Key == ShiftType.Flexible
                 ? (FlexWindowEndDateTime?.TimeOfDay ?? startTime)
-                : null;
-            TimeSpan? weekly = SelectedShiftType.Key == ShiftType.Flexible && WeeklyHours > 0
-                ? TimeSpan.FromHours(WeeklyHours)
                 : null;
 
             var parameters = new DialogParameters
@@ -273,9 +312,34 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 if (end.TotalDays >= 1) end = end.Subtract(TimeSpan.FromDays(1));
                 EndDateTime = DateTime.Today.Add(end);
 
-                if (type == ShiftType.Continuo || type == ShiftType.Flexible)
+                if (type == ShiftType.Continuo)
                 {
                     TargetHours = (int)workHours.TotalHours;
+                }
+                else if (type == ShiftType.Flexible)
+                {
+                    if (parameters.ContainsKey("WeeklyWorkHours"))
+                    {
+                        var weekly = parameters.GetValue<TimeSpan?>("WeeklyWorkHours");
+                        if (weekly.HasValue && weekly.Value > TimeSpan.Zero)
+                        {
+                            WeeklyHours = (int)weekly.Value.TotalHours;
+                            IsWeeklyFlexibleMode = true;
+                        }
+                        else
+                        {
+                            IsWeeklyFlexibleMode = false;
+                        }
+                    }
+                    else
+                    {
+                        IsWeeklyFlexibleMode = false;
+                    }
+
+                    if (workHours > TimeSpan.Zero)
+                    {
+                        TargetHours = (int)workHours.TotalHours;
+                    }
                 }
 
                 if (parameters.ContainsKey("FlexWindowEndTime"))
@@ -283,13 +347,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var flexEnd = parameters.GetValue<TimeSpan?>("FlexWindowEndTime");
                     if (flexEnd.HasValue)
                         FlexWindowEndDateTime = DateTime.Today.Add(flexEnd.Value);
-                }
-
-                if (parameters.ContainsKey("WeeklyWorkHours"))
-                {
-                    var weekly = parameters.GetValue<TimeSpan?>("WeeklyWorkHours");
-                    if (weekly.HasValue)
-                        WeeklyHours = (int)weekly.Value.TotalHours;
                 }
 
                 if (parameters.ContainsKey("RoundingsEnabled"))

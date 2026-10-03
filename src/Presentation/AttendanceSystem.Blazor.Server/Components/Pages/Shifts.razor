@@ -43,7 +43,11 @@
         <MudTd DataLabel="Nombre">@context.Name</MudTd>
         <MudTd DataLabel="Inicio">@context.StartTime.ToString(@"hh\:mm")</MudTd>
         <MudTd DataLabel="Fin">@context.EndTime.ToString(@"hh\:mm")</MudTd>
-        <MudTd DataLabel="Duración">@context.WorkHours.ToString(@"hh\:mm")</MudTd>
+        <MudTd DataLabel="Duración">
+            @(context.ShiftType == ShiftType.Flexible && context.WeeklyWorkHours.HasValue && context.WeeklyWorkHours.Value > TimeSpan.Zero
+                ? $"{context.WeeklyWorkHours.Value.TotalHours:0}h / sem"
+                : context.WorkHours.ToString(@"hh\:mm"))
+        </MudTd>
         <MudTd DataLabel="Tolerancia">@context.ToleranceMinutes min</MudTd>
         <MudTd DataLabel="Tipo">@context.ShiftType</MudTd>
         <AuthorizeView Roles="Administrador" Context="authContext">

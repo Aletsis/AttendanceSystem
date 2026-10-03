@@ -71,13 +71,24 @@
                     <MudTimePicker @bind-Time="_flexWindowEndTime" Label="Fin Ventana Llegada" Required="true" Editable="true" />
                 </MudItem>
             </MudGrid>
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Esquema de Horas Objetivo:</MudText>
+            <MudRadioGroup @bind-Value="_flexTargetType" Class="mb-3">
+                <MudRadio Value="@("Daily")" Color="Color.Primary">Por Día (Horas Diarias)</MudRadio>
+                <MudRadio Value="@("Weekly")" Color="Color.Primary">Por Semana (Bolsa de Horas)</MudRadio>
+            </MudRadioGroup>
             <MudGrid Class="mb-4">
-                <MudItem xs="6">
-                    <MudNumericField @bind-Value="_targetHours" Label="Horas Diarias Objetivo" Min="1" Max="24" Step="1" HelperText="Horas de trabajo requeridas al día" />
-                </MudItem>
-                <MudItem xs="6">
-                    <MudNumericField @bind-Value="_weeklyHours" Label="Horas Semanales (Bolsa)" Min="0" Max="168" Step="1" HelperText="Meta semanal acumulada (opcional)" />
-                </MudItem>
+                @if (_flexTargetType == "Daily")
+                {
+                    <MudItem xs="12">
+                        <MudNumericField @bind-Value="_targetHours" Label="Horas Diarias Objetivo" Min="1" Max="24" Step="1" HelperText="Horas de trabajo requeridas al día" Required="true" />
+                    </MudItem>
+                }
+                else
+                {
+                    <MudItem xs="12">
+                        <MudNumericField @bind-Value="_weeklyHours" Label="Horas Semanales Objetivo (Bolsa)" Min="1" Max="168" Step="1" HelperText="Meta semanal acumulada requerida" Required="true" />
+                    </MudItem>
+                }
             </MudGrid>
             <MudCheckBox @bind-Value="_roundingsEnabled" Label="Habilitar Redondeos en Entrada" Color="Color.Primary" Class="mb-2" />
             @if (_roundingsEnabled)
@@ -123,6 +134,7 @@
     private int _toleranceMinutes;
     private int _targetHours = 8;
     private int _weeklyHours = 40;
+    private string _flexTargetType = "Daily";
     private ShiftType _shiftType;
     private bool _roundingsEnabled;
     private int _roundingInterval = 15;
@@ -147,12 +159,18 @@
         _roundingsEnabled = RoundingsEnabled;
         _roundingInterval = RoundingInterval == 0 ? 15 : RoundingInterval;
         _flexWindowEndTime = FlexWindowEndTime ?? (_startTime.HasValue ? _startTime.Value.Add(TimeSpan.FromHours(1.5)) : new TimeSpan(9, 30, 0));
-        if (WeeklyWorkHours.HasValue)
+        
+        if (WeeklyWorkHours.HasValue && WeeklyWorkHours.Value > TimeSpan.Zero)
         {
+            _flexTargetType = "Weekly";
             _weeklyHours = (int)WeeklyWorkHours.Value.TotalHours;
         }
+        else
+        {
+            _flexTargetType = "Daily";
+        }
         
-        if (WorkHours.HasValue)
+        if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero)
         {
              _targetHours = (int)WorkHours.Value.TotalHours;
              if (StartTime.HasValue)
@@ -243,9 +261,26 @@
         if (durationEnd <= start)
             durationEnd = durationEnd.Add(TimeSpan.FromHours(24));
         
-        var workHours = _shiftType == ShiftType.Flexible
-            ? TimeSpan.FromHours(_targetHours)
-            : durationEnd - start;
+        TimeSpan workHours;
+        TimeSpan? weekly = null;
+
+        if (_shiftType == ShiftType.Flexible)
+        {
+            if (_flexTargetType == "Daily")
+            {
+                workHours = TimeSpan.FromHours(_targetHours);
+                weekly = null;
+            }
+            else
+            {
+                workHours = TimeSpan.Zero;
+                weekly = TimeSpan.FromHours(_weeklyHours);
+            }
+        }
+        else
+        {
+            workHours = durationEnd - start;
+        }
 
         var dtos = new List<ShiftDayDto>();
         if (_shiftType == ShiftType.Mixto)
@@ -264,7 +299,6 @@
         }
 
         TimeSpan? flexEnd = _shiftType == ShiftType.Flexible ? (_flexWindowEndTime ?? start) : null;
-        TimeSpan? weekly = _shiftType == ShiftType.Flexible && _weeklyHours > 0 ? TimeSpan.FromHours(_weeklyHours) : null;
 
         if (ShiftId.HasValue)
         {

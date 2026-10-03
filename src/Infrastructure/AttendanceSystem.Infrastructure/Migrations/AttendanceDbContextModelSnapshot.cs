@@ -185,6 +185,9 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<TimeSpan?>("WorkHours")
                         .HasColumnType("interval");
 
+                    b.Property<TimeSpan?>("WeeklyWorkHours")
+                        .HasColumnType("interval");
+
                     b.Property<Guid?>("ShiftId")
                         .HasColumnType("uuid");
 

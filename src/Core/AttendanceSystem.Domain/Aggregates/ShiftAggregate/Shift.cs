@@ -43,10 +43,31 @@ public class Shift : AggregateRoot<ShiftId>
             flexWindowEndTime ??= startTime;
             if (flexWindowEndTime.Value < startTime)
                 throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+
+            bool hasDaily = workHours > TimeSpan.Zero;
+            bool hasWeekly = weeklyWorkHours.HasValue && weeklyWorkHours.Value > TimeSpan.Zero;
+
+            if (hasDaily && hasWeekly)
+                throw new DomainException("En un turno flexible, las horas objetivo deben configurarse por día o por semana, pero no ambas.");
+
+            if (!hasDaily && !hasWeekly)
+                throw new DomainException("En un turno flexible, debe especificarse las horas objetivo diarias o las horas objetivo semanales.");
+
+            if (!hasDaily)
+            {
+                workHours = TimeSpan.Zero;
+            }
+            else
+            {
+                weeklyWorkHours = null;
+            }
         }
         else
         {
             flexWindowEndTime = null;
+            weeklyWorkHours = null;
+            if (workHours <= TimeSpan.Zero)
+                throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
         }
 
         var shift = new Shift
@@ -101,10 +122,31 @@ public class Shift : AggregateRoot<ShiftId>
             flexWindowEndTime ??= startTime;
             if (flexWindowEndTime.Value < startTime)
                 throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+
+            bool hasDaily = workHours > TimeSpan.Zero;
+            bool hasWeekly = weeklyWorkHours.HasValue && weeklyWorkHours.Value > TimeSpan.Zero;
+
+            if (hasDaily && hasWeekly)
+                throw new DomainException("En un turno flexible, las horas objetivo deben configurarse por día o por semana, pero no ambas.");
+
+            if (!hasDaily && !hasWeekly)
+                throw new DomainException("En un turno flexible, debe especificarse las horas objetivo diarias o las horas objetivo semanales.");
+
+            if (!hasDaily)
+            {
+                workHours = TimeSpan.Zero;
+            }
+            else
+            {
+                weeklyWorkHours = null;
+            }
         }
         else
         {
             flexWindowEndTime = null;
+            weeklyWorkHours = null;
+            if (workHours <= TimeSpan.Zero)
+                throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
         }
 
         Name = name;
