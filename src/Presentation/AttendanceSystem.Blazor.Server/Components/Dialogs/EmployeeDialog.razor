@@ -249,6 +249,7 @@
         get
         {
             if (!_selectedShiftType.HasValue) return Enumerable.Empty<ShiftDto>();
+            if (_selectedShiftType.Value == ShiftTypeEnum.Rotativo) return _shifts.OrderBy(s => s.StartTime).ToList();
             return _shifts.Where(s => s.ShiftType == _selectedShiftType.Value).OrderBy(s => s.StartTime).ToList();
         }
     }

@@ -249,6 +249,11 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<bool>("WorkedOnRestDay")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsAutoDetectedShift")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.HasKey("Id");
 
                     b.HasIndex("Date");
@@ -654,6 +659,49 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Shifts", (string)null);
+                });
+
+            modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate.ShiftRoster", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("EmployeeId")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.Property<bool>("IsRestDay")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<Guid?>("ShiftId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Date");
+
+                    b.HasIndex("ShiftId");
+
+                    b.HasIndex("EmployeeId", "Date")
+                        .IsUnique();
+
+                    b.ToTable("ShiftRosters", (string)null);
                 });
 
             modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert", b =>
@@ -1250,6 +1298,20 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate.ShiftRoster", b =>
+                {
+                    b.HasOne("AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee", null)
+                        .WithMany()
+                        .HasForeignKey("EmployeeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("AttendanceSystem.Domain.Aggregates.ShiftAggregate.Shift", null)
+                        .WithMany()
+                        .HasForeignKey("ShiftId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 #pragma warning restore 612, 618
         }

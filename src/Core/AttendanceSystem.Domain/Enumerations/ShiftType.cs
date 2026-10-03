@@ -8,5 +8,6 @@ public enum ShiftType
     Mixto = 3,
     Continuo = 4,
     Flexible = 5,
-    Partido = 6
+    Partido = 6,
+    Rotativo = 7
 }

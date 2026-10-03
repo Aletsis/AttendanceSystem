@@ -1,0 +1,229 @@
+@using AttendanceSystem.Application.Features.Roster.Commands.GenerateRotationPattern
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Employees
+@using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using MediatR
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <MudGrid>
+            <MudItem xs="12">
+                <MudSelect T="RotationSchemeType" @bind-Value="_schemeType" Label="Esquema Rotativo" Required="true" AnchorOrigin="Origin.BottomCenter">
+                    <MudSelectItem Value="@RotationSchemeType.Rotativo3x8">Turnos 3x8 (3 turnos rotativos de 8 horas)</MudSelectItem>
+                    <MudSelectItem Value="@RotationSchemeType.Esquema4x3">Esquema 4x3 (4 días de trabajo / 3 días de descanso)</MudSelectItem>
+                    <MudSelectItem Value="@RotationSchemeType.Esquema24x48">Esquema 24x48 (Guardia 24h / 48h de descanso)</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+
+            <MudItem xs="12" sm="6">
+                <MudDatePicker Label="Fecha Inicio" @bind-Date="_startDate" Required="true" DateFormat="dd/MM/yyyy" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudDatePicker Label="Fecha Fin" @bind-Date="_endDate" Required="true" DateFormat="dd/MM/yyyy" />
+            </MudItem>
+
+            @if (_schemeType == RotationSchemeType.Rotativo3x8)
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                        Seleccione los 3 turnos rotativos en orden de rotación (ej. Mañana, Tarde, Noche).
+                    </MudAlert>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="Guid" @bind-Value="_shift1" Label="Turno 1 (Mañana)" Required="true">
+                        @foreach (var s in _shifts)
+                        {
+                            <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="Guid" @bind-Value="_shift2" Label="Turno 2 (Tarde)" Required="true">
+                        @foreach (var s in _shifts)
+                        {
+                            <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="4">
+                    <MudSelect T="Guid" @bind-Value="_shift3" Label="Turno 3 (Noche)" Required="true">
+                        @foreach (var s in _shifts)
+                        {
+                            <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_daysPerShift" Label="Días por turno antes de rotar" Min="1" Max="30" HelperText="Ej. 7 para rotación semanal" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_restDaysAfterShift" Label="Días de descanso al rotar" Min="0" Max="7" HelperText="Días de descanso al final de cada ciclo" />
+                </MudItem>
+            }
+            else if (_schemeType == RotationSchemeType.Esquema4x3)
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                        Ciclo continuo de 7 días: 4 días de jornada laboral seguidos de 3 días de descanso.
+                    </MudAlert>
+                    <MudSelect T="Guid" @bind-Value="_baseShift" Label="Turno de trabajo (10h o 12h)" Required="true">
+                        @foreach (var s in _shifts)
+                        {
+                            <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+            else if (_schemeType == RotationSchemeType.Esquema24x48)
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                        Ciclo continuo de 3 días: 1 día de guardia de 24 horas seguido de 2 días de descanso (48 horas).
+                    </MudAlert>
+                    <MudSelect T="Guid" @bind-Value="_baseShift" Label="Turno de Guardia (24 horas)" Required="true">
+                        @foreach (var s in _shifts)
+                        {
+                            <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
+
+            <MudItem xs="12">
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Empleados a asignar:</MudText>
+                <MudSelect T="string" MultiSelection="true" @bind-SelectedValues="_selectedEmployeeIds" Label="Seleccionar Empleados" SelectAll="true" SelectAllText="Seleccionar todos" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetMultiSelectionText))">
+                    @foreach (var emp in _employees)
+                    {
+                        <MudSelectItem T="string" Value="@emp.Id">@emp.FullName (@emp.Id)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+        </MudGrid>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Submit" Disabled="_isProcessing">
+            @if (_isProcessing)
+            {
+                <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                <span class="ms-2">Generando...</span>
+            }
+            else
+            {
+                <span>Generar Roster</span>
+            }
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+
+    private RotationSchemeType _schemeType = RotationSchemeType.Rotativo3x8;
+    private DateTime? _startDate = DateTime.Today;
+    private DateTime? _endDate = DateTime.Today.AddDays(30);
+
+    private Guid _shift1;
+    private Guid _shift2;
+    private Guid _shift3;
+    private Guid _baseShift;
+
+    private int _daysPerShift = 7;
+    private int _restDaysAfterShift = 2;
+
+    private List<ShiftDto> _shifts = new();
+    private List<EmployeeDto> _employees = new();
+    private IReadOnlyCollection<string> _selectedEmployeeIds = new HashSet<string>();
+    private bool _isProcessing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var shiftsResult = await Sender.Send(new GetShiftsQuery());
+        if (shiftsResult.IsSuccess)
+        {
+            _shifts = shiftsResult.Value.ToList();
+        }
+
+        if (_shifts.Any())
+        {
+            _baseShift = _shifts.First().Id;
+            _shift1 = _shifts.First().Id;
+            _shift2 = _shifts.Count > 1 ? _shifts[1].Id : _shift1;
+            _shift3 = _shifts.Count > 2 ? _shifts[2].Id : _shift1;
+        }
+
+        var empsResult = await Sender.Send(new GetAllEmployeesQuery());
+        _employees = empsResult.IsSuccess ? empsResult.Value.OrderBy(e => e.FullName).ToList() : new();
+    }
+
+    private string GetMultiSelectionText(IReadOnlyList<string> selectedValues)
+    {
+        return $"{selectedValues.Count} empleado(s) seleccionado(s)";
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task Submit()
+    {
+        if (!_startDate.HasValue || !_endDate.HasValue)
+        {
+            Snackbar.Add("Debe seleccionar las fechas de inicio y fin.", Severity.Warning);
+            return;
+        }
+
+        if (!_selectedEmployeeIds.Any())
+        {
+            Snackbar.Add("Debe seleccionar al menos un empleado.", Severity.Warning);
+            return;
+        }
+
+        var shiftIds = new List<Guid>();
+        if (_schemeType == RotationSchemeType.Rotativo3x8)
+        {
+            if (_shift1 == Guid.Empty || _shift2 == Guid.Empty || _shift3 == Guid.Empty)
+            {
+                Snackbar.Add("Debe seleccionar los 3 turnos para el esquema 3x8.", Severity.Warning);
+                return;
+            }
+            shiftIds.AddRange(new[] { _shift1, _shift2, _shift3 });
+        }
+        else
+        {
+            if (_baseShift == Guid.Empty)
+            {
+                Snackbar.Add("Debe seleccionar el turno base para el esquema.", Severity.Warning);
+                return;
+            }
+            shiftIds.Add(_baseShift);
+        }
+
+        try
+        {
+            _isProcessing = true;
+            var command = new GenerateRotationPatternCommand(
+                _selectedEmployeeIds.ToList(),
+                _startDate.Value,
+                _endDate.Value,
+                _schemeType,
+                shiftIds,
+                _daysPerShift,
+                _restDaysAfterShift);
+
+            var count = await Sender.Send(command);
+            Snackbar.Add($"Se generaron {count} asignaciones de turno con éxito.", Severity.Success);
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al generar el esquema: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _isProcessing = false;
+        }
+    }
+}

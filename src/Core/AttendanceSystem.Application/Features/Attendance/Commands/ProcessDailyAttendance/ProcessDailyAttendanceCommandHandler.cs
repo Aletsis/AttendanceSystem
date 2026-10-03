@@ -18,6 +18,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IEmployeeRepository _employeeRepo;
     private readonly IShiftRepository _shiftRepo;
+    private readonly IShiftRosterRepository _rosterRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISender _sender;
     private readonly ILogger<ProcessDailyAttendanceCommandHandler> _logger;
@@ -27,6 +28,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IAttendanceRepository attendanceRepo,
         IEmployeeRepository employeeRepo,
         IShiftRepository shiftRepo,
+        IShiftRosterRepository rosterRepo,
         IUnitOfWork unitOfWork,
         ISender sender,
         ILogger<ProcessDailyAttendanceCommandHandler> logger)
@@ -35,6 +37,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         _attendanceRepo = attendanceRepo;
         _employeeRepo = employeeRepo;
         _shiftRepo = shiftRepo;
+        _rosterRepo = rosterRepo;
         _unitOfWork = unitOfWork;
         _sender = sender;
         _logger = logger;
@@ -93,6 +96,19 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             .GroupBy(da => (da.EmployeeId.Value, da.Date.Date))
             .ToDictionary(g => g.Key, g => g.First());
         _logger.LogDebug("Obtenidos {DaCount} registros de asistencia diaria existentes para reprogramación", existingDailyAttendances.Count);
+
+        // 1.25 Carga masiva de asignaciones de Roster de turnos para el rango de fechas
+        var rosters = await _rosterRepo.GetByDateRangeAsync(
+            request.StartDate,
+            request.EndDate,
+            request.BranchId,
+            request.EmployeeId,
+            cancellationToken);
+
+        var rosterLookup = rosters
+            .GroupBy(r => (r.EmployeeId.Value, r.Date.Date))
+            .ToDictionary(g => g.Key, g => g.First());
+        _logger.LogDebug("Obtenidos {RosterCount} registros de asignación en Roster", rosters.Count);
 
         // 1.3 Carga masiva de todos los registros de asistencia para el rango de fechas (incluyendo un día de buffer antes y después para turnos que cruzan el día)
         var startQueryDate = DateOnly.FromDateTime(request.StartDate.Date.AddDays(-1));
@@ -163,12 +179,63 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 // 3. Determinamos el turno y el alcance de búsqueda
                 Shift? shift = null;
                 bool isRestDay = false;
+                bool isAutoDetected = false;
                 var searchStartDate = DateOnly.FromDateTime(date);
-                var searchEndDate = searchStartDate; // Default para un día normal, pero podría extenderse si es un turno nocturno o continuo.
+                var searchEndDate = searchStartDate;
 
-                if (employee.ScheduleId != null && shifts.TryGetValue(employee.ScheduleId, out var matchedShift))
+                // 3.1 Prioridad 1: Asignación en Roster / Calendario de turnos
+                var rosterKey = (employee.Id.Value, date.Date);
+                if (rosterLookup.TryGetValue(rosterKey, out var rosterEntry))
                 {
-                    shift = matchedShift;
+                    isRestDay = rosterEntry.IsRestDay;
+                    if (rosterEntry.ShiftId != null && shifts.TryGetValue(rosterEntry.ShiftId, out var rShift))
+                    {
+                        shift = rShift;
+                    }
+                }
+                else
+                {
+                    // Determinar día de descanso predeterminado del empleado
+                    if (employee.RestDay.HasValue)
+                    {
+                        var dayOfWeek = (WeekDay)(int)date.DayOfWeek;
+                        if (employee.RestDay == dayOfWeek)
+                        {
+                            isRestDay = true;
+                        }
+                    }
+
+                    // 3.2 Prioridad 2: Empleado con turno rotativo o sin horario fijo -> Detección automática por proximidad
+                    if (employee.ShiftType == ShiftType.Rotativo || employee.ScheduleId == null)
+                    {
+                        var empAllRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var recs) ? recs : null;
+                        var firstPunchOfDay = empAllRecords?
+                            .Where(r => r.CheckTime.Date == date.Date)
+                            .OrderBy(r => r.CheckTime)
+                            .FirstOrDefault();
+
+                        if (firstPunchOfDay != null)
+                        {
+                            var autoShift = AttendanceSystem.Domain.Services.ShiftDetectionService.FindClosestShift(
+                                firstPunchOfDay.CheckTime,
+                                shifts.Values);
+
+                            if (autoShift != null)
+                            {
+                                shift = autoShift;
+                                isAutoDetected = true;
+                                _logger.LogInformation(
+                                    "Turno '{ShiftName}' autodetectado por proximidad para {EmpId} en {Date} (Marcaje: {Time:HH:mm})",
+                                    autoShift.Name, employee.Id.Value, date.ToString("yyyy-MM-dd"), firstPunchOfDay.CheckTime);
+                            }
+                        }
+                    }
+
+                    // 3.3 Prioridad 3: Turno fijo del empleado (ScheduleId)
+                    if (shift == null && employee.ScheduleId != null && shifts.TryGetValue(employee.ScheduleId, out var matchedShift))
+                    {
+                        shift = matchedShift;
+                    }
                 }
 
                 // Si es un turno nocturno o continuo, extendemos la búsqueda al día siguiente para capturar la salida
@@ -190,13 +257,13 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                             dayEndTime = dayConfig.EndTime;
 
                             // Si dayConfig es Nocturno, Continuo o Flexible, o si endTime <= startTime, cruza el día
-                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible || dayConfig.ShiftType == ShiftType.Partido)
+                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible || dayConfig.ShiftType == ShiftType.Partido || dayConfig.ShiftType == ShiftType.Rotativo)
                             {
                                 isCrossDay = true;
                             }
                         }
                     }
-                    else if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible ||
+                    else if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible ||
                              (shift.ShiftType == ShiftType.Partido && shift.SecondBlockEndTime.HasValue && shift.SecondBlockStartTime.HasValue && shift.SecondBlockEndTime.Value <= shift.SecondBlockStartTime.Value))
                     {
                         isCrossDay = true;
@@ -220,16 +287,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     .Where(r => r.CheckTime >= startDateTime && r.CheckTime <= endDateTime)
                     .OrderBy(r => r.CheckTime)
                     .ToList();
-
-                // Determinar si hoy es un día de descanso
-                if (employee.RestDay.HasValue)
-                {
-                    var dayOfWeek = (WeekDay)(int)date.DayOfWeek;
-                    if (employee.RestDay == dayOfWeek)
-                    {
-                        isRestDay = true;
-                    }
-                }
 
                 // 5. Delegar el cálculo a un sub-comando específico
                 if (shift == null)
@@ -256,7 +313,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         date,
                         shift,
                         records,
-                        isRestDay), cancellationToken);
+                        isRestDay,
+                        isAutoDetected), cancellationToken);
                 }
                 else if (shift.ShiftType == ShiftType.Flexible)
                 {
@@ -265,7 +323,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         date,
                         shift,
                         records,
-                        isRestDay), cancellationToken);
+                        isRestDay,
+                        isAutoDetected), cancellationToken);
                 }
                 else if (shift.ShiftType == ShiftType.Partido)
                 {
@@ -274,9 +333,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         date,
                         shift,
                         records,
-                        isRestDay), cancellationToken);
+                        isRestDay,
+                        isAutoDetected), cancellationToken);
                 }
-                else if (shift.ShiftType == ShiftType.Nocturno)
+                else if (shift.ShiftType == ShiftType.Nocturno || (dayEndTime <= dayStartTime && shift.ShiftType != ShiftType.Continuo && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
                 {
                     await _sender.Send(new ProcessNightlyAttendanceCommand(
                         employee,
@@ -285,17 +345,19 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         records,
                         isRestDay,
                         dayStartTime,
-                        dayEndTime), cancellationToken);
+                        dayEndTime,
+                        isAutoDetected), cancellationToken);
                 }
                 else
                 {
-                    // Matutino o Vespertino
+                    // Matutino, Vespertino o Rotativo
                     await _sender.Send(new ProcessRegularAttendanceCommand(
                         employee,
                         date,
                         shift,
                         records,
-                        isRestDay), cancellationToken);
+                        isRestDay,
+                        isAutoDetected), cancellationToken);
                 }
 
                 processedCount++;

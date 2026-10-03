@@ -14,7 +14,8 @@ public record ProcessSplitAttendanceCommand(
     DateTime Date,
     Shift Shift,
     List<AttendanceRecord> Records,
-    bool IsRestDay) : IRequest;
+    bool IsRestDay,
+    bool IsAutoDetectedShift = false) : IRequest;
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
@@ -167,7 +168,8 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             b1InRecord?.Id,
             b2OutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
-            request.Employee.OvertimeAuthorized);
+            request.Employee.OvertimeAuthorized,
+            request.IsAutoDetectedShift);
 
         if (b1OutRecord != null)
         {

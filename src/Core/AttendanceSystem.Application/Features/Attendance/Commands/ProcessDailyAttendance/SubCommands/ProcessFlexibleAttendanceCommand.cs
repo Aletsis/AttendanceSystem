@@ -14,7 +14,8 @@ public record ProcessFlexibleAttendanceCommand(
     DateTime Date,
     Shift Shift,
     List<AttendanceRecord> Records,
-    bool IsRestDay) : IRequest;
+    bool IsRestDay,
+    bool IsAutoDetectedShift = false) : IRequest;
 
 public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFlexibleAttendanceCommand>
 {
@@ -167,7 +168,8 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             checkInRecord?.Id,
             checkOutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
-            request.Employee.OvertimeAuthorized);
+            request.Employee.OvertimeAuthorized,
+            request.IsAutoDetectedShift);
 
         if (intermediateAnalysis.HasValue)
         {

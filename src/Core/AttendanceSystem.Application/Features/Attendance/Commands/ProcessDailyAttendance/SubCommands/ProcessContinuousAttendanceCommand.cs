@@ -14,7 +14,8 @@ public record ProcessContinuousAttendanceCommand(
     DateTime Date,
     Shift Shift,
     List<AttendanceRecord> Records,
-    bool IsRestDay) : IRequest;
+    bool IsRestDay,
+    bool IsAutoDetectedShift = false) : IRequest;
 
 public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<ProcessContinuousAttendanceCommand>
 {
@@ -82,7 +83,8 @@ public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<Process
             checkInRecord?.Id,
             checkOutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
-            request.Employee.OvertimeAuthorized);
+            request.Employee.OvertimeAuthorized,
+            request.IsAutoDetectedShift);
 
         _dailyRepo.Add(dailyAttendance);
     }

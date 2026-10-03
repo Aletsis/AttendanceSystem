@@ -95,6 +95,7 @@ namespace AttendanceSystem.WPF
             services.AddScoped<IPositionRepository, PositionRepository>();
             services.AddScoped<IBranchRepository, BranchRepository>();
             services.AddScoped<IShiftRepository, ShiftRepository>();
+            services.AddScoped<IShiftRosterRepository, ShiftRosterRepository>();
             services.AddScoped<IDeviceRepository, DeviceRepository>();
             services.AddScoped<IAttendanceRepository, AttendanceRepository>();
             services.AddScoped<IDailyAttendanceRepository, DailyAttendanceRepository>();

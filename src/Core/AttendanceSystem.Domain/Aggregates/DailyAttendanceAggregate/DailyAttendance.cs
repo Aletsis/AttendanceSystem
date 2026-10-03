@@ -77,17 +77,21 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public string? TemporaryExitNote { get; private set; }
     /// <summary>Minutos de comida deducidos automáticamente al calcular la jornada.</summary>
     public int LunchBreakMinutesApplied { get; private set; }
+    /// <summary>Indica si el turno fue detectado automáticamente por proximidad de marcaje.</summary>
+    public bool IsAutoDetectedShift { get; private set; }
 
     /// <summary>
     /// Texto dinámico para mostrar en reportes y exportaciones.
-    /// Devuelve null si el día no tiene incidencias de salida temporal.
+    /// Devuelve null si el día no tiene incidencias de salida temporal ni turno autodetectado.
     /// </summary>
-    public string? AttendanceNote => (HasTemporaryExits, TemporaryExitStatus) switch
+    public string? AttendanceNote => (HasTemporaryExits, TemporaryExitStatus, IsAutoDetectedShift) switch
     {
-        (true, TemporaryExitStatus.Pending) => $"⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
-        (true, TemporaryExitStatus.ApprovedPaid) => $"✅ Permiso con goce — {TemporaryExitNote}",
-        (true, TemporaryExitStatus.ApprovedUnpaid) => $"✂️ Permiso sin goce — {TemporaryExitMinutes} min descontados",
-        (true, TemporaryExitStatus.Dismissed) => $"ℹ️ Error de checada — ignorado",
+        (true, TemporaryExitStatus.Pending, true) => $"🔍 Turno autodetectado. ⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
+        (true, TemporaryExitStatus.Pending, false) => $"⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
+        (true, TemporaryExitStatus.ApprovedPaid, _) => $"✅ Permiso con goce — {TemporaryExitNote}",
+        (true, TemporaryExitStatus.ApprovedUnpaid, _) => $"✂️ Permiso sin goce — {TemporaryExitMinutes} min descontados",
+        (true, TemporaryExitStatus.Dismissed, _) => $"ℹ️ Error de checada — ignorado",
+        (false, _, true) => "🔍 Turno detectado automáticamente por proximidad de marcaje",
         _ => null
     };
 
@@ -103,7 +107,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         AttendanceRecordId? checkInRecordId = null,
         AttendanceRecordId? checkOutRecordId = null,
         bool calculateOvertimeBeforeEntry = false,
-        bool overtimeAuthorized = true)
+        bool overtimeAuthorized = true,
+        bool isAutoDetectedShift = false)
     {
         var attendance = new DailyAttendance
         {
@@ -112,7 +117,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             Date = date.Date,
             IsRestDay = isRestDay,
             CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
-            OvertimeAuthorized = overtimeAuthorized
+            OvertimeAuthorized = overtimeAuthorized,
+            IsAutoDetectedShift = isAutoDetectedShift
         };
 
         // 1. Configure Shift Snapshot
@@ -216,13 +222,14 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         CalculateStatus();
     }
 
-    public void UpdateShift(Shift shift)
+    public void UpdateShift(Shift shift, bool isAutoDetectedShift = false)
     {
         if (shift == null) throw new ArgumentNullException(nameof(shift));
 
         ShiftId = shift.Id;
         ShiftName = shift.Name;
         ShiftType = shift.ShiftType;
+        IsAutoDetectedShift = isAutoDetectedShift;
 
         var dayStartTime = shift.StartTime;
         var dayEndTime = shift.EndTime;

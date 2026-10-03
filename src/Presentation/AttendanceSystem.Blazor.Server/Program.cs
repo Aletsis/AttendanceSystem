@@ -167,6 +167,7 @@ try
 
     // Repositorios
     builder.Services.AddScoped<IShiftRepository, ShiftRepository>();
+    builder.Services.AddScoped<IShiftRosterRepository, ShiftRosterRepository>();
     builder.Services.AddScoped<IBranchRepository, BranchRepository>();
     builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();
     builder.Services.AddScoped<IPositionRepository, PositionRepository>();

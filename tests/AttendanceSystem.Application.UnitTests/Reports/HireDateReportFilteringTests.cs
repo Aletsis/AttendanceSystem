@@ -13,6 +13,7 @@ using AttendanceSystem.Domain.Aggregates.DepartmentAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.PositionAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
+using AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
@@ -60,6 +61,7 @@ public class HireDateReportFilteringTests
         var attendanceRepoMock = new Mock<IAttendanceRepository>();
         var employeeRepoMock = new Mock<IEmployeeRepository>();
         var shiftRepoMock = new Mock<IShiftRepository>();
+        var rosterRepoMock = new Mock<IShiftRosterRepository>();
         var unitOfWorkMock = new Mock<IUnitOfWork>();
         var senderMock = new Mock<ISender>();
         var loggerMock = new Mock<ILogger<ProcessDailyAttendanceCommandHandler>>();
@@ -71,6 +73,10 @@ public class HireDateReportFilteringTests
         shiftRepoMock
             .Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<Shift> { _shift });
+
+        rosterRepoMock
+            .Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster>());
 
         dailyRepoMock
             .Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
@@ -85,6 +91,7 @@ public class HireDateReportFilteringTests
             attendanceRepoMock.Object,
             employeeRepoMock.Object,
             shiftRepoMock.Object,
+            rosterRepoMock.Object,
             unitOfWorkMock.Object,
             senderMock.Object,
             loggerMock.Object);

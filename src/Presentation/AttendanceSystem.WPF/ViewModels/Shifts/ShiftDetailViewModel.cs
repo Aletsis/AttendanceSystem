@@ -53,7 +53,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Mixto, "Mixto" },
             { ShiftType.Continuo, "Continuo" },
             { ShiftType.Flexible, "Flexible" },
-            { ShiftType.Partido, "Partido / Doble Turno" }
+            { ShiftType.Partido, "Partido / Doble Turno" },
+            { ShiftType.Rotativo, "Rotativo" }
         };
 
         public Dictionary<ShiftType, string> DayShiftTypes { get; } = new()
@@ -63,7 +64,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Nocturno, "Nocturno" },
             { ShiftType.Continuo, "Continuo" },
             { ShiftType.Flexible, "Flexible" },
-            { ShiftType.Partido, "Partido / Doble Turno" }
+            { ShiftType.Partido, "Partido / Doble Turno" },
+            { ShiftType.Rotativo, "Rotativo" }
         };
 
         public KeyValuePair<ShiftType, string> SelectedShiftType
