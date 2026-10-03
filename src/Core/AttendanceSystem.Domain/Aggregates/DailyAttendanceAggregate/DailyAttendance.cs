@@ -311,7 +311,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         var scheduledInDateTime = Date.Add(ScheduledCheckIn.Value);
 
         // LATE Check (Retardo)
-        // Rule: Only late after tolerance. 
+        // Rule: Only late after tolerance. Truncate seconds so that clocking in during the tolerance minute is within tolerance.
         if (ActualCheckIn.HasValue)
         {
             if (ShiftType == Enumerations.ShiftType.Continuo || ScheduledCheckIn == null)
@@ -321,7 +321,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
             else
             {
-                var diff = (ActualCheckIn.Value - scheduledInDateTime).TotalMinutes;
+                var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+                var diff = (checkInNoSeconds - scheduledInDateTime).TotalMinutes;
                 int delayMinutes = (int)diff;
 
                 if (delayMinutes > ToleranceMinutes)
@@ -380,11 +381,17 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         }
     }
 
+    public static DateTime TruncateSeconds(DateTime dateTime)
+    {
+        return new DateTime(dateTime.Year, dateTime.Month, dateTime.Day, dateTime.Hour, dateTime.Minute, 0, dateTime.Kind);
+    }
+
     public static DateTime RoundEntry(DateTime checkIn, int roundingIntervalMinutes, int toleranceMinutes)
     {
         if (roundingIntervalMinutes <= 0) return checkIn;
+        var checkInNoSeconds = TruncateSeconds(checkIn);
         var prevBlock = new DateTime(checkIn.Year, checkIn.Month, checkIn.Day, checkIn.Hour, (checkIn.Minute / roundingIntervalMinutes) * roundingIntervalMinutes, 0, checkIn.Kind);
-        var diff = (checkIn - prevBlock).TotalMinutes;
+        var diff = (checkInNoSeconds - prevBlock).TotalMinutes;
         if (diff <= toleranceMinutes)
         {
             return prevBlock;
@@ -416,7 +423,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         if (ScheduledCheckIn.HasValue)
         {
             var scheduledInDateTime = Date.Add(ScheduledCheckIn.Value);
-            var delayMinutes = (ActualCheckIn.Value - scheduledInDateTime).TotalMinutes;
+            var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+            var delayMinutes = (checkInNoSeconds - scheduledInDateTime).TotalMinutes;
             if (delayMinutes > ToleranceMinutes)
             {
                 double rawK = (delayMinutes - ToleranceMinutes) / 30.0;

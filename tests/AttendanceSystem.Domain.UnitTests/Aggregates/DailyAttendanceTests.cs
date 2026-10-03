@@ -259,4 +259,70 @@ public class DailyAttendanceTests
         da.IsRestDay.Should().BeTrue();
         da.OvertimeMinutes.Should().Be(60);
     }
+
+    [Fact]
+    public void Create_WhenCheckInHasSecondsWithinToleranceMinute_ShouldBeConsideredOnTime()
+    {
+        // Arrange: Shift 10:00 to 18:00 (8h), tolerance 5 mins, lunch 0 mins.
+        var shift = Shift.Create(
+            name: "Matutino 10-18",
+            startTime: new TimeSpan(10, 0, 0),
+            toleranceMinutes: 5,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Matutino,
+            lunchBreakMinutes: 0);
+
+        // CheckIn: 10:05:35 (within the 5th minute of tolerance), CheckOut: 19:20:00
+        var checkIn = _date.Add(new TimeSpan(10, 5, 35));
+        var checkOut = _date.Add(new TimeSpan(19, 20, 0));
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: shift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false,
+            overtimeAuthorized: true);
+
+        // Assert
+        da.LateMinutes.Should().Be(0);
+        da.GetReferenceEntry().Should().Be(_date.Add(new TimeSpan(10, 0, 0)));
+        // Scheduled: 480 min. Reference duration: 19:20 - 10:00 = 560 min. Overtime = 80 min.
+        da.OvertimeMinutes.Should().Be(80);
+    }
+
+    [Fact]
+    public void Create_WhenCheckInExceedsToleranceMinute_ShouldPenalizeToNextHalfHourBlock()
+    {
+        // Arrange: Shift 10:00 to 18:00 (8h), tolerance 5 mins, lunch 0 mins.
+        var shift = Shift.Create(
+            name: "Matutino 10-18",
+            startTime: new TimeSpan(10, 0, 0),
+            toleranceMinutes: 5,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Matutino,
+            lunchBreakMinutes: 0);
+
+        // CheckIn: 10:06:15 (minute 6, past 5m tolerance), CheckOut: 19:20:00
+        var checkIn = _date.Add(new TimeSpan(10, 6, 15));
+        var checkOut = _date.Add(new TimeSpan(19, 20, 0));
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: shift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false,
+            overtimeAuthorized: true);
+
+        // Assert
+        da.LateMinutes.Should().Be(6);
+        da.GetReferenceEntry().Should().Be(_date.Add(new TimeSpan(10, 30, 0)));
+        // Reference duration: 19:20 - 10:30 = 530 min. Overtime = 530 - 480 = 50 min.
+        da.OvertimeMinutes.Should().Be(50);
+    }
 }
