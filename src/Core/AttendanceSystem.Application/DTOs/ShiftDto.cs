@@ -14,8 +14,11 @@ public record ShiftDto(
     bool RoundingsEnabled,
     int RoundingInterval,
     TimeSpan? FlexWindowEndTime = null,
-    TimeSpan? WeeklyWorkHours = null
+    TimeSpan? WeeklyWorkHours = null,
+    TimeSpan? SecondBlockStartTime = null,
+    TimeSpan? SecondBlockEndTime = null,
+    int? SecondBlockToleranceMinutes = null
 )
 {
-    public ShiftDto() : this(Guid.Empty, string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0, TimeSpan.Zero, ShiftType.Matutino, Enumerable.Empty<ShiftDayDto>(), false, 0, null, null) { }
+    public ShiftDto() : this(Guid.Empty, string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0, TimeSpan.Zero, ShiftType.Matutino, Enumerable.Empty<ShiftDayDto>(), false, 0, null, null, null, null, null) { }
 }

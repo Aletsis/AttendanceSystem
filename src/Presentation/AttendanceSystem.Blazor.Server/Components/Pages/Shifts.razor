@@ -41,14 +41,26 @@
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Nombre">@context.Name</MudTd>
-        <MudTd DataLabel="Inicio">@context.StartTime.ToString(@"hh\:mm")</MudTd>
-        <MudTd DataLabel="Fin">@context.EndTime.ToString(@"hh\:mm")</MudTd>
+        <MudTd DataLabel="Inicio">
+            @(context.ShiftType == ShiftType.Partido && context.SecondBlockStartTime.HasValue
+                ? $"{context.StartTime:hh\\:mm} | {context.SecondBlockStartTime.Value:hh\\:mm}"
+                : context.StartTime.ToString(@"hh\:mm"))
+        </MudTd>
+        <MudTd DataLabel="Fin">
+            @(context.ShiftType == ShiftType.Partido && context.SecondBlockEndTime.HasValue
+                ? $"{context.EndTime:hh\\:mm} | {context.SecondBlockEndTime.Value:hh\\:mm}"
+                : context.EndTime.ToString(@"hh\:mm"))
+        </MudTd>
         <MudTd DataLabel="Duración">
             @(context.ShiftType == ShiftType.Flexible && context.WeeklyWorkHours.HasValue && context.WeeklyWorkHours.Value > TimeSpan.Zero
                 ? $"{context.WeeklyWorkHours.Value.TotalHours:0}h / sem"
                 : context.WorkHours.ToString(@"hh\:mm"))
         </MudTd>
-        <MudTd DataLabel="Tolerancia">@context.ToleranceMinutes min</MudTd>
+        <MudTd DataLabel="Tolerancia">
+            @(context.ShiftType == ShiftType.Partido && context.SecondBlockToleranceMinutes.HasValue
+                ? $"{context.ToleranceMinutes}m | {context.SecondBlockToleranceMinutes.Value}m"
+                : $"{context.ToleranceMinutes} min")
+        </MudTd>
         <MudTd DataLabel="Tipo">@context.ShiftType</MudTd>
         <AuthorizeView Roles="Administrador" Context="authContext">
             <MudTd DataLabel="Acciones">

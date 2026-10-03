@@ -19,7 +19,10 @@ public sealed record CreateShiftCommand(
     bool RoundingsEnabled = false,
     int RoundingInterval = 0,
     TimeSpan? FlexWindowEndTime = null,
-    TimeSpan? WeeklyWorkHours = null) : IRequest<Result<Guid>>;
+    TimeSpan? WeeklyWorkHours = null,
+    TimeSpan? SecondBlockStartTime = null,
+    TimeSpan? SecondBlockEndTime = null,
+    int? SecondBlockToleranceMinutes = null) : IRequest<Result<Guid>>;
 
 public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftCommand, Result<Guid>>
 {
@@ -54,7 +57,10 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
                 roundingsEnabled: request.RoundingsEnabled,
                 roundingInterval: request.RoundingInterval,
                 flexWindowEndTime: request.FlexWindowEndTime,
-                weeklyWorkHours: request.WeeklyWorkHours);
+                weeklyWorkHours: request.WeeklyWorkHours,
+                secondBlockStartTime: request.SecondBlockStartTime,
+                secondBlockEndTime: request.SecondBlockEndTime,
+                secondBlockToleranceMinutes: request.SecondBlockToleranceMinutes);
 
             await _shiftRepository.AddAsync(shift, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

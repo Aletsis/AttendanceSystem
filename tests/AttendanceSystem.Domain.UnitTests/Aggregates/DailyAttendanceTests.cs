@@ -535,4 +535,184 @@ public class DailyAttendanceTests
         da.EarlyDepartureMinutes.Should().Be(0); // Sin salida temprana diaria
         da.OvertimeMinutes.Should().Be(0); // Las horas se acumulan a la bolsa semanal
     }
+
+    [Fact]
+    public void Create_SplitShift_WithAll4PunchesOnTime_ShouldHaveNoTardinessNorEarlyDeparture()
+    {
+        // Arrange: Block 1: 09:00 - 13:00 (dur 4h, Tol 10m), Block 2: 17:00 - 21:00 (dur 4h, Tol 15m)
+        var splitShift = Shift.Create(
+            name: "Horario Partido Comercial",
+            startTime: new TimeSpan(9, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(17, 0, 0),
+            secondBlockEndTime: new TimeSpan(21, 0, 0),
+            secondBlockToleranceMinutes: 15);
+
+        var punchB1In = _date.AddHours(9).AddMinutes(5);
+        var punchB1Out = _date.AddHours(13).AddMinutes(2);
+        var punchB2In = _date.AddHours(17).AddMinutes(12);
+        var punchB2Out = _date.AddHours(21).AddMinutes(5);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: splitShift,
+            checkIn: punchB1In,
+            checkOut: punchB2Out,
+            isRestDay: false);
+
+        da.SetBlock1CheckOut(punchB1Out, AttendanceRecordId.CreateNew());
+        da.SetBlock2CheckIn(punchB2In, AttendanceRecordId.CreateNew());
+
+        // Assert
+        da.IsAbsent.Should().BeFalse();
+        da.MissingCheckIn.Should().BeFalse();
+        da.MissingBlock1CheckOut.Should().BeFalse();
+        da.MissingBlock2CheckIn.Should().BeFalse();
+        da.MissingCheckOut.Should().BeFalse();
+        da.LateMinutes.Should().Be(0); // 5 min <= 10 min tol, 12 min <= 15 min tol
+        da.EarlyDepartureMinutes.Should().Be(0);
+    }
+
+    [Fact]
+    public void Create_SplitShift_WithTardinessInBothBlocksIndependentTolerance_ShouldCalculateAccumulatedLateMinutes()
+    {
+        // Arrange: Block 1 tol: 10m, Block 2 tol: 5m
+        var splitShift = Shift.Create(
+            name: "Horario Partido Comercial",
+            startTime: new TimeSpan(9, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(17, 0, 0),
+            secondBlockEndTime: new TimeSpan(21, 0, 0),
+            secondBlockToleranceMinutes: 5);
+
+        // Block 1: arrives 9:18 (18m late > 10m tol -> 18m late)
+        var punchB1In = _date.AddHours(9).AddMinutes(18);
+        var punchB1Out = _date.AddHours(13);
+        // Block 2: arrives 17:10 (10m late > 5m tol -> 10m late)
+        var punchB2In = _date.AddHours(17).AddMinutes(10);
+        var punchB2Out = _date.AddHours(21);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: splitShift,
+            checkIn: punchB1In,
+            checkOut: punchB2Out,
+            isRestDay: false);
+
+        da.SetBlock1CheckOut(punchB1Out, AttendanceRecordId.CreateNew());
+        da.SetBlock2CheckIn(punchB2In, AttendanceRecordId.CreateNew());
+
+        // Assert
+        da.LateMinutes.Should().Be(28); // 18 + 10 = 28
+    }
+
+    [Fact]
+    public void Create_SplitShift_WithEarlyDepartureInBothBlocks_ShouldCalculateAccumulatedEarlyDepartureMinutes()
+    {
+        // Arrange: Block 1 ends 13:00, Block 2 ends 21:00
+        var splitShift = Shift.Create(
+            name: "Horario Partido Comercial",
+            startTime: new TimeSpan(9, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(17, 0, 0),
+            secondBlockEndTime: new TimeSpan(21, 0, 0));
+
+        // Block 1: leaves at 12:45 (15 min early)
+        var punchB1In = _date.AddHours(9);
+        var punchB1Out = _date.AddHours(12).AddMinutes(45);
+        // Block 2: leaves at 20:40 (20 min early)
+        var punchB2In = _date.AddHours(17);
+        var punchB2Out = _date.AddHours(20).AddMinutes(40);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: splitShift,
+            checkIn: punchB1In,
+            checkOut: punchB2Out,
+            isRestDay: false);
+
+        da.SetBlock1CheckOut(punchB1Out, AttendanceRecordId.CreateNew());
+        da.SetBlock2CheckIn(punchB2In, AttendanceRecordId.CreateNew());
+
+        // Assert
+        da.EarlyDepartureMinutes.Should().Be(35); // 15 + 20 = 35
+    }
+
+    [Fact]
+    public void Create_SplitShift_WithOvernightSecondBlock_ShouldCalculateAccurateHoursAndTimes()
+    {
+        // Arrange: Block 1: 12:00 - 16:00 (4h), Block 2: 20:00 - 02:00 (+1 day)
+        var splitShift = Shift.Create(
+            name: "Horario Partido Nocturno",
+            startTime: new TimeSpan(12, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(20, 0, 0),
+            secondBlockEndTime: new TimeSpan(2, 0, 0));
+
+        var punchB1In = _date.AddHours(12);
+        var punchB1Out = _date.AddHours(16);
+        var punchB2In = _date.AddHours(20);
+        // Leaves at 01:45 next day -> 15 min early departure
+        var punchB2Out = _date.AddDays(1).AddHours(1).AddMinutes(45);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: splitShift,
+            checkIn: punchB1In,
+            checkOut: punchB2Out,
+            isRestDay: false);
+
+        da.SetBlock1CheckOut(punchB1Out, AttendanceRecordId.CreateNew());
+        da.SetBlock2CheckIn(punchB2In, AttendanceRecordId.CreateNew());
+
+        // Assert
+        da.EarlyDepartureMinutes.Should().Be(15);
+        da.LateMinutes.Should().Be(0);
+    }
+
+    [Fact]
+    public void Create_SplitShift_MissingIntermediatePunches_ShouldFlagMissingPunches()
+    {
+        // Arrange
+        var splitShift = Shift.Create(
+            name: "Horario Partido Comercial",
+            startTime: new TimeSpan(9, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(17, 0, 0),
+            secondBlockEndTime: new TimeSpan(21, 0, 0));
+
+        // Punched check-in and check-out, but no block 1 check-out nor block 2 check-in
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: splitShift,
+            checkIn: _date.AddHours(9),
+            checkOut: _date.AddHours(21),
+            isRestDay: false);
+
+        // Assert
+        da.MissingCheckIn.Should().BeFalse();
+        da.MissingBlock1CheckOut.Should().BeTrue();
+        da.MissingBlock2CheckIn.Should().BeTrue();
+        da.MissingCheckOut.Should().BeFalse();
+    }
 }
+

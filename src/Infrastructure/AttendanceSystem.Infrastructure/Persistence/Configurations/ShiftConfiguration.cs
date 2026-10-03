@@ -56,6 +56,15 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
         builder.Property(s => s.WeeklyWorkHours)
             .IsRequired(false);
 
+        builder.Property(s => s.SecondBlockStartTime)
+            .IsRequired(false);
+
+        builder.Property(s => s.SecondBlockEndTime)
+            .IsRequired(false);
+
+        builder.Property(s => s.SecondBlockToleranceMinutes)
+            .IsRequired(false);
+
         builder.OwnsMany(s => s.Days, d =>
         {
             d.ToTable("ShiftDays");

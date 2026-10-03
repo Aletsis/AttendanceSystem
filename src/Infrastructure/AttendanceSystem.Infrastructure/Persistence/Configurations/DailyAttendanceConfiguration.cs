@@ -56,10 +56,30 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
             .IsRequired(false);
         builder.Property(x => x.DynamicScheduledCheckOut)
             .IsRequired(false);
+        builder.Property(x => x.ScheduledBlock2CheckIn)
+            .IsRequired(false);
+        builder.Property(x => x.ScheduledBlock2CheckOut)
+            .IsRequired(false);
+        builder.Property(x => x.SecondBlockToleranceMinutes)
+            .IsRequired(false);
 
         // Actuals
         builder.Property(x => x.ActualCheckIn);
         builder.Property(x => x.CheckInRecordId)
+             .HasConversion(
+                id => id != null ? id.Value : (Guid?)null,
+                value => value.HasValue ? AttendanceRecordId.From(value.Value) : null);
+
+        builder.Property(x => x.ActualBlock1CheckOut)
+            .IsRequired(false);
+        builder.Property(x => x.Block1CheckOutRecordId)
+             .HasConversion(
+                id => id != null ? id.Value : (Guid?)null,
+                value => value.HasValue ? AttendanceRecordId.From(value.Value) : null);
+
+        builder.Property(x => x.ActualBlock2CheckIn)
+            .IsRequired(false);
+        builder.Property(x => x.Block2CheckInRecordId)
              .HasConversion(
                 id => id != null ? id.Value : (Guid?)null,
                 value => value.HasValue ? AttendanceRecordId.From(value.Value) : null);
@@ -76,6 +96,12 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.EarlyDepartureMinutes);
         builder.Property(x => x.OvertimeMinutes);
         builder.Property(x => x.MissingCheckIn);
+        builder.Property(x => x.MissingBlock1CheckOut)
+            .IsRequired()
+            .HasDefaultValue(false);
+        builder.Property(x => x.MissingBlock2CheckIn)
+            .IsRequired()
+            .HasDefaultValue(false);
         builder.Property(x => x.MissingCheckOut);
         builder.Property(x => x.IsRestDay);
         builder.Property(x => x.WorkedOnRestDay);

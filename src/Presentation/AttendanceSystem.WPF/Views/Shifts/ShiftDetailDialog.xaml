@@ -222,6 +222,57 @@
                             </ComboBox>
                         </StackPanel>
                     </StackPanel>
+
+                    <!-- Partido / Doble Turno Shift -->
+                    <StackPanel Visibility="{Binding IsSplitShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
+                        <TextBlock Text="Primer Bloque" FontWeight="Bold" Foreground="#4E5D78" Margin="0,5,0,8"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Entrada Bloque 1" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:TimePicker SelectedDateTime="{Binding StartDateTime}" 
+                                                mah:TextBoxHelper.Watermark="9:00 AM"
+                                                Culture="es-MX" IsClockVisible="False"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Salida Bloque 1" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:TimePicker SelectedDateTime="{Binding EndDateTime}" 
+                                                mah:TextBoxHelper.Watermark="2:00 PM"
+                                                Culture="es-MX" IsClockVisible="False"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="Segundo Bloque" FontWeight="Bold" Foreground="#4E5D78" Margin="0,10,0,8"/>
+                        <Grid Margin="0,0,0,10">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Margin="0,0,10,0">
+                                <TextBlock Text="Entrada Bloque 2" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:TimePicker SelectedDateTime="{Binding SecondBlockStartDateTime}" 
+                                                mah:TextBoxHelper.Watermark="4:00 PM"
+                                                Culture="es-MX" IsClockVisible="False"/>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="Salida Bloque 2" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <mah:TimePicker SelectedDateTime="{Binding SecondBlockEndDateTime}" 
+                                                mah:TextBoxHelper.Watermark="8:00 PM"
+                                                Culture="es-MX" IsClockVisible="False"/>
+                            </StackPanel>
+                        </Grid>
+
+                        <StackPanel Margin="0,0,0,15">
+                            <TextBlock Text="Tolerancia Bloque 2 (min)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <mah:NumericUpDown Value="{Binding SecondBlockToleranceMinutes}" Minimum="0" Maximum="60" Interval="1"/>
+                            <TextBlock Text="Tolerancia independiente para la entrada del segundo bloque." FontSize="11" Foreground="#858796" Margin="0,2,0,0" FontStyle="Italic"/>
+                        </StackPanel>
+
+                        <TextBlock Text="* Horario partido con 4 marcajes obligatorios. Admite salida de segundo bloque al día siguiente." FontSize="11" Foreground="#858796" Margin="0,0,0,10" FontStyle="Italic"/>
+                    </StackPanel>
                 </StackPanel>
             </ScrollViewer>
 

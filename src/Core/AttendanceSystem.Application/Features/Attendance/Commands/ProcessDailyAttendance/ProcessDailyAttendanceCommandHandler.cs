@@ -190,13 +190,14 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                             dayEndTime = dayConfig.EndTime;
 
                             // Si dayConfig es Nocturno, Continuo o Flexible, o si endTime <= startTime, cruza el día
-                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible)
+                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible || dayConfig.ShiftType == ShiftType.Partido)
                             {
                                 isCrossDay = true;
                             }
                         }
                     }
-                    else if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible)
+                    else if (dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible ||
+                             (shift.ShiftType == ShiftType.Partido && shift.SecondBlockEndTime.HasValue && shift.SecondBlockStartTime.HasValue && shift.SecondBlockEndTime.Value <= shift.SecondBlockStartTime.Value))
                     {
                         isCrossDay = true;
                     }
@@ -260,6 +261,15 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 else if (shift.ShiftType == ShiftType.Flexible)
                 {
                     await _sender.Send(new ProcessFlexibleAttendanceCommand(
+                        employee,
+                        date,
+                        shift,
+                        records,
+                        isRestDay), cancellationToken);
+                }
+                else if (shift.ShiftType == ShiftType.Partido)
+                {
+                    await _sender.Send(new ProcessSplitAttendanceCommand(
                         employee,
                         date,
                         shift,

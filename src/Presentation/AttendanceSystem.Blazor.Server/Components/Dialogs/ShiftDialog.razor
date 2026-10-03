@@ -100,6 +100,37 @@
                 </MudSelect>
             }
         }
+        else if (_shiftType == ShiftType.Partido)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Primary">Primer Bloque</MudText>
+            <MudGrid Class="mb-3">
+                <MudItem xs="4">
+                    <MudTimePicker @bind-Time="_startTime" Label="Entrada Bloque 1" Required="true" Editable="true" />
+                </MudItem>
+                <MudItem xs="4">
+                    <MudTimePicker @bind-Time="_endTime" Label="Salida Bloque 1" Required="true" Editable="true" />
+                </MudItem>
+                <MudItem xs="4">
+                    <MudNumericField @bind-Value="_toleranceMinutes" Label="Tolerancia Bloque 1 (min)" Min="0" Max="60" Step="1" />
+                </MudItem>
+            </MudGrid>
+
+            <MudText Typo="Typo.subtitle2" Class="mb-2" Color="Color.Primary">Segundo Bloque</MudText>
+            <MudGrid Class="mb-3">
+                <MudItem xs="4">
+                    <MudTimePicker @bind-Time="_secondBlockStartTime" Label="Entrada Bloque 2" Required="true" Editable="true" />
+                </MudItem>
+                <MudItem xs="4">
+                    <MudTimePicker @bind-Time="_secondBlockEndTime" Label="Salida Bloque 2" Required="true" Editable="true" />
+                </MudItem>
+                <MudItem xs="4">
+                    <MudNumericField @bind-Value="_secondBlockToleranceMinutes" Label="Tolerancia Bloque 2 (min)" Min="0" Max="60" Step="1" />
+                </MudItem>
+            </MudGrid>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-4">
+                * Requiere 4 marcajes obligatorios. Si la salida del bloque 2 es menor a su entrada, se computa como salida del día siguiente (nocturno).
+            </MudText>
+        }
         else
         {
             <MudTimePicker @bind-Time="_startTime" Label="Hora de Inicio" Required="true" Editable="true" />
@@ -126,10 +157,16 @@
     [Parameter] public int RoundingInterval { get; set; }
     [Parameter] public TimeSpan? FlexWindowEndTime { get; set; }
     [Parameter] public TimeSpan? WeeklyWorkHours { get; set; }
+    [Parameter] public TimeSpan? SecondBlockStartTime { get; set; }
+    [Parameter] public TimeSpan? SecondBlockEndTime { get; set; }
+    [Parameter] public int? SecondBlockToleranceMinutes { get; set; }
 
     private string _name = "";
     private TimeSpan? _startTime;
     private TimeSpan? _endTime;
+    private TimeSpan? _secondBlockStartTime;
+    private TimeSpan? _secondBlockEndTime;
+    private int _secondBlockToleranceMinutes = 10;
     private TimeSpan? _flexWindowEndTime;
     private int _toleranceMinutes;
     private int _targetHours = 8;
@@ -159,6 +196,9 @@
         _roundingsEnabled = RoundingsEnabled;
         _roundingInterval = RoundingInterval == 0 ? 15 : RoundingInterval;
         _flexWindowEndTime = FlexWindowEndTime ?? (_startTime.HasValue ? _startTime.Value.Add(TimeSpan.FromHours(1.5)) : new TimeSpan(9, 30, 0));
+        _secondBlockStartTime = SecondBlockStartTime ?? new TimeSpan(16, 0, 0);
+        _secondBlockEndTime = SecondBlockEndTime ?? new TimeSpan(20, 0, 0);
+        _secondBlockToleranceMinutes = SecondBlockToleranceMinutes ?? ToleranceMinutes;
         
         if (WeeklyWorkHours.HasValue && WeeklyWorkHours.Value > TimeSpan.Zero)
         {
@@ -263,6 +303,9 @@
         
         TimeSpan workHours;
         TimeSpan? weekly = null;
+        TimeSpan? b2Start = null;
+        TimeSpan? b2End = null;
+        int? b2Tol = null;
 
         if (_shiftType == ShiftType.Flexible)
         {
@@ -276,6 +319,17 @@
                 workHours = TimeSpan.Zero;
                 weekly = TimeSpan.FromHours(_weeklyHours);
             }
+        }
+        else if (_shiftType == ShiftType.Partido)
+        {
+            b2Start = _secondBlockStartTime ?? new TimeSpan(16, 0, 0);
+            b2End = _secondBlockEndTime ?? new TimeSpan(20, 0, 0);
+            b2Tol = _secondBlockToleranceMinutes;
+
+            var b1Dur = durationEnd - start;
+            var b2DurEnd = b2End.Value <= b2Start.Value ? b2End.Value.Add(TimeSpan.FromHours(24)) : b2End.Value;
+            var b2Dur = b2DurEnd - b2Start.Value;
+            workHours = b1Dur + b2Dur;
         }
         else
         {
@@ -314,7 +368,10 @@
                 RoundingsEnabled: _roundingsEnabled,
                 RoundingInterval: _roundingInterval,
                 FlexWindowEndTime: flexEnd,
-                WeeklyWorkHours: weekly);
+                WeeklyWorkHours: weekly,
+                SecondBlockStartTime: b2Start,
+                SecondBlockEndTime: b2End,
+                SecondBlockToleranceMinutes: b2Tol);
             MudDialog.Close(DialogResult.Ok(command));
         }
         else
@@ -330,7 +387,10 @@
                 RoundingsEnabled: _roundingsEnabled,
                 RoundingInterval: _roundingInterval,
                 FlexWindowEndTime: flexEnd,
-                WeeklyWorkHours: weekly);
+                WeeklyWorkHours: weekly,
+                SecondBlockStartTime: b2Start,
+                SecondBlockEndTime: b2End,
+                SecondBlockToleranceMinutes: b2Tol);
             MudDialog.Close(DialogResult.Ok(command));
         }
     }
@@ -343,6 +403,7 @@
         ShiftType.Mixto => "Mixto",
         ShiftType.Continuo => "Continuo",
         ShiftType.Flexible => "Flexible",
+        ShiftType.Partido => "Partido / Doble Turno",
         _ => type.ToString()
     };
 }

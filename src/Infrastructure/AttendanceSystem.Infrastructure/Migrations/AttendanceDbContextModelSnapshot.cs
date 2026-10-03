@@ -188,6 +188,37 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<TimeSpan?>("WeeklyWorkHours")
                         .HasColumnType("interval");
 
+                    b.Property<TimeSpan?>("ScheduledBlock2CheckIn")
+                        .HasColumnType("interval");
+
+                    b.Property<TimeSpan?>("ScheduledBlock2CheckOut")
+                        .HasColumnType("interval");
+
+                    b.Property<int?>("SecondBlockToleranceMinutes")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("ActualBlock1CheckOut")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("Block1CheckOutRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime?>("ActualBlock2CheckIn")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("Block2CheckInRecordId")
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("MissingBlock1CheckOut")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("MissingBlock2CheckIn")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<Guid?>("ShiftId")
                         .HasColumnType("uuid");
 
@@ -607,6 +638,15 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.Property<TimeSpan?>("WeeklyWorkHours")
                         .HasColumnType("interval");
+
+                    b.Property<TimeSpan?>("SecondBlockStartTime")
+                        .HasColumnType("interval");
+
+                    b.Property<TimeSpan?>("SecondBlockEndTime")
+                        .HasColumnType("interval");
+
+                    b.Property<int?>("SecondBlockToleranceMinutes")
+                        .HasColumnType("integer");
 
                     b.Property<TimeSpan>("WorkHours")
                         .HasColumnType("interval");

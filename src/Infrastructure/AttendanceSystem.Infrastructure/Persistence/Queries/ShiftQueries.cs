@@ -33,6 +33,9 @@ public class ShiftQueries : IShiftQueries
                 s.RoundingsEnabled,
                 s.RoundingInterval,
                 s.FlexWindowEndTime,
-                s.WeeklyWorkHours));
+                s.WeeklyWorkHours,
+                s.SecondBlockStartTime,
+                s.SecondBlockEndTime,
+                s.SecondBlockToleranceMinutes));
     }
 }

@@ -20,7 +20,10 @@ public sealed record UpdateShiftCommand(
     bool RoundingsEnabled = false,
     int RoundingInterval = 0,
     TimeSpan? FlexWindowEndTime = null,
-    TimeSpan? WeeklyWorkHours = null) : IRequest<Result>;
+    TimeSpan? WeeklyWorkHours = null,
+    TimeSpan? SecondBlockStartTime = null,
+    TimeSpan? SecondBlockEndTime = null,
+    int? SecondBlockToleranceMinutes = null) : IRequest<Result>;
 
 public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftCommand, Result>
 {
@@ -63,7 +66,10 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
                 roundingsEnabled: request.RoundingsEnabled,
                 roundingInterval: request.RoundingInterval,
                 flexWindowEndTime: request.FlexWindowEndTime,
-                weeklyWorkHours: request.WeeklyWorkHours);
+                weeklyWorkHours: request.WeeklyWorkHours,
+                secondBlockStartTime: request.SecondBlockStartTime,
+                secondBlockEndTime: request.SecondBlockEndTime,
+                secondBlockToleranceMinutes: request.SecondBlockToleranceMinutes);
 
             _shiftRepository.Update(shift);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

@@ -36,10 +36,17 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public TimeSpan? WorkHours { get; private set; }
     public TimeSpan? WeeklyWorkHours { get; private set; }
     public DateTime? DynamicScheduledCheckOut { get; private set; }
+    public TimeSpan? ScheduledBlock2CheckIn { get; private set; }
+    public TimeSpan? ScheduledBlock2CheckOut { get; private set; }
+    public int? SecondBlockToleranceMinutes { get; private set; }
 
     // Actual Data
     public DateTime? ActualCheckIn { get; private set; }
     public AttendanceRecordId? CheckInRecordId { get; private set; }
+    public DateTime? ActualBlock1CheckOut { get; private set; }
+    public AttendanceRecordId? Block1CheckOutRecordId { get; private set; }
+    public DateTime? ActualBlock2CheckIn { get; private set; }
+    public AttendanceRecordId? Block2CheckInRecordId { get; private set; }
     public DateTime? ActualCheckOut { get; private set; }
     public AttendanceRecordId? CheckOutRecordId { get; private set; }
 
@@ -51,6 +58,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
     // Flags
     public bool MissingCheckIn { get; private set; }
+    public bool MissingBlock1CheckOut { get; private set; }
+    public bool MissingBlock2CheckIn { get; private set; }
     public bool MissingCheckOut { get; private set; }
     public bool IsRestDay { get; private set; }
     public bool WorkedOnRestDay { get; private set; }
@@ -134,6 +143,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             attendance.FlexWindowEndTime = shift.FlexWindowEndTime;
             attendance.WorkHours = shift.WorkHours > TimeSpan.Zero ? shift.WorkHours : null;
             attendance.WeeklyWorkHours = shift.WeeklyWorkHours;
+            attendance.ScheduledBlock2CheckIn = shift.SecondBlockStartTime;
+            attendance.ScheduledBlock2CheckOut = shift.SecondBlockEndTime;
+            attendance.SecondBlockToleranceMinutes = shift.SecondBlockToleranceMinutes;
         }
 
         // 2. Set Actual Times
@@ -159,6 +171,34 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     {
         ActualCheckIn = null;
         CheckInRecordId = null;
+        CalculateStatus();
+    }
+
+    public void SetBlock1CheckOut(DateTime checkOut, AttendanceRecordId recordId)
+    {
+        ActualBlock1CheckOut = checkOut;
+        Block1CheckOutRecordId = recordId;
+        CalculateStatus();
+    }
+
+    public void RemoveBlock1CheckOut()
+    {
+        ActualBlock1CheckOut = null;
+        Block1CheckOutRecordId = null;
+        CalculateStatus();
+    }
+
+    public void SetBlock2CheckIn(DateTime checkIn, AttendanceRecordId recordId)
+    {
+        ActualBlock2CheckIn = checkIn;
+        Block2CheckInRecordId = recordId;
+        CalculateStatus();
+    }
+
+    public void RemoveBlock2CheckIn()
+    {
+        ActualBlock2CheckIn = null;
+        Block2CheckInRecordId = null;
         CalculateStatus();
     }
 
@@ -205,6 +245,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         FlexWindowEndTime = shift.FlexWindowEndTime;
         WorkHours = shift.WorkHours > TimeSpan.Zero ? shift.WorkHours : null;
         WeeklyWorkHours = shift.WeeklyWorkHours;
+        ScheduledBlock2CheckIn = shift.SecondBlockStartTime;
+        ScheduledBlock2CheckOut = shift.SecondBlockEndTime;
+        SecondBlockToleranceMinutes = shift.SecondBlockToleranceMinutes;
 
         // If updating shift, it's likely not a Rest Day anymore unless strict override, but usually shift implies work day.
         IsRestDay = false;
@@ -265,6 +308,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         EarlyDepartureMinutes = 0;
         OvertimeMinutes = 0;
         MissingCheckIn = false;
+        MissingBlock1CheckOut = false;
+        MissingBlock2CheckIn = false;
         MissingCheckOut = false;
         WorkedOnRestDay = false;
         DynamicScheduledCheckOut = null;
@@ -272,7 +317,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         // If Rest Day
         if (IsRestDay)
         {
-            if (ActualCheckIn.HasValue || ActualCheckOut.HasValue)
+            if (ActualCheckIn.HasValue || ActualCheckOut.HasValue || ActualBlock1CheckOut.HasValue || ActualBlock2CheckIn.HasValue)
             {
                 WorkedOnRestDay = true;
             }
@@ -281,6 +326,116 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 // If they did not punch anything on their rest day, they are just resting. Not absent.
                 return;
             }
+        }
+
+        // ShiftType.Partido: Horario Partido / Doble Turno con 2 bloques y 4 marcajes obligatorios
+        if (ShiftType == Enumerations.ShiftType.Partido)
+        {
+            if (ScheduledCheckIn == null || ScheduledCheckOut == null || ScheduledBlock2CheckIn == null || ScheduledBlock2CheckOut == null)
+            {
+                return;
+            }
+
+            // Ausencia total: ningún marcaje de los 4
+            if (ActualCheckIn == null && ActualBlock1CheckOut == null && ActualBlock2CheckIn == null && ActualCheckOut == null)
+            {
+                IsAbsent = true;
+                return;
+            }
+
+            // 4 marcajes obligatorios:
+            MissingCheckIn = ActualCheckIn == null;
+            MissingBlock1CheckOut = ActualBlock1CheckOut == null;
+            MissingBlock2CheckIn = ActualBlock2CheckIn == null;
+            MissingCheckOut = ActualCheckOut == null;
+
+            var schedB1In = Date.Add(ScheduledCheckIn.Value);
+            var schedB1Out = Date.Add(ScheduledCheckOut.Value);
+            var schedB2In = Date.Add(ScheduledBlock2CheckIn.Value);
+            var schedB2Out = ScheduledBlock2CheckOut.Value <= ScheduledBlock2CheckIn.Value
+                ? Date.AddDays(1).Add(ScheduledBlock2CheckOut.Value)
+                : Date.Add(ScheduledBlock2CheckOut.Value);
+
+            int totalLate = 0;
+            int totalEarly = 0;
+
+            // Retardo Bloque 1 (Tolerancia independiente: ToleranceMinutes)
+            if (ActualCheckIn.HasValue)
+            {
+                var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+                if (checkInNoSeconds > schedB1In)
+                {
+                    int delay = (int)(checkInNoSeconds - schedB1In).TotalMinutes;
+                    if (delay > ToleranceMinutes)
+                    {
+                        totalLate += delay;
+                    }
+                }
+            }
+
+            // Retardo Bloque 2 (Tolerancia independiente: SecondBlockToleranceMinutes)
+            if (ActualBlock2CheckIn.HasValue)
+            {
+                var block2InNoSeconds = TruncateSeconds(ActualBlock2CheckIn.Value);
+                if (block2InNoSeconds > schedB2In)
+                {
+                    int delay = (int)(block2InNoSeconds - schedB2In).TotalMinutes;
+                    int tol2 = SecondBlockToleranceMinutes ?? ToleranceMinutes;
+                    if (delay > tol2)
+                    {
+                        totalLate += delay;
+                    }
+                }
+            }
+            LateMinutes = totalLate;
+
+            // Salida anticipada Bloque 1
+            if (ActualBlock1CheckOut.HasValue)
+            {
+                if (ActualBlock1CheckOut.Value < schedB1Out)
+                {
+                    totalEarly += (int)(schedB1Out - ActualBlock1CheckOut.Value).TotalMinutes;
+                }
+            }
+
+            // Salida anticipada Bloque 2
+            if (ActualCheckOut.HasValue)
+            {
+                if (ActualCheckOut.Value < schedB2Out)
+                {
+                    totalEarly += (int)(schedB2Out - ActualCheckOut.Value).TotalMinutes;
+                }
+            }
+            EarlyDepartureMinutes = totalEarly;
+
+            // Cómputo de horas laboradas y horas extras
+            double workedMinutesBlock1 = 0;
+            if (ActualCheckIn.HasValue && ActualBlock1CheckOut.HasValue && ActualBlock1CheckOut.Value > ActualCheckIn.Value)
+            {
+                workedMinutesBlock1 = (ActualBlock1CheckOut.Value - ActualCheckIn.Value).TotalMinutes;
+            }
+
+            double workedMinutesBlock2 = 0;
+            if (ActualBlock2CheckIn.HasValue && ActualCheckOut.HasValue && ActualCheckOut.Value > ActualBlock2CheckIn.Value)
+            {
+                workedMinutesBlock2 = (ActualCheckOut.Value - ActualBlock2CheckIn.Value).TotalMinutes;
+            }
+
+            double totalWorked = workedMinutesBlock1 + workedMinutesBlock2;
+
+            if (TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid && TemporaryExitMinutes > 0)
+            {
+                totalWorked = Math.Max(0, totalWorked - TemporaryExitMinutes);
+            }
+
+            double scheduledDuration = (schedB1Out - schedB1In).TotalMinutes + (schedB2Out - schedB2In).TotalMinutes;
+
+            if (totalWorked > scheduledDuration && OvertimeAuthorized)
+            {
+                OvertimeMinutes = (int)(totalWorked - scheduledDuration);
+            }
+
+            return;
         }
 
         // Normal Day Logic

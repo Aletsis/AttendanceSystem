@@ -215,4 +215,102 @@ public class ShiftTests
         act.Should().Throw<DomainException>()
             .WithMessage("*no puede ser anterior a la hora de inicio*");
     }
+
+    [Fact]
+    public void Create_SplitShift_WithValidBlocks_ShouldCalculateTotalWorkHoursAndProperties()
+    {
+        // Arrange: Bloque 1: 09:00 - 14:00 (5h), Bloque 2: 17:00 - 21:00 (4h) -> Total 9h
+        var startB1 = new TimeSpan(9, 0, 0);
+        var durB1 = new TimeSpan(5, 0, 0);
+        var startB2 = new TimeSpan(17, 0, 0);
+        var endB2 = new TimeSpan(21, 0, 0);
+
+        // Act
+        var shift = Shift.Create(
+            name: "Horario Partido Restaurante",
+            startTime: startB1,
+            toleranceMinutes: 10,
+            workHours: durB1,
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: startB2,
+            secondBlockEndTime: endB2,
+            secondBlockToleranceMinutes: 15);
+
+        // Assert
+        shift.ShiftType.Should().Be(ShiftType.Partido);
+        shift.StartTime.Should().Be(startB1);
+        shift.EndTime.Should().Be(new TimeSpan(14, 0, 0));
+        shift.ToleranceMinutes.Should().Be(10);
+        shift.SecondBlockStartTime.Should().Be(startB2);
+        shift.SecondBlockEndTime.Should().Be(endB2);
+        shift.SecondBlockToleranceMinutes.Should().Be(15);
+        shift.WorkHours.Should().Be(new TimeSpan(9, 0, 0));
+    }
+
+    [Fact]
+    public void Create_SplitShift_OvernightSecondBlock_ShouldCalculateCrossMidnightHours()
+    {
+        // Arrange: Bloque 1: 10:00 - 14:00 (4h), Bloque 2: 19:00 - 02:00 (7h) -> Total 11h
+        var startB1 = new TimeSpan(10, 0, 0);
+        var durB1 = new TimeSpan(4, 0, 0);
+        var startB2 = new TimeSpan(19, 0, 0);
+        var endB2 = new TimeSpan(2, 0, 0);
+
+        // Act
+        var shift = Shift.Create(
+            name: "Partido Noche",
+            startTime: startB1,
+            toleranceMinutes: 10,
+            workHours: durB1,
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: startB2,
+            secondBlockEndTime: endB2);
+
+        // Assert
+        shift.EndTime.Should().Be(new TimeSpan(14, 0, 0));
+        shift.WorkHours.Should().Be(new TimeSpan(11, 0, 0));
+        shift.SecondBlockToleranceMinutes.Should().Be(10); // Defaults to toleranceMinutes
+    }
+
+    [Fact]
+    public void Create_SplitShift_WithoutSecondBlock_ShouldThrowDomainException()
+    {
+        // Arrange
+        var startB1 = new TimeSpan(9, 0, 0);
+
+        // Act
+        Action act = () => Shift.Create(
+            name: "Partido Sin Bloque 2",
+            startTime: startB1,
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(5, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: null,
+            secondBlockEndTime: null);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*segundo bloque es requerida*");
+    }
+
+    [Fact]
+    public void Create_SplitShift_WhenSecondBlockStartsBeforeFirstBlockEnds_ShouldThrowDomainException()
+    {
+        // Arrange: Bloque 1 termina a las 14:00, Bloque 2 intenta iniciar a las 13:00
+        var startB1 = new TimeSpan(9, 0, 0);
+
+        // Act
+        Action act = () => Shift.Create(
+            name: "Partido Traslape",
+            startTime: startB1,
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(5, 0, 0), // EndTime = 14:00
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(13, 0, 0),
+            secondBlockEndTime: new TimeSpan(18, 0, 0));
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*segundo bloque no puede iniciar antes*");
+    }
 }

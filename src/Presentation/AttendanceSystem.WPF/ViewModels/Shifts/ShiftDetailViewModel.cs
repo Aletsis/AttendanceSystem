@@ -52,7 +52,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Nocturno, "Nocturno" },
             { ShiftType.Mixto, "Mixto" },
             { ShiftType.Continuo, "Continuo" },
-            { ShiftType.Flexible, "Flexible" }
+            { ShiftType.Flexible, "Flexible" },
+            { ShiftType.Partido, "Partido / Doble Turno" }
         };
 
         public Dictionary<ShiftType, string> DayShiftTypes { get; } = new()
@@ -61,7 +62,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Vespertino, "Vespertino" },
             { ShiftType.Nocturno, "Nocturno" },
             { ShiftType.Continuo, "Continuo" },
-            { ShiftType.Flexible, "Flexible" }
+            { ShiftType.Flexible, "Flexible" },
+            { ShiftType.Partido, "Partido / Doble Turno" }
         };
 
         public KeyValuePair<ShiftType, string> SelectedShiftType
@@ -75,6 +77,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     RaisePropertyChanged(nameof(IsContinuousShift));
                     RaisePropertyChanged(nameof(IsMixedShift));
                     RaisePropertyChanged(nameof(IsFlexibleShift));
+                    RaisePropertyChanged(nameof(IsSplitShift));
                 }
             }
         }
@@ -152,10 +155,33 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             }
         }
 
-        public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Continuo && SelectedShiftType.Key != ShiftType.Flexible;
+        private DateTime? _secondBlockStartDateTime = DateTime.Today.AddHours(16);
+        private DateTime? _secondBlockEndDateTime = DateTime.Today.AddHours(20);
+        private int _secondBlockToleranceMinutes = 10;
+
+        public DateTime? SecondBlockStartDateTime
+        {
+            get => _secondBlockStartDateTime;
+            set => SetProperty(ref _secondBlockStartDateTime, value);
+        }
+
+        public DateTime? SecondBlockEndDateTime
+        {
+            get => _secondBlockEndDateTime;
+            set => SetProperty(ref _secondBlockEndDateTime, value);
+        }
+
+        public int SecondBlockToleranceMinutes
+        {
+            get => _secondBlockToleranceMinutes;
+            set => SetProperty(ref _secondBlockToleranceMinutes, value);
+        }
+
+        public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Continuo && SelectedShiftType.Key != ShiftType.Flexible && SelectedShiftType.Key != ShiftType.Partido;
         public bool IsContinuousShift => SelectedShiftType.Key == ShiftType.Continuo;
         public bool IsMixedShift => SelectedShiftType.Key == ShiftType.Mixto;
         public bool IsFlexibleShift => SelectedShiftType.Key == ShiftType.Flexible;
+        public bool IsSplitShift => SelectedShiftType.Key == ShiftType.Partido;
 
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
@@ -225,6 +251,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
             TimeSpan workHours;
             TimeSpan? weekly = null;
+            TimeSpan? b2Start = null;
+            TimeSpan? b2End = null;
+            int? b2Tol = null;
 
             if (SelectedShiftType.Key == ShiftType.Flexible)
             {
@@ -238,6 +267,17 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     workHours = TimeSpan.Zero;
                     weekly = TimeSpan.FromHours(WeeklyHours);
                 }
+            }
+            else if (SelectedShiftType.Key == ShiftType.Partido)
+            {
+                b2Start = SecondBlockStartDateTime?.TimeOfDay ?? new TimeSpan(16, 0, 0);
+                b2End = SecondBlockEndDateTime?.TimeOfDay ?? new TimeSpan(20, 0, 0);
+                b2Tol = SecondBlockToleranceMinutes;
+
+                var b1Dur = durationEnd - startTime;
+                var b2DurEnd = b2End.Value <= b2Start.Value ? b2End.Value.Add(TimeSpan.FromHours(24)) : b2End.Value;
+                var b2Dur = b2DurEnd - b2Start.Value;
+                workHours = b1Dur + b2Dur;
             }
             else
             {
@@ -272,7 +312,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "RoundingsEnabled", RoundingsEnabled },
                 { "RoundingInterval", RoundingInterval },
                 { "FlexWindowEndTime", flexEnd },
-                { "WeeklyWorkHours", weekly }
+                { "WeeklyWorkHours", weekly },
+                { "SecondBlockStartTime", b2Start },
+                { "SecondBlockEndTime", b2End },
+                { "SecondBlockToleranceMinutes", b2Tol }
             };
 
             if (_shiftId.HasValue)
@@ -347,6 +390,25 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var flexEnd = parameters.GetValue<TimeSpan?>("FlexWindowEndTime");
                     if (flexEnd.HasValue)
                         FlexWindowEndDateTime = DateTime.Today.Add(flexEnd.Value);
+                }
+
+                if (parameters.ContainsKey("SecondBlockStartTime"))
+                {
+                    var b2s = parameters.GetValue<TimeSpan?>("SecondBlockStartTime");
+                    if (b2s.HasValue)
+                        SecondBlockStartDateTime = DateTime.Today.Add(b2s.Value);
+                }
+                if (parameters.ContainsKey("SecondBlockEndTime"))
+                {
+                    var b2e = parameters.GetValue<TimeSpan?>("SecondBlockEndTime");
+                    if (b2e.HasValue)
+                        SecondBlockEndDateTime = DateTime.Today.Add(b2e.Value);
+                }
+                if (parameters.ContainsKey("SecondBlockToleranceMinutes"))
+                {
+                    var b2t = parameters.GetValue<int?>("SecondBlockToleranceMinutes");
+                    if (b2t.HasValue)
+                        SecondBlockToleranceMinutes = b2t.Value;
                 }
 
                 if (parameters.ContainsKey("RoundingsEnabled"))

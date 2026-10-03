@@ -19,6 +19,12 @@ public class Shift : AggregateRoot<ShiftId>
     public TimeSpan? FlexWindowEndTime { get; private set; }
     /// <summary>Horas objetivo semanales para cálculo de bolsa de horas acumulada (opcional).</summary>
     public TimeSpan? WeeklyWorkHours { get; private set; }
+    /// <summary>Hora de inicio del segundo bloque para turnos partidos.</summary>
+    public TimeSpan? SecondBlockStartTime { get; private set; }
+    /// <summary>Hora de fin del segundo bloque para turnos partidos.</summary>
+    public TimeSpan? SecondBlockEndTime { get; private set; }
+    /// <summary>Minutos de tolerancia para el segundo bloque.</summary>
+    public int? SecondBlockToleranceMinutes { get; private set; }
 
     private readonly List<ShiftDay> _days = new();
     public IReadOnlyCollection<ShiftDay> Days => _days.AsReadOnly();
@@ -36,8 +42,13 @@ public class Shift : AggregateRoot<ShiftId>
         bool roundingsEnabled = false,
         int roundingInterval = 0,
         TimeSpan? flexWindowEndTime = null,
-        TimeSpan? weeklyWorkHours = null)
+        TimeSpan? weeklyWorkHours = null,
+        TimeSpan? secondBlockStartTime = null,
+        TimeSpan? secondBlockEndTime = null,
+        int? secondBlockToleranceMinutes = null)
     {
+        TimeSpan calculatedEndTime;
+
         if (shiftType == ShiftType.Flexible)
         {
             flexWindowEndTime ??= startTime;
@@ -61,13 +72,55 @@ public class Shift : AggregateRoot<ShiftId>
             {
                 weeklyWorkHours = null;
             }
+
+            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
+            secondBlockStartTime = null;
+            secondBlockEndTime = null;
+            secondBlockToleranceMinutes = null;
+        }
+        else if (shiftType == ShiftType.Partido)
+        {
+            if (!secondBlockStartTime.HasValue)
+                throw new DomainException("La hora de inicio del segundo bloque es requerida para turnos partidos.");
+            if (!secondBlockEndTime.HasValue)
+                throw new DomainException("La hora de fin del segundo bloque es requerida para turnos partidos.");
+
+            var b1End = NormalizeTime(startTime.Add(workHours));
+            if (startTime == b1End)
+                throw new DomainException("El primer bloque debe tener una duración mayor a cero.");
+
+            if (secondBlockStartTime.Value == secondBlockEndTime.Value)
+                throw new DomainException("El segundo bloque debe tener una duración mayor a cero.");
+
+            if (secondBlockStartTime.Value < b1End)
+                throw new DomainException("El segundo bloque no puede iniciar antes de que finalice el primer bloque.");
+
+            secondBlockToleranceMinutes ??= toleranceMinutes;
+            if (secondBlockToleranceMinutes.Value < 0)
+                throw new DomainException("El tiempo de tolerancia del segundo bloque no puede ser negativo.");
+
+            var b1Duration = b1End >= startTime ? b1End - startTime : b1End.Add(TimeSpan.FromDays(1)) - startTime;
+            var b2Duration = secondBlockEndTime.Value >= secondBlockStartTime.Value
+                ? secondBlockEndTime.Value - secondBlockStartTime.Value
+                : secondBlockEndTime.Value.Add(TimeSpan.FromDays(1)) - secondBlockStartTime.Value;
+
+            workHours = b1Duration + b2Duration;
+            calculatedEndTime = b1End;
+            flexWindowEndTime = null;
+            weeklyWorkHours = null;
         }
         else
         {
             flexWindowEndTime = null;
             weeklyWorkHours = null;
+            secondBlockStartTime = null;
+            secondBlockEndTime = null;
+            secondBlockToleranceMinutes = null;
+
             if (workHours <= TimeSpan.Zero)
                 throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
+
+            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
         }
 
         var shift = new Shift
@@ -79,11 +132,14 @@ public class Shift : AggregateRoot<ShiftId>
             WorkHours = workHours,
             ShiftType = shiftType,
             LunchBreakMinutes = lunchBreakMinutes < 0 ? 0 : lunchBreakMinutes,
-            EndTime = NormalizeTime(startTime.Add(workHours)),
+            EndTime = calculatedEndTime,
             RoundingsEnabled = roundingsEnabled,
             RoundingInterval = roundingInterval,
             FlexWindowEndTime = flexWindowEndTime,
-            WeeklyWorkHours = weeklyWorkHours
+            WeeklyWorkHours = weeklyWorkHours,
+            SecondBlockStartTime = secondBlockStartTime,
+            SecondBlockEndTime = secondBlockEndTime,
+            SecondBlockToleranceMinutes = secondBlockToleranceMinutes
         };
 
         if (days != null && days.Any())
@@ -110,12 +166,17 @@ public class Shift : AggregateRoot<ShiftId>
         bool roundingsEnabled = false,
         int roundingInterval = 0,
         TimeSpan? flexWindowEndTime = null,
-        TimeSpan? weeklyWorkHours = null)
+        TimeSpan? weeklyWorkHours = null,
+        TimeSpan? secondBlockStartTime = null,
+        TimeSpan? secondBlockEndTime = null,
+        int? secondBlockToleranceMinutes = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del turno es requerido.");
         if (toleranceMinutes < 0)
             throw new DomainException("El tiempo de tolerancia no puede ser negativo.");
+
+        TimeSpan calculatedEndTime;
 
         if (shiftType == ShiftType.Flexible)
         {
@@ -140,13 +201,55 @@ public class Shift : AggregateRoot<ShiftId>
             {
                 weeklyWorkHours = null;
             }
+
+            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
+            secondBlockStartTime = null;
+            secondBlockEndTime = null;
+            secondBlockToleranceMinutes = null;
+        }
+        else if (shiftType == ShiftType.Partido)
+        {
+            if (!secondBlockStartTime.HasValue)
+                throw new DomainException("La hora de inicio del segundo bloque es requerida para turnos partidos.");
+            if (!secondBlockEndTime.HasValue)
+                throw new DomainException("La hora de fin del segundo bloque es requerida para turnos partidos.");
+
+            var b1End = NormalizeTime(startTime.Add(workHours));
+            if (startTime == b1End)
+                throw new DomainException("El primer bloque debe tener una duración mayor a cero.");
+
+            if (secondBlockStartTime.Value == secondBlockEndTime.Value)
+                throw new DomainException("El segundo bloque debe tener una duración mayor a cero.");
+
+            if (secondBlockStartTime.Value < b1End)
+                throw new DomainException("El segundo bloque no puede iniciar antes de que finalice el primer bloque.");
+
+            secondBlockToleranceMinutes ??= toleranceMinutes;
+            if (secondBlockToleranceMinutes.Value < 0)
+                throw new DomainException("El tiempo de tolerancia del segundo bloque no puede ser negativo.");
+
+            var b1Duration = b1End >= startTime ? b1End - startTime : b1End.Add(TimeSpan.FromDays(1)) - startTime;
+            var b2Duration = secondBlockEndTime.Value >= secondBlockStartTime.Value
+                ? secondBlockEndTime.Value - secondBlockStartTime.Value
+                : secondBlockEndTime.Value.Add(TimeSpan.FromDays(1)) - secondBlockStartTime.Value;
+
+            workHours = b1Duration + b2Duration;
+            calculatedEndTime = b1End;
+            flexWindowEndTime = null;
+            weeklyWorkHours = null;
         }
         else
         {
             flexWindowEndTime = null;
             weeklyWorkHours = null;
+            secondBlockStartTime = null;
+            secondBlockEndTime = null;
+            secondBlockToleranceMinutes = null;
+
             if (workHours <= TimeSpan.Zero)
                 throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
+
+            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
         }
 
         Name = name;
@@ -155,11 +258,14 @@ public class Shift : AggregateRoot<ShiftId>
         WorkHours = workHours;
         ShiftType = shiftType;
         LunchBreakMinutes = lunchBreakMinutes < 0 ? 0 : lunchBreakMinutes;
-        EndTime = NormalizeTime(startTime.Add(workHours));
+        EndTime = calculatedEndTime;
         RoundingsEnabled = roundingsEnabled;
         RoundingInterval = roundingInterval;
         FlexWindowEndTime = flexWindowEndTime;
         WeeklyWorkHours = weeklyWorkHours;
+        SecondBlockStartTime = secondBlockStartTime;
+        SecondBlockEndTime = secondBlockEndTime;
+        SecondBlockToleranceMinutes = secondBlockToleranceMinutes;
 
         _days.Clear();
         if (days != null && days.Any())
