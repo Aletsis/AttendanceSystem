@@ -88,6 +88,11 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 return Result<EmployeeDto>.Failure($"No existe la sucursal con ID {request.BranchId}");
             }
 
+            if (branch.IsExternal)
+            {
+                return Result<EmployeeDto>.Failure($"La sucursal '{branch.Name}' es externa. Los empleados de sucursales externas deben gestionarse en el catálogo de Empleados Externos.");
+            }
+
             var departmentId = DepartmentId.From(request.DepartmentId);
             var department = await _departmentRepository.GetByIdAsync(departmentId, cancellationToken);
             if (department is null)

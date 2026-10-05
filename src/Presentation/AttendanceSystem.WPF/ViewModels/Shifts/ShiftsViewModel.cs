@@ -175,10 +175,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         workHours,
                         type,
                         days,
-                        roundingsEnabled: roundingsEnabled,
-                        roundingInterval: roundingInterval,
-                        flexWindowEndTime: result.Parameters.ContainsKey("FlexWindowEndTime") ? result.Parameters.GetValue<TimeSpan?>("FlexWindowEndTime") : null,
-                        weeklyWorkHours: result.Parameters.ContainsKey("WeeklyWorkHours") ? result.Parameters.GetValue<TimeSpan?>("WeeklyWorkHours") : null);
+                        RoundingsEnabled: roundingsEnabled,
+                        RoundingInterval: roundingInterval,
+                        FlexWindowEndTime: result.Parameters.ContainsKey("FlexWindowEndTime") ? result.Parameters.GetValue<TimeSpan?>("FlexWindowEndTime") : null,
+                        WeeklyWorkHours: result.Parameters.ContainsKey("WeeklyWorkHours") ? result.Parameters.GetValue<TimeSpan?>("WeeklyWorkHours") : null);
                     var createResult = await _mediator.Send(command);
 
                     if (createResult.IsSuccess)
@@ -239,10 +239,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         workHours,
                         type,
                         days,
-                        roundingsEnabled: roundingsEnabled,
-                        roundingInterval: roundingInterval,
-                        flexWindowEndTime: flexWindowEndTime,
-                        weeklyWorkHours: weeklyWorkHours);
+                        RoundingsEnabled: roundingsEnabled,
+                        RoundingInterval: roundingInterval,
+                        FlexWindowEndTime: flexWindowEndTime,
+                        WeeklyWorkHours: weeklyWorkHours);
                     var updateResult = await _mediator.Send(command);
 
                     if (updateResult.IsSuccess)

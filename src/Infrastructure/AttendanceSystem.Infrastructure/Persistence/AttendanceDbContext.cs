@@ -28,6 +28,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert> SystemAlerts => Set<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert>();
     public DbSet<AttendanceSystem.Domain.Aggregates.ExternalLogAggregate.ExternalAttendanceLog> ExternalAttendanceLogs => Set<AttendanceSystem.Domain.Aggregates.ExternalLogAggregate.ExternalAttendanceLog>();
     public DbSet<AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate.ShiftRoster> ShiftRosters => Set<AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate.ShiftRoster>();
+    public DbSet<AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployee> ExternalEmployees => Set<AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployee>();
 
 
 

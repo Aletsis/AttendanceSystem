@@ -177,6 +177,7 @@ try
     builder.Services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
     builder.Services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
     builder.Services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
+    builder.Services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
     builder.Services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();
 
     // ===== IDENTITY & AUTHENTICATION =====

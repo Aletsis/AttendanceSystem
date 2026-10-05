@@ -197,7 +197,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 if (branches.IsSuccess)
                 {
                     Branches.Clear();
-                    Branches.AddRange(branches.Value);
+                    Branches.AddRange(branches.Value.Where(b => !b.IsExternal));
                 }
 
                 var shifts = await _mediator.Send(new GetShiftsQuery());

@@ -1,0 +1,176 @@
+<UserControl x:Class="AttendanceSystem.WPF.Views.Employees.ExternalEmployeeDetailDialog"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:prism="http://prismlibrary.com/"
+             xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Width="500">
+    
+    <prism:Dialog.WindowStyle>
+        <Style TargetType="Window">
+            <Setter Property="prism:Dialog.WindowStartupLocation" Value="CenterOwner" />
+            <Setter Property="ResizeMode" Value="NoResize"/>
+            <Setter Property="ShowInTaskbar" Value="False"/>
+            <Setter Property="SizeToContent" Value="Height"/>
+            <Setter Property="WindowStyle" Value="None"/>
+            <Setter Property="AllowsTransparency" Value="True"/>
+            <Setter Property="Background" Value="Transparent"/>
+        </Style>
+    </prism:Dialog.WindowStyle>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
+        </Border.Effect>
+        
+        <Grid Margin="25">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Header -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,20">
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
+                <TextBlock Text="Gestione la información del personal en sucursales externas" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+            </StackPanel>
+
+            <!-- Form -->
+            <StackPanel Grid.Row="1">
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Sucursal Externa -->
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="Sucursal Externa *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <ComboBox ItemsSource="{Binding ExternalBranches}"
+                                  SelectedItem="{Binding SelectedBranch}"
+                                  DisplayMemberPath="DisplayName"
+                                  mah:TextBoxHelper.Watermark="Seleccione sucursal"
+                                  Padding="10,8"/>
+                    </StackPanel>
+
+                    <!-- Número de Empleado -->
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                        <TextBlock Text="No. Empleado *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding EmployeeNumber, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Ej: 101"
+                                 Padding="10,8"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Nombre y Apellidos -->
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="Nombre(s) *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding FirstName, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Nombre del empleado"
+                                 Padding="10,8"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                        <TextBlock Text="Apellidos *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding LastName, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Apellidos"
+                                 Padding="10,8"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Puesto y Departamento -->
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="Puesto" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding Position, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Puesto laboral"
+                                 Padding="10,8"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                        <TextBlock Text="Departamento" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding Department, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Área o departamento"
+                                 Padding="10,8"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Teléfono y Email -->
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="Teléfono" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding PhoneNumber, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Teléfono de contacto"
+                                 Padding="10,8"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                        <TextBlock Text="Correo Electrónico" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="correo@ejemplo.com"
+                                 Padding="10,8"/>
+                    </StackPanel>
+                </Grid>
+
+                <!-- Estatus y Tarjeta RFID -->
+                <Grid Margin="0,0,0,15">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="0" Margin="0,0,10,0">
+                        <TextBlock Text="Estatus" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <ComboBox ItemsSource="{Binding StatusOptions}"
+                                  SelectedItem="{Binding Status}"
+                                  Padding="10,8"/>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Margin="10,0,0,0">
+                        <TextBlock Text="No. Tarjeta / RFID" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBox Text="{Binding CardNumber, UpdateSourceTrigger=PropertyChanged}" 
+                                 mah:TextBoxHelper.Watermark="Opcional"
+                                 Padding="10,8"/>
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+
+            <!-- Actions -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,15,0,0">
+                <Button Content="Cancelar" 
+                        Command="{Binding CancelCommand}"
+                        Style="{StaticResource MahApps.Styles.Button.Square}"
+                        Background="Transparent"
+                        Foreground="#858796"
+                        BorderThickness="0"
+                        Margin="0,0,10,0"
+                        Padding="15,8"/>
+                
+                <Button Content="Guardar" 
+                        Command="{Binding SaveCommand}"
+                        Style="{StaticResource MahApps.Styles.Button.Square.Accent}"
+                        Background="#4E73DF"
+                        Foreground="White"
+                        BorderThickness="0"
+                        Padding="20,8"/>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

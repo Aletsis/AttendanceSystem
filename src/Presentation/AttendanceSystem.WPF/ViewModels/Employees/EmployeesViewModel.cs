@@ -7,6 +7,9 @@ using MediatR;
 using AttendanceSystem.Application.Features.Employees.Queries;
 using AttendanceSystem.Application.Features.Employees.Commands;
 using AttendanceSystem.Application.Features.Employees;
+using AttendanceSystem.Application.Features.ExternalEmployees;
+using AttendanceSystem.Application.Features.ExternalEmployees.Commands;
+using AttendanceSystem.Application.Features.ExternalEmployees.Queries;
 using AttendanceSystem.Domain.Enumerations;
 using Microsoft.Win32;
 using System.IO;
@@ -33,12 +36,41 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private readonly IReportExportService _exportService;
         private readonly IDialogService _dialogService;
 
+        private bool _isExternalMode;
         private ObservableCollection<EmployeeListItem> _employees = new();
         private ObservableCollection<EmployeeListItem> _filteredEmployees = new();
         private EmployeeListItem? _selectedEmployee;
+
+        private ObservableCollection<ExternalEmployeeListItem> _externalEmployees = new();
+        private ObservableCollection<ExternalEmployeeListItem> _filteredExternalEmployees = new();
+        private ExternalEmployeeListItem? _selectedExternalEmployee;
+
         private string _searchText = string.Empty;
         private string _selectedStatus = "Todos";
         private List<EmployeeDto> _allEmployeesData = new();
+        private List<ExternalEmployeeDto> _allExternalEmployeesData = new();
+
+        public bool IsExternalMode
+        {
+            get => _isExternalMode;
+            set
+            {
+                if (SetProperty(ref _isExternalMode, value))
+                {
+                    RaisePropertyChanged(nameof(IsInternalMode));
+                    if (_isExternalMode)
+                    {
+                        _ = LoadExternalEmployeesAsync();
+                    }
+                    else
+                    {
+                        _ = LoadEmployeesAsync();
+                    }
+                }
+            }
+        }
+
+        public bool IsInternalMode => !_isExternalMode;
 
         public ObservableCollection<EmployeeListItem> Employees
         {
@@ -52,6 +84,18 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             set => SetProperty(ref _selectedEmployee, value);
         }
 
+        public ObservableCollection<ExternalEmployeeListItem> ExternalEmployees
+        {
+            get => _filteredExternalEmployees;
+            set => SetProperty(ref _filteredExternalEmployees, value);
+        }
+
+        public ExternalEmployeeListItem? SelectedExternalEmployee
+        {
+            get => _selectedExternalEmployee;
+            set => SetProperty(ref _selectedExternalEmployee, value);
+        }
+
         public string SearchText
         {
             get => _searchText;
@@ -59,7 +103,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             {
                 if (SetProperty(ref _searchText, value))
                 {
-                    FilterEmployees();
+                    if (IsExternalMode)
+                        FilterExternalEmployees();
+                    else
+                        FilterEmployees();
                 }
             }
         }
@@ -71,7 +118,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             {
                 if (SetProperty(ref _selectedStatus, value))
                 {
-                    FilterEmployees();
+                    if (IsExternalMode)
+                        FilterExternalEmployees();
+                    else
+                        FilterEmployees();
                 }
             }
         }
@@ -87,6 +137,12 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public ICommand ExportEmployeesCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
         public ICommand SendToDeviceCommand { get; }
+
+        public ICommand AddExternalEmployeeCommand { get; }
+        public ICommand EditExternalEmployeeCommand { get; }
+        public ICommand DeleteExternalEmployeeCommand { get; }
+        public ICommand SwitchToInternalCommand { get; }
+        public ICommand SwitchToExternalCommand { get; }
 
         public EmployeesViewModel(
             IFrameNavigationService navigationService,
@@ -108,7 +164,24 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 .ObservesProperty(() => SelectedEmployee);
             DeleteEmployeeCommand = new DelegateCommand(async () => await ExecuteDeleteEmployeeAsync(), CanExecuteEditEmployee)
                 .ObservesProperty(() => SelectedEmployee);
-            RefreshCommand = new DelegateCommand(async () => await LoadEmployeesAsync());
+
+            AddExternalEmployeeCommand = new DelegateCommand(ExecuteAddExternalEmployee);
+            EditExternalEmployeeCommand = new DelegateCommand(ExecuteEditExternalEmployee, () => SelectedExternalEmployee != null)
+                .ObservesProperty(() => SelectedExternalEmployee);
+            DeleteExternalEmployeeCommand = new DelegateCommand(async () => await ExecuteDeleteExternalEmployeeAsync(), () => SelectedExternalEmployee != null)
+                .ObservesProperty(() => SelectedExternalEmployee);
+
+            SwitchToInternalCommand = new DelegateCommand(() => IsExternalMode = false);
+            SwitchToExternalCommand = new DelegateCommand(() => IsExternalMode = true);
+
+            RefreshCommand = new DelegateCommand(async () =>
+            {
+                if (IsExternalMode)
+                    await LoadExternalEmployeesAsync();
+                else
+                    await LoadEmployeesAsync();
+            });
+
             BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportEmployeesCommand = new DelegateCommand(async () => await ExecuteImportEmployeesAsync());
             ExportEmployeesCommand = new DelegateCommand(async () => await ExecuteExportEmployeesAsync());
@@ -120,7 +193,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         private async Task LoadEmployeesAsync()
         {
-            SetBusy(true, "Cargando empleados...");
+            SetBusy(true, "Cargando empleados internos...");
             try
             {
                 var result = await _mediator.Send(new GetAllEmployeesQuery());
@@ -168,7 +241,6 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         {
             var query = _employees.AsEnumerable();
 
-            // Filtrar por búsqueda
             if (!string.IsNullOrWhiteSpace(SearchText))
             {
                 var searchLower = SearchText.ToLower();
@@ -180,13 +252,84 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     e.PositionName.ToLower().Contains(searchLower));
             }
 
-            // Filtrar por estado
             if (SelectedStatus != "Todos")
             {
                 query = query.Where(e => e.Status == SelectedStatus);
             }
 
             Employees = new ObservableCollection<EmployeeListItem>(query);
+        }
+
+        private async Task LoadExternalEmployeesAsync()
+        {
+            SetBusy(true, "Cargando empleados externos...");
+            try
+            {
+                var result = await _mediator.Send(new GetExternalEmployeesQuery());
+                if (result.IsSuccess && result.Value != null)
+                {
+                    _allExternalEmployeesData = result.Value.ToList();
+                    _externalEmployees.Clear();
+
+                    foreach (var emp in _allExternalEmployeesData)
+                    {
+                        _externalEmployees.Add(new ExternalEmployeeListItem
+                        {
+                            Id = emp.Id,
+                            BranchId = emp.BranchId,
+                            BranchName = emp.BranchName,
+                            BranchCode = emp.BranchCode,
+                            EmployeeNumber = emp.EmployeeNumber,
+                            FullName = emp.FullName,
+                            Email = emp.Email ?? "N/A",
+                            Phone = emp.PhoneNumber ?? "N/A",
+                            Department = emp.Department ?? "N/A",
+                            Position = emp.Position ?? "N/A",
+                            CardNumber = emp.CardNumber ?? "N/A",
+                            Status = emp.Status == EmployeeStatus.Alta ? "Alta" : "Baja",
+                            CreatedAt = emp.CreatedAt
+                        });
+                    }
+
+                    FilterExternalEmployees();
+                }
+                else
+                {
+                    await _messageService.ShowErrorAsync($"Error al cargar empleados externos: {result.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al cargar empleados externos: {ex.Message}");
+            }
+            finally
+            {
+                SetBusy(false);
+            }
+        }
+
+        private void FilterExternalEmployees()
+        {
+            var query = _externalEmployees.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(SearchText))
+            {
+                var searchLower = SearchText.ToLower();
+                query = query.Where(e =>
+                    e.FullName.ToLower().Contains(searchLower) ||
+                    e.EmployeeNumber.ToLower().Contains(searchLower) ||
+                    e.BranchName.ToLower().Contains(searchLower) ||
+                    e.BranchCode.ToLower().Contains(searchLower) ||
+                    e.Department.ToLower().Contains(searchLower) ||
+                    e.Position.ToLower().Contains(searchLower));
+            }
+
+            if (SelectedStatus != "Todos")
+            {
+                query = query.Where(e => e.Status.Equals(SelectedStatus, StringComparison.OrdinalIgnoreCase));
+            }
+
+            ExternalEmployees = new ObservableCollection<ExternalEmployeeListItem>(query);
         }
 
         private void ExecuteAddEmployee()
@@ -241,6 +384,149 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             }
         }
 
+        private void ExecuteAddExternalEmployee()
+        {
+            _dialogService.ShowDialog("ExternalEmployeeDetailDialog", null, async result =>
+            {
+                if (result.Result == ButtonResult.OK)
+                {
+                    var branchId = result.Parameters.GetValue<Guid>("BranchId");
+                    var employeeNumber = result.Parameters.GetValue<string>("EmployeeNumber");
+                    var firstName = result.Parameters.GetValue<string>("FirstName");
+                    var lastName = result.Parameters.GetValue<string>("LastName");
+                    var email = result.Parameters.GetValue<string?>("Email");
+                    var phoneNumber = result.Parameters.GetValue<string?>("PhoneNumber");
+                    var position = result.Parameters.GetValue<string?>("Position");
+                    var department = result.Parameters.GetValue<string?>("Department");
+                    var status = result.Parameters.GetValue<EmployeeStatus>("Status");
+                    var cardNumber = result.Parameters.GetValue<string?>("CardNumber");
+
+                    var command = new CreateExternalEmployeeCommand(
+                        branchId.ToString(),
+                        employeeNumber,
+                        firstName,
+                        lastName,
+                        email,
+                        phoneNumber,
+                        position,
+                        department,
+                        status,
+                        cardNumber);
+
+                    var createResult = await _mediator.Send(command);
+                    if (createResult.IsSuccess)
+                    {
+                        await _messageService.ShowSuccessAsync("Empleado externo registrado correctamente.");
+                        await LoadExternalEmployeesAsync();
+                    }
+                    else
+                    {
+                        await _messageService.ShowErrorAsync($"Error al registrar empleado externo: {createResult.Error}");
+                    }
+                }
+            });
+        }
+
+        private void ExecuteEditExternalEmployee()
+        {
+            if (SelectedExternalEmployee == null) return;
+
+            var empData = _allExternalEmployeesData.FirstOrDefault(e => e.Id == SelectedExternalEmployee.Id);
+            if (empData == null) return;
+
+            var parameters = new DialogParameters
+            {
+                { "Id", empData.Id },
+                { "BranchId", empData.BranchId },
+                { "EmployeeNumber", empData.EmployeeNumber },
+                { "FirstName", empData.FirstName },
+                { "LastName", empData.LastName },
+                { "Email", empData.Email },
+                { "PhoneNumber", empData.PhoneNumber },
+                { "Position", empData.Position },
+                { "Department", empData.Department },
+                { "Status", empData.Status },
+                { "CardNumber", empData.CardNumber }
+            };
+
+            _dialogService.ShowDialog("ExternalEmployeeDetailDialog", parameters, async result =>
+            {
+                if (result.Result == ButtonResult.OK)
+                {
+                    var branchId = result.Parameters.GetValue<Guid>("BranchId");
+                    var employeeNumber = result.Parameters.GetValue<string>("EmployeeNumber");
+                    var firstName = result.Parameters.GetValue<string>("FirstName");
+                    var lastName = result.Parameters.GetValue<string>("LastName");
+                    var email = result.Parameters.GetValue<string?>("Email");
+                    var phoneNumber = result.Parameters.GetValue<string?>("PhoneNumber");
+                    var position = result.Parameters.GetValue<string?>("Position");
+                    var department = result.Parameters.GetValue<string?>("Department");
+                    var status = result.Parameters.GetValue<EmployeeStatus>("Status");
+                    var cardNumber = result.Parameters.GetValue<string?>("CardNumber");
+
+                    var command = new UpdateExternalEmployeeCommand(
+                        empData.Id,
+                        branchId.ToString(),
+                        employeeNumber,
+                        firstName,
+                        lastName,
+                        email,
+                        phoneNumber,
+                        position,
+                        department,
+                        status,
+                        cardNumber);
+
+                    var updateResult = await _mediator.Send(command);
+                    if (updateResult.IsSuccess)
+                    {
+                        await _messageService.ShowSuccessAsync("Empleado externo actualizado correctamente.");
+                        await LoadExternalEmployeesAsync();
+                    }
+                    else
+                    {
+                        await _messageService.ShowErrorAsync($"Error al actualizar empleado externo: {updateResult.Error}");
+                    }
+                }
+            });
+        }
+
+        private async Task ExecuteDeleteExternalEmployeeAsync()
+        {
+            if (SelectedExternalEmployee == null) return;
+
+            var confirmed = await _messageService.ShowConfirmationAsync(
+                "Confirmar eliminación",
+                $"¿Está seguro de eliminar al empleado externo {SelectedExternalEmployee.FullName} de la sucursal {SelectedExternalEmployee.BranchName}?");
+
+            if (!confirmed) return;
+
+            SetBusy(true, "Eliminando empleado externo...");
+            try
+            {
+                var command = new DeleteExternalEmployeeCommand(SelectedExternalEmployee.Id);
+                var result = await _mediator.Send(command);
+
+                if (result.IsSuccess)
+                {
+                    await _messageService.ShowSuccessAsync("Empleado externo eliminado correctamente");
+                    await LoadExternalEmployeesAsync();
+                }
+                else
+                {
+                    await _messageService.ShowErrorAsync($"Error al eliminar empleado externo: {result.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al eliminar empleado externo: {ex.Message}");
+            }
+            finally
+            {
+                SetBusy(false);
+            }
+        }
+
         private bool CanExecuteEditEmployee()
         {
             return SelectedEmployee != null;
@@ -250,72 +536,81 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         {
             var openFileDialog = new OpenFileDialog
             {
-                Filter = "Excel Files (*.xlsx)|*.xlsx",
+                Filter = "Archivos de Excel (*.xlsx)|*.xlsx",
                 Title = "Seleccionar archivo de empleados"
             };
 
             if (openFileDialog.ShowDialog() == true)
             {
-                SetBusy(true, "Procesando importación...");
+                SetBusy(true, "Importando empleados...");
                 try
                 {
-                    // 1. Cargar catálogos para mapeo
                     var branchesResult = await _mediator.Send(new GetBranchesQuery());
                     var departmentsResult = await _mediator.Send(new GetDepartmentsQuery());
                     var positionsResult = await _mediator.Send(new GetPositionsQuery());
-                    var shiftsResult = await _mediator.Send(new GetShiftsQuery());
 
-                    var branches = branchesResult.IsSuccess ? branchesResult.Value.ToDictionary(b => b.Name, b => b.Id, StringComparer.OrdinalIgnoreCase) : new();
-                    var departments = departmentsResult.IsSuccess ? departmentsResult.Value.ToDictionary(d => d.Name, d => d.Id, StringComparer.OrdinalIgnoreCase) : new();
-                    var positions = positionsResult.IsSuccess ? positionsResult.Value.ToDictionary(p => p.Name, p => p.Id, StringComparer.OrdinalIgnoreCase) : new();
-
-                    using var stream = File.OpenRead(openFileDialog.FileName);
-                    var importResult = await _importService.ParseEmployeesAsync(stream);
-
-                    if (importResult.Errors.Any() && !importResult.ValidEntries.Any())
+                    if (!branchesResult.IsSuccess || !departmentsResult.IsSuccess || !positionsResult.IsSuccess)
                     {
-                        await _messageService.ShowErrorAsync($"Error al leer el archivo: {string.Join("\n", importResult.Errors.Take(5))}");
+                        await _messageService.ShowErrorAsync("Error al cargar catálogos para asociar empleados.");
                         return;
                     }
 
-                    int successCount = 0;
-                    int errorCount = 0;
+                    var branchMap = branchesResult.Value.ToDictionary(b => b.Name.Trim().ToLowerInvariant(), b => b.Id);
+                    var deptMap = departmentsResult.Value.ToDictionary(d => d.Name.Trim().ToLowerInvariant(), d => d.Id);
+                    var posMap = positionsResult.Value.ToDictionary(p => p.Name.Trim().ToLowerInvariant(), p => p.Id);
 
-                    foreach (var dto in importResult.ValidEntries)
+                    using var stream = File.OpenRead(openFileDialog.FileName);
+                    var result = await _importService.ParseEmployeesAsync(stream);
+
+                    if (result.IsSuccess)
                     {
-                        try
+                        int successCount = 0;
+                        int failCount = 0;
+
+                        foreach (var item in result.Data)
                         {
-                            if (!branches.TryGetValue(dto.BranchName, out var branchId) ||
-                                !departments.TryGetValue(dto.DepartmentName, out var deptId) ||
-                                !positions.TryGetValue(dto.PositionName, out var posId))
+                            if (!branchMap.TryGetValue((item.BranchName ?? string.Empty).Trim().ToLowerInvariant(), out var branchId) ||
+                                !deptMap.TryGetValue((item.DepartmentName ?? string.Empty).Trim().ToLowerInvariant(), out var deptId) ||
+                                !posMap.TryGetValue((item.PositionName ?? string.Empty).Trim().ToLowerInvariant(), out var posId))
                             {
-                                errorCount++;
+                                failCount++;
                                 continue;
                             }
 
-                            var gender = Gender.Male;
-                            if (!string.IsNullOrWhiteSpace(dto.Gender) && dto.Gender.StartsWith("F", StringComparison.OrdinalIgnoreCase))
-                                gender = Gender.Female;
+                            var gender = Enum.TryParse<Gender>(item.Gender, true, out var g) ? g : Gender.Male;
 
                             var command = new CreateEmployeeCommand(
-                                dto.EmployeeId, dto.FirstName, dto.LastName, dto.Email, string.Empty, dto.HireDate, gender,
-                                branchId.ToString(), deptId.ToString(), posId.ToString(),
-                                ShiftType.Matutino, null, null, false, OvertimeCalculationMethod.NoRounding,
-                                OvertimeCapType.None, null, false
-                            );
+                                item.EmployeeId,
+                                item.FirstName,
+                                item.LastName,
+                                item.Email,
+                                null,
+                                item.HireDate,
+                                gender,
+                                branchId.ToString(),
+                                deptId.ToString(),
+                                posId.ToString(),
+                                null,
+                                null,
+                                null,
+                                false,
+                                OvertimeCalculationMethod.NoRounding,
+                                OvertimeCapType.None,
+                                null,
+                                false);
 
-                            var result = await _mediator.Send(command);
-                            if (result.IsSuccess) successCount++;
-                            else errorCount++;
+                            var createResult = await _mediator.Send(command);
+                            if (createResult.IsSuccess) successCount++;
+                            else failCount++;
                         }
-                        catch
-                        {
-                            errorCount++;
-                        }
+
+                        await _messageService.ShowSuccessAsync($"Importación finalizada. Exitosos: {successCount}, Fallidos: {failCount}");
+                        await LoadEmployeesAsync();
                     }
-
-                    await _messageService.ShowSuccessAsync($"Importación completada. Exitosos: {successCount}, Errores: {errorCount}");
-                    await LoadEmployeesAsync();
+                    else
+                    {
+                        await _messageService.ShowErrorAsync($"Error al leer archivo: {result.ErrorMessage}");
+                    }
                 }
                 catch (Exception ex)
                 {
@@ -404,6 +699,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     try
                     {
                         var cmdResult = await _mediator.Send(new SendEmployeeToDeviceCommand(employee.Id, deviceId));
+
                         if (cmdResult.IsSuccess)
                         {
                             await _messageService.ShowSuccessAsync($"Empleado sincronizado correctamente en {deviceName}.");
@@ -438,5 +734,22 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public string BranchName { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
         public DateTime HireDate { get; set; }
+    }
+
+    public class ExternalEmployeeListItem
+    {
+        public Guid Id { get; set; }
+        public Guid BranchId { get; set; }
+        public string BranchName { get; set; } = string.Empty;
+        public string BranchCode { get; set; } = string.Empty;
+        public string EmployeeNumber { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public string Email { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string Department { get; set; } = string.Empty;
+        public string Position { get; set; } = string.Empty;
+        public string CardNumber { get; set; } = string.Empty;
+        public string Status { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
     }
 }
