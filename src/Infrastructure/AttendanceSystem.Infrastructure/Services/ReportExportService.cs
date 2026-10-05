@@ -436,49 +436,69 @@ public class ReportExportService : IReportExportService
                            }
                        });
 
-                       uint rowIndex = 0;
-                       foreach (var item in attendanceData)
+                       var employeeGroups = attendanceData.GroupBy(x => x.EmployeeId);
+
+                       foreach (var group in employeeGroups)
                        {
-                           var overtimeStr = CalculateOvertimeString(item);
+                           var items = group.ToList();
 
-                           TimeSpan worked = TimeSpan.Zero;
-                           if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
+                           for (int i = 0; i < items.Count; i++)
                            {
-                               worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
+                               var item = items[i];
+                               bool isFirstDay = (i == 0);
+                               bool isLastDay = (i == items.Count - 1);
+
+                               var overtimeStr = CalculateOvertimeString(item);
+
+                               TimeSpan worked = TimeSpan.Zero;
+                               if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
+                               {
+                                   worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
+                               }
+
+                               var workedStr = worked == TimeSpan.Zero ? "" : $"{(int)worked.TotalHours:00}:{worked.Minutes:00}";
+                               var bgColor = (i % 2 == 0) ? Colors.White : Colors.Grey.Lighten4;
+
+                               float borderWidth = isLastDay ? 2f : 1f;
+                               string borderColor = isLastDay ? Colors.Blue.Darken2 : Colors.Grey.Lighten3;
+
+                               if (isFirstDay)
+                               {
+                                   table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.EmployeeId).Bold().FontColor(Colors.Blue.Darken3);
+                                   table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor).AlignLeft()).Text(item.EmployeeName).Bold().FontColor(Colors.Blue.Darken3);
+                               }
+                               else
+                               {
+                                   table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.EmployeeId);
+                                   table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor).AlignLeft()).Text(item.EmployeeName);
+                               }
+
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.Date.ToString("dd/MM/yyyy"));
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(FormatDateTime(item.ActualCheckIn, item.Date, "--"));
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(FormatDateTime(item.ActualCheckOut, item.Date, "--"));
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(workedStr);
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(overtimeStr);
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor).AlignLeft()).Text(item.BranchName);
+
+                               // Indicators with colors
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.IsAbsent ? "1FINJ" : "").FontColor(Colors.Red.Medium).Bold();
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.WorkedOnRestDay ? "1DFT" : "").FontColor(Colors.Green.Darken1).Bold();
+                               table.Cell().Element(c => BodyStyle(c, bgColor, borderWidth, borderColor)).Text(item.LateMinutes > 0 ? "1RET" : "").FontColor(Colors.Orange.Darken2).Bold();
                            }
+                       }
 
-                           var workedStr = worked == TimeSpan.Zero ? "" : $"{(int)worked.TotalHours:00}:{worked.Minutes:00}";
-                           var bgColor = rowIndex % 2 == 0 ? Colors.White : Colors.Grey.Lighten4;
-
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.EmployeeId);
-                           table.Cell().Element(c => BodyStyle(c, bgColor).AlignLeft()).Text(item.EmployeeName);
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.Date.ToString("dd/MM/yyyy"));
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckIn, item.Date, "--"));
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(FormatDateTime(item.ActualCheckOut, item.Date, "--"));
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(workedStr);
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(overtimeStr);
-                           table.Cell().Element(c => BodyStyle(c, bgColor).AlignLeft()).Text(item.BranchName);
-
-                           // Indicators with colors
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.IsAbsent ? "1FINJ" : "").FontColor(Colors.Red.Medium).Bold();
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.WorkedOnRestDay ? "1DFT" : "").FontColor(Colors.Green.Darken1).Bold();
-                           table.Cell().Element(c => BodyStyle(c, bgColor)).Text(item.LateMinutes > 0 ? "1RET" : "").FontColor(Colors.Orange.Darken2).Bold();
-
-                           rowIndex++;
-
-                           static IContainer BodyStyle(IContainer container, string backgroundColor)
-                           {
-                               return container
-                                   .Background(backgroundColor)
-                                   .BorderBottom(1)
-                                   .BorderColor(Colors.Grey.Lighten3)
-                                   .PaddingVertical(4)
-                                   .PaddingHorizontal(2)
-                                   .AlignMiddle()
-                                   .AlignCenter();
-                           }
+                       static IContainer BodyStyle(IContainer container, string backgroundColor, float borderBottomWidth, string borderBottomColor)
+                       {
+                           return container
+                               .Background(backgroundColor)
+                               .BorderBottom(borderBottomWidth)
+                               .BorderColor(borderBottomColor)
+                               .PaddingVertical(4)
+                               .PaddingHorizontal(2)
+                               .AlignMiddle()
+                               .AlignCenter();
                        }
                    });
 
