@@ -1,5 +1,7 @@
 @using AttendanceSystem.Application.Features.Employees.Commands
 @using AttendanceSystem.Application.Features.Employees.Queries
+@using AttendanceSystem.Application.Features.ExternalEmployees.Commands
+@using AttendanceSystem.Application.Features.ExternalEmployees.Queries
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
 @using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
 @using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
@@ -49,7 +51,7 @@
                 <MudTabPanel Text="General">
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="Id" Label="ID de Empleado" Required="true" RequiredError="El ID es requerido" Disabled="@(EmployeeId != null)" />
+                            <MudTextField @bind-Value="Id" Label="ID de Empleado" Required="true" RequiredError="El ID es requerido" Disabled="@(_isEditing)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
                             <MudTextField @bind-Value="FirstName" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
@@ -58,7 +60,7 @@
                             <MudTextField @bind-Value="LastName" Label="Apellido" Required="true" RequiredError="El apellido es requerido" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudDatePicker @bind-Date="_hireDate" Label="Fecha de Contratación" Required="true" Editable="true" Mask="@(new DateMask("dd/MM/yyyy"))" Disabled="@(!_canEditAll)" />
+                            <MudDatePicker @bind-Date="_hireDate" Label="Fecha de Contratación" Required="@(!IsSelectedBranchExternal)" Editable="true" Mask="@(new DateMask("dd/MM/yyyy"))" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
                             <MudTextField @bind-Value="Email" Label="Email" InputType="InputType.Email" Disabled="@(!_canEditAll)" />
@@ -67,7 +69,7 @@
                             <MudTextField @bind-Value="PhoneNumber" Label="Teléfono" Disabled="@(!_canEditAll)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="GenderEnum" @bind-Value="Gender" Label="Sexo" Required="true" RequiredError="El sexo es requerido" Disabled="@(!_canEditAll)">
+                            <MudSelect T="GenderEnum" @bind-Value="Gender" Label="Sexo" Required="@(!IsSelectedBranchExternal)" RequiredError="El sexo es requerido" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var gender in Enum.GetValues<GenderEnum>())
                                 {
                                     <MudSelectItem T="GenderEnum" Value="@gender">@(gender == GenderEnum.Male ? "Masculino" : "Femenino")</MudSelectItem>
@@ -95,7 +97,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid" Value="DepartmentId" ValueChanged="OnDepartmentChanged" Label="Departamento" Required="true" RequiredError="El departamento es requerido">
+                            <MudSelect T="Guid" Value="DepartmentId" ValueChanged="OnDepartmentChanged" Label="Departamento" Required="@(!IsSelectedBranchExternal)" RequiredError="El departamento es requerido" Clearable="@IsSelectedBranchExternal">
                                 @foreach (var department in _departments)
                                 {
                                     <MudSelectItem T="Guid" Value="@department.Id">@department.Name</MudSelectItem>
@@ -103,7 +105,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid" @bind-Value="PositionId" Label="Puesto" Required="true" RequiredError="El puesto es requerido">
+                            <MudSelect T="Guid" @bind-Value="PositionId" Label="Puesto" Required="@(!IsSelectedBranchExternal)" RequiredError="El puesto es requerido" Clearable="@IsSelectedBranchExternal">
                                 @foreach (var position in _filteredPositions)
                                 {
                                     <MudSelectItem T="Guid" Value="@position.Id">@position.Name</MudSelectItem>
@@ -191,7 +193,7 @@
                             <MudTextField @bind-Value="CardNumber" Label="Número de Tarjeta" HelperText="Deje vacío si no aplica" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="DevicePassword" Label="Contraseña PIN" HelperText="Máximo 8 dígitos" InputType="InputType.Password" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Lock" />
+                            <MudTextField @bind-Value="DevicePassword" Label="Contraseña PIN" HelperText="@(IsSelectedBranchExternal ? "No aplica para sucursales externas" : "Máximo 8 dígitos")" InputType="InputType.Password" Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Lock" Disabled="@IsSelectedBranchExternal" />
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
@@ -208,6 +210,7 @@
     [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
 
     [Parameter] public string? EmployeeId { get; set; }
+    [Parameter] public Guid? ExternalEmployeeId { get; set; }
     [Parameter] public string Id { get; set; } = string.Empty;
     [Parameter] public string FirstName { get; set; } = string.Empty;
     [Parameter] public string LastName { get; set; } = string.Empty;
@@ -235,7 +238,7 @@
     private DateTime? _hireDate;
     private bool _loading = true;
     private bool _isAdmin;
-    private bool _isEditing => !string.IsNullOrEmpty(EmployeeId);
+    private bool _isEditing => !string.IsNullOrEmpty(EmployeeId) || ExternalEmployeeId.HasValue;
     private bool _canEditAll => _isAdmin || !_isEditing;
     private bool IsSelectedBranchExternal => _branches.FirstOrDefault(b => b.Id == BranchId)?.IsExternal ?? false;
     private ShiftTypeEnum? _selectedShiftType;
@@ -261,8 +264,8 @@
 
         _hireDate = HireDate;
         
-        // Si estamos editando, usar el EmployeeId como Id
-        if (!string.IsNullOrEmpty(EmployeeId))
+        // Si estamos editando y tenemos EmployeeId como identificador de formulario
+        if (!string.IsNullOrEmpty(EmployeeId) && string.IsNullOrEmpty(Id))
         {
             Id = EmployeeId;
         }
@@ -380,96 +383,187 @@
         if (string.IsNullOrWhiteSpace(Id) || 
             string.IsNullOrWhiteSpace(FirstName) || 
             string.IsNullOrWhiteSpace(LastName) ||
-            BranchId == Guid.Empty ||
-            DepartmentId == Guid.Empty ||
-            PositionId == Guid.Empty ||
-            !_hireDate.HasValue ||
-            Gender == 0)
+            BranchId == Guid.Empty)
         {
             Snackbar.Add("Por favor complete todos los campos requeridos", Severity.Warning);
             return;
         }
 
-        if (!_filteredPositions.Any(p => p.Id == PositionId))
+        if (!IsSelectedBranchExternal)
         {
-            Snackbar.Add("El puesto seleccionado no pertenece al departamento seleccionado", Severity.Warning);
-            return;
-        }
-
-        if (ScheduleId.HasValue && _selectedShiftType.HasValue)
-        {
-            var selectedSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
-            if (selectedSchedule != null && selectedSchedule.ShiftType != _selectedShiftType.Value)
+            if (DepartmentId == Guid.Empty ||
+                PositionId == Guid.Empty ||
+                !_hireDate.HasValue ||
+                Gender == 0)
             {
-                Snackbar.Add("El horario seleccionado no corresponde al turno seleccionado", Severity.Warning);
+                Snackbar.Add("Por favor complete todos los campos requeridos para el empleado", Severity.Warning);
                 return;
+            }
+
+            if (!_filteredPositions.Any(p => p.Id == PositionId))
+            {
+                Snackbar.Add("El puesto seleccionado no pertenece al departamento seleccionado", Severity.Warning);
+                return;
+            }
+
+            if (ScheduleId.HasValue && _selectedShiftType.HasValue)
+            {
+                var selectedSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
+                if (selectedSchedule != null && selectedSchedule.ShiftType != _selectedShiftType.Value)
+                {
+                    Snackbar.Add("El horario seleccionado no corresponde al turno seleccionado", Severity.Warning);
+                    return;
+                }
             }
         }
 
-        // Si es un nuevo empleado, validar que el ID no exista
-        if (string.IsNullOrEmpty(EmployeeId))
+        // Validación de unicidad de ID
+        if (!_isEditing)
         {
-            // Verificamos si ya existe el ID
-            var existingEmployeeResult = await Sender.Send(new GetEmployeeByIdQuery(Id));
-            if (existingEmployeeResult.IsSuccess)
+            if (!IsSelectedBranchExternal)
             {
-                Snackbar.Add($"El ID '{Id}' ya se encuentra registrado. Utilice un ID diferente.", Severity.Error);
-                return;
+                // Validación para empleado INTERNO (ID único global en Employees)
+                var existingEmployeeResult = await Sender.Send(new GetEmployeeByIdQuery(Id));
+                if (existingEmployeeResult.IsSuccess)
+                {
+                    Snackbar.Add($"El ID '{Id}' ya se encuentra registrado. Utilice un ID diferente.", Severity.Error);
+                    return;
+                }
+            }
+            else
+            {
+                // Validación para empleado EXTERNO (ID único por sucursal externa)
+                var branchName = _branches.FirstOrDefault(b => b.Id == BranchId)?.Name ?? "seleccionada";
+                var externalEmployeesResult = await Sender.Send(new GetExternalEmployeesQuery(BranchId.ToString()));
+                if (externalEmployeesResult.IsSuccess && externalEmployeesResult.Value != null)
+                {
+                    if (externalEmployeesResult.Value.Any(e => e.EmployeeNumber.Trim().Equals(Id.Trim(), StringComparison.OrdinalIgnoreCase)))
+                    {
+                        Snackbar.Add($"El ID '{Id}' ya se encuentra registrado en la sucursal externa '{branchName}'. Utilice un ID diferente.", Severity.Error);
+                        return;
+                    }
+                }
+            }
+        }
+        else if (IsSelectedBranchExternal)
+        {
+            // Editando empleado externo: validar que no choque con otro empleado de esa misma sucursal
+            var branchName = _branches.FirstOrDefault(b => b.Id == BranchId)?.Name ?? "seleccionada";
+            var externalEmployeesResult = await Sender.Send(new GetExternalEmployeesQuery(BranchId.ToString()));
+            if (externalEmployeesResult.IsSuccess && externalEmployeesResult.Value != null)
+            {
+                var targetId = ExternalEmployeeId;
+                if (!targetId.HasValue && !string.IsNullOrEmpty(EmployeeId) && Guid.TryParse(EmployeeId, out var parsedGuid))
+                {
+                    targetId = parsedGuid;
+                }
+
+                if (externalEmployeesResult.Value.Any(e => 
+                    (!targetId.HasValue || e.Id != targetId.Value) && 
+                    e.EmployeeNumber.Trim().Equals(Id.Trim(), StringComparison.OrdinalIgnoreCase)))
+                {
+                    Snackbar.Add($"El ID '{Id}' ya se encuentra registrado para otro empleado en la sucursal externa '{branchName}'.", Severity.Error);
+                    return;
+                }
             }
         }
 
-        if (!string.IsNullOrEmpty(EmployeeId))
+        if (IsSelectedBranchExternal)
         {
-            MudDialog.Close(DialogResult.Ok(new UpdateEmployeeCommand(
-                Id,
-                FirstName,
-                LastName,
-                Email,
-                PhoneNumber,
-                _hireDate.Value,
-                Gender,
-                Status,
-                BranchId.ToString(),
-                DepartmentId.ToString(),
-                PositionId.ToString(),
-                _selectedShiftType,
-                ScheduleId?.ToString(),
-                (int?)RestDay,
-                OvertimeAuthorized,
-                OvertimeCalculationMethod,
-                OvertimeCapType,
-                OvertimeCapMinutes,
-                CalculateOvertimeBeforeEntry,
-                CardNumber,
-                DevicePassword,
-                Photo,
-                DevicePrivilege)));
+            var deptName = _departments.FirstOrDefault(d => d.Id == DepartmentId)?.Name;
+            var posName = _positions.FirstOrDefault(p => p.Id == PositionId)?.Name;
+
+            var targetExtId = ExternalEmployeeId;
+            if (!targetExtId.HasValue && !string.IsNullOrEmpty(EmployeeId) && Guid.TryParse(EmployeeId, out var parsedId))
+            {
+                targetExtId = parsedId;
+            }
+
+            if (targetExtId.HasValue)
+            {
+                MudDialog.Close(DialogResult.Ok(new UpdateExternalEmployeeCommand(
+                    targetExtId.Value,
+                    BranchId.ToString(),
+                    Id,
+                    FirstName,
+                    LastName,
+                    Email,
+                    PhoneNumber,
+                    posName,
+                    deptName,
+                    Status,
+                    CardNumber)));
+            }
+            else
+            {
+                MudDialog.Close(DialogResult.Ok(new CreateExternalEmployeeCommand(
+                    BranchId.ToString(),
+                    Id,
+                    FirstName,
+                    LastName,
+                    Email,
+                    PhoneNumber,
+                    posName,
+                    deptName,
+                    Status,
+                    CardNumber)));
+            }
         }
         else
         {
-            MudDialog.Close(DialogResult.Ok(new CreateEmployeeCommand(
-                Id,
-                FirstName,
-                LastName,
-                Email,
-                PhoneNumber,
-                _hireDate.Value,
-                Gender,
-                BranchId.ToString(),
-                DepartmentId.ToString(),
-                PositionId.ToString(),
-                _selectedShiftType,
-                ScheduleId?.ToString(),
-                (int?)RestDay,
-                OvertimeAuthorized,
-                OvertimeCalculationMethod,
-                OvertimeCapType,
-                OvertimeCapMinutes,
-                CalculateOvertimeBeforeEntry,
-                CardNumber,
-                DevicePassword,
-                Photo,
-                DevicePrivilege)));
+            if (!string.IsNullOrEmpty(EmployeeId))
+            {
+                MudDialog.Close(DialogResult.Ok(new UpdateEmployeeCommand(
+                    Id,
+                    FirstName,
+                    LastName,
+                    Email,
+                    PhoneNumber,
+                    _hireDate!.Value,
+                    Gender,
+                    Status,
+                    BranchId.ToString(),
+                    DepartmentId.ToString(),
+                    PositionId.ToString(),
+                    _selectedShiftType,
+                    ScheduleId?.ToString(),
+                    (int?)RestDay,
+                    OvertimeAuthorized,
+                    OvertimeCalculationMethod,
+                    OvertimeCapType,
+                    OvertimeCapMinutes,
+                    CalculateOvertimeBeforeEntry,
+                    CardNumber,
+                    DevicePassword,
+                    Photo,
+                    DevicePrivilege)));
+            }
+            else
+            {
+                MudDialog.Close(DialogResult.Ok(new CreateEmployeeCommand(
+                    Id,
+                    FirstName,
+                    LastName,
+                    Email,
+                    PhoneNumber,
+                    _hireDate!.Value,
+                    Gender,
+                    BranchId.ToString(),
+                    DepartmentId.ToString(),
+                    PositionId.ToString(),
+                    _selectedShiftType,
+                    ScheduleId?.ToString(),
+                    (int?)RestDay,
+                    OvertimeAuthorized,
+                    OvertimeCalculationMethod,
+                    OvertimeCapType,
+                    OvertimeCapMinutes,
+                    CalculateOvertimeBeforeEntry,
+                    CardNumber,
+                    DevicePassword,
+                    Photo,
+                    DevicePrivilege)));
+            }
         }
     }
 }

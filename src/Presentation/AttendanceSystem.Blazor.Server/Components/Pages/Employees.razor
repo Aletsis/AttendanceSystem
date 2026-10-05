@@ -1,8 +1,12 @@
 @page "/employees"
 @using MediatR
+@using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Employees
 @using AttendanceSystem.Application.Features.Employees.Queries
 @using AttendanceSystem.Application.Features.Employees.Commands
+@using AttendanceSystem.Application.Features.ExternalEmployees
+@using AttendanceSystem.Application.Features.ExternalEmployees.Commands
+@using AttendanceSystem.Application.Features.ExternalEmployees.Queries
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
 @using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
 @using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
@@ -16,7 +20,6 @@
 @using Microsoft.JSInterop
 
 <PageTitle>Empleados</PageTitle>
-<MudText Typo="Typo.h5" Class="mb-4">Empleados</MudText>
 
 @if (!_isLoaded)
 {
@@ -24,107 +27,215 @@
 }
 else
 {
-    <MudGrid Spacing="2" Class="mb-4">
-        <MudItem xs="12" sm="6" md="3">
-            <MudTextField T="string" Value="_searchString" ValueChanged="OnSearch" Label="Buscar" 
-                          Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary"
-                          Clearable="true" Immediate="false" />
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudSelect T="string" Label="Sucursal" MultiSelection="true" @bind-SelectedValues="_selectedBranches" 
-                       Clearable="true" AnchorOrigin="Origin.BottomCenter" MultiSelectionTextFunc="@(x => string.Join(", ", x))">
-                @foreach (var branch in _availableBranches)
-                {
-                    <MudSelectItem T="string" Value="@branch">@branch</MudSelectItem>
-                }
-            </MudSelect>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudSelect T="string" Label="Departamento" MultiSelection="true" @bind-SelectedValues="_selectedDepts" 
-                       Clearable="true" AnchorOrigin="Origin.BottomCenter" MultiSelectionTextFunc="@(x => string.Join(", ", x))">
-                @foreach (var dept in _availableDepts)
-                {
-                    <MudSelectItem T="string" Value="@dept">@dept</MudSelectItem>
-                }
-            </MudSelect>
-        </MudItem>
-        <MudItem xs="12" sm="6" md="3">
-            <MudSelect T="string" Label="Estado" MultiSelection="true" @bind-SelectedValues="_selectedStatuses" 
-                       Clearable="true" AnchorOrigin="Origin.BottomCenter">
-                @foreach (var status in _availableStatuses)
-                {
-                    <MudSelectItem T="string" Value="@status.ToString()">@status.ToString()</MudSelectItem>
-                }
-            </MudSelect>
-        </MudItem>
-        
-        <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
-            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportEmployees">Importar</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Empleado</MudButton>
-            <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="LoadEmployees">Filtrar</MudButton>
-        </MudItem>
-    </MudGrid>
+    <div class="d-flex align-center justify-space-between mb-4">
+        <MudText Typo="Typo.h5">Gestión de Empleados</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">
+            Nuevo Empleado
+        </MudButton>
+    </div>
 
-    <MudDataGrid T="EmployeeDto" ServerData="ServerReload" @ref="_dataGrid" Filterable="false" Hideable="true" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
-        <Columns>
-            <TemplateColumn Title="Foto" Sortable="false" Filterable="false">
-                <CellTemplate>
-                    @if (!string.IsNullOrEmpty(context.Item.Photo))
-                    {
-                        <MudAvatar Size="Size.Medium">
-                            <MudImage Src="@($"data:image/jpeg;base64,{context.Item.Photo}")" />
-                        </MudAvatar>
-                    }
-                    else
-                    {
-                        <MudAvatar Color="Color.Default" Size="Size.Medium">
-                            <MudIcon Icon="@Icons.Material.Filled.Person" />
-                        </MudAvatar>
-                    }
-                </CellTemplate>
-            </TemplateColumn>
-            <PropertyColumn Property="x => x.Id" Title="ID" />
-            <PropertyColumn Property="x => x.FullName" Title="Nombre Completo" />
-            <PropertyColumn Property="x => x.BranchName" Title="Sucursal" />
-            <PropertyColumn Property="x => x.DepartmentName" Title="Departamento" />
-            <PropertyColumn Property="x => x.ScheduleName" Title="Horario" />
-            <PropertyColumn Property="x => x.RestDayName" Title="Descanso" />
-            <PropertyColumn Property="x => x.Status" Title="Estado">
-                <CellTemplate>
-                    <MudChip T="string" Color="@(context.Item.Status == EmployeeStatus.Alta ? Color.Success : context.Item.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">
-                        @(context.Item.Status.ToString())
-                    </MudChip>
-                </CellTemplate>
-            </PropertyColumn>
-            <TemplateColumn CellClass="d-flex justify-end" Filterable="false" Sortable="false">
-                <CellTemplate>
-                    <MudTooltip Text="Ver Detalles">
-                        <MudIconButton Icon="@Icons.Material.Filled.Visibility" Color="Color.Primary" OnClick="@(() => OpenDetailsDialog(context.Item))" Size="Size.Medium" />
-                    </MudTooltip>
-                    <MudTooltip Text="Editar">
-                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context.Item))" Size="Size.Medium" />
-                    </MudTooltip>
-                    <AuthorizeView Roles="Administrador" Context="authContext">
-                        <MudTooltip Text="Eliminar">
-                            <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteEmployee(context.Item.Id))" Size="Size.Medium" />
-                        </MudTooltip>
-                    </AuthorizeView>
-                </CellTemplate>
-            </TemplateColumn>
-        </Columns>
-        <PagerContent>
-            <MudDataGridPager T="EmployeeDto" />
-        </PagerContent>
-    </MudDataGrid>
-    }
+    <MudTabs Elevation="2" Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pa-4" ActivePanelIndexChanged="OnTabChanged">
+        <MudTabPanel Text="Empleados Internos" Icon="@Icons.Material.Filled.Badge">
+            <MudGrid Spacing="2" Class="mb-4">
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField T="string" Value="_searchString" ValueChanged="OnSearch" Label="Buscar" 
+                                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary"
+                                  Clearable="true" Immediate="false" />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" Label="Sucursal" MultiSelection="true" @bind-SelectedValues="_selectedBranches" 
+                               Clearable="true" AnchorOrigin="Origin.BottomCenter" MultiSelectionTextFunc="@(x => string.Join(", ", x))">
+                        @foreach (var branch in _availableBranches)
+                        {
+                            <MudSelectItem T="string" Value="@branch">@branch</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" Label="Departamento" MultiSelection="true" @bind-SelectedValues="_selectedDepts" 
+                               Clearable="true" AnchorOrigin="Origin.BottomCenter" MultiSelectionTextFunc="@(x => string.Join(", ", x))">
+                        @foreach (var dept in _availableDepts)
+                        {
+                            <MudSelectItem T="string" Value="@dept">@dept</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="3">
+                    <MudSelect T="string" Label="Estado" MultiSelection="true" @bind-SelectedValues="_selectedStatuses" 
+                               Clearable="true" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var status in _availableStatuses)
+                        {
+                            <MudSelectItem T="string" Value="@status.ToString()">@status.ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                
+                <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportEmployees">Importar</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="LoadEmployees">Filtrar</MudButton>
+                </MudItem>
+            </MudGrid>
+
+            <MudDataGrid T="EmployeeDto" ServerData="ServerReload" @ref="_dataGrid" Filterable="false" Hideable="true" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                <Columns>
+                    <TemplateColumn Title="Foto" Sortable="false" Filterable="false">
+                        <CellTemplate>
+                            @if (!string.IsNullOrEmpty(context.Item.Photo))
+                            {
+                                <MudAvatar Size="Size.Medium">
+                                    <MudImage Src="@($"data:image/jpeg;base64,{context.Item.Photo}")" />
+                                </MudAvatar>
+                            }
+                            else
+                            {
+                                <MudAvatar Color="Color.Default" Size="Size.Medium">
+                                    <MudIcon Icon="@Icons.Material.Filled.Person" />
+                                </MudAvatar>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <PropertyColumn Property="x => x.Id" Title="ID" />
+                    <PropertyColumn Property="x => x.FullName" Title="Nombre Completo" />
+                    <PropertyColumn Property="x => x.BranchName" Title="Sucursal" />
+                    <PropertyColumn Property="x => x.DepartmentName" Title="Departamento" />
+                    <PropertyColumn Property="x => x.ScheduleName" Title="Horario" />
+                    <PropertyColumn Property="x => x.RestDayName" Title="Descanso" />
+                    <PropertyColumn Property="x => x.Status" Title="Estado">
+                        <CellTemplate>
+                            <MudChip T="string" Color="@(context.Item.Status == EmployeeStatus.Alta ? Color.Success : context.Item.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">
+                                @(context.Item.Status.ToString())
+                            </MudChip>
+                        </CellTemplate>
+                    </PropertyColumn>
+                    <TemplateColumn CellClass="d-flex justify-end" Filterable="false" Sortable="false">
+                        <CellTemplate>
+                            <MudTooltip Text="Ver Detalles">
+                                <MudIconButton Icon="@Icons.Material.Filled.Visibility" Color="Color.Primary" OnClick="@(() => OpenDetailsDialog(context.Item))" Size="Size.Medium" />
+                            </MudTooltip>
+                            <MudTooltip Text="Enviar a Reloj">
+                                <MudIconButton Icon="@Icons.Material.Filled.Router" Color="Color.Info" OnClick="@(() => OpenSendInternalToDeviceDialog(context.Item))" Size="Size.Medium" />
+                            </MudTooltip>
+                            <MudTooltip Text="Editar">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context.Item))" Size="Size.Medium" />
+                            </MudTooltip>
+                            <AuthorizeView Roles="Administrador" Context="authContext">
+                                <MudTooltip Text="Eliminar">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteEmployee(context.Item.Id))" Size="Size.Medium" />
+                                </MudTooltip>
+                            </AuthorizeView>
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+                <PagerContent>
+                    <MudDataGridPager T="EmployeeDto" />
+                </PagerContent>
+            </MudDataGrid>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Empleados Externos" Icon="@Icons.Material.Filled.Public">
+            <MudGrid Spacing="2" Class="mb-4">
+                <MudItem xs="12" sm="6" md="4">
+                    <MudTextField T="string" Value="_externalSearchString" ValueChanged="OnExternalSearch" Label="Buscar" 
+                                  Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary"
+                                  Clearable="true" Immediate="false" Placeholder="Nombre, número, puesto..." />
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="Guid?" @bind-Value="_selectedExternalBranchId" Label="Sucursal Externa" Clearable="true" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var branch in _externalBranches)
+                        {
+                            <MudSelectItem T="Guid?" Value="@((Guid?)branch.Id)">@branch.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6" md="4">
+                    <MudSelect T="EmployeeStatus?" @bind-Value="_selectedExternalStatus" Label="Estado" Clearable="true" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var status in _availableStatuses)
+                        {
+                            <MudSelectItem T="EmployeeStatus?" Value="@((EmployeeStatus?)status)">@status.ToString()</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                
+                <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
+                    <MudButton Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="LoadExternalEmployees">Filtrar</MudButton>
+                </MudItem>
+            </MudGrid>
+
+            @if (_loadingExternal)
+            {
+                <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
+            }
+
+            <MudDataGrid T="ExternalEmployeeDto" Items="@_externalEmployees" Filterable="false" Hideable="true" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                <Columns>
+                    <PropertyColumn Property="x => x.BranchName" Title="Sucursal Externa">
+                        <CellTemplate>
+                            <MudChip T="string" Color="Color.Secondary" Variant="Variant.Outlined" Size="Size.Small">
+                                @context.Item.BranchName
+                            </MudChip>
+                        </CellTemplate>
+                    </PropertyColumn>
+                    <PropertyColumn Property="x => x.EmployeeNumber" Title="No. Empleado" />
+                    <PropertyColumn Property="x => x.FullName" Title="Nombre Completo" />
+                    <PropertyColumn Property="x => x.Department" Title="Departamento">
+                        <CellTemplate>
+                            @(string.IsNullOrEmpty(context.Item.Department) ? "-" : context.Item.Department)
+                        </CellTemplate>
+                    </PropertyColumn>
+                    <PropertyColumn Property="x => x.Position" Title="Puesto">
+                        <CellTemplate>
+                            @(string.IsNullOrEmpty(context.Item.Position) ? "-" : context.Item.Position)
+                        </CellTemplate>
+                    </PropertyColumn>
+                    <PropertyColumn Property="x => x.PhoneNumber" Title="Teléfono">
+                        <CellTemplate>
+                            @(string.IsNullOrEmpty(context.Item.PhoneNumber) ? "-" : context.Item.PhoneNumber)
+                        </CellTemplate>
+                    </PropertyColumn>
+                    <PropertyColumn Property="x => x.CardNumber" Title="Tarjeta">
+                        <CellTemplate>
+                            @(string.IsNullOrEmpty(context.Item.CardNumber) ? "-" : context.Item.CardNumber)
+                        </CellTemplate>
+                    </PropertyColumn>
+                    <PropertyColumn Property="x => x.Status" Title="Estado">
+                        <CellTemplate>
+                            <MudChip T="string" Color="@(context.Item.Status == EmployeeStatus.Alta ? Color.Success : context.Item.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">
+                                @(context.Item.Status.ToString())
+                            </MudChip>
+                        </CellTemplate>
+                    </PropertyColumn>
+                    <TemplateColumn CellClass="d-flex justify-end" Filterable="false" Sortable="false">
+                        <CellTemplate>
+                            <MudTooltip Text="Enviar a Reloj">
+                                <MudIconButton Icon="@Icons.Material.Filled.Router" Color="Color.Info" OnClick="@(() => OpenSendToDeviceDialog(context.Item))" Size="Size.Medium" />
+                            </MudTooltip>
+                            <MudTooltip Text="Editar">
+                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditExternalDialog(context.Item))" Size="Size.Medium" />
+                            </MudTooltip>
+                            <AuthorizeView Roles="Administrador" Context="authContext">
+                                <MudTooltip Text="Eliminar">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteExternalEmployee(context.Item))" Size="Size.Medium" />
+                                </MudTooltip>
+                            </AuthorizeView>
+                        </CellTemplate>
+                    </TemplateColumn>
+                </Columns>
+                <PagerContent>
+                    <MudDataGridPager T="ExternalEmployeeDto" />
+                </PagerContent>
+            </MudDataGrid>
+        </MudTabPanel>
+    </MudTabs>
+}
 
 @code {
     private MudDataGrid<EmployeeDto> _dataGrid = default!;
     private bool _isLoaded = false;
     private string _searchString = string.Empty;
+    private int _activeTabIndex = 0;
 
-    // Filter values
+    // Filter values (Internos)
     private IReadOnlyCollection<string> _selectedBranches = new HashSet<string>();
     private IReadOnlyCollection<string> _selectedDepts = new HashSet<string>();
     private IReadOnlyCollection<string> _selectedStatuses = new HashSet<string>();
@@ -136,9 +247,21 @@ else
     private int? _currentSortDirection;
 
     // Available options
+    private List<BranchDto> _allBranches = new();
     private List<string> _availableBranches = new();
+    private List<BranchDto> _externalBranches = new();
+    private List<DepartmentDto> _departmentsList = new();
+    private List<PositionDto> _positionsList = new();
     private List<string> _availableDepts = new();
     private List<EmployeeStatus> _availableStatuses = Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>().ToList();
+
+    // External employees state
+    private List<ExternalEmployeeDto> _externalEmployees = new();
+    private bool _loadingExternal = false;
+    private bool _externalEmployeesLoaded = false;
+    private string _externalSearchString = string.Empty;
+    private Guid? _selectedExternalBranchId;
+    private EmployeeStatus? _selectedExternalStatus;
 
     protected override async Task OnInitializedAsync()
     {
@@ -151,13 +274,32 @@ else
         var branchResult = await Sender.Send(new GetBranchesQuery());
         if (branchResult.IsSuccess)
         {
-            _availableBranches = branchResult.Value.Select(b => b.Name).Distinct().OrderBy(n => n).ToList();
+            _allBranches = branchResult.Value.ToList();
+            _availableBranches = _allBranches.Where(b => !b.IsExternal).Select(b => b.Name).Distinct().OrderBy(n => n).ToList();
+            _externalBranches = _allBranches.Where(b => b.IsExternal).OrderBy(b => b.Name).ToList();
         }
 
         var deptResult = await Sender.Send(new GetDepartmentsQuery());
         if (deptResult.IsSuccess)
         {
-            _availableDepts = deptResult.Value.Select(d => d.Name).Distinct().OrderBy(n => n).ToList();
+            _departmentsList = deptResult.Value.ToList();
+            _availableDepts = _departmentsList.Select(d => d.Name).Distinct().OrderBy(n => n).ToList();
+        }
+
+        var posResult = await Sender.Send(new GetPositionsQuery());
+        if (posResult.IsSuccess)
+        {
+            _positionsList = posResult.Value.ToList();
+        }
+    }
+
+    private async Task OnTabChanged(int index)
+    {
+        _activeTabIndex = index;
+        if (index == 1 && !_externalEmployeesLoaded)
+        {
+            await LoadExternalEmployees();
+            _externalEmployeesLoaded = true;
         }
     }
 
@@ -165,6 +307,12 @@ else
     {
         _searchString = text;
         _dataGrid.ReloadServerData();
+    }
+
+    private async Task OnExternalSearch(string text)
+    {
+        _externalSearchString = text;
+        await LoadExternalEmployees();
     }
 
     private async Task<GridData<EmployeeDto>> ServerReload(GridState<EmployeeDto> state, CancellationToken cancellationToken)
@@ -212,25 +360,77 @@ else
         await _dataGrid.ReloadServerData();
     }
 
+    private async Task LoadExternalEmployees()
+    {
+        _loadingExternal = true;
+        var query = new GetExternalEmployeesQuery(
+            _selectedExternalBranchId.HasValue ? _selectedExternalBranchId.Value.ToString() : null,
+            _externalSearchString
+        );
+
+        var result = await Sender.Send(query);
+        if (result.IsSuccess)
+        {
+            var items = result.Value.AsEnumerable();
+            if (_selectedExternalStatus.HasValue)
+            {
+                items = items.Where(e => e.Status == _selectedExternalStatus.Value);
+            }
+            _externalEmployees = items.OrderBy(e => e.BranchName).ThenBy(e => e.EmployeeNumber).ToList();
+        }
+        else
+        {
+            Snackbar.Add($"Error al cargar empleados externos: {result.Error}", Severity.Error);
+        }
+        _loadingExternal = false;
+    }
+
     private async Task OpenCreateDialog()
     {
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
-        
-        var dialog = await DialogService.ShowAsync<EmployeeDialog>("Nuevo Empleado", options);
+        var parameters = new DialogParameters();
+
+        if (_activeTabIndex == 1)
+        {
+            var defaultBranchId = _selectedExternalBranchId ?? _externalBranches.FirstOrDefault()?.Id;
+            if (defaultBranchId.HasValue && defaultBranchId.Value != Guid.Empty)
+            {
+                parameters.Add("BranchId", defaultBranchId.Value);
+            }
+        }
+
+        var dialog = await DialogService.ShowAsync<EmployeeDialog>("Nuevo Empleado", parameters, options);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is CreateEmployeeCommand command)
+        if (result is not null && !result.Canceled)
         {
-             var createResult = await Sender.Send(command);
-             if (createResult.IsSuccess)
-             {
-                 Snackbar.Add("Empleado creado correctamente", Severity.Success);
-                 await LoadEmployees();
-             }
-             else
-             {
-                 Snackbar.Add($"Error al crear: {createResult.Error}", Severity.Error);
-             }
+            if (result.Data is CreateEmployeeCommand command)
+            {
+                 var createResult = await Sender.Send(command);
+                 if (createResult.IsSuccess)
+                 {
+                     Snackbar.Add("Empleado creado correctamente", Severity.Success);
+                     await LoadEmployees();
+                 }
+                 else
+                 {
+                     Snackbar.Add($"Error al crear: {createResult.Error}", Severity.Error);
+                 }
+            }
+            else if (result.Data is CreateExternalEmployeeCommand extCommand)
+            {
+                 var createResult = await Sender.Send(extCommand);
+                 if (createResult.IsSuccess)
+                 {
+                     Snackbar.Add("Empleado externo creado correctamente", Severity.Success);
+                     await LoadExternalEmployees();
+                     _externalEmployeesLoaded = true;
+                 }
+                 else
+                 {
+                     Snackbar.Add($"Error al crear empleado externo: {createResult.Error}", Severity.Error);
+                 }
+            }
         }
     }
 
@@ -281,18 +481,74 @@ else
         var dialog = await DialogService.ShowAsync<EmployeeDialog>("Editar Empleado", parameters, options);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is UpdateEmployeeCommand command)
+        if (result is not null && !result.Canceled)
         {
-             var updateResult = await Sender.Send(command);
-             if (updateResult.IsSuccess)
-             {
-                 Snackbar.Add("Empleado actualizado correctamente", Severity.Success);
-                 await LoadEmployees();
-             }
-             else
-             {
-                 Snackbar.Add($"Error al actualizar: {updateResult.Error}", Severity.Error);
-             }
+            if (result.Data is UpdateEmployeeCommand command)
+            {
+                 var updateResult = await Sender.Send(command);
+                 if (updateResult.IsSuccess)
+                 {
+                     Snackbar.Add("Empleado actualizado correctamente", Severity.Success);
+                     await LoadEmployees();
+                 }
+                 else
+                 {
+                     Snackbar.Add($"Error al actualizar: {updateResult.Error}", Severity.Error);
+                 }
+            }
+            else if (result.Data is UpdateExternalEmployeeCommand extCommand)
+            {
+                 var updateResult = await Sender.Send(extCommand);
+                 if (updateResult.IsSuccess)
+                 {
+                     Snackbar.Add("Empleado externo actualizado correctamente", Severity.Success);
+                     await LoadExternalEmployees();
+                 }
+                 else
+                 {
+                     Snackbar.Add($"Error al actualizar empleado externo: {updateResult.Error}", Severity.Error);
+                 }
+            }
+        }
+    }
+
+    private async Task OpenEditExternalDialog(ExternalEmployeeDto employee)
+    {
+        var dept = _departmentsList.FirstOrDefault(d => d.Name.Equals(employee.Department, StringComparison.OrdinalIgnoreCase));
+        var pos = _positionsList.FirstOrDefault(p => p.Name.Equals(employee.Position, StringComparison.OrdinalIgnoreCase));
+
+        var parameters = new DialogParameters
+        {
+            { "ExternalEmployeeId", employee.Id },
+            { "EmployeeId", employee.Id.ToString() },
+            { "Id", employee.EmployeeNumber },
+            { "FirstName", employee.FirstName },
+            { "LastName", employee.LastName },
+            { "Email", employee.Email ?? string.Empty },
+            { "PhoneNumber", employee.PhoneNumber },
+            { "BranchId", employee.BranchId },
+            { "DepartmentId", dept?.Id ?? Guid.Empty },
+            { "PositionId", pos?.Id ?? Guid.Empty },
+            { "Status", employee.Status },
+            { "CardNumber", employee.CardNumber }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
+        var dialog = await DialogService.ShowAsync<EmployeeDialog>("Editar Empleado Externo", parameters, options);
+        var result = await dialog.Result;
+
+        if (result is not null && !result.Canceled && result.Data is UpdateExternalEmployeeCommand extCommand)
+        {
+            var updateResult = await Sender.Send(extCommand);
+            if (updateResult.IsSuccess)
+            {
+                Snackbar.Add("Empleado externo actualizado correctamente", Severity.Success);
+                await LoadExternalEmployees();
+            }
+            else
+            {
+                Snackbar.Add($"Error al actualizar empleado externo: {updateResult.Error}", Severity.Error);
+            }
         }
     }
 
@@ -314,6 +570,28 @@ else
             else
             {
                 Snackbar.Add($"Error al eliminar: {result.Error}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task DeleteExternalEmployee(ExternalEmployeeDto employee)
+    {
+        bool? confirm = await DialogService.ShowMessageBoxAsync(
+            "Confirmar eliminación",
+            $"¿Está seguro de eliminar al empleado externo {employee.FullName} ({employee.EmployeeNumber}) de la sucursal {employee.BranchName}?",
+            yesText: "Eliminar", cancelText: "Cancelar");
+
+        if (confirm == true)
+        {
+            var result = await Sender.Send(new DeleteExternalEmployeeCommand(employee.Id));
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Empleado externo eliminado correctamente", Severity.Success);
+                await LoadExternalEmployees();
+            }
+            else
+            {
+                Snackbar.Add($"Error al eliminar empleado externo: {result.Error}", Severity.Error);
             }
         }
     }
@@ -365,5 +643,33 @@ else
         {
             await LoadEmployees();
         }
+    }
+
+    private async Task OpenSendToDeviceDialog(ExternalEmployeeDto employee)
+    {
+        var parameters = new DialogParameters
+        {
+            { "EmployeeId", employee.Id.ToString() },
+            { "EmployeeDisplayId", $"{employee.BranchCode}{employee.EmployeeNumber} ({employee.BranchName})" },
+            { "EmployeeName", employee.FullName },
+            { "IsExternal", true }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        await DialogService.ShowAsync<SendEmployeeToDeviceDialog>("Enviar a Reloj Checador", parameters, options);
+    }
+
+    private async Task OpenSendInternalToDeviceDialog(EmployeeDto employee)
+    {
+        var parameters = new DialogParameters
+        {
+            { "EmployeeId", employee.Id },
+            { "EmployeeDisplayId", $"{employee.Id} ({employee.BranchName})" },
+            { "EmployeeName", employee.FullName },
+            { "IsExternal", false }
+        };
+
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        await DialogService.ShowAsync<SendEmployeeToDeviceDialog>("Enviar a Reloj Checador", parameters, options);
     }
 }

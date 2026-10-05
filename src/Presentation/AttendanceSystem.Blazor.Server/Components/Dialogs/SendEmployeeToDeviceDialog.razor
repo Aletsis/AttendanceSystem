@@ -1,0 +1,148 @@
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Devices.Queries.GetAllDevices
+@using AttendanceSystem.Application.Features.Devices.Commands.SendEmployeeToDevice
+@using AttendanceSystem.Domain.Enumerations
+@using MediatR
+@using MudBlazor
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="mb-4">
+            <MudText Typo="Typo.subtitle1"><strong>Empleado:</strong> @EmployeeName</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Identificador: @EmployeeDisplayId</MudText>
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+        }
+        else if (!_devices.Any())
+        {
+            <MudAlert Severity="Severity.Warning">No hay relojes checadores registrados en el sistema.</MudAlert>
+        }
+        else
+        {
+            <MudSelect T="string" Value="_selectedDeviceId" ValueChanged="OnDeviceChanged" Label="Seleccione Reloj Checador" Required="true" AnchorOrigin="Origin.BottomCenter">
+                @foreach (var device in _devices)
+                {
+                    <MudSelectItem Value="@device.DeviceId">
+                        @device.Name (@device.IpAddress) - @device.Status
+                    </MudSelectItem>
+                }
+            </MudSelect>
+
+            @if (SelectedDevice != null)
+            {
+                <MudPaper Class="pa-3 mt-3 mb-2" Elevation="0" Outlined="true">
+                    <MudStack Row="true" AlignItems="AlignItems.Center">
+                        <MudIcon Icon="@Icons.Material.Filled.Router" Color="@(SelectedDevice.Status == "Online" || SelectedDevice.Status == "En Línea" ? Color.Success : Color.Error)" />
+                        <div>
+                            <MudText Typo="Typo.body2"><strong>@SelectedDevice.Name</strong> (@SelectedDevice.Brand)</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">IP: @SelectedDevice.IpAddress:@SelectedDevice.Port | Ubicación: @(SelectedDevice.Location ?? "N/A")</MudText>
+                        </div>
+                    </MudStack>
+                </MudPaper>
+
+                <MudSelect T="DevicePrivilege" @bind-Value="_devicePrivilege" Label="Rol / Privilegio" Class="mt-3" AnchorOrigin="Origin.BottomCenter">
+                    @foreach (var opt in AvailablePrivileges)
+                    {
+                        <MudSelectItem Value="@opt.Value">@opt.DisplayName</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (IsExternal)
+                {
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                        Este empleado pertenece a una sucursal externa. Se registrará en el reloj con el prefijo de la sucursal para enrutamiento automático de checadas.
+                    </MudAlert>
+                }
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.Send" OnClick="SendToDevice" Disabled="@(string.IsNullOrEmpty(_selectedDeviceId) || _sending || _loading)">
+            @(_sending ? "Enviando..." : "Enviar a Reloj")
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string EmployeeId { get; set; } = string.Empty;
+    [Parameter] public string EmployeeDisplayId { get; set; } = string.Empty;
+    [Parameter] public string EmployeeName { get; set; } = string.Empty;
+    [Parameter] public bool IsExternal { get; set; } = false;
+
+    private List<DeviceDto> _devices = new();
+    private bool _loading = true;
+    private bool _sending = false;
+    private string _selectedDeviceId = string.Empty;
+    private DevicePrivilege _devicePrivilege = DevicePrivilege.User;
+
+    private DeviceDto? SelectedDevice => _devices.FirstOrDefault(d => d.DeviceId == _selectedDeviceId);
+
+    private IReadOnlyList<DevicePrivilegeOption> AvailablePrivileges =>
+        SelectedDevice != null
+            ? DevicePrivilegeMapper.GetSupportedPrivileges(SelectedDevice.Brand, SelectedDevice.DownloadMethod)
+            : DevicePrivilegeMapper.GetSupportedPrivileges(DeviceBrand.ZKTeco);
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Sender.Send(new GetAllDevicesQuery());
+        if (result.IsSuccess)
+        {
+            _devices = result.Value.ToList();
+            if (_devices.Any())
+            {
+                OnDeviceChanged(_devices.First().DeviceId);
+            }
+        }
+        else
+        {
+            Snackbar.Add("Error al cargar dispositivos: " + result.Error, Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private void OnDeviceChanged(string deviceId)
+    {
+        _selectedDeviceId = deviceId;
+        if (SelectedDevice != null)
+        {
+            _devicePrivilege = DevicePrivilegeMapper.NormalizeForDevice(SelectedDevice.Brand, _devicePrivilege);
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private async Task SendToDevice()
+    {
+        if (string.IsNullOrEmpty(_selectedDeviceId)) return;
+
+        _sending = true;
+        try
+        {
+            var result = await Sender.Send(new SendEmployeeToDeviceCommand(EmployeeId, _selectedDeviceId, _devicePrivilege));
+            if (result.IsSuccess && result.Value)
+            {
+                Snackbar.Add($"Empleado enviado correctamente a {SelectedDevice?.Name}", Severity.Success);
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+            else
+            {
+                Snackbar.Add($"Error al enviar empleado: {result.Error}", Severity.Error);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error inesperado: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+}
