@@ -212,8 +212,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "Days", shiftData.Days },
                 { "RoundingsEnabled", shiftData.RoundingsEnabled },
                 { "RoundingInterval", shiftData.RoundingInterval },
-                { "FlexWindowEndTime", shiftData.FlexWindowEndTime },
-                { "WeeklyWorkHours", shiftData.WeeklyWorkHours }
+                { "FlexWindowEndTime", shiftData.FlexWindowEndTime! },
+                { "WeeklyWorkHours", shiftData.WeeklyWorkHours! }
             };
 
             _dialogService.ShowDialog("ShiftDetailDialog", parameters, async result =>

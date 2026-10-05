@@ -158,12 +158,12 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 { "EmployeeNumber", EmployeeNumber.Trim() },
                 { "FirstName", FirstName.Trim() },
                 { "LastName", LastName.Trim() },
-                { "Email", Email?.Trim() },
-                { "PhoneNumber", PhoneNumber?.Trim() },
-                { "Position", Position?.Trim() },
-                { "Department", Department?.Trim() },
+                { "Email", Email?.Trim()! },
+                { "PhoneNumber", PhoneNumber?.Trim()! },
+                { "Position", Position?.Trim()! },
+                { "Department", Department?.Trim()! },
                 { "Status", Status },
-                { "CardNumber", CardNumber?.Trim() }
+                { "CardNumber", CardNumber?.Trim()! }
             };
 
             if (_id.HasValue)

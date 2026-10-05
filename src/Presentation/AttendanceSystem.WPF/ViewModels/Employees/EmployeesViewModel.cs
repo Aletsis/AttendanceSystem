@@ -441,12 +441,12 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 { "EmployeeNumber", empData.EmployeeNumber },
                 { "FirstName", empData.FirstName },
                 { "LastName", empData.LastName },
-                { "Email", empData.Email },
-                { "PhoneNumber", empData.PhoneNumber },
-                { "Position", empData.Position },
-                { "Department", empData.Department },
+                { "Email", empData.Email! },
+                { "PhoneNumber", empData.PhoneNumber! },
+                { "Position", empData.Position! },
+                { "Department", empData.Department! },
                 { "Status", empData.Status },
-                { "CardNumber", empData.CardNumber }
+                { "CardNumber", empData.CardNumber! }
             };
 
             _dialogService.ShowDialog("ExternalEmployeeDetailDialog", parameters, async result =>

@@ -313,11 +313,11 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "Days", dayDtos },
                 { "RoundingsEnabled", RoundingsEnabled },
                 { "RoundingInterval", RoundingInterval },
-                { "FlexWindowEndTime", flexEnd },
-                { "WeeklyWorkHours", weekly },
-                { "SecondBlockStartTime", b2Start },
-                { "SecondBlockEndTime", b2End },
-                { "SecondBlockToleranceMinutes", b2Tol }
+                { "FlexWindowEndTime", flexEnd! },
+                { "WeeklyWorkHours", weekly! },
+                { "SecondBlockStartTime", b2Start! },
+                { "SecondBlockEndTime", b2End! },
+                { "SecondBlockToleranceMinutes", b2Tol! }
             };
 
             if (_shiftId.HasValue)

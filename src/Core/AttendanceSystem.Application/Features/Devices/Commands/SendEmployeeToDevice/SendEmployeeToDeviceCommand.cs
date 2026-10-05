@@ -137,7 +137,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                     _logger.LogInformation("Enviando empleado externo {EmpNo} de sucursal {Code} a dispositivo {Device}. ID en reloj: {DeviceUserId}",
                         externalEmployee.EmployeeNumber, branchCode, device.Name, deviceUserId);
 
-                    var privilege = request.DevicePrivilege.HasValue 
+                    var privilege = request.DevicePrivilege.HasValue
                         ? (int)DevicePrivilegeMapper.NormalizeForDevice(device.Brand, request.DevicePrivilege.Value)
                         : (int)DevicePrivilege.User;
 

@@ -34,7 +34,7 @@ public class ExternalLogsController : ControllerBase
     [HttpPost("receive")]
     public async Task<IActionResult> ReceiveLog([FromBody] ExternalLogRequest request)
     {
-        _logger.LogInformation("Recibiendo log para empleado {EmployeeId} (Sucursal: {BranchCode})", 
+        _logger.LogInformation("Recibiendo log para empleado {EmployeeId} (Sucursal: {BranchCode})",
             request.EmployeeId, request.BranchCode ?? "N/A");
 
         // Si se provee código de sucursal y corresponde a una sucursal externa, almacenar en ExternalAttendanceLogs
@@ -42,7 +42,7 @@ public class ExternalLogsController : ControllerBase
         {
             var branches = await _branchRepository.GetAllAsync();
             var branch = branches.FirstOrDefault(b => b.Code.Equals(request.BranchCode.Trim(), StringComparison.OrdinalIgnoreCase));
-            
+
             if (branch != null && branch.IsExternal)
             {
                 var externalLog = ExternalAttendanceLog.Create(
