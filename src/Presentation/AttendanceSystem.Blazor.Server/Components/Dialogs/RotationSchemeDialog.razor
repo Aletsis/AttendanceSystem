@@ -85,8 +85,57 @@
                     <MudNumericField @bind-Value="_daysPerShift" Label="Días por turno antes de rotar" Min="1" Max="30" HelperText="Ej. 7 para rotación semanal" />
                 </MudItem>
                 <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_restDaysAfterShift" Label="Días de descanso al rotar" Min="0" Max="7" HelperText="Días de descanso al final de cada ciclo" />
+                    <MudSelect T="RotationRestDayMode" @bind-Value="_restDayMode" Label="Distribución del Descanso" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem Value="@RotationRestDayMode.FromEmployeeProfile">Día fijo del perfil del empleado</MudSelectItem>
+                        <MudSelectItem Value="@RotationRestDayMode.FixedDaysOfWeek">Día(s) fijo(s) de la semana específico(s)</MudSelectItem>
+                        <MudSelectItem Value="@RotationRestDayMode.AtEndOfCycle">Al final del período de rotación</MudSelectItem>
+                    </MudSelect>
                 </MudItem>
+
+                @if (_restDayMode == RotationRestDayMode.AtEndOfCycle)
+                {
+                    <MudItem xs="12">
+                        <MudNumericField @bind-Value="_restDaysAfterShift" Label="Días de descanso al rotar" Min="0" Max="7" HelperText="Días de descanso al final de cada ciclo" />
+                    </MudItem>
+                }
+                else if (_restDayMode == RotationRestDayMode.FromEmployeeProfile)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-1">
+                            Cada empleado descansará en el día fijo configurado en su perfil (expediente). Los demás días laborará el turno asignado para esa semana. Puede definir días de respaldo abajo por si algún empleado no tiene día de descanso registrado.
+                        </MudAlert>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudSelect T="DayOfWeek" MultiSelection="true" @bind-SelectedValues="_selectedFixedRestDays" Label="Día(s) de descanso de respaldo (si el empleado no tiene)" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetRestDaysSelectionText))" AnchorOrigin="Origin.BottomCenter">
+                            <MudSelectItem Value="@DayOfWeek.Monday">Lunes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Tuesday">Martes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Wednesday">Miércoles</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Thursday">Jueves</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Friday">Viernes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Saturday">Sábado</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Sunday">Domingo</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                }
+                else if (_restDayMode == RotationRestDayMode.FixedDaysOfWeek)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-1">
+                            El o los días seleccionados serán descanso fijo en la semana para todos los empleados seleccionados (ej. Domingo, o Sábado y Domingo, o descansos discontinuos como Martes y Jueves).
+                        </MudAlert>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudSelect T="DayOfWeek" MultiSelection="true" @bind-SelectedValues="_selectedFixedRestDays" Label="Día(s) fijo(s) de la semana para descanso" Required="true" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetRestDaysSelectionText))" AnchorOrigin="Origin.BottomCenter">
+                            <MudSelectItem Value="@DayOfWeek.Monday">Lunes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Tuesday">Martes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Wednesday">Miércoles</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Thursday">Jueves</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Friday">Viernes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Saturday">Sábado</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Sunday">Domingo</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                }
             }
             else if (_schemeType == RotationSchemeType.Rotativo2x8)
             {
@@ -115,8 +164,57 @@
                     <MudNumericField @bind-Value="_daysPerShift" Label="Días por turno antes de rotar" Min="1" Max="30" HelperText="Ej. 7 para rotación semanal" />
                 </MudItem>
                 <MudItem xs="12" sm="6">
-                    <MudNumericField @bind-Value="_restDaysAfterShift" Label="Días de descanso al rotar" Min="0" Max="7" HelperText="Días de descanso al final de cada ciclo" />
+                    <MudSelect T="RotationRestDayMode" @bind-Value="_restDayMode" Label="Distribución del Descanso" AnchorOrigin="Origin.BottomCenter">
+                        <MudSelectItem Value="@RotationRestDayMode.FromEmployeeProfile">Día fijo del perfil del empleado</MudSelectItem>
+                        <MudSelectItem Value="@RotationRestDayMode.FixedDaysOfWeek">Día(s) fijo(s) de la semana específico(s)</MudSelectItem>
+                        <MudSelectItem Value="@RotationRestDayMode.AtEndOfCycle">Al final del período de rotación</MudSelectItem>
+                    </MudSelect>
                 </MudItem>
+
+                @if (_restDayMode == RotationRestDayMode.AtEndOfCycle)
+                {
+                    <MudItem xs="12">
+                        <MudNumericField @bind-Value="_restDaysAfterShift" Label="Días de descanso al rotar" Min="0" Max="7" HelperText="Días de descanso al final de cada ciclo" />
+                    </MudItem>
+                }
+                else if (_restDayMode == RotationRestDayMode.FromEmployeeProfile)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-1">
+                            Cada empleado descansará en el día fijo configurado en su perfil (expediente). Los demás días laborará el turno asignado para esa semana. Puede definir días de respaldo abajo por si algún empleado no tiene día de descanso registrado.
+                        </MudAlert>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudSelect T="DayOfWeek" MultiSelection="true" @bind-SelectedValues="_selectedFixedRestDays" Label="Día(s) de descanso de respaldo (si el empleado no tiene)" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetRestDaysSelectionText))" AnchorOrigin="Origin.BottomCenter">
+                            <MudSelectItem Value="@DayOfWeek.Monday">Lunes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Tuesday">Martes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Wednesday">Miércoles</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Thursday">Jueves</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Friday">Viernes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Saturday">Sábado</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Sunday">Domingo</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                }
+                else if (_restDayMode == RotationRestDayMode.FixedDaysOfWeek)
+                {
+                    <MudItem xs="12">
+                        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-1">
+                            El o los días seleccionados serán descanso fijo en la semana para todos los empleados seleccionados (ej. Domingo, o Sábado y Domingo, o descansos discontinuos como Martes y Jueves).
+                        </MudAlert>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudSelect T="DayOfWeek" MultiSelection="true" @bind-SelectedValues="_selectedFixedRestDays" Label="Día(s) fijo(s) de la semana para descanso" Required="true" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetRestDaysSelectionText))" AnchorOrigin="Origin.BottomCenter">
+                            <MudSelectItem Value="@DayOfWeek.Monday">Lunes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Tuesday">Martes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Wednesday">Miércoles</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Thursday">Jueves</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Friday">Viernes</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Saturday">Sábado</MudSelectItem>
+                            <MudSelectItem Value="@DayOfWeek.Sunday">Domingo</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                }
             }
             else if (_schemeType == RotationSchemeType.Esquema4x3)
             {
@@ -206,6 +304,8 @@
 
     private int _daysPerShift = 7;
     private int _restDaysAfterShift = 2;
+    private RotationRestDayMode _restDayMode = RotationRestDayMode.FromEmployeeProfile;
+    private IReadOnlyCollection<DayOfWeek> _selectedFixedRestDays = new HashSet<DayOfWeek> { DayOfWeek.Sunday };
 
     private List<ShiftDto> _shifts = new();
     private List<EmployeeDto> _employees = new();
@@ -246,6 +346,15 @@
 
         var empsResult = await Sender.Send(new GetAllEmployeesQuery());
         _employees = empsResult.IsSuccess ? empsResult.Value.OrderBy(e => e.FullName).ToList() : new();
+
+        if (!string.IsNullOrEmpty(PreselectedEmployeeId))
+        {
+            var preselectedEmp = _employees.FirstOrDefault(e => e.Id == PreselectedEmployeeId);
+            if (preselectedEmp?.RestDay.HasValue == true)
+            {
+                _selectedFixedRestDays = new HashSet<DayOfWeek> { (DayOfWeek)preselectedEmp.RestDay.Value };
+            }
+        }
     }
 
     private void OnIndefiniteChanged(bool val)
@@ -266,6 +375,31 @@
         return $"{selectedValues.Count} empleado(s) seleccionado(s)";
     }
 
+    private string GetRestDaysSelectionText(IReadOnlyList<string> selectedValues)
+    {
+        if (selectedValues == null || !selectedValues.Any()) return "Ningún día seleccionado";
+        return string.Join(", ", selectedValues.Select(v =>
+        {
+            if (Enum.TryParse<DayOfWeek>(v, true, out var dow))
+            {
+                return GetDayNameSpanish(dow);
+            }
+            return v;
+        }));
+    }
+
+    private static string GetDayNameSpanish(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Monday => "Lunes",
+        DayOfWeek.Tuesday => "Martes",
+        DayOfWeek.Wednesday => "Miércoles",
+        DayOfWeek.Thursday => "Jueves",
+        DayOfWeek.Friday => "Viernes",
+        DayOfWeek.Saturday => "Sábado",
+        DayOfWeek.Sunday => "Domingo",
+        _ => day.ToString()
+    };
+
     private void Cancel() => MudDialog.Cancel();
 
     private async Task Submit()
@@ -285,6 +419,14 @@
         if (!_selectedEmployeeIds.Any())
         {
             Snackbar.Add("Debe seleccionar al menos un empleado.", Severity.Warning);
+            return;
+        }
+
+        if ((_schemeType == RotationSchemeType.Rotativo3x8 || _schemeType == RotationSchemeType.Rotativo2x8)
+            && _restDayMode == RotationRestDayMode.FixedDaysOfWeek
+            && !_selectedFixedRestDays.Any())
+        {
+            Snackbar.Add("Debe seleccionar al menos un día fijo de descanso.", Severity.Warning);
             return;
         }
 
@@ -332,7 +474,9 @@
                 shiftIds,
                 _daysPerShift,
                 _restDaysAfterShift,
-                IsIndefinite: _isIndefinite);
+                IsIndefinite: _isIndefinite,
+                RestDayMode: _restDayMode,
+                FixedRestDays: _selectedFixedRestDays.ToList());
 
             var count = await Sender.Send(command);
             string horizonText = _indefiniteHorizonMonths switch

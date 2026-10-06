@@ -1,7 +1,9 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Application.Features.Roster.Commands.GenerateRotationPattern;
+using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate;
+using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using FluentAssertions;
@@ -9,6 +11,7 @@ using Moq;
 using Xunit;
 
 namespace AttendanceSystem.Application.UnitTests.Features.Roster;
+
 
 public class GenerateRotationPatternCommandHandlerTests
 {
@@ -214,4 +217,160 @@ public class GenerateRotationPatternCommandHandlerTests
         savedRosters[11].IsRestDay.Should().BeTrue();
         savedRosters[11].Notes.Should().Be("Rotativo 2x8 (Descanso)");
     }
+
+    [Fact]
+    public async Task Handle_Rotativo3x8_WithFixedRestDays_ShouldPlaceRestOnSpecificDaysBetweenPeriod()
+    {
+        // Arrange: 14 days starting on Monday (2026-10-05)
+        // 2 shifts in rotation (7 days per shift): Week 1 = Shift 1, Week 2 = Shift 2
+        // Fixed rest days: Wednesday and Sunday (discontinuous rest between the period)
+        var employeeId = "EMP-001";
+        var startDate = new DateTime(2026, 10, 5); // Monday
+        var endDate = new DateTime(2026, 10, 18);   // Sunday (14 days total)
+        var shift1 = Guid.NewGuid();
+        var shift2 = Guid.NewGuid();
+
+        _rosterRepoMock.Setup(r => r.GetByEmployeeAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster>());
+
+        List<ShiftRoster>? savedRosters = null;
+        _rosterRepoMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<ShiftRoster>>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ShiftRoster>, CancellationToken>((rosters, _) => savedRosters = rosters.ToList());
+
+        var command = new GenerateRotationPatternCommand(
+            new List<string> { employeeId },
+            startDate,
+            endDate,
+            RotationSchemeType.Rotativo3x8,
+            new List<Guid> { shift1, shift2 },
+            DaysPerShift: 7,
+            RestDayMode: RotationRestDayMode.FixedDaysOfWeek,
+            FixedRestDays: new List<DayOfWeek> { DayOfWeek.Wednesday, DayOfWeek.Sunday });
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().Be(14);
+        savedRosters.Should().NotBeNull();
+        savedRosters!.Count.Should().Be(14);
+
+        // Week 1 (Days 0..6): Shift 1
+        // Day 0: Monday -> Shift 1
+        savedRosters[0].IsRestDay.Should().BeFalse();
+        savedRosters[0].ShiftId!.Value.Should().Be(shift1);
+
+        // Day 1: Tuesday -> Shift 1
+        savedRosters[1].IsRestDay.Should().BeFalse();
+        savedRosters[1].ShiftId!.Value.Should().Be(shift1);
+
+        // Day 2: Wednesday -> REST
+        savedRosters[2].IsRestDay.Should().BeTrue();
+        savedRosters[2].Notes.Should().Contain("Descanso Miércoles");
+
+        // Day 3..5: Thursday..Saturday -> Shift 1
+        for (int i = 3; i <= 5; i++)
+        {
+            savedRosters[i].IsRestDay.Should().BeFalse();
+            savedRosters[i].ShiftId!.Value.Should().Be(shift1);
+        }
+
+        // Day 6: Sunday -> REST
+        savedRosters[6].IsRestDay.Should().BeTrue();
+        savedRosters[6].Notes.Should().Contain("Descanso Domingo");
+
+        // Week 2 (Days 7..13): Shift 2
+        // Day 7: Monday -> Shift 2
+        savedRosters[7].IsRestDay.Should().BeFalse();
+        savedRosters[7].ShiftId!.Value.Should().Be(shift2);
+
+        // Day 8: Tuesday -> Shift 2
+        savedRosters[8].IsRestDay.Should().BeFalse();
+        savedRosters[8].ShiftId!.Value.Should().Be(shift2);
+
+        // Day 9: Wednesday -> REST
+        savedRosters[9].IsRestDay.Should().BeTrue();
+        savedRosters[9].Notes.Should().Contain("Descanso Miércoles");
+
+        // Day 10..12: Thursday..Saturday -> Shift 2
+        for (int i = 10; i <= 12; i++)
+        {
+            savedRosters[i].IsRestDay.Should().BeFalse();
+            savedRosters[i].ShiftId!.Value.Should().Be(shift2);
+        }
+
+        // Day 13: Sunday -> REST
+        savedRosters[13].IsRestDay.Should().BeTrue();
+        savedRosters[13].Notes.Should().Contain("Descanso Domingo");
+    }
+
+    [Fact]
+    public async Task Handle_Rotativo2x8_WithEmployeeRestDay_ShouldUseEmployeeRestDay()
+    {
+        // Arrange
+        var employeeId = "EMP-001";
+        var empIdObj = EmployeeId.From(employeeId);
+        var startDate = new DateTime(2026, 10, 5); // Monday
+        var endDate = new DateTime(2026, 10, 11);  // Sunday (7 days total)
+        var shift1 = Guid.NewGuid();
+        var shift2 = Guid.NewGuid();
+
+        var employeeRepoMock = new Mock<IEmployeeRepository>();
+        var employee = Employee.Create(
+            empIdObj,
+            "Juan",
+            "Perez",
+            "juan@test.com",
+            null,
+            DateTime.Today.AddYears(-1),
+            Gender.Male,
+            BranchId.CreateNew(),
+            DepartmentId.CreateNew(),
+            PositionId.CreateNew(),
+            ShiftType.Rotativo,
+            scheduleId: null,
+            restDay: WeekDay.Miercoles);
+
+        employeeRepoMock.Setup(r => r.GetByIdAsync(empIdObj, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(employee);
+
+        var handler = new GenerateRotationPatternCommandHandler(_rosterRepoMock.Object, employeeRepoMock.Object, _unitOfWorkMock.Object);
+
+        _rosterRepoMock.Setup(r => r.GetByEmployeeAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster>());
+
+        List<ShiftRoster>? savedRosters = null;
+        _rosterRepoMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<ShiftRoster>>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ShiftRoster>, CancellationToken>((rosters, _) => savedRosters = rosters.ToList());
+
+        var command = new GenerateRotationPatternCommand(
+            new List<string> { employeeId },
+            startDate,
+            endDate,
+            RotationSchemeType.Rotativo2x8,
+            new List<Guid> { shift1, shift2 },
+            DaysPerShift: 7,
+            RestDayMode: RotationRestDayMode.FromEmployeeProfile);
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().Be(7);
+        savedRosters.Should().NotBeNull();
+        savedRosters!.Count.Should().Be(7);
+
+        // Wednesday (Day 2) must be Rest
+        savedRosters[2].IsRestDay.Should().BeTrue();
+        savedRosters[2].Notes.Should().Contain("Descanso");
+
+        // Other days must be Shift 1
+        for (int i = 0; i < 7; i++)
+        {
+            if (i == 2) continue;
+            savedRosters[i].IsRestDay.Should().BeFalse();
+            savedRosters[i].ShiftId!.Value.Should().Be(shift1);
+        }
+    }
 }
+

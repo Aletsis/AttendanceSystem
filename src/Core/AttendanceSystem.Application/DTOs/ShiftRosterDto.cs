@@ -23,3 +23,11 @@ public enum RotationSchemeType
     Personalizado = 3,
     Rotativo2x8 = 4
 }
+
+public enum RotationRestDayMode
+{
+    AtEndOfCycle = 0,
+    FromEmployeeProfile = 1,
+    FixedDaysOfWeek = 2
+}
+

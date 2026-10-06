@@ -1,5 +1,6 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
+using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
@@ -19,7 +20,9 @@ public record GenerateRotationPatternCommand(
     int DaysPerShift = 7,
     int RestDaysAfterRotation = 2,
     List<CustomRotationSlotDto>? CustomSlots = null,
-    bool IsIndefinite = false) : IRequest<int>;
+    bool IsIndefinite = false,
+    RotationRestDayMode RestDayMode = RotationRestDayMode.AtEndOfCycle,
+    List<DayOfWeek>? FixedRestDays = null) : IRequest<int>;
 
 public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRotationPatternCommand, int>
 {
@@ -62,10 +65,11 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         foreach (var empIdStr in request.EmployeeIds)
         {
             var empId = EmployeeId.From(empIdStr);
+            Employee? employee = null;
 
             if (_employeeRepository != null)
             {
-                var employee = await _employeeRepository.GetByIdAsync(empId, cancellationToken);
+                employee = await _employeeRepository.GetByIdAsync(empId, cancellationToken);
                 if (employee != null && employee.ShiftType != ShiftType.Rotativo)
                 {
                     employee.SetShiftType(ShiftType.Rotativo);
@@ -86,7 +90,7 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
             for (int dayOffset = 0; dayOffset < totalDays; dayOffset++)
             {
                 var currentDate = request.StartDate.Date.AddDays(dayOffset);
-                (ShiftId? shiftId, bool isRestDay, string notes) = DetermineSlot(request, dayOffset);
+                (ShiftId? shiftId, bool isRestDay, string notes) = DetermineSlot(request, dayOffset, currentDate, employee);
 
                 if (existingRosters.TryGetValue(currentDate, out var existing))
                 {
@@ -114,7 +118,9 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
 
     private static (ShiftId? shiftId, bool isRestDay, string notes) DetermineSlot(
         GenerateRotationPatternCommand request,
-        int dayOffset)
+        int dayOffset,
+        DateTime currentDate,
+        Employee? employee)
     {
         var shiftIds = request.ShiftIds ?? new List<Guid>();
 
@@ -151,52 +157,10 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
                 }
 
             case RotationSchemeType.Rotativo3x8:
-                {
-                    // 3 turnos rotativos: Mañana, Tarde, Noche
-                    // Rota cada DaysPerShift días (ej. 7 días Mañana, 7 días Tarde, 7 días Noche)
-                    // O ciclo de trabajo + descanso
-                    if (!shiftIds.Any())
-                        return (null, true, "Rotativo 3x8");
-
-                    int daysPerShift = Math.Max(1, request.DaysPerShift);
-                    int shiftIndex = (dayOffset / daysPerShift) % shiftIds.Count;
-                    var currentShiftGuid = shiftIds[shiftIndex];
-
-                    // Si hay días de descanso tras completar un bloque de rotación
-                    int dayInShiftBlock = dayOffset % daysPerShift;
-                    int workDaysInBlock = Math.Max(1, daysPerShift - request.RestDaysAfterRotation);
-
-                    if (request.RestDaysAfterRotation > 0 && dayInShiftBlock >= workDaysInBlock)
-                    {
-                        return (null, true, "Rotativo 3x8 (Descanso)");
-                    }
-
-                    return (ShiftId.From(currentShiftGuid), false, $"Rotativo 3x8 (Turno {shiftIndex + 1})");
-                }
+                return DetermineRotativoSlot(request, dayOffset, currentDate, employee, "Rotativo 3x8");
 
             case RotationSchemeType.Rotativo2x8:
-                {
-                    // 2 turnos rotativos: ej. Turno 1 y Turno 2
-                    // Rota cada DaysPerShift días
-                    // O ciclo de trabajo + descanso
-                    if (!shiftIds.Any())
-                        return (null, true, "Rotativo 2x8");
-
-                    int daysPerShift = Math.Max(1, request.DaysPerShift);
-                    int shiftIndex = (dayOffset / daysPerShift) % shiftIds.Count;
-                    var currentShiftGuid = shiftIds[shiftIndex];
-
-                    // Si hay días de descanso tras completar un bloque de rotación
-                    int dayInShiftBlock = dayOffset % daysPerShift;
-                    int workDaysInBlock = Math.Max(1, daysPerShift - request.RestDaysAfterRotation);
-
-                    if (request.RestDaysAfterRotation > 0 && dayInShiftBlock >= workDaysInBlock)
-                    {
-                        return (null, true, "Rotativo 2x8 (Descanso)");
-                    }
-
-                    return (ShiftId.From(currentShiftGuid), false, $"Rotativo 2x8 (Turno {shiftIndex + 1})");
-                }
+                return DetermineRotativoSlot(request, dayOffset, currentDate, employee, "Rotativo 2x8");
 
             case RotationSchemeType.Personalizado:
                 {
@@ -214,4 +178,83 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
                 return (null, true, "Descanso");
         }
     }
+
+    private static (ShiftId? shiftId, bool isRestDay, string notes) DetermineRotativoSlot(
+        GenerateRotationPatternCommand request,
+        int dayOffset,
+        DateTime currentDate,
+        Employee? employee,
+        string schemeName)
+    {
+        var shiftIds = request.ShiftIds ?? new List<Guid>();
+        if (!shiftIds.Any())
+            return (null, true, schemeName);
+
+        int daysPerShift = Math.Max(1, request.DaysPerShift);
+        int shiftIndex = (dayOffset / daysPerShift) % shiftIds.Count;
+        var currentShiftGuid = shiftIds[shiftIndex];
+
+        bool isRestDay = false;
+        string? restDetail = null;
+
+        if (request.RestDayMode == RotationRestDayMode.FromEmployeeProfile)
+        {
+            if (employee?.RestDay != null)
+            {
+                if ((int)currentDate.DayOfWeek == (int)employee.RestDay.Value)
+                {
+                    isRestDay = true;
+                    restDetail = GetDayName((DayOfWeek)(int)employee.RestDay.Value);
+                }
+            }
+            else if (request.FixedRestDays != null && request.FixedRestDays.Any())
+            {
+                if (request.FixedRestDays.Contains(currentDate.DayOfWeek))
+                {
+                    isRestDay = true;
+                    restDetail = GetDayName(currentDate.DayOfWeek);
+                }
+            }
+        }
+        else if (request.RestDayMode == RotationRestDayMode.FixedDaysOfWeek)
+        {
+            if (request.FixedRestDays != null && request.FixedRestDays.Contains(currentDate.DayOfWeek))
+            {
+                isRestDay = true;
+                restDetail = GetDayName(currentDate.DayOfWeek);
+            }
+        }
+        else // AtEndOfCycle
+        {
+            int dayInShiftBlock = dayOffset % daysPerShift;
+            int workDaysInBlock = Math.Max(1, daysPerShift - request.RestDaysAfterRotation);
+
+            if (request.RestDaysAfterRotation > 0 && dayInShiftBlock >= workDaysInBlock)
+            {
+                isRestDay = true;
+            }
+        }
+
+        if (isRestDay)
+        {
+            string note = string.IsNullOrWhiteSpace(restDetail)
+                ? $"{schemeName} (Descanso)"
+                : $"{schemeName} (Descanso {restDetail})";
+            return (null, true, note);
+        }
+
+        return (ShiftId.From(currentShiftGuid), false, $"{schemeName} (Turno {shiftIndex + 1})");
+    }
+
+    private static string GetDayName(DayOfWeek dayOfWeek) => dayOfWeek switch
+    {
+        DayOfWeek.Sunday => "Domingo",
+        DayOfWeek.Monday => "Lunes",
+        DayOfWeek.Tuesday => "Martes",
+        DayOfWeek.Wednesday => "Miércoles",
+        DayOfWeek.Thursday => "Jueves",
+        DayOfWeek.Friday => "Viernes",
+        DayOfWeek.Saturday => "Sábado",
+        _ => dayOfWeek.ToString()
+    };
 }
