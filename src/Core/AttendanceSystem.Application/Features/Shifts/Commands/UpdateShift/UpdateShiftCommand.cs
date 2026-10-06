@@ -23,7 +23,9 @@ public sealed record UpdateShiftCommand(
     TimeSpan? WeeklyWorkHours = null,
     TimeSpan? SecondBlockStartTime = null,
     TimeSpan? SecondBlockEndTime = null,
-    int? SecondBlockToleranceMinutes = null) : IRequest<Result>;
+    int? SecondBlockToleranceMinutes = null,
+    PunchTrackingMode PunchTrackingMode = PunchTrackingMode.SingleInterval,
+    bool HasEntryWindow = true) : IRequest<Result>;
 
 public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftCommand, Result>
 {
@@ -69,7 +71,9 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
                 weeklyWorkHours: request.WeeklyWorkHours,
                 secondBlockStartTime: request.SecondBlockStartTime,
                 secondBlockEndTime: request.SecondBlockEndTime,
-                secondBlockToleranceMinutes: request.SecondBlockToleranceMinutes);
+                secondBlockToleranceMinutes: request.SecondBlockToleranceMinutes,
+                punchTrackingMode: request.PunchTrackingMode,
+                hasEntryWindow: request.HasEntryWindow);
 
             _shiftRepository.Update(shift);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

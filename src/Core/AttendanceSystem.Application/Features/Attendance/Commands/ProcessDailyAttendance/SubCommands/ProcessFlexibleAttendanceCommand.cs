@@ -35,6 +35,82 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
     public async Task Handle(ProcessFlexibleAttendanceCommand request, CancellationToken cancellationToken)
     {
+        if (request.Shift.PunchTrackingMode == PunchTrackingMode.MultiInterval)
+        {
+            var pendingRecords = request.Records
+                .Where(r => r.Status == AttendanceStatus.Pending &&
+                           (r.CheckTime.Date == request.Date.Date || (r.CheckTime - request.Date).TotalHours <= 24))
+                .OrderBy(r => r.CheckTime)
+                .ToList();
+
+            // Filtrar dobles toques inmediatos (< 15 segundos)
+            var cleanRecords = new List<AttendanceRecord>();
+            foreach (var r in pendingRecords)
+            {
+                if (!cleanRecords.Any() || (r.CheckTime - cleanRecords.Last().CheckTime).TotalSeconds >= 15)
+                {
+                    cleanRecords.Add(r);
+                }
+            }
+
+            var intervals = new List<AttendanceIntervalDto>();
+            int totalWorked = 0;
+            AttendanceRecord? firstIn = cleanRecords.FirstOrDefault();
+            AttendanceRecord? lastOut = null;
+
+            for (int i = 0; i < cleanRecords.Count; i += 2)
+            {
+                var inRec = cleanRecords[i];
+                inRec.MarkAsProcessed();
+                inRec.SetInferredType(CheckType.CheckIn);
+                await _attendanceRepo.UpdateAsync(inRec, cancellationToken);
+
+                if (i + 1 < cleanRecords.Count)
+                {
+                    var outRec = cleanRecords[i + 1];
+                    outRec.MarkAsProcessed();
+                    outRec.SetInferredType(CheckType.CheckOut);
+                    await _attendanceRepo.UpdateAsync(outRec, cancellationToken);
+                    lastOut = outRec;
+
+                    DateTime refIn = inRec.CheckTime;
+                    if (request.Shift.RoundingsEnabled && request.Shift.RoundingInterval > 0)
+                    {
+                        refIn = DailyAttendance.RoundEntry(inRec.CheckTime, request.Shift.RoundingInterval, request.Shift.ToleranceMinutes);
+                    }
+                    DateTime refOut = outRec.CheckTime;
+
+                    int intervalMinutes = (int)Math.Max(0, (refOut - refIn).TotalMinutes);
+                    totalWorked += intervalMinutes;
+
+                    intervals.Add(new AttendanceIntervalDto(inRec.CheckTime, outRec.CheckTime, refIn, refOut, intervalMinutes));
+                }
+            }
+
+            string? intervalsJson = intervals.Any() ? System.Text.Json.JsonSerializer.Serialize(intervals) : null;
+
+            var multiDailyAttendance = DailyAttendance.Create(
+                request.Employee.Id,
+                request.Date,
+                request.Shift,
+                firstIn?.CheckTime,
+                lastOut?.CheckTime,
+                request.IsRestDay,
+                firstIn?.Id,
+                lastOut?.Id,
+                request.Employee.CalculateOvertimeBeforeEntry,
+                request.Employee.OvertimeAuthorized,
+                request.IsAutoDetectedShift,
+                punchTrackingMode: request.Shift.PunchTrackingMode,
+                hasEntryWindow: request.Shift.HasEntryWindow,
+                overtimeCalculationMethod: request.Employee.OvertimeCalculationMethod,
+                totalWorkedMinutes: totalWorked,
+                intervalsData: intervalsJson);
+
+            _dailyRepo.Add(multiDailyAttendance);
+            return;
+        }
+
         DateTime? checkIn = null;
         DateTime? checkOut = null;
         AttendanceRecord? checkInRecord = null;
@@ -169,7 +245,10 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             checkOutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
             request.Employee.OvertimeAuthorized,
-            request.IsAutoDetectedShift);
+            request.IsAutoDetectedShift,
+            punchTrackingMode: request.Shift.PunchTrackingMode,
+            hasEntryWindow: request.Shift.HasEntryWindow,
+            overtimeCalculationMethod: request.Employee.OvertimeCalculationMethod);
 
         if (intermediateAnalysis.HasValue)
         {
@@ -182,3 +261,11 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         _dailyRepo.Add(dailyAttendance);
     }
 }
+
+public record AttendanceIntervalDto(
+    DateTime CheckIn,
+    DateTime CheckOut,
+    DateTime ReferenceCheckIn,
+    DateTime ReferenceCheckOut,
+    int WorkedMinutes);
+

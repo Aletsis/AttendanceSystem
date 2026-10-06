@@ -25,6 +25,10 @@ public class Shift : AggregateRoot<ShiftId>
     public TimeSpan? SecondBlockEndTime { get; private set; }
     /// <summary>Minutos de tolerancia para el segundo bloque.</summary>
     public int? SecondBlockToleranceMinutes { get; private set; }
+    /// <summary>Modalidad de seguimiento de marcajes (tiempo corrido vs multi-marcaje acumulable).</summary>
+    public PunchTrackingMode PunchTrackingMode { get; private set; } = PunchTrackingMode.SingleInterval;
+    /// <summary>Indica si el turno tiene ventana de llegada (false = entrada abierta a cualquier hora sin retardo).</summary>
+    public bool HasEntryWindow { get; private set; } = true;
 
     private readonly List<ShiftDay> _days = new();
     public IReadOnlyCollection<ShiftDay> Days => _days.AsReadOnly();
@@ -45,15 +49,25 @@ public class Shift : AggregateRoot<ShiftId>
         TimeSpan? weeklyWorkHours = null,
         TimeSpan? secondBlockStartTime = null,
         TimeSpan? secondBlockEndTime = null,
-        int? secondBlockToleranceMinutes = null)
+        int? secondBlockToleranceMinutes = null,
+        PunchTrackingMode punchTrackingMode = PunchTrackingMode.SingleInterval,
+        bool hasEntryWindow = true)
     {
         TimeSpan calculatedEndTime;
 
         if (shiftType == ShiftType.Flexible)
         {
-            flexWindowEndTime ??= startTime;
-            if (flexWindowEndTime.Value < startTime)
-                throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+            if (hasEntryWindow)
+            {
+                flexWindowEndTime ??= startTime;
+                if (flexWindowEndTime.Value < startTime)
+                    throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+            }
+            else
+            {
+                startTime = TimeSpan.Zero;
+                flexWindowEndTime = null;
+            }
 
             bool hasDaily = workHours > TimeSpan.Zero;
             bool hasWeekly = weeklyWorkHours.HasValue && weeklyWorkHours.Value > TimeSpan.Zero;
@@ -77,6 +91,20 @@ public class Shift : AggregateRoot<ShiftId>
             secondBlockStartTime = null;
             secondBlockEndTime = null;
             secondBlockToleranceMinutes = null;
+        }
+        else if (shiftType == ShiftType.Continuo)
+        {
+            hasEntryWindow = false;
+            flexWindowEndTime = null;
+            weeklyWorkHours = null;
+            secondBlockStartTime = null;
+            secondBlockEndTime = null;
+            secondBlockToleranceMinutes = null;
+
+            if (workHours <= TimeSpan.Zero)
+                throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
+
+            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
         }
         else if (shiftType == ShiftType.Partido)
         {
@@ -139,7 +167,9 @@ public class Shift : AggregateRoot<ShiftId>
             WeeklyWorkHours = weeklyWorkHours,
             SecondBlockStartTime = secondBlockStartTime,
             SecondBlockEndTime = secondBlockEndTime,
-            SecondBlockToleranceMinutes = secondBlockToleranceMinutes
+            SecondBlockToleranceMinutes = secondBlockToleranceMinutes,
+            PunchTrackingMode = punchTrackingMode,
+            HasEntryWindow = (shiftType == ShiftType.Continuo) ? false : hasEntryWindow
         };
 
         if (days != null && days.Any())
@@ -169,7 +199,9 @@ public class Shift : AggregateRoot<ShiftId>
         TimeSpan? weeklyWorkHours = null,
         TimeSpan? secondBlockStartTime = null,
         TimeSpan? secondBlockEndTime = null,
-        int? secondBlockToleranceMinutes = null)
+        int? secondBlockToleranceMinutes = null,
+        PunchTrackingMode punchTrackingMode = PunchTrackingMode.SingleInterval,
+        bool hasEntryWindow = true)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del turno es requerido.");
@@ -180,9 +212,17 @@ public class Shift : AggregateRoot<ShiftId>
 
         if (shiftType == ShiftType.Flexible)
         {
-            flexWindowEndTime ??= startTime;
-            if (flexWindowEndTime.Value < startTime)
-                throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+            if (hasEntryWindow)
+            {
+                flexWindowEndTime ??= startTime;
+                if (flexWindowEndTime.Value < startTime)
+                    throw new DomainException("El fin de la ventana de llegada no puede ser anterior a la hora de inicio.");
+            }
+            else
+            {
+                startTime = TimeSpan.Zero;
+                flexWindowEndTime = null;
+            }
 
             bool hasDaily = workHours > TimeSpan.Zero;
             bool hasWeekly = weeklyWorkHours.HasValue && weeklyWorkHours.Value > TimeSpan.Zero;
@@ -206,6 +246,20 @@ public class Shift : AggregateRoot<ShiftId>
             secondBlockStartTime = null;
             secondBlockEndTime = null;
             secondBlockToleranceMinutes = null;
+        }
+        else if (shiftType == ShiftType.Continuo)
+        {
+            hasEntryWindow = false;
+            flexWindowEndTime = null;
+            weeklyWorkHours = null;
+            secondBlockStartTime = null;
+            secondBlockEndTime = null;
+            secondBlockToleranceMinutes = null;
+
+            if (workHours <= TimeSpan.Zero)
+                throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
+
+            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
         }
         else if (shiftType == ShiftType.Partido)
         {
@@ -266,6 +320,8 @@ public class Shift : AggregateRoot<ShiftId>
         SecondBlockStartTime = secondBlockStartTime;
         SecondBlockEndTime = secondBlockEndTime;
         SecondBlockToleranceMinutes = secondBlockToleranceMinutes;
+        PunchTrackingMode = punchTrackingMode;
+        HasEntryWindow = (shiftType == ShiftType.Continuo) ? false : hasEntryWindow;
 
         _days.Clear();
         if (days != null && days.Any())

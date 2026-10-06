@@ -313,4 +313,51 @@ public class ShiftTests
         act.Should().Throw<DomainException>()
             .WithMessage("*segundo bloque no puede iniciar antes*");
     }
+
+    [Fact]
+    public void Create_UnifiedShift_WithMultiIntervalAndOpenEntry_ShouldSetProperties()
+    {
+        // Act
+        var shift = Shift.Create(
+            name: "Turno Abierto Multi-Marcaje",
+            startTime: TimeSpan.Zero,
+            toleranceMinutes: 0,
+            workHours: TimeSpan.FromHours(8),
+            shiftType: ShiftType.Flexible,
+            punchTrackingMode: PunchTrackingMode.MultiInterval,
+            hasEntryWindow: false);
+
+        // Assert
+        shift.PunchTrackingMode.Should().Be(PunchTrackingMode.MultiInterval);
+        shift.HasEntryWindow.Should().BeFalse();
+        shift.StartTime.Should().Be(TimeSpan.Zero);
+    }
+
+    [Fact]
+    public void Update_UnifiedShift_ShouldUpdateTrackingModeAndEntryWindow()
+    {
+        // Arrange
+        var shift = Shift.Create(
+            name: "Turno Original",
+            startTime: new TimeSpan(8, 0, 0),
+            toleranceMinutes: 10,
+            workHours: TimeSpan.FromHours(8),
+            shiftType: ShiftType.Flexible,
+            punchTrackingMode: PunchTrackingMode.SingleInterval,
+            hasEntryWindow: true);
+
+        // Act
+        shift.Update(
+            name: "Turno Modificado",
+            startTime: TimeSpan.Zero,
+            toleranceMinutes: 0,
+            workHours: TimeSpan.FromHours(8),
+            shiftType: ShiftType.Flexible,
+            punchTrackingMode: PunchTrackingMode.MultiInterval,
+            hasEntryWindow: false);
+
+        // Assert
+        shift.PunchTrackingMode.Should().Be(PunchTrackingMode.MultiInterval);
+        shift.HasEntryWindow.Should().BeFalse();
+    }
 }

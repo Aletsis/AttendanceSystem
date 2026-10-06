@@ -168,6 +168,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var roundingsEnabled = result.Parameters.GetValue<bool>("RoundingsEnabled");
                     var roundingInterval = result.Parameters.GetValue<int>("RoundingInterval");
 
+                    var punchTrackingMode = result.Parameters.ContainsKey("PunchTrackingMode") ? result.Parameters.GetValue<PunchTrackingMode>("PunchTrackingMode") : PunchTrackingMode.SingleInterval;
+                    var hasEntryWindow = result.Parameters.ContainsKey("HasEntryWindow") ? result.Parameters.GetValue<bool>("HasEntryWindow") : true;
+
                     var command = new CreateShiftCommand(
                         name,
                         start,
@@ -178,7 +181,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         RoundingsEnabled: roundingsEnabled,
                         RoundingInterval: roundingInterval,
                         FlexWindowEndTime: result.Parameters.ContainsKey("FlexWindowEndTime") ? result.Parameters.GetValue<TimeSpan?>("FlexWindowEndTime") : null,
-                        WeeklyWorkHours: result.Parameters.ContainsKey("WeeklyWorkHours") ? result.Parameters.GetValue<TimeSpan?>("WeeklyWorkHours") : null);
+                        WeeklyWorkHours: result.Parameters.ContainsKey("WeeklyWorkHours") ? result.Parameters.GetValue<TimeSpan?>("WeeklyWorkHours") : null,
+                        PunchTrackingMode: punchTrackingMode,
+                        HasEntryWindow: hasEntryWindow);
                     var createResult = await _mediator.Send(command);
 
                     if (createResult.IsSuccess)
@@ -213,7 +218,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "RoundingsEnabled", shiftData.RoundingsEnabled },
                 { "RoundingInterval", shiftData.RoundingInterval },
                 { "FlexWindowEndTime", shiftData.FlexWindowEndTime! },
-                { "WeeklyWorkHours", shiftData.WeeklyWorkHours! }
+                { "WeeklyWorkHours", shiftData.WeeklyWorkHours! },
+                { "PunchTrackingMode", shiftData.PunchTrackingMode },
+                { "HasEntryWindow", shiftData.HasEntryWindow }
             };
 
             _dialogService.ShowDialog("ShiftDetailDialog", parameters, async result =>
@@ -230,6 +237,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var roundingInterval = result.Parameters.GetValue<int>("RoundingInterval");
                     var flexWindowEndTime = result.Parameters.ContainsKey("FlexWindowEndTime") ? result.Parameters.GetValue<TimeSpan?>("FlexWindowEndTime") : null;
                     var weeklyWorkHours = result.Parameters.ContainsKey("WeeklyWorkHours") ? result.Parameters.GetValue<TimeSpan?>("WeeklyWorkHours") : null;
+                    var punchTrackingMode = result.Parameters.ContainsKey("PunchTrackingMode") ? result.Parameters.GetValue<PunchTrackingMode>("PunchTrackingMode") : PunchTrackingMode.SingleInterval;
+                    var hasEntryWindow = result.Parameters.ContainsKey("HasEntryWindow") ? result.Parameters.GetValue<bool>("HasEntryWindow") : true;
 
                     var command = new UpdateShiftCommand(
                         shiftData.Id,
@@ -242,7 +251,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         RoundingsEnabled: roundingsEnabled,
                         RoundingInterval: roundingInterval,
                         FlexWindowEndTime: flexWindowEndTime,
-                        WeeklyWorkHours: weeklyWorkHours);
+                        WeeklyWorkHours: weeklyWorkHours,
+                        PunchTrackingMode: punchTrackingMode,
+                        HasEntryWindow: hasEntryWindow);
                     var updateResult = await _mediator.Send(command);
 
                     if (updateResult.IsSuccess)

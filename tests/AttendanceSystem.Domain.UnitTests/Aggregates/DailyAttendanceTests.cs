@@ -714,5 +714,128 @@ public class DailyAttendanceTests
         da.MissingBlock2CheckIn.Should().BeTrue();
         da.MissingCheckOut.Should().BeFalse();
     }
+
+    [Fact]
+    public void Create_OpenEntryShift_ShouldHaveZeroLateMinutesRegardlessOfCheckInTime()
+    {
+        // Arrange: Turno con entrada abierta (00:00, HasEntryWindow = false) y meta de 8h
+        var openShift = Shift.Create(
+            name: "Turno Abierto",
+            startTime: TimeSpan.Zero,
+            toleranceMinutes: 0,
+            workHours: TimeSpan.FromHours(8),
+            shiftType: ShiftType.Flexible,
+            punchTrackingMode: PunchTrackingMode.SingleInterval,
+            hasEntryWindow: false);
+
+        // Entrada a las 11:30 AM, Salida a las 20:30 (9h laboradas)
+        var checkIn = _date.AddHours(11).AddMinutes(30);
+        var checkOut = _date.AddHours(20).AddMinutes(30);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: openShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false);
+
+        // Assert
+        da.LateMinutes.Should().Be(0);
+        da.EarlyDepartureMinutes.Should().Be(0);
+        da.OvertimeMinutes.Should().Be(60); // 9h - 8h = 60 min extra
+        da.TotalWorkedMinutes.Should().Be(540); // 9h = 540 min
+    }
+
+    [Fact]
+    public void Create_WeeklyFlexibleShift_ShouldHaveZeroDailyLateAndZeroDailyOvertime()
+    {
+        // Arrange: Bolsa semanal de 40h
+        var weeklyShift = Shift.Create(
+            name: "Bolsa Semanal",
+            startTime: TimeSpan.Zero,
+            toleranceMinutes: 0,
+            workHours: TimeSpan.Zero,
+            shiftType: ShiftType.Flexible,
+            weeklyWorkHours: TimeSpan.FromHours(40),
+            punchTrackingMode: PunchTrackingMode.SingleInterval,
+            hasEntryWindow: false);
+
+        // Entrada 10:00, Salida 20:00 (10h laboradas)
+        var checkIn = _date.AddHours(10);
+        var checkOut = _date.AddHours(20);
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: weeklyShift,
+            checkIn: checkIn,
+            checkOut: checkOut,
+            isRestDay: false);
+
+        // Assert: En bolsa semanal, no hay retardo diario ni overtime diario
+        da.LateMinutes.Should().Be(0);
+        da.EarlyDepartureMinutes.Should().Be(0);
+        da.OvertimeMinutes.Should().Be(0);
+        da.TotalWorkedMinutes.Should().Be(600); // 10h = 600 min acumulables a la semana
+    }
+
+    [Fact]
+    public void SetIntervalsData_MultiIntervalShift_ShouldComputeWorkedMinutesAndOvertimeAccurately()
+    {
+        // Arrange: Turno flexible multi-intervalo con meta de 8h (480 min)
+        var multiShift = Shift.Create(
+            name: "Multi-Marcaje Abierto",
+            startTime: TimeSpan.Zero,
+            toleranceMinutes: 0,
+            workHours: TimeSpan.FromHours(8),
+            shiftType: ShiftType.Flexible,
+            punchTrackingMode: PunchTrackingMode.MultiInterval,
+            hasEntryWindow: false);
+
+        var firstIn = _date.AddHours(9);
+        var lastOut = _date.AddHours(18).AddMinutes(30);
+
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: multiShift,
+            checkIn: firstIn,
+            checkOut: lastOut,
+            isRestDay: false);
+
+        // Supongamos que acumuló 520 minutos efectivos a lo largo de varios intervalos
+        // Act
+        da.SetIntervalsData(520, "[{\"CheckIn\":\"09:00\",\"CheckOut\":\"13:00\",\"Minutes\":240},{\"CheckIn\":\"14:00\",\"CheckOut\":\"18:40\",\"Minutes\":280}]");
+
+        // Assert
+        da.TotalWorkedMinutes.Should().Be(520);
+        da.OvertimeMinutes.Should().Be(40); // 520 - 480 = 40 min extra
+        da.EarlyDepartureMinutes.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(45, OvertimeCalculationMethod.NoRounding, 45)]
+    [InlineData(25, OvertimeCalculationMethod.RoundByHalfHour, 0)]
+    [InlineData(30, OvertimeCalculationMethod.RoundByHalfHour, 30)]
+    [InlineData(59, OvertimeCalculationMethod.RoundByHalfHour, 30)]
+    [InlineData(60, OvertimeCalculationMethod.RoundByHalfHour, 60)]
+    [InlineData(59, OvertimeCalculationMethod.RoundByHour, 0)]
+    [InlineData(60, OvertimeCalculationMethod.RoundByHour, 60)]
+    [InlineData(115, OvertimeCalculationMethod.RoundByHour, 60)]
+    [InlineData(120, OvertimeCalculationMethod.RoundByHour, 120)]
+    public void ApplyOvertimeRounding_ShouldRoundAccordingToEmployeeConfiguration(
+        double inputMinutes,
+        OvertimeCalculationMethod method,
+        double expectedMinutes)
+    {
+        // Act
+        var result = DailyAttendance.ApplyOvertimeRounding(inputMinutes, method);
+
+        // Assert
+        result.Should().Be(expectedMinutes);
+    }
 }
 

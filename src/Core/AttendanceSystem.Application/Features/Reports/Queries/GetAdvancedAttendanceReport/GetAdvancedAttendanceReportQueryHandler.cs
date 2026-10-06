@@ -180,11 +180,18 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 double totalWorkedHours = 0;
                 foreach (var d in details)
                 {
-                    var refIn = GetReferenceEntry(d);
-                    var refOut = GetReferenceExit(d);
-                    if (refIn.HasValue && refOut.HasValue)
+                    if (d.TotalWorkedMinutes > 0)
                     {
-                        totalWorkedHours += (refOut.Value - refIn.Value).TotalHours;
+                        totalWorkedHours += d.TotalWorkedMinutes / 60.0;
+                    }
+                    else
+                    {
+                        var refIn = GetReferenceEntry(d);
+                        var refOut = GetReferenceExit(d);
+                        if (refIn.HasValue && refOut.HasValue)
+                        {
+                            totalWorkedHours += (refOut.Value - refIn.Value).TotalHours;
+                        }
                     }
                 }
 
@@ -229,9 +236,9 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         DateTime? referenceExit = GetReferenceExit(att);
 
         // 2. Duración trabajada basada en la regla del usuario
-        TimeSpan? workedVal = (referenceExit.HasValue && referenceEntry.HasValue)
-            ? (referenceExit.Value - referenceEntry.Value)
-            : null;
+        TimeSpan? workedVal = att.TotalWorkedMinutes > 0
+            ? TimeSpan.FromMinutes(att.TotalWorkedMinutes)
+            : ((referenceExit.HasValue && referenceEntry.HasValue) ? (referenceExit.Value - referenceEntry.Value) : null);
 
         string workedStr = workedVal.HasValue ? $"{(int)workedVal.Value.TotalHours:00}:{workedVal.Value.Minutes:00}" : "--:--";
 

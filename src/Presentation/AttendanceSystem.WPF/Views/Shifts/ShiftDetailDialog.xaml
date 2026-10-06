@@ -123,6 +123,12 @@
 
                     <!-- Continuous Shift -->
                     <StackPanel Visibility="{Binding IsContinuousShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
+                        <TextBlock Text="Modalidad de Marcajes" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <RadioButton Content="Tiempo Corrido (1 Entrada / 1 Salida)" IsChecked="{Binding IsSingleInterval}" GroupName="ContinuousPunchMode" Margin="0,0,20,0" Foreground="#4E5D78"/>
+                            <RadioButton Content="Multi-Marcajes (Entradas/Salidas libres)" IsChecked="{Binding IsMultiInterval}" GroupName="ContinuousPunchMode" Foreground="#4E5D78"/>
+                        </StackPanel>
+
                         <TextBlock Text="Horas de Jornada Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
                         <mah:NumericUpDown Value="{Binding TargetHours}" Minimum="1" Maximum="24" Interval="1" Margin="0,0,0,5" />
                         <TextBlock Text="Horas mínimas que el empleado debe cumplir para evitar falta." 
@@ -162,7 +168,10 @@
 
                     <!-- Flexible Shift -->
                     <StackPanel Visibility="{Binding IsFlexibleShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                        <Grid Margin="0,5,0,15">
+                        <TextBlock Text="Política de Entrada" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <CheckBox Content="Definir ventana de llegada con tolerancia de retraso" IsChecked="{Binding HasEntryWindow}" Foreground="#4E5D78" Margin="0,0,0,10"/>
+
+                        <Grid Margin="0,5,0,15" Visibility="{Binding HasEntryWindow, Converter={StaticResource BoolToVis}}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
@@ -180,6 +189,12 @@
                                                 Culture="es-MX" IsClockVisible="False"/>
                             </StackPanel>
                         </Grid>
+
+                        <TextBlock Text="Modalidad de Marcajes" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <RadioButton Content="Tiempo Corrido (1 Entrada / 1 Salida)" IsChecked="{Binding IsSingleInterval}" GroupName="FlexPunchMode" Margin="0,0,20,0" Foreground="#4E5D78"/>
+                            <RadioButton Content="Multi-Marcajes (Entradas/Salidas libres)" IsChecked="{Binding IsMultiInterval}" GroupName="FlexPunchMode" Foreground="#4E5D78"/>
+                        </StackPanel>
 
                         <TextBlock Text="Esquema de Horas Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">

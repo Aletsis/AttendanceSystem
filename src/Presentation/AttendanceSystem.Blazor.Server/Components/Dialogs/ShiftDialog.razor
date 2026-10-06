@@ -50,8 +50,14 @@
         }
         else if (_shiftType == ShiftType.Continuo)
         {
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Modalidad de Marcaje:</MudText>
+            <MudRadioGroup @bind-Value="_punchTrackingMode" Class="mb-3">
+                <MudRadio Value="@(PunchTrackingMode.SingleInterval)" Color="Color.Primary">Tiempo Corrido (1 Entrada, 1 Salida)</MudRadio>
+                <MudRadio Value="@(PunchTrackingMode.MultiInterval)" Color="Color.Primary">Multi-Marcaje (Entradas y Salidas Libres Acumulables)</MudRadio>
+            </MudRadioGroup>
+
             <MudNumericField @bind-Value="_targetHours" Label="Horas de Jornada Objetivo" Min="1" Max="24" Step="1" HelperText="Horas que el empleado debe cumplir para no contar como salida anticipada" Class="mb-4" />
-            <MudCheckBox @bind-Value="_roundingsEnabled" Label="Habilitar Redondeos" Color="Color.Primary" Class="mb-2" />
+            <MudCheckBox @bind-Value="_roundingsEnabled" Label="Habilitar Redondeos en Entrada" Color="Color.Primary" Class="mb-2" />
             @if (_roundingsEnabled)
             {
                 <MudSelect @bind-Value="_roundingInterval" Label="Intervalo de Redondeo" Class="mb-4">
@@ -63,14 +69,31 @@
         }
         else if (_shiftType == ShiftType.Flexible)
         {
-            <MudGrid Class="mb-4">
-                <MudItem xs="6">
-                    <MudTimePicker @bind-Time="_startTime" Label="Inicio Ventana Llegada" Required="true" Editable="true" />
-                </MudItem>
-                <MudItem xs="6">
-                    <MudTimePicker @bind-Time="_flexWindowEndTime" Label="Fin Ventana Llegada" Required="true" Editable="true" />
-                </MudItem>
-            </MudGrid>
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Modalidad de Marcaje:</MudText>
+            <MudRadioGroup @bind-Value="_punchTrackingMode" Class="mb-3">
+                <MudRadio Value="@(PunchTrackingMode.SingleInterval)" Color="Color.Primary">Tiempo Corrido (1 Entrada, 1 Salida)</MudRadio>
+                <MudRadio Value="@(PunchTrackingMode.MultiInterval)" Color="Color.Primary">Multi-Marcaje (Entradas y Salidas Libres Acumulables)</MudRadio>
+            </MudRadioGroup>
+
+            <MudCheckBox @bind-Value="_hasEntryWindow" Label="Habilitar Ventana de Llegada (con control de retardo)" Color="Color.Primary" Class="mb-2" />
+            @if (_hasEntryWindow)
+            {
+                <MudGrid Class="mb-4">
+                    <MudItem xs="6">
+                        <MudTimePicker @bind-Time="_startTime" Label="Inicio Ventana Llegada" Required="true" Editable="true" />
+                    </MudItem>
+                    <MudItem xs="6">
+                        <MudTimePicker @bind-Time="_flexWindowEndTime" Label="Fin Ventana Llegada" Required="true" Editable="true" />
+                    </MudItem>
+                </MudGrid>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-3 d-block">
+                    * Entrada abierta (00:00). El empleado puede ingresar a cualquier hora del día sin generar retardos.
+                </MudText>
+            }
+
             <MudText Typo="Typo.subtitle2" Class="mb-1">Esquema de Horas Objetivo:</MudText>
             <MudRadioGroup @bind-Value="_flexTargetType" Class="mb-3">
                 <MudRadio Value="@("Daily")" Color="Color.Primary">Por Día (Horas Diarias)</MudRadio>
@@ -160,6 +183,8 @@
     [Parameter] public TimeSpan? SecondBlockStartTime { get; set; }
     [Parameter] public TimeSpan? SecondBlockEndTime { get; set; }
     [Parameter] public int? SecondBlockToleranceMinutes { get; set; }
+    [Parameter] public PunchTrackingMode PunchTrackingMode { get; set; } = PunchTrackingMode.SingleInterval;
+    [Parameter] public bool HasEntryWindow { get; set; } = true;
 
     private string _name = "";
     private TimeSpan? _startTime;
@@ -175,6 +200,8 @@
     private ShiftType _shiftType;
     private bool _roundingsEnabled;
     private int _roundingInterval = 15;
+    private PunchTrackingMode _punchTrackingMode = PunchTrackingMode.SingleInterval;
+    private bool _hasEntryWindow = true;
     
     private List<DayConfig> _days = new();
 
@@ -199,6 +226,8 @@
         _secondBlockStartTime = SecondBlockStartTime ?? new TimeSpan(16, 0, 0);
         _secondBlockEndTime = SecondBlockEndTime ?? new TimeSpan(20, 0, 0);
         _secondBlockToleranceMinutes = SecondBlockToleranceMinutes ?? ToleranceMinutes;
+        _punchTrackingMode = PunchTrackingMode;
+        _hasEntryWindow = HasEntryWindow;
         
         if (WeeklyWorkHours.HasValue && WeeklyWorkHours.Value > TimeSpan.Zero)
         {
@@ -352,7 +381,21 @@
             }
         }
 
-        TimeSpan? flexEnd = _shiftType == ShiftType.Flexible ? (_flexWindowEndTime ?? start) : null;
+        TimeSpan? flexEnd = null;
+        if (_shiftType == ShiftType.Flexible)
+        {
+            if (_hasEntryWindow)
+            {
+                flexEnd = _flexWindowEndTime ?? start;
+            }
+            else
+            {
+                start = TimeSpan.Zero;
+                flexEnd = null;
+            }
+        }
+
+        bool effectiveHasEntryWindow = _shiftType == ShiftType.Continuo ? false : (_shiftType == ShiftType.Flexible ? _hasEntryWindow : true);
 
         if (ShiftId.HasValue)
         {
@@ -371,7 +414,9 @@
                 WeeklyWorkHours: weekly,
                 SecondBlockStartTime: b2Start,
                 SecondBlockEndTime: b2End,
-                SecondBlockToleranceMinutes: b2Tol);
+                SecondBlockToleranceMinutes: b2Tol,
+                PunchTrackingMode: _punchTrackingMode,
+                HasEntryWindow: effectiveHasEntryWindow);
             MudDialog.Close(DialogResult.Ok(command));
         }
         else
@@ -390,7 +435,9 @@
                 WeeklyWorkHours: weekly,
                 SecondBlockStartTime: b2Start,
                 SecondBlockEndTime: b2End,
-                SecondBlockToleranceMinutes: b2Tol);
+                SecondBlockToleranceMinutes: b2Tol,
+                PunchTrackingMode: _punchTrackingMode,
+                HasEntryWindow: effectiveHasEntryWindow);
             MudDialog.Close(DialogResult.Ok(command));
         }
     }

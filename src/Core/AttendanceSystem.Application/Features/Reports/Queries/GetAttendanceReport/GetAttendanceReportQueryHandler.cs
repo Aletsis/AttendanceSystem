@@ -134,7 +134,10 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     HasTemporaryExits = att.HasTemporaryExits,
                     TemporaryExitMinutes = att.TemporaryExitMinutes,
                     TemporaryExitStatus = (int)att.TemporaryExitStatus,
-                    AttendanceNote = att.AttendanceNote
+                    AttendanceNote = att.AttendanceNote,
+                    TotalWorkedMinutes = att.TotalWorkedMinutes,
+                    PunchTrackingMode = att.PunchTrackingMode,
+                    IntervalsData = att.IntervalsData
                 });
             }
         }

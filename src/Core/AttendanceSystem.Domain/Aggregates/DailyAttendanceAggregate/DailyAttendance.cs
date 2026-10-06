@@ -39,6 +39,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public TimeSpan? ScheduledBlock2CheckIn { get; private set; }
     public TimeSpan? ScheduledBlock2CheckOut { get; private set; }
     public int? SecondBlockToleranceMinutes { get; private set; }
+    public PunchTrackingMode PunchTrackingMode { get; private set; } = PunchTrackingMode.SingleInterval;
+    public bool HasEntryWindow { get; private set; } = false;
 
     // Actual Data
     public DateTime? ActualCheckIn { get; private set; }
@@ -55,6 +57,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public int LateMinutes { get; private set; }
     public int EarlyDepartureMinutes { get; private set; }
     public int OvertimeMinutes { get; private set; } // Based on shift end or simple work hours?
+    public int TotalWorkedMinutes { get; private set; }
+    public string? IntervalsData { get; private set; }
+    public OvertimeCalculationMethod OvertimeCalculationMethod { get; private set; } = OvertimeCalculationMethod.NoRounding;
 
     // Flags
     public bool MissingCheckIn { get; private set; }
@@ -108,7 +113,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         AttendanceRecordId? checkOutRecordId = null,
         bool calculateOvertimeBeforeEntry = false,
         bool overtimeAuthorized = true,
-        bool isAutoDetectedShift = false)
+        bool isAutoDetectedShift = false,
+        PunchTrackingMode punchTrackingMode = PunchTrackingMode.SingleInterval,
+        bool hasEntryWindow = false,
+        OvertimeCalculationMethod overtimeCalculationMethod = OvertimeCalculationMethod.NoRounding,
+        int totalWorkedMinutes = 0,
+        string? intervalsData = null)
     {
         var attendance = new DailyAttendance
         {
@@ -118,7 +128,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             IsRestDay = isRestDay,
             CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
             OvertimeAuthorized = overtimeAuthorized,
-            IsAutoDetectedShift = isAutoDetectedShift
+            IsAutoDetectedShift = isAutoDetectedShift,
+            OvertimeCalculationMethod = overtimeCalculationMethod,
+            TotalWorkedMinutes = totalWorkedMinutes,
+            IntervalsData = intervalsData,
+            PunchTrackingMode = punchTrackingMode,
+            HasEntryWindow = hasEntryWindow
         };
 
         // 1. Configure Shift Snapshot
@@ -152,6 +167,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             attendance.ScheduledBlock2CheckIn = shift.SecondBlockStartTime;
             attendance.ScheduledBlock2CheckOut = shift.SecondBlockEndTime;
             attendance.SecondBlockToleranceMinutes = shift.SecondBlockToleranceMinutes;
+            attendance.PunchTrackingMode = shift.PunchTrackingMode;
+            attendance.HasEntryWindow = shift.HasEntryWindow;
         }
 
         // 2. Set Actual Times
@@ -164,6 +181,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         attendance.CalculateStatus();
 
         return attendance;
+    }
+
+    public void SetIntervalsData(int totalWorkedMinutes, string? intervalsData)
+    {
+        TotalWorkedMinutes = totalWorkedMinutes;
+        IntervalsData = intervalsData;
+        CalculateStatus();
     }
 
     public void SetCheckIn(DateTime checkIn, AttendanceRecordId recordId)
@@ -494,24 +518,36 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
             else if (ShiftType == Enumerations.ShiftType.Flexible)
             {
-                // Ventana de llegada: No genera retardo si llega dentro de la ventana (StartTime .. FlexWindowEndTime)
-                var windowEnd = FlexWindowEndTime ?? ScheduledCheckIn.Value;
-                var windowEndDateTime = Date.Add(windowEnd);
-                var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
-
-                if (checkInNoSeconds > windowEndDateTime)
+                if (!HasEntryWindow)
                 {
-                    var diff = (checkInNoSeconds - windowEndDateTime).TotalMinutes;
-                    int delayMinutes = (int)diff;
-
-                    if (delayMinutes > ToleranceMinutes)
-                    {
-                        LateMinutes = delayMinutes;
-                    }
+                    // Entrada abierta (sin ventana): no genera retardos
+                    LateMinutes = 0;
                 }
                 else
                 {
-                    LateMinutes = 0;
+                    // Ventana de llegada: No genera retardo si llega dentro de la ventana (StartTime .. FlexWindowEndTime)
+                    var windowEnd = FlexWindowEndTime ?? ScheduledCheckIn.Value;
+                    var windowEndDateTime = Date.Add(windowEnd);
+                    var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+
+                    if (checkInNoSeconds > windowEndDateTime)
+                    {
+                        var diff = (checkInNoSeconds - windowEndDateTime).TotalMinutes;
+                        int delayMinutes = (int)diff;
+
+                        if (delayMinutes > ToleranceMinutes)
+                        {
+                            LateMinutes = delayMinutes;
+                        }
+                        else
+                        {
+                            LateMinutes = 0;
+                        }
+                    }
+                    else
+                    {
+                        LateMinutes = 0;
+                    }
                 }
             }
             else
@@ -527,18 +563,25 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
         }
 
-        // Calcular salida esperada dinámica para turnos flexibles o continuos
+        // Calcular salida esperada dinámica para turnos flexibles o continuos (solo en tiempo corrido)
         if (ShiftType == Enumerations.ShiftType.Continuo && ActualCheckIn.HasValue)
         {
-            DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
-            var targetWorkHours = WorkHours ?? (ScheduledCheckOut.HasValue && ScheduledCheckIn.HasValue
-                ? (ScheduledCheckOut.Value >= ScheduledCheckIn.Value ? ScheduledCheckOut.Value - ScheduledCheckIn.Value : ScheduledCheckOut.Value.Add(TimeSpan.FromDays(1)) - ScheduledCheckIn.Value)
-                : TimeSpan.FromHours(8));
-            DynamicScheduledCheckOut = referenceEntry.Add(targetWorkHours).AddMinutes(LunchBreakMinutesApplied);
+            if (PunchTrackingMode == PunchTrackingMode.SingleInterval)
+            {
+                DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
+                var targetWorkHours = WorkHours ?? (ScheduledCheckOut.HasValue && ScheduledCheckIn.HasValue
+                    ? (ScheduledCheckOut.Value >= ScheduledCheckIn.Value ? ScheduledCheckOut.Value - ScheduledCheckIn.Value : ScheduledCheckOut.Value.Add(TimeSpan.FromDays(1)) - ScheduledCheckIn.Value)
+                    : TimeSpan.FromHours(8));
+                DynamicScheduledCheckOut = referenceEntry.Add(targetWorkHours).AddMinutes(LunchBreakMinutesApplied);
+            }
+            else
+            {
+                DynamicScheduledCheckOut = null;
+            }
         }
         else if (ShiftType == Enumerations.ShiftType.Flexible && ActualCheckIn.HasValue)
         {
-            if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero)
+            if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero && PunchTrackingMode == PunchTrackingMode.SingleInterval)
             {
                 DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
                 DynamicScheduledCheckOut = referenceEntry.Add(WorkHours.Value).AddMinutes(LunchBreakMinutesApplied);
@@ -550,103 +593,107 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         }
 
         // EARLY DEPARTURE & OVERTIME
-        if (ActualCheckOut.HasValue)
+        if (ActualCheckOut.HasValue || (PunchTrackingMode == PunchTrackingMode.MultiInterval && TotalWorkedMinutes > 0))
         {
-            DateTime scheduledOutDateTime = DateTime.MinValue;
-            bool evaluateEarlyDeparture = true;
+            if (ShiftType == Enumerations.ShiftType.Flexible || ShiftType == Enumerations.ShiftType.Continuo)
+            {
+                // Si es SingleInterval y TotalWorkedMinutes no fue precalculado por intervalos:
+                if (PunchTrackingMode == PunchTrackingMode.SingleInterval && ActualCheckIn.HasValue && ActualCheckOut.HasValue)
+                {
+                    DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
+                    DateTime referenceExit = ActualCheckOut.Value;
 
-            if (ShiftType == Enumerations.ShiftType.Flexible)
-            {
-                if (DynamicScheduledCheckOut.HasValue)
-                {
-                    scheduledOutDateTime = DynamicScheduledCheckOut.Value;
+                    var worked = (referenceExit - referenceEntry).TotalMinutes;
+                    worked -= LunchBreakMinutesApplied;
+                    if (TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
+                        worked -= TemporaryExitMinutes;
+
+                    TotalWorkedMinutes = (int)Math.Max(0, worked);
                 }
-                else
+
+                // Esquema de bolsa semanal
+                if (WeeklyWorkHours.HasValue && WeeklyWorkHours.Value > TimeSpan.Zero)
                 {
-                    // En esquema de bolsa semanal, no hay salida temprana diaria fija
-                    evaluateEarlyDeparture = false;
+                    // En esquema de bolsa semanal, no hay salida temprana diaria fija ni tiempo extra diario
                     EarlyDepartureMinutes = 0;
+                    OvertimeMinutes = 0;
                 }
-            }
-            else if (ShiftType == Enumerations.ShiftType.Continuo && DynamicScheduledCheckOut.HasValue)
-            {
-                scheduledOutDateTime = DynamicScheduledCheckOut.Value;
+                else // Esquema de bolsa diaria
+                {
+                    double scheduledMinutes = WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero
+                        ? WorkHours.Value.TotalMinutes
+                        : (ScheduledCheckOut.HasValue && ScheduledCheckIn.HasValue
+                            ? (ScheduledCheckOut.Value >= ScheduledCheckIn.Value ? ScheduledCheckOut.Value - ScheduledCheckIn.Value : ScheduledCheckOut.Value.Add(TimeSpan.FromDays(1)) - ScheduledCheckIn.Value).TotalMinutes
+                            : 480);
+
+                    if (TotalWorkedMinutes < scheduledMinutes)
+                    {
+                        EarlyDepartureMinutes = (int)(scheduledMinutes - TotalWorkedMinutes);
+                        OvertimeMinutes = 0;
+                    }
+                    else
+                    {
+                        EarlyDepartureMinutes = 0;
+                        double surplus = TotalWorkedMinutes - scheduledMinutes;
+
+                        if (surplus > 0 && OvertimeAuthorized)
+                        {
+                            OvertimeMinutes = (int)ApplyOvertimeRounding(surplus, OvertimeCalculationMethod);
+                        }
+                        else
+                        {
+                            OvertimeMinutes = 0;
+                        }
+                    }
+                }
             }
             else
             {
-                scheduledOutDateTime = Date.Add(ScheduledCheckOut.Value);
-
+                DateTime scheduledOutDateTime = Date.Add(ScheduledCheckOut.Value);
                 if (ScheduledCheckOut <= ScheduledCheckIn)
                 {
                     scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
                 }
-            }
 
-            if (evaluateEarlyDeparture && ActualCheckOut.Value < scheduledOutDateTime)
-            {
-                EarlyDepartureMinutes = (int)(scheduledOutDateTime - ActualCheckOut.Value).TotalMinutes;
-            }
-
-            // OVERTIME logic
-            if (ActualCheckIn.HasValue)
-            {
-                // Calculate scheduled work duration
-                double scheduledMinutes = 0;
-                bool evaluateDailyOvertime = true;
-
-                if (ShiftType == Enumerations.ShiftType.Flexible)
+                if (ActualCheckOut.HasValue && ActualCheckOut.Value < scheduledOutDateTime)
                 {
-                    if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero)
-                    {
-                        scheduledMinutes = WorkHours.Value.TotalMinutes;
-                    }
-                    else
-                    {
-                        // En esquema de bolsa semanal, las horas acumuladas no generan overtime diario
-                        evaluateDailyOvertime = false;
-                        OvertimeMinutes = 0;
-                    }
-                }
-                else if (ShiftType == Enumerations.ShiftType.Continuo)
-                {
-                    var targetWorkHours = WorkHours ?? (ScheduledCheckOut.HasValue && ScheduledCheckIn.HasValue
-                        ? (ScheduledCheckOut.Value >= ScheduledCheckIn.Value ? ScheduledCheckOut.Value - ScheduledCheckIn.Value : ScheduledCheckOut.Value.Add(TimeSpan.FromDays(1)) - ScheduledCheckIn.Value)
-                        : TimeSpan.FromHours(8));
-                    scheduledMinutes = targetWorkHours.TotalMinutes;
-                }
-                else
-                {
-                    scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
+                    EarlyDepartureMinutes = (int)(scheduledOutDateTime - ActualCheckOut.Value).TotalMinutes;
                 }
 
-                if (evaluateDailyOvertime)
+                if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
                 {
-                    // 1. Determine Reference Entry & Exit
+                    double scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
                     DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
                     DateTime referenceExit = GetReferenceExit() ?? ActualCheckOut.Value;
 
-                    // 2. Calculate Worked Duration (Tiempo Laborado)
                     var totalWorkedMinutes = (referenceExit - referenceEntry).TotalMinutes;
-
-                    // Deducir minutos de comida formal (turno con LunchBreakMinutes configurado)
                     totalWorkedMinutes -= LunchBreakMinutesApplied;
-
-                    // Deducir minutos de permiso sin goce clasificado por el administrador
                     if (TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
                         totalWorkedMinutes -= TemporaryExitMinutes;
 
                     if (totalWorkedMinutes < 0) totalWorkedMinutes = 0;
+                    TotalWorkedMinutes = (int)totalWorkedMinutes;
 
-                    // 3. Calculate Overtime (Tiempo Extra)
-                    // Overtime = Worked Duration - Scheduled Duration
                     double overtime = totalWorkedMinutes - scheduledMinutes;
-
                     if (overtime > 0 && OvertimeAuthorized)
                     {
-                        OvertimeMinutes = (int)overtime;
+                        OvertimeMinutes = (int)ApplyOvertimeRounding(overtime, OvertimeCalculationMethod);
                     }
                 }
             }
+        }
+    }
+
+    public static double ApplyOvertimeRounding(double minutes, OvertimeCalculationMethod method)
+    {
+        switch (method)
+        {
+            case OvertimeCalculationMethod.RoundByHalfHour:
+                return Math.Floor(minutes / 30.0) * 30.0;
+            case OvertimeCalculationMethod.RoundByHour:
+                return Math.Floor(minutes / 60.0) * 60.0;
+            default:
+                return minutes;
         }
     }
 
@@ -714,10 +761,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         if (!ActualCheckOut.HasValue) return null;
         if (ShiftType == Enumerations.ShiftType.Continuo || ShiftType == Enumerations.ShiftType.Flexible)
         {
-            if (RoundingsEnabled && RoundingInterval > 0)
-            {
-                return RoundExit(ActualCheckOut.Value, RoundingInterval);
-            }
+            // Salida real para cómputo de horas laboradas y sobrante
             return ActualCheckOut.Value;
         }
         return ActualCheckOut.Value;

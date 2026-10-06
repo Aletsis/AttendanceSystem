@@ -33,6 +33,9 @@ public sealed record AttendanceReportViewDto
     public string? AttendanceNote { get; init; }
 
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; init; }
+    public int TotalWorkedMinutes { get; init; }
+    public PunchTrackingMode PunchTrackingMode { get; init; } = PunchTrackingMode.SingleInterval;
+    public string? IntervalsData { get; init; }
 
     public int RoundedOvertimeMinutes
     {

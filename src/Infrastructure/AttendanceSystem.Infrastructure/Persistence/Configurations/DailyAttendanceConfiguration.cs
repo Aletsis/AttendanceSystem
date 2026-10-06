@@ -62,6 +62,13 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
             .IsRequired(false);
         builder.Property(x => x.SecondBlockToleranceMinutes)
             .IsRequired(false);
+        builder.Property(x => x.PunchTrackingMode)
+            .IsRequired()
+            .HasConversion<int>()
+            .HasDefaultValue(AttendanceSystem.Domain.Enumerations.PunchTrackingMode.SingleInterval);
+        builder.Property(x => x.HasEntryWindow)
+            .IsRequired()
+            .HasDefaultValue(false);
 
         // Actuals
         builder.Property(x => x.ActualCheckIn);
@@ -95,6 +102,15 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.LateMinutes);
         builder.Property(x => x.EarlyDepartureMinutes);
         builder.Property(x => x.OvertimeMinutes);
+        builder.Property(x => x.TotalWorkedMinutes)
+            .IsRequired()
+            .HasDefaultValue(0);
+        builder.Property(x => x.IntervalsData)
+            .IsRequired(false);
+        builder.Property(x => x.OvertimeCalculationMethod)
+            .IsRequired()
+            .HasConversion<int>()
+            .HasDefaultValue(AttendanceSystem.Domain.Enumerations.OvertimeCalculationMethod.NoRounding);
         builder.Property(x => x.MissingCheckIn);
         builder.Property(x => x.MissingBlock1CheckOut)
             .IsRequired()

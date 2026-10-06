@@ -17,8 +17,10 @@ public record ShiftDto(
     TimeSpan? WeeklyWorkHours = null,
     TimeSpan? SecondBlockStartTime = null,
     TimeSpan? SecondBlockEndTime = null,
-    int? SecondBlockToleranceMinutes = null
+    int? SecondBlockToleranceMinutes = null,
+    PunchTrackingMode PunchTrackingMode = PunchTrackingMode.SingleInterval,
+    bool HasEntryWindow = true
 )
 {
-    public ShiftDto() : this(Guid.Empty, string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0, TimeSpan.Zero, ShiftType.Matutino, Enumerable.Empty<ShiftDayDto>(), false, 0, null, null, null, null, null) { }
+    public ShiftDto() : this(Guid.Empty, string.Empty, TimeSpan.Zero, TimeSpan.Zero, 0, TimeSpan.Zero, ShiftType.Matutino, Enumerable.Empty<ShiftDayDto>(), false, 0, null, null, null, null, null, PunchTrackingMode.SingleInterval, true) { }
 }

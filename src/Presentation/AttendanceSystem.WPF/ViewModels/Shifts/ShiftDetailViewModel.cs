@@ -132,6 +132,46 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             set => SetProperty(ref _roundingInterval, value);
         }
 
+        private PunchTrackingMode _punchTrackingMode = PunchTrackingMode.SingleInterval;
+        private bool _hasEntryWindow = true;
+
+        public PunchTrackingMode PunchTrackingMode
+        {
+            get => _punchTrackingMode;
+            set
+            {
+                if (SetProperty(ref _punchTrackingMode, value))
+                {
+                    RaisePropertyChanged(nameof(IsSingleInterval));
+                    RaisePropertyChanged(nameof(IsMultiInterval));
+                }
+            }
+        }
+
+        public bool IsSingleInterval
+        {
+            get => _punchTrackingMode == PunchTrackingMode.SingleInterval;
+            set
+            {
+                if (value) PunchTrackingMode = PunchTrackingMode.SingleInterval;
+            }
+        }
+
+        public bool IsMultiInterval
+        {
+            get => _punchTrackingMode == PunchTrackingMode.MultiInterval;
+            set
+            {
+                if (value) PunchTrackingMode = PunchTrackingMode.MultiInterval;
+            }
+        }
+
+        public bool HasEntryWindow
+        {
+            get => _hasEntryWindow;
+            set => SetProperty(ref _hasEntryWindow, value);
+        }
+
         private bool _isWeeklyFlexibleMode;
         public bool IsWeeklyFlexibleMode
         {
@@ -235,6 +275,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         {
             TimeSpan startTime = StartDateTime?.TimeOfDay ?? TimeSpan.Zero;
             TimeSpan endTime = EndDateTime?.TimeOfDay ?? TimeSpan.Zero;
+            TimeSpan? flexEnd = null;
 
             if (SelectedShiftType.Key == ShiftType.Continuo)
             {
@@ -243,8 +284,18 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             }
             else if (SelectedShiftType.Key == ShiftType.Flexible)
             {
-                startTime = StartDateTime?.TimeOfDay ?? new TimeSpan(8, 0, 0);
-                endTime = (FlexWindowEndDateTime?.TimeOfDay ?? startTime).Add(TimeSpan.FromHours(TargetHours));
+                if (HasEntryWindow)
+                {
+                    startTime = StartDateTime?.TimeOfDay ?? new TimeSpan(8, 0, 0);
+                    flexEnd = FlexWindowEndDateTime?.TimeOfDay ?? startTime;
+                    endTime = flexEnd.Value.Add(TimeSpan.FromHours(TargetHours));
+                }
+                else
+                {
+                    startTime = TimeSpan.Zero;
+                    flexEnd = null;
+                    endTime = TimeSpan.FromHours(TargetHours);
+                }
             }
 
             TimeSpan durationEnd = endTime;
@@ -299,9 +350,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 }
             }
 
-            TimeSpan? flexEnd = SelectedShiftType.Key == ShiftType.Flexible
-                ? (FlexWindowEndDateTime?.TimeOfDay ?? startTime)
-                : null;
+            bool effectiveHasEntryWindow = SelectedShiftType.Key == ShiftType.Continuo
+                ? false
+                : (SelectedShiftType.Key == ShiftType.Flexible ? HasEntryWindow : true);
 
             var parameters = new DialogParameters
             {
@@ -317,7 +368,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "WeeklyWorkHours", weekly! },
                 { "SecondBlockStartTime", b2Start! },
                 { "SecondBlockEndTime", b2End! },
-                { "SecondBlockToleranceMinutes", b2Tol! }
+                { "SecondBlockToleranceMinutes", b2Tol! },
+                { "PunchTrackingMode", PunchTrackingMode },
+                { "HasEntryWindow", effectiveHasEntryWindow }
             };
 
             if (_shiftId.HasValue)
@@ -422,6 +475,15 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     var interval = parameters.GetValue<int>("RoundingInterval");
                     if (interval > 0)
                         RoundingInterval = interval;
+                }
+
+                if (parameters.ContainsKey("PunchTrackingMode"))
+                {
+                    PunchTrackingMode = parameters.GetValue<PunchTrackingMode>("PunchTrackingMode");
+                }
+                if (parameters.ContainsKey("HasEntryWindow"))
+                {
+                    HasEntryWindow = parameters.GetValue<bool>("HasEntryWindow");
                 }
 
                 var days = parameters.GetValue<IEnumerable<ShiftDayDto>>("Days");

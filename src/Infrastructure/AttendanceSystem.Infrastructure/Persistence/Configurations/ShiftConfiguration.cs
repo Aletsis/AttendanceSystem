@@ -65,6 +65,15 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
         builder.Property(s => s.SecondBlockToleranceMinutes)
             .IsRequired(false);
 
+        builder.Property(s => s.PunchTrackingMode)
+            .IsRequired()
+            .HasConversion<int>()
+            .HasDefaultValue(AttendanceSystem.Domain.Enumerations.PunchTrackingMode.SingleInterval);
+
+        builder.Property(s => s.HasEntryWindow)
+            .IsRequired()
+            .HasDefaultValue(true);
+
         builder.OwnsMany(s => s.Days, d =>
         {
             d.ToTable("ShiftDays");

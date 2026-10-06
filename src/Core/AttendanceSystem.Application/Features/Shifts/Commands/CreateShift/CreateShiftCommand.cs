@@ -22,7 +22,9 @@ public sealed record CreateShiftCommand(
     TimeSpan? WeeklyWorkHours = null,
     TimeSpan? SecondBlockStartTime = null,
     TimeSpan? SecondBlockEndTime = null,
-    int? SecondBlockToleranceMinutes = null) : IRequest<Result<Guid>>;
+    int? SecondBlockToleranceMinutes = null,
+    PunchTrackingMode PunchTrackingMode = PunchTrackingMode.SingleInterval,
+    bool HasEntryWindow = true) : IRequest<Result<Guid>>;
 
 public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftCommand, Result<Guid>>
 {
@@ -60,7 +62,9 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
                 weeklyWorkHours: request.WeeklyWorkHours,
                 secondBlockStartTime: request.SecondBlockStartTime,
                 secondBlockEndTime: request.SecondBlockEndTime,
-                secondBlockToleranceMinutes: request.SecondBlockToleranceMinutes);
+                secondBlockToleranceMinutes: request.SecondBlockToleranceMinutes,
+                punchTrackingMode: request.PunchTrackingMode,
+                hasEntryWindow: request.HasEntryWindow);
 
             await _shiftRepository.AddAsync(shift, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
