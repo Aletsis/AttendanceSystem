@@ -125,9 +125,9 @@
                     <MudGrid>
                         <MudItem xs="12" sm="6">
                             <MudSelect T="ShiftTypeEnum?" Value="_selectedShiftType" ValueChanged="OnShiftTypeChanged" Label="Turno" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
-                                @foreach (var type in Enum.GetValues<ShiftTypeEnum>())
+                                @foreach (var type in AvailableShiftTypes)
                                 {
-                                    <MudSelectItem T="ShiftTypeEnum?" Value="@type">@type.ToString()</MudSelectItem>
+                                    <MudSelectItem T="ShiftTypeEnum?" Value="@type">@GetShiftTypeName(type)</MudSelectItem>
                                 }
                             </MudSelect>
                         </MudItem>
@@ -319,6 +319,17 @@
     private bool _showEditRotationForm;
     private bool _applyRotationScheme = true;
 
+    private static readonly ShiftTypeEnum[] AvailableShiftTypes =
+    [
+        ShiftTypeEnum.Matutino,
+        ShiftTypeEnum.Vespertino,
+        ShiftTypeEnum.Nocturno,
+        ShiftTypeEnum.Mixto,
+        ShiftTypeEnum.Flexible,
+        ShiftTypeEnum.Partido,
+        ShiftTypeEnum.Rotativo
+    ];
+
     private IEnumerable<ShiftDto> FilteredSchedules
     {
         get
@@ -360,14 +371,14 @@
         
         if (ShiftType.HasValue)
         {
-            _selectedShiftType = ShiftType;
+            _selectedShiftType = ShiftType.Value == ShiftTypeEnum.Continuo ? ShiftTypeEnum.Flexible : ShiftType;
         }
         else if (ScheduleId.HasValue)
         {
             var currentSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
             if (currentSchedule != null)
             {
-                _selectedShiftType = currentSchedule.ShiftType;
+                _selectedShiftType = currentSchedule.ShiftType == ShiftTypeEnum.Continuo ? ShiftTypeEnum.Flexible : currentSchedule.ShiftType;
             }
         }
 
@@ -786,5 +797,11 @@
         WeekDayEnum.Viernes => "Viernes",
         WeekDayEnum.Sabado => "Sábado",
         _ => day.ToString()
+    };
+
+    private static string GetShiftTypeName(ShiftTypeEnum type) => type switch
+    {
+        ShiftTypeEnum.Partido => "Partido / Doble Turno",
+        _ => type.ToString()
     };
 }
