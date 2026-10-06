@@ -150,6 +150,7 @@
     [Parameter] public Guid? ShiftId { get; set; }
     [Parameter] public string Name { get; set; } = "";
     [Parameter] public TimeSpan? StartTime { get; set; }
+    [Parameter] public TimeSpan? EndTime { get; set; }
     [Parameter] public TimeSpan? WorkHours { get; set; }
     [Parameter] public int ToleranceMinutes { get; set; }
     [Parameter] public ShiftType ShiftType { get; set; }
@@ -245,9 +246,16 @@
             _flexTargetType = "Daily";
         }
         
-        if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero)
+        if (EndTime.HasValue)
         {
-             _targetHours = (int)WorkHours.Value.TotalHours;
+            _endTime = EndTime.Value;
+        }
+        else if (_shiftType == ShiftType.Partido)
+        {
+            _endTime = _startTime.HasValue ? _startTime.Value.Add(TimeSpan.FromHours(4)) : new TimeSpan(13, 0, 0);
+        }
+        else if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero)
+        {
              if (StartTime.HasValue)
              {
                  _endTime = StartTime.Value.Add(WorkHours.Value);
@@ -256,6 +264,11 @@
         else
         {
              _endTime = _startTime.Value.Add(TimeSpan.FromHours(9)); // Default 9 hours
+        }
+
+        if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero)
+        {
+             _targetHours = (int)WorkHours.Value.TotalHours;
         }
 
         InitDays();
@@ -358,7 +371,7 @@
             var b1Dur = durationEnd - start;
             var b2DurEnd = b2End.Value <= b2Start.Value ? b2End.Value.Add(TimeSpan.FromHours(24)) : b2End.Value;
             var b2Dur = b2DurEnd - b2Start.Value;
-            workHours = b1Dur + b2Dur;
+            workHours = b1Dur;
         }
         else
         {

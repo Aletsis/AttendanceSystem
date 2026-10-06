@@ -182,6 +182,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         RoundingInterval: roundingInterval,
                         FlexWindowEndTime: result.Parameters.ContainsKey("FlexWindowEndTime") ? result.Parameters.GetValue<TimeSpan?>("FlexWindowEndTime") : null,
                         WeeklyWorkHours: result.Parameters.ContainsKey("WeeklyWorkHours") ? result.Parameters.GetValue<TimeSpan?>("WeeklyWorkHours") : null,
+                        SecondBlockStartTime: result.Parameters.ContainsKey("SecondBlockStartTime") ? result.Parameters.GetValue<TimeSpan?>("SecondBlockStartTime") : null,
+                        SecondBlockEndTime: result.Parameters.ContainsKey("SecondBlockEndTime") ? result.Parameters.GetValue<TimeSpan?>("SecondBlockEndTime") : null,
+                        SecondBlockToleranceMinutes: result.Parameters.ContainsKey("SecondBlockToleranceMinutes") ? result.Parameters.GetValue<int?>("SecondBlockToleranceMinutes") : null,
                         PunchTrackingMode: punchTrackingMode,
                         HasEntryWindow: hasEntryWindow);
                     var createResult = await _mediator.Send(command);
@@ -211,6 +214,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "ShiftId", shiftData.Id },
                 { "Name", shiftData.Name },
                 { "StartTime", shiftData.StartTime },
+                { "EndTime", shiftData.EndTime },
                 { "ToleranceMinutes", shiftData.ToleranceMinutes },
                 { "WorkHours", shiftData.WorkHours },
                 { "ShiftType", shiftData.ShiftType },
@@ -219,6 +223,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "RoundingInterval", shiftData.RoundingInterval },
                 { "FlexWindowEndTime", shiftData.FlexWindowEndTime! },
                 { "WeeklyWorkHours", shiftData.WeeklyWorkHours! },
+                { "SecondBlockStartTime", shiftData.SecondBlockStartTime! },
+                { "SecondBlockEndTime", shiftData.SecondBlockEndTime! },
+                { "SecondBlockToleranceMinutes", shiftData.SecondBlockToleranceMinutes! },
                 { "PunchTrackingMode", shiftData.PunchTrackingMode },
                 { "HasEntryWindow", shiftData.HasEntryWindow }
             };
@@ -252,6 +259,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         RoundingInterval: roundingInterval,
                         FlexWindowEndTime: flexWindowEndTime,
                         WeeklyWorkHours: weeklyWorkHours,
+                        SecondBlockStartTime: result.Parameters.ContainsKey("SecondBlockStartTime") ? result.Parameters.GetValue<TimeSpan?>("SecondBlockStartTime") : null,
+                        SecondBlockEndTime: result.Parameters.ContainsKey("SecondBlockEndTime") ? result.Parameters.GetValue<TimeSpan?>("SecondBlockEndTime") : null,
+                        SecondBlockToleranceMinutes: result.Parameters.ContainsKey("SecondBlockToleranceMinutes") ? result.Parameters.GetValue<int?>("SecondBlockToleranceMinutes") : null,
                         PunchTrackingMode: punchTrackingMode,
                         HasEntryWindow: hasEntryWindow);
                     var updateResult = await _mediator.Send(command);

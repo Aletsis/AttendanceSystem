@@ -330,7 +330,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 var b1Dur = durationEnd - startTime;
                 var b2DurEnd = b2End.Value <= b2Start.Value ? b2End.Value.Add(TimeSpan.FromHours(24)) : b2End.Value;
                 var b2Dur = b2DurEnd - b2Start.Value;
-                workHours = b1Dur + b2Dur;
+                workHours = b1Dur;
             }
             else
             {
@@ -406,9 +406,16 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
                 StartDateTime = DateTime.Today.Add(start);
 
-                var end = start.Add(workHours);
-                if (end.TotalDays >= 1) end = end.Subtract(TimeSpan.FromDays(1));
-                EndDateTime = DateTime.Today.Add(end);
+                if (parameters.ContainsKey("EndTime") && parameters.GetValue<TimeSpan?>("EndTime").HasValue)
+                {
+                    EndDateTime = DateTime.Today.Add(parameters.GetValue<TimeSpan>("EndTime"));
+                }
+                else
+                {
+                    var end = start.Add(workHours);
+                    if (end.TotalDays >= 1) end = end.Subtract(TimeSpan.FromDays(1));
+                    EndDateTime = DateTime.Today.Add(end);
+                }
 
                 if (type == ShiftType.Continuo)
                 {

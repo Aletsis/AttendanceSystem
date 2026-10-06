@@ -121,4 +121,51 @@ public class DialogComponentTests : BlazorTestBase
         comp.Markup.Should().Contain("Seleccionar Carpeta");
         comp.Markup.Should().Contain("Seleccionar");
     }
+
+    [Fact]
+    public async Task ShiftDialog_WithSplitShift_ShouldRenderAndSubmitCorrectBlock1Duration()
+    {
+        var comp = RenderComponent<MudDialogProvider>();
+        var dialogService = Services.GetRequiredService<IDialogService>();
+        var shiftId = Guid.NewGuid();
+        var parameters = new DialogParameters<ShiftDialog>
+        {
+            { x => x.ShiftId, shiftId },
+            { x => x.Name, "Turno Partido Restaurante" },
+            { x => x.ShiftType, AttendanceSystem.Domain.Enumerations.ShiftType.Partido },
+            { x => x.StartTime, new TimeSpan(9, 0, 0) },
+            { x => x.EndTime, new TimeSpan(13, 0, 0) },
+            { x => x.WorkHours, new TimeSpan(8, 0, 0) },
+            { x => x.ToleranceMinutes, 10 },
+            { x => x.SecondBlockStartTime, new TimeSpan(17, 0, 0) },
+            { x => x.SecondBlockEndTime, new TimeSpan(21, 0, 0) },
+            { x => x.SecondBlockToleranceMinutes, 15 }
+        };
+
+        var dialogRef = await comp.InvokeAsync(() => dialogService.ShowAsync<ShiftDialog>("Editar Turno", parameters));
+
+        comp.Markup.Should().Contain("Primer Bloque");
+        comp.Markup.Should().Contain("Segundo Bloque");
+        comp.Markup.Should().Contain("Entrada Bloque 1");
+        comp.Markup.Should().Contain("Salida Bloque 1");
+        comp.Markup.Should().Contain("Entrada Bloque 2");
+        comp.Markup.Should().Contain("Salida Bloque 2");
+
+        // Submit the dialog
+        var buttons = comp.FindAll("button");
+        var saveButton = buttons.First(b => b.TextContent.Contains("Guardar"));
+        await comp.InvokeAsync(() => saveButton.Click());
+
+        var result = await dialogRef.Result;
+        result.Should().NotBeNull();
+        result!.Canceled.Should().BeFalse();
+        result.Data.Should().BeOfType<AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift.UpdateShiftCommand>();
+
+        var cmd = (AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift.UpdateShiftCommand)result.Data!;
+        cmd.StartTime.Should().Be(new TimeSpan(9, 0, 0));
+        // Crucial fix: workHours sent to command must be the duration of block 1 (13:00 - 09:00 = 4h)
+        cmd.WorkHours.Should().Be(new TimeSpan(4, 0, 0));
+        cmd.SecondBlockStartTime.Should().Be(new TimeSpan(17, 0, 0));
+        cmd.SecondBlockEndTime.Should().Be(new TimeSpan(21, 0, 0));
+    }
 }
