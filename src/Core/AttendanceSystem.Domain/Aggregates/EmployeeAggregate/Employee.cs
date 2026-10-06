@@ -193,6 +193,11 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         Status = status;
     }
 
+    public void SetShiftType(ShiftType? shiftType)
+    {
+        ShiftType = shiftType;
+    }
+
     public string GetFullName() => $"{FirstName} {LastName}";
 
     private static void ValidateName(string name, string paramName)

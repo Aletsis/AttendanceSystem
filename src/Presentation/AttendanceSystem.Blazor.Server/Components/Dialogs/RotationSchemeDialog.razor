@@ -116,15 +116,26 @@
                 </MudItem>
             }
 
-            <MudItem xs="12">
-                <MudText Typo="Typo.subtitle2" Class="mb-1">Empleados a asignar:</MudText>
-                <MudSelect T="string" MultiSelection="true" @bind-SelectedValues="_selectedEmployeeIds" Label="Seleccionar Empleados" SelectAll="true" SelectAllText="Seleccionar todos" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetMultiSelectionText))">
-                    @foreach (var emp in _employees)
-                    {
-                        <MudSelectItem T="string" Value="@emp.Id">@emp.FullName (@emp.Id)</MudSelectItem>
-                    }
-                </MudSelect>
-            </MudItem>
+            @if (!string.IsNullOrEmpty(PreselectedEmployeeId))
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Icon="@Icons.Material.Filled.Person">
+                        Modificando esquema para: <b>@(PreselectedEmployeeName ?? PreselectedEmployeeId)</b> (ID: @PreselectedEmployeeId)
+                    </MudAlert>
+                </MudItem>
+            }
+            else
+            {
+                <MudItem xs="12">
+                    <MudText Typo="Typo.subtitle2" Class="mb-1">Empleados a asignar:</MudText>
+                    <MudSelect T="string" MultiSelection="true" @bind-SelectedValues="_selectedEmployeeIds" Label="Seleccionar Empleados" SelectAll="true" SelectAllText="Seleccionar todos" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetMultiSelectionText))">
+                        @foreach (var emp in _employees)
+                        {
+                            <MudSelectItem T="string" Value="@emp.Id">@emp.FullName (@emp.Id)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+            }
         </MudGrid>
     </DialogContent>
     <DialogActions>
@@ -133,11 +144,11 @@
             @if (_isProcessing)
             {
                 <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
-                <span class="ms-2">Generando...</span>
+                <span class="ms-2">Guardando...</span>
             }
             else
             {
-                <span>Generar Roster</span>
+                <span>@(string.IsNullOrEmpty(PreselectedEmployeeId) ? "Generar Roster" : "Guardar Esquema")</span>
             }
         </MudButton>
     </DialogActions>
@@ -145,6 +156,10 @@
 
 @code {
     [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string? PreselectedEmployeeId { get; set; }
+    [Parameter] public string? PreselectedEmployeeName { get; set; }
+    [Parameter] public string? InitialSchemeName { get; set; }
 
     private RotationSchemeType _schemeType = RotationSchemeType.Rotativo3x8;
     private DateTime? _startDate = DateTime.Today;
@@ -168,6 +183,20 @@
 
     protected override async Task OnInitializedAsync()
     {
+        if (!string.IsNullOrEmpty(PreselectedEmployeeId))
+        {
+            _selectedEmployeeIds = new HashSet<string> { PreselectedEmployeeId };
+        }
+
+        if (!string.IsNullOrEmpty(InitialSchemeName))
+        {
+            if (InitialSchemeName.Contains("4x3", StringComparison.OrdinalIgnoreCase))
+                _schemeType = RotationSchemeType.Esquema4x3;
+            else if (InitialSchemeName.Contains("24x48", StringComparison.OrdinalIgnoreCase))
+                _schemeType = RotationSchemeType.Esquema24x48;
+            else if (InitialSchemeName.Contains("3x8", StringComparison.OrdinalIgnoreCase))
+                _schemeType = RotationSchemeType.Rotativo3x8;
+        }
         var shiftsResult = await Sender.Send(new GetShiftsQuery());
         if (shiftsResult.IsSuccess)
         {

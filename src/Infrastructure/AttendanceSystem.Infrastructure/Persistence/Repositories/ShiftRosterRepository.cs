@@ -73,6 +73,19 @@ public class ShiftRosterRepository : IShiftRosterRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ShiftRoster>> GetAllAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.Set<ShiftRoster>().ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<EmployeeId>> GetEmployeeIdsWithRosterAsync(CancellationToken cancellationToken = default)
+    {
+        return await _context.Set<ShiftRoster>()
+            .Select(r => r.EmployeeId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task AddAsync(ShiftRoster roster, CancellationToken cancellationToken = default)
     {
         await _context.Set<ShiftRoster>().AddAsync(roster, cancellationToken);

@@ -1,0 +1,218 @@
+@using AttendanceSystem.Application.Features.Roster.Queries.GetShiftRoster
+@using AttendanceSystem.Application.Features.Roster.Commands.DeleteShiftRoster
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Blazor.Server.Components.Dialogs
+@using MediatR
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="d-flex justify-space-between align-center mb-3">
+            <div>
+                <MudText Typo="Typo.h6">
+                    <MudIcon Icon="@Icons.Material.Filled.CalendarMonth" Class="mr-2 vertical-align-middle" />
+                    Proyección de Turnos - @EmployeeName
+                </MudText>
+                <MudText Typo="Typo.body2" Color="Color.Secondary">
+                    ID: <b>@EmployeeId</b> • Esquema: <b>@(SchemeName ?? "Rotativo")</b>
+                </MudText>
+            </div>
+            <MudButton Variant="Variant.Outlined"
+                       Color="Color.Secondary"
+                       Size="Size.Small"
+                       StartIcon="@Icons.Material.Filled.EditCalendar"
+                       OnClick="OpenModifyScheme">
+                Modificar Esquema
+            </MudButton>
+        </div>
+
+        <MudCard Class="mb-3" Outlined="true">
+            <MudCardContent Class="py-2">
+                <MudGrid Class="align-center">
+                    <MudItem xs="12" sm="3">
+                        <MudDatePicker Label="Desde" @bind-Date="_startDate" DateFormat="dd/MM/yyyy" />
+                    </MudItem>
+                    <MudItem xs="12" sm="3">
+                        <MudDatePicker Label="Hasta" @bind-Date="_endDate" DateFormat="dd/MM/yyyy" />
+                    </MudItem>
+                    <MudItem xs="12" sm="3" Class="d-flex gap-1 align-center">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.Search" OnClick="LoadProjection" Disabled="_loading">
+                            Consultar
+                        </MudButton>
+                    </MudItem>
+                    <MudItem xs="12" sm="3" Class="d-flex justify-end gap-1">
+                        <MudChip T="string" Size="Size.Small" OnClick="@(() => SetRangeDays(14))" Variant="Variant.Outlined">15 días</MudChip>
+                        <MudChip T="string" Size="Size.Small" OnClick="@(() => SetRangeDays(30))" Variant="Variant.Outlined">30 días</MudChip>
+                        <MudChip T="string" Size="Size.Small" OnClick="@(() => SetRangeDays(60))" Variant="Variant.Outlined">60 días</MudChip>
+                    </MudItem>
+                </MudGrid>
+            </MudCardContent>
+        </MudCard>
+
+        @if (_rosterItems.Any())
+        {
+            <div class="d-flex gap-3 mb-3">
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Filled" Size="Size.Small" Icon="@Icons.Material.Filled.DateRange">
+                    Total: @_rosterItems.Count días
+                </MudChip>
+                <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small" Icon="@Icons.Material.Filled.Work">
+                    Laborales: @_rosterItems.Count(r => !r.IsRestDay) días
+                </MudChip>
+                <MudChip T="string" Color="Color.Default" Variant="Variant.Filled" Size="Size.Small" Icon="@Icons.Material.Filled.Weekend">
+                    Descanso: @_rosterItems.Count(r => r.IsRestDay) días
+                </MudChip>
+            </div>
+        }
+
+        <MudTable Items="_rosterItems" Dense="true" Hover="true" Loading="_loading" Elevation="0" Outlined="true">
+            <HeaderContent>
+                <MudTh>Fecha</MudTh>
+                <MudTh>Estado / Turno</MudTh>
+                <MudTh>Horario</MudTh>
+                <MudTh>Detalle / Esquema</MudTh>
+                <MudTh Style="text-align: right;">Acciones</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd DataLabel="Fecha">
+                    <MudText Typo="Typo.body2" Style="font-weight: 500;">
+                        @context.Date.ToString("dd/MM/yyyy (ddd)")
+                    </MudText>
+                </MudTd>
+                <MudTd DataLabel="Estado / Turno">
+                    @if (context.IsRestDay)
+                    {
+                        <MudChip T="string" Color="Color.Default" Variant="Variant.Filled" Size="Size.Small" Icon="@Icons.Material.Filled.Weekend">
+                            Día de Descanso
+                        </MudChip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Color="Color.Primary" Variant="Variant.Filled" Size="Size.Small" Icon="@Icons.Material.Filled.Work">
+                            @(context.ShiftName ?? "Turno Asignado")
+                        </MudChip>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Horario">
+                    @if (!context.IsRestDay && context.StartTime.HasValue && context.EndTime.HasValue)
+                    {
+                        <MudText Typo="Typo.body2">
+                            @context.StartTime.Value.ToString(@"hh\:mm") - @context.EndTime.Value.ToString(@"hh\:mm")
+                        </MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Secondary">—</MudText>
+                    }
+                </MudTd>
+                <MudTd DataLabel="Detalle">
+                    <MudText Typo="Typo.caption">@(context.Notes ?? "—")</MudText>
+                </MudTd>
+                <MudTd Style="text-align: right;">
+                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteItem(context.Id))" />
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent>
+                <MudText Align="Align.Center" Class="pa-4">No hay asignaciones en la proyección para este período.</MudText>
+            </NoRecordsContent>
+            <PagerContent>
+                <MudTablePager PageSizeOptions="new int[]{ 15, 30, 60 }" />
+            </PagerContent>
+        </MudTable>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close" Variant="Variant.Filled" Color="Color.Primary">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter] public string EmployeeId { get; set; } = string.Empty;
+    [Parameter] public string EmployeeName { get; set; } = string.Empty;
+    [Parameter] public string? SchemeName { get; set; }
+
+    private DateTime? _startDate = DateTime.Today;
+    private DateTime? _endDate = DateTime.Today.AddDays(30);
+    private bool _loading;
+    private List<ShiftRosterDto> _rosterItems = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadProjection();
+    }
+
+    private void SetRangeDays(int days)
+    {
+        _startDate = DateTime.Today;
+        _endDate = DateTime.Today.AddDays(days);
+        _ = LoadProjection();
+    }
+
+    private async Task LoadProjection()
+    {
+        if (!_startDate.HasValue || !_endDate.HasValue || string.IsNullOrEmpty(EmployeeId))
+            return;
+
+        try
+        {
+            _loading = true;
+            var query = new GetShiftRosterQuery(
+                _startDate.Value,
+                _endDate.Value,
+                null,
+                EmployeeId);
+
+            _rosterItems = await Sender.Send(query);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar la proyección: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenModifyScheme()
+    {
+        var parameters = new DialogParameters
+        {
+            { nameof(RotationSchemeDialog.PreselectedEmployeeId), EmployeeId },
+            { nameof(RotationSchemeDialog.PreselectedEmployeeName), EmployeeName },
+            { nameof(RotationSchemeDialog.InitialSchemeName), SchemeName }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<RotationSchemeDialog>("Modificar Esquema Rotativo", parameters, options);
+        var result = await dialog.Result;
+
+        if (result != null && !result.Canceled)
+        {
+            await LoadProjection();
+        }
+    }
+
+    private async Task DeleteItem(Guid id)
+    {
+        var confirm = await DialogService.ShowMessageBoxAsync(
+            "Confirmar eliminación",
+            "¿Desea eliminar esta fecha de la proyección?",
+            yesText: "Eliminar", cancelText: "Cancelar", noText: null,
+            options: new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraSmall });
+
+        if (confirm == true)
+        {
+            var success = await Sender.Send(new DeleteShiftRosterCommand(id));
+            if (success)
+            {
+                Snackbar.Add("Asignación eliminada de la proyección.", Severity.Success);
+                await LoadProjection();
+            }
+        }
+    }
+
+    private void Close() => MudDialog.Close();
+}

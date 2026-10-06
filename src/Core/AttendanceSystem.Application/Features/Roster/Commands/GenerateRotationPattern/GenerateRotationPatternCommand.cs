@@ -1,6 +1,7 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate;
+using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using MediatR;
@@ -23,13 +24,23 @@ public record GenerateRotationPatternCommand(
 public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRotationPatternCommand, int>
 {
     private readonly IShiftRosterRepository _rosterRepository;
+    private readonly IEmployeeRepository? _employeeRepository;
     private readonly IUnitOfWork _unitOfWork;
 
     public GenerateRotationPatternCommandHandler(
         IShiftRosterRepository rosterRepository,
         IUnitOfWork unitOfWork)
+        : this(rosterRepository, null, unitOfWork)
+    {
+    }
+
+    public GenerateRotationPatternCommandHandler(
+        IShiftRosterRepository rosterRepository,
+        IEmployeeRepository? employeeRepository,
+        IUnitOfWork unitOfWork)
     {
         _rosterRepository = rosterRepository;
+        _employeeRepository = employeeRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -51,6 +62,16 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         foreach (var empIdStr in request.EmployeeIds)
         {
             var empId = EmployeeId.From(empIdStr);
+
+            if (_employeeRepository != null)
+            {
+                var employee = await _employeeRepository.GetByIdAsync(empId, cancellationToken);
+                if (employee != null && employee.ShiftType != ShiftType.Rotativo)
+                {
+                    employee.SetShiftType(ShiftType.Rotativo);
+                    _employeeRepository.Update(employee);
+                }
+            }
 
             // Cargar los existentes en el rango para actualizar o insertar
             var existingRosters = (await _rosterRepository.GetByEmployeeAsync(
