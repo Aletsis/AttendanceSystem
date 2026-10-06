@@ -118,4 +118,46 @@ public class GetRosterEmployeesQueryHandlerTests
         emp2Dto.SchemeName.Should().Be("Esquema 4x3");
         emp2Dto.HasRoster.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Handle_ShouldDetectRotativo2x8SchemeNameFromNotes()
+    {
+        // Arrange
+        var branchId = BranchId.CreateNew();
+        var deptId = DepartmentId.CreateNew();
+        var posId = PositionId.CreateNew();
+
+        var emp = Employee.Create(
+            EmployeeId.From("EMP-010"),
+            "Pedro",
+            "Ramirez",
+            "pedro@test.com",
+            null,
+            DateTime.Today.AddYears(-1),
+            Gender.Male,
+            branchId,
+            deptId,
+            posId,
+            ShiftType.Rotativo);
+
+        _employeeRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Employee> { emp });
+
+        var roster = ShiftRoster.Create(
+            emp.Id,
+            DateTime.Today,
+            ShiftId.From(Guid.NewGuid()),
+            false,
+            "Rotativo 2x8 (Turno 1)");
+
+        _rosterRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster> { roster });
+
+        // Act
+        var result = await _handler.Handle(new GetRosterEmployeesQuery(), CancellationToken.None);
+
+        // Assert
+        result.Should().HaveCount(1);
+        result[0].SchemeName.Should().Be("Rotativo 2x8");
+    }
 }

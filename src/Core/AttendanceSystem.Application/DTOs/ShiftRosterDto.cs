@@ -20,5 +20,6 @@ public enum RotationSchemeType
     Rotativo3x8 = 0,
     Esquema4x3 = 1,
     Esquema24x48 = 2,
-    Personalizado = 3
+    Personalizado = 3,
+    Rotativo2x8 = 4
 }

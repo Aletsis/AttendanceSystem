@@ -14,6 +14,7 @@
             <MudItem xs="12">
                 <MudSelect T="RotationSchemeType" @bind-Value="_schemeType" Label="Esquema Rotativo" Required="true" AnchorOrigin="Origin.BottomCenter">
                     <MudSelectItem Value="@RotationSchemeType.Rotativo3x8">Turnos 3x8 (3 turnos rotativos de 8 horas)</MudSelectItem>
+                    <MudSelectItem Value="@RotationSchemeType.Rotativo2x8">Turnos 2x8 (2 turnos rotativos de 8 horas)</MudSelectItem>
                     <MudSelectItem Value="@RotationSchemeType.Esquema4x3">Esquema 4x3 (4 días de trabajo / 3 días de descanso)</MudSelectItem>
                     <MudSelectItem Value="@RotationSchemeType.Esquema24x48">Esquema 24x48 (Guardia 24h / 48h de descanso)</MudSelectItem>
                 </MudSelect>
@@ -74,6 +75,36 @@
                 </MudItem>
                 <MudItem xs="12" sm="4">
                     <MudSelect T="Guid" @bind-Value="_shift3" Label="Turno 3 (Noche)" Required="true">
+                        @foreach (var s in _shifts)
+                        {
+                            <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_daysPerShift" Label="Días por turno antes de rotar" Min="1" Max="30" HelperText="Ej. 7 para rotación semanal" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudNumericField @bind-Value="_restDaysAfterShift" Label="Días de descanso al rotar" Min="0" Max="7" HelperText="Días de descanso al final de cada ciclo" />
+                </MudItem>
+            }
+            else if (_schemeType == RotationSchemeType.Rotativo2x8)
+            {
+                <MudItem xs="12">
+                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">
+                        Seleccione los 2 turnos rotativos en orden de rotación (ej. Turno 1 y Turno 2).
+                    </MudAlert>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="Guid" @bind-Value="_shift1" Label="Turno 1" Required="true">
+                        @foreach (var s in _shifts)
+                        {
+                            <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="Guid" @bind-Value="_shift2" Label="Turno 2" Required="true">
                         @foreach (var s in _shifts)
                         {
                             <MudSelectItem Value="@s.Id">@s.Name (@s.StartTime.ToString(@"hh\:mm") - @s.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
@@ -194,6 +225,8 @@
                 _schemeType = RotationSchemeType.Esquema4x3;
             else if (InitialSchemeName.Contains("24x48", StringComparison.OrdinalIgnoreCase))
                 _schemeType = RotationSchemeType.Esquema24x48;
+            else if (InitialSchemeName.Contains("2x8", StringComparison.OrdinalIgnoreCase))
+                _schemeType = RotationSchemeType.Rotativo2x8;
             else if (InitialSchemeName.Contains("3x8", StringComparison.OrdinalIgnoreCase))
                 _schemeType = RotationSchemeType.Rotativo3x8;
         }
@@ -264,6 +297,15 @@
                 return;
             }
             shiftIds.AddRange(new[] { _shift1, _shift2, _shift3 });
+        }
+        else if (_schemeType == RotationSchemeType.Rotativo2x8)
+        {
+            if (_shift1 == Guid.Empty || _shift2 == Guid.Empty)
+            {
+                Snackbar.Add("Debe seleccionar los 2 turnos para el esquema 2x8.", Severity.Warning);
+                return;
+            }
+            shiftIds.AddRange(new[] { _shift1, _shift2 });
         }
         else
         {

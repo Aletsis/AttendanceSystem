@@ -174,6 +174,30 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
                     return (ShiftId.From(currentShiftGuid), false, $"Rotativo 3x8 (Turno {shiftIndex + 1})");
                 }
 
+            case RotationSchemeType.Rotativo2x8:
+                {
+                    // 2 turnos rotativos: ej. Turno 1 y Turno 2
+                    // Rota cada DaysPerShift días
+                    // O ciclo de trabajo + descanso
+                    if (!shiftIds.Any())
+                        return (null, true, "Rotativo 2x8");
+
+                    int daysPerShift = Math.Max(1, request.DaysPerShift);
+                    int shiftIndex = (dayOffset / daysPerShift) % shiftIds.Count;
+                    var currentShiftGuid = shiftIds[shiftIndex];
+
+                    // Si hay días de descanso tras completar un bloque de rotación
+                    int dayInShiftBlock = dayOffset % daysPerShift;
+                    int workDaysInBlock = Math.Max(1, daysPerShift - request.RestDaysAfterRotation);
+
+                    if (request.RestDaysAfterRotation > 0 && dayInShiftBlock >= workDaysInBlock)
+                    {
+                        return (null, true, "Rotativo 2x8 (Descanso)");
+                    }
+
+                    return (ShiftId.From(currentShiftGuid), false, $"Rotativo 2x8 (Turno {shiftIndex + 1})");
+                }
+
             case RotationSchemeType.Personalizado:
                 {
                     if (request.CustomSlots != null && request.CustomSlots.Any())

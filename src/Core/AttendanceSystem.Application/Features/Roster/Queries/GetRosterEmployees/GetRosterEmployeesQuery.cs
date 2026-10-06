@@ -92,7 +92,9 @@ public class GetRosterEmployeesQueryHandler : IRequestHandler<GetRosterEmployees
                 var sampleNote = empRosters.FirstOrDefault(r => !string.IsNullOrWhiteSpace(r.Notes))?.Notes;
                 if (!string.IsNullOrWhiteSpace(sampleNote))
                 {
-                    if (sampleNote.Contains("3x8", StringComparison.OrdinalIgnoreCase))
+                    if (sampleNote.Contains("2x8", StringComparison.OrdinalIgnoreCase))
+                        schemeName = "Rotativo 2x8";
+                    else if (sampleNote.Contains("3x8", StringComparison.OrdinalIgnoreCase))
                         schemeName = "Rotativo 3x8";
                     else if (sampleNote.Contains("4x3", StringComparison.OrdinalIgnoreCase))
                         schemeName = "Esquema 4x3";

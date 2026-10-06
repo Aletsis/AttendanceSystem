@@ -153,4 +153,65 @@ public class GenerateRotationPatternCommandHandlerTests
         await act.Should().ThrowAsync<ArgumentException>()
             .WithMessage("*no puede ser anterior*");
     }
+
+    [Fact]
+    public async Task Handle_Rotativo2x8_ShouldRotateBetween2ShiftsWithRestDays()
+    {
+        // Arrange: 12 days total, 2 shifts, 6 days per shift, 1 rest day after rotation
+        // Cycle 1: Days 0..4 = Shift 1, Day 5 = Rest
+        // Cycle 2: Days 6..10 = Shift 2, Day 11 = Rest
+        var employeeId = "EMP-001";
+        var startDate = new DateTime(2026, 10, 5);
+        var endDate = new DateTime(2026, 10, 16); // 12 days
+        var shift1 = Guid.NewGuid();
+        var shift2 = Guid.NewGuid();
+
+        _rosterRepoMock.Setup(r => r.GetByEmployeeAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster>());
+
+        List<ShiftRoster>? savedRosters = null;
+        _rosterRepoMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<ShiftRoster>>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ShiftRoster>, CancellationToken>((rosters, _) => savedRosters = rosters.ToList());
+
+        var command = new GenerateRotationPatternCommand(
+            new List<string> { employeeId },
+            startDate,
+            endDate,
+            RotationSchemeType.Rotativo2x8,
+            new List<Guid> { shift1, shift2 },
+            DaysPerShift: 6,
+            RestDaysAfterRotation: 1);
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().Be(12);
+        savedRosters.Should().NotBeNull();
+        savedRosters!.Count.Should().Be(12);
+
+        // Days 0..4: Shift 1
+        for (int i = 0; i < 5; i++)
+        {
+            savedRosters[i].IsRestDay.Should().BeFalse();
+            savedRosters[i].ShiftId!.Value.Should().Be(shift1);
+            savedRosters[i].Notes.Should().Be("Rotativo 2x8 (Turno 1)");
+        }
+
+        // Day 5: Rest
+        savedRosters[5].IsRestDay.Should().BeTrue();
+        savedRosters[5].Notes.Should().Be("Rotativo 2x8 (Descanso)");
+
+        // Days 6..10: Shift 2
+        for (int i = 6; i < 11; i++)
+        {
+            savedRosters[i].IsRestDay.Should().BeFalse();
+            savedRosters[i].ShiftId!.Value.Should().Be(shift2);
+            savedRosters[i].Notes.Should().Be("Rotativo 2x8 (Turno 2)");
+        }
+
+        // Day 11: Rest
+        savedRosters[11].IsRestDay.Should().BeTrue();
+        savedRosters[11].Notes.Should().Be("Rotativo 2x8 (Descanso)");
+    }
 }
