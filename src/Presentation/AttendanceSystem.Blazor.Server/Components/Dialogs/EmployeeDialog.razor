@@ -6,6 +6,8 @@
 @using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
 @using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
 @using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
+@using AttendanceSystem.Application.Features.Roster.Queries.GetRosterEmployees
+@using AttendanceSystem.Application.Features.Roster.Commands.GenerateRotationPattern
 @using AttendanceSystem.Application.DTOs
 @using MediatR
 @using ShiftTypeEnum = AttendanceSystem.Domain.Enumerations.ShiftType
@@ -19,6 +21,7 @@
 @inject AuthenticationStateProvider AuthStateProvider
 @inject ISender Sender
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <MudDialog>
     <DialogContent>
@@ -121,29 +124,90 @@
                     }
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="ShiftTypeEnum?" @bind-Value="_selectedShiftType" Label="Turno" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                            <MudSelect T="ShiftTypeEnum?" Value="_selectedShiftType" ValueChanged="OnShiftTypeChanged" Label="Turno" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var type in Enum.GetValues<ShiftTypeEnum>())
                                 {
                                     <MudSelectItem T="ShiftTypeEnum?" Value="@type">@type.ToString()</MudSelectItem>
                                 }
                             </MudSelect>
                         </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll || IsSelectedBranchExternal)">
-                                @foreach (var shift in FilteredSchedules)
-                                {
-                                    <MudSelectItem T="Guid?" Value="@shift.Id">@shift.Name</MudSelectItem>
-                                }
-                            </MudSelect>
-                        </MudItem>
-                        <MudItem xs="12" sm="6">
-                            <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
-                                @foreach (var day in Enum.GetValues<WeekDayEnum>())
-                                {
-                                    <MudSelectItem T="WeekDayEnum?" Value="@day">@day.ToString()</MudSelectItem>
-                                }
-                            </MudSelect>
-                        </MudItem>
+
+                        @if (_selectedShiftType == ShiftTypeEnum.Rotativo)
+                        {
+                            @if (_existingRoster != null && _existingRoster.HasRoster)
+                            {
+                                <MudItem xs="12">
+                                    <MudPaper Class="pa-4 mb-2" Elevation="0" Outlined="true" Style="border-left: 4px solid var(--mud-palette-primary); background-color: var(--mud-palette-background-grey);">
+                                        <div class="d-flex justify-space-between align-center flex-wrap gap-2 mb-2">
+                                            <div class="d-flex align-center gap-2">
+                                                <MudIcon Icon="@Icons.Material.Filled.AutoMode" Color="Color.Primary" Size="Size.Medium" />
+                                                <MudText Typo="Typo.subtitle1" Style="font-weight: 600;">Esquema Rotativo Activo</MudText>
+                                                <MudChip T="string" Color="Color.Primary" Size="Size.Small" Variant="Variant.Filled">@_existingRoster.SchemeName</MudChip>
+                                            </div>
+                                            <div class="d-flex gap-2">
+                                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.CalendarMonth" OnClick="OpenProjectionViewer">
+                                                    Ver Proyección
+                                                </MudButton>
+                                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Size="Size.Small" StartIcon="@Icons.Material.Filled.EditCalendar" OnClick="@(() => _showEditRotationForm = !_showEditRotationForm)">
+                                                    @(_showEditRotationForm ? "Ocultar Editor" : "Modificar Esquema")
+                                                </MudButton>
+                                            </div>
+                                        </div>
+                                        <MudGrid Class="mt-1">
+                                            <MudItem xs="12" sm="4">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">Vigencia Proyectada</MudText>
+                                                <MudText Typo="Typo.body2">
+                                                    @(_existingRoster.StartDate?.ToString("dd/MM/yyyy") ?? "—") al @(_existingRoster.EndDate?.ToString("dd/MM/yyyy") ?? "—")
+                                                </MudText>
+                                            </MudItem>
+                                            <MudItem xs="12" sm="4">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">Días Asignados</MudText>
+                                                <MudText Typo="Typo.body2">@_existingRoster.TotalAssignments días</MudText>
+                                            </MudItem>
+                                            <MudItem xs="12" sm="4">
+                                                <MudText Typo="Typo.caption" Color="Color.Secondary">Estado / Turno Hoy</MudText>
+                                                <MudText Typo="Typo.body2">@(_existingRoster.TodayStatus ?? "Sin turno hoy")</MudText>
+                                            </MudItem>
+                                        </MudGrid>
+                                    </MudPaper>
+                                </MudItem>
+                            }
+
+                            @if (_showEditRotationForm || _existingRoster == null || !_existingRoster.HasRoster)
+                            {
+                                <MudItem xs="12">
+                                    <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
+                                        @(!_isEditing 
+                                            ? "Este empleado trabajará bajo un esquema de turnos rotativos. Configure los parámetros para generar su calendario de turnos al guardar." 
+                                            : "Configure los parámetros para generar o actualizar el esquema rotativo del empleado.")
+                                    </MudAlert>
+                                    <RotationSchemeConfigForm Model="_rotationModel" Shifts="_shifts" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
+                                </MudItem>
+                                <MudItem xs="12">
+                                    <MudCheckBox @bind-Value="_applyRotationScheme" Label="Generar / Actualizar proyección de turnos automáticamente al guardar" Color="Color.Primary" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
+                                </MudItem>
+                            }
+                        }
+                        else
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll || IsSelectedBranchExternal)">
+                                    @foreach (var shift in FilteredSchedules)
+                                    {
+                                        <MudSelectItem T="Guid?" Value="@shift.Id">@shift.Name</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="12" sm="6">
+                                <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                                    @foreach (var day in Enum.GetValues<WeekDayEnum>())
+                                    {
+                                        <MudSelectItem T="WeekDayEnum?" Value="@day">@day.ToString()</MudSelectItem>
+                                    }
+                                </MudSelect>
+                            </MudItem>
+                        }
+
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
                             <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
                         </MudItem>
@@ -182,7 +246,7 @@
                                 }
                             </MudSelect>
                         </MudItem>
-                         <MudItem xs="12" sm="6">
+                        <MudItem xs="12" sm="6">
                             <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None || !_canEditAll || IsSelectedBranchExternal)" Min="0" />
                         </MudItem>
                     </MudGrid>
@@ -247,6 +311,12 @@
     private List<PositionDto> _positions = new();
     private List<ShiftDto> _shifts = new();
 
+    // Roster integration fields
+    private RotationSchemeModel _rotationModel = new();
+    private RosterEmployeeDto? _existingRoster;
+    private bool _showEditRotationForm;
+    private bool _applyRotationScheme = true;
+
     private IEnumerable<ShiftDto> FilteredSchedules
     {
         get
@@ -257,6 +327,8 @@
         }
     }
 
+    private IEnumerable<PositionDto> _filteredPositions = new List<PositionDto>();
+
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthStateProvider.GetAuthenticationStateAsync();
@@ -264,7 +336,6 @@
 
         _hireDate = HireDate;
         
-        // Si estamos editando y tenemos EmployeeId como identificador de formulario
         if (!string.IsNullOrEmpty(EmployeeId) && string.IsNullOrEmpty(Id))
         {
             Id = EmployeeId;
@@ -272,8 +343,6 @@
 
         await LoadData();
         
-        // Inicializar el tipo de turno seleccionado basado en el horario actual
-        // Inicializar el tipo de turno seleccionado
         if (ShiftType.HasValue)
         {
             _selectedShiftType = ShiftType;
@@ -286,9 +355,75 @@
                 _selectedShiftType = currentSchedule.ShiftType;
             }
         }
+
+        if (_selectedShiftType == ShiftTypeEnum.Rotativo)
+        {
+            _rotationModel.InitializeShifts(_shifts);
+            await LoadRosterInfo();
+        }
     }
 
-    private IEnumerable<PositionDto> _filteredPositions = new List<PositionDto>();
+    private void OnShiftTypeChanged(ShiftTypeEnum? newType)
+    {
+        _selectedShiftType = newType;
+        if (_selectedShiftType == ShiftTypeEnum.Rotativo)
+        {
+            _applyRotationScheme = true;
+            _rotationModel.InitializeShifts(_shifts);
+            if (_existingRoster == null && !string.IsNullOrEmpty(Id))
+            {
+                _ = LoadRosterInfo();
+            }
+        }
+    }
+
+    private async Task LoadRosterInfo()
+    {
+        if (!string.IsNullOrEmpty(Id) && !IsSelectedBranchExternal)
+        {
+            try
+            {
+                var rosterList = await Sender.Send(new GetRosterEmployeesQuery(null, Id));
+                _existingRoster = rosterList?.FirstOrDefault(r => r.EmployeeId == Id);
+                if (_existingRoster != null && _existingRoster.HasRoster)
+                {
+                    if (_existingRoster.SchemeName.Contains("4x3", StringComparison.OrdinalIgnoreCase))
+                        _rotationModel.SchemeType = RotationSchemeType.Esquema4x3;
+                    else if (_existingRoster.SchemeName.Contains("24x48", StringComparison.OrdinalIgnoreCase))
+                        _rotationModel.SchemeType = RotationSchemeType.Esquema24x48;
+                    else if (_existingRoster.SchemeName.Contains("2x8", StringComparison.OrdinalIgnoreCase))
+                        _rotationModel.SchemeType = RotationSchemeType.Rotativo2x8;
+                    else if (_existingRoster.SchemeName.Contains("3x8", StringComparison.OrdinalIgnoreCase))
+                        _rotationModel.SchemeType = RotationSchemeType.Rotativo3x8;
+                }
+            }
+            catch
+            {
+                // Ignorar error si no hay datos de roster aún
+            }
+        }
+    }
+
+    private async Task OpenProjectionViewer()
+    {
+        if (string.IsNullOrEmpty(Id)) return;
+
+        var fullName = $"{FirstName} {LastName}".Trim();
+        var parameters = new DialogParameters
+        {
+            { nameof(RosterProjectionDialog.EmployeeId), Id },
+            { nameof(RosterProjectionDialog.EmployeeName), string.IsNullOrEmpty(fullName) ? Id : fullName },
+            { nameof(RosterProjectionDialog.SchemeName), _existingRoster?.SchemeName ?? "Rotativo" }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+        var dialog = await DialogService.ShowAsync<RosterProjectionDialog>($"Proyección de Turnos - {fullName}", parameters, options);
+        var result = await dialog.Result;
+        if (result != null && !result.Canceled)
+        {
+            await LoadRosterInfo();
+        }
+    }
 
     private void OnBranchChanged(Guid branchId)
     {
@@ -311,7 +446,6 @@
         DepartmentId = newDepartmentId;
         UpdateFilteredPositions();
         
-        // Reset Position if it's no longer valid for the new department
         if (PositionId != Guid.Empty && !_filteredPositions.Any(p => p.Id == PositionId))
         {
             PositionId = Guid.Empty;
@@ -323,8 +457,6 @@
         if (DepartmentId == Guid.Empty)
         {
             _filteredPositions = new List<PositionDto>();
-            // If we want to show all when no department is selected: 
-            // _filteredPositions = _positions; 
         }
         else
         {
@@ -345,7 +477,6 @@
     {
         _loading = true;
 
-        // Ejecutar consultas secuencialmente para evitar conflictos de concurrencia con DbContext
         var branchesResult = await Sender.Send(new GetBranchesQuery());
         var departmentsResult = await Sender.Send(new GetDepartmentsQuery());
         var positionsResult = await Sender.Send(new GetPositionsQuery());
@@ -367,11 +498,14 @@
             Snackbar.Add("Error al cargar puestos", Severity.Error);
 
         if (shiftsResult.IsSuccess)
+        {
             _shifts = shiftsResult.Value.OrderBy(s => s.StartTime).ToList();
+            _rotationModel.InitializeShifts(_shifts);
+        }
         else
             Snackbar.Add("Error al cargar turnos", Severity.Error);
             
-        UpdateFilteredPositions(); // Update filter after data load
+        UpdateFilteredPositions();
 
         _loading = false;
     }
@@ -406,13 +540,29 @@
                 return;
             }
 
-            if (ScheduleId.HasValue && _selectedShiftType.HasValue)
+            // Validar turno rotativo vs fijo
+            if (_selectedShiftType == ShiftTypeEnum.Rotativo)
             {
-                var selectedSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
-                if (selectedSchedule != null && selectedSchedule.ShiftType != _selectedShiftType.Value)
+                if (_applyRotationScheme)
                 {
-                    Snackbar.Add("El horario seleccionado no corresponde al turno seleccionado", Severity.Warning);
-                    return;
+                    var validation = _rotationModel.Validate();
+                    if (!validation.IsValid)
+                    {
+                        Snackbar.Add(validation.ErrorMessage!, Severity.Warning);
+                        return;
+                    }
+                }
+            }
+            else
+            {
+                if (ScheduleId.HasValue && _selectedShiftType.HasValue)
+                {
+                    var selectedSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
+                    if (selectedSchedule != null && selectedSchedule.ShiftType != _selectedShiftType.Value)
+                    {
+                        Snackbar.Add("El horario seleccionado no corresponde al turno seleccionado", Severity.Warning);
+                        return;
+                    }
                 }
             }
         }
@@ -422,7 +572,6 @@
         {
             if (!IsSelectedBranchExternal)
             {
-                // Validación para empleado INTERNO (ID único global en Employees)
                 var existingEmployeeResult = await Sender.Send(new GetEmployeeByIdQuery(Id));
                 if (existingEmployeeResult.IsSuccess)
                 {
@@ -432,7 +581,6 @@
             }
             else
             {
-                // Validación para empleado EXTERNO (ID único por sucursal externa)
                 var branchName = _branches.FirstOrDefault(b => b.Id == BranchId)?.Name ?? "seleccionada";
                 var externalEmployeesResult = await Sender.Send(new GetExternalEmployeesQuery(BranchId.ToString()));
                 if (externalEmployeesResult.IsSuccess && externalEmployeesResult.Value != null)
@@ -447,7 +595,6 @@
         }
         else if (IsSelectedBranchExternal)
         {
-            // Editando empleado externo: validar que no choque con otro empleado de esa misma sucursal
             var branchName = _branches.FirstOrDefault(b => b.Id == BranchId)?.Name ?? "seleccionada";
             var externalEmployeesResult = await Sender.Send(new GetExternalEmployeesQuery(BranchId.ToString()));
             if (externalEmployeesResult.IsSuccess && externalEmployeesResult.Value != null)
@@ -468,6 +615,8 @@
             }
         }
 
+        var result = new EmployeeDialogResult();
+
         if (IsSelectedBranchExternal)
         {
             var deptName = _departments.FirstOrDefault(d => d.Id == DepartmentId)?.Name;
@@ -481,7 +630,7 @@
 
             if (targetExtId.HasValue)
             {
-                MudDialog.Close(DialogResult.Ok(new UpdateExternalEmployeeCommand(
+                result.UpdateExternalCommand = new UpdateExternalEmployeeCommand(
                     targetExtId.Value,
                     BranchId.ToString(),
                     Id,
@@ -492,11 +641,11 @@
                     posName,
                     deptName,
                     Status,
-                    CardNumber)));
+                    CardNumber);
             }
             else
             {
-                MudDialog.Close(DialogResult.Ok(new CreateExternalEmployeeCommand(
+                result.CreateExternalCommand = new CreateExternalEmployeeCommand(
                     BranchId.ToString(),
                     Id,
                     FirstName,
@@ -506,14 +655,39 @@
                     posName,
                     deptName,
                     Status,
-                    CardNumber)));
+                    CardNumber);
             }
         }
         else
         {
+            // Determinar fallback de ScheduleId y RestDay para rotativo
+            Guid? effectiveScheduleId = ScheduleId;
+            WeekDayEnum? effectiveRestDay = RestDay;
+
+            if (_selectedShiftType == ShiftTypeEnum.Rotativo)
+            {
+                if (_rotationModel.SchemeType == RotationSchemeType.Rotativo3x8 || _rotationModel.SchemeType == RotationSchemeType.Rotativo2x8)
+                {
+                    effectiveScheduleId = _rotationModel.Shift1 != Guid.Empty ? _rotationModel.Shift1 : ScheduleId;
+                    if (_rotationModel.SelectedFixedRestDays != null && _rotationModel.SelectedFixedRestDays.Any())
+                    {
+                        effectiveRestDay = (WeekDayEnum?)(int)_rotationModel.SelectedFixedRestDays.First();
+                    }
+                }
+                else
+                {
+                    effectiveScheduleId = _rotationModel.BaseShift != Guid.Empty ? _rotationModel.BaseShift : ScheduleId;
+                }
+
+                if (_applyRotationScheme)
+                {
+                    result.RotationPatternCommand = _rotationModel.ToCommand(new List<string> { Id });
+                }
+            }
+
             if (!string.IsNullOrEmpty(EmployeeId))
             {
-                MudDialog.Close(DialogResult.Ok(new UpdateEmployeeCommand(
+                result.UpdateCommand = new UpdateEmployeeCommand(
                     Id,
                     FirstName,
                     LastName,
@@ -526,8 +700,8 @@
                     DepartmentId.ToString(),
                     PositionId.ToString(),
                     _selectedShiftType,
-                    ScheduleId?.ToString(),
-                    (int?)RestDay,
+                    effectiveScheduleId?.ToString(),
+                    (int?)effectiveRestDay,
                     OvertimeAuthorized,
                     OvertimeCalculationMethod,
                     OvertimeCapType,
@@ -536,11 +710,11 @@
                     CardNumber,
                     DevicePassword,
                     Photo,
-                    DevicePrivilege)));
+                    DevicePrivilege);
             }
             else
             {
-                MudDialog.Close(DialogResult.Ok(new CreateEmployeeCommand(
+                result.CreateCommand = new CreateEmployeeCommand(
                     Id,
                     FirstName,
                     LastName,
@@ -552,8 +726,8 @@
                     DepartmentId.ToString(),
                     PositionId.ToString(),
                     _selectedShiftType,
-                    ScheduleId?.ToString(),
-                    (int?)RestDay,
+                    effectiveScheduleId?.ToString(),
+                    (int?)effectiveRestDay,
                     OvertimeAuthorized,
                     OvertimeCalculationMethod,
                     OvertimeCapType,
@@ -562,8 +736,10 @@
                     CardNumber,
                     DevicePassword,
                     Photo,
-                    DevicePrivilege)));
+                    DevicePrivilege);
             }
         }
+
+        MudDialog.Close(DialogResult.Ok(result));
     }
 }

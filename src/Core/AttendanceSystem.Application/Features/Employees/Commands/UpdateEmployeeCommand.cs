@@ -123,7 +123,7 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                     return Result<EmployeeDto>.Failure($"No existe el horario con ID {request.ScheduleId}");
                 }
 
-                if (request.ShiftType.HasValue && schedule.ShiftType != request.ShiftType.Value)
+                if (request.ShiftType.HasValue && request.ShiftType.Value != ShiftType.Rotativo && schedule.ShiftType != request.ShiftType.Value)
                 {
                     return Result<EmployeeDto>.Failure($"El horario '{schedule.Name}' no corresponde al turno seleccionado ({request.ShiftType.Value})");
                 }

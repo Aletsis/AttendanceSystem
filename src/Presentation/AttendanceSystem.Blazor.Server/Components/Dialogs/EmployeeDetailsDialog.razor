@@ -9,6 +9,7 @@
 @using MudBlazor
 @inject ISender Sender
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <MudDialog>
     <DialogContent>
@@ -67,6 +68,28 @@
                              <MudChip T="string" Color="@(_employee.Status == EmployeeStatus.Alta ? Color.Success : Color.Error)" Size="Size.Small">
                                 @_employee.Status
                             </MudChip>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Turno / Horario</MudText>
+                            @if (_employee.ShiftType == ShiftType.Rotativo)
+                            {
+                                <div class="d-flex align-center gap-1">
+                                    <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.AutoMode">
+                                        Rotativo
+                                    </MudChip>
+                                    <MudButton Variant="Variant.Text" Color="Color.Primary" Size="Size.Small" StartIcon="@Icons.Material.Filled.CalendarMonth" OnClick="OpenRosterProjection">
+                                        Ver Proyección
+                                    </MudButton>
+                                </div>
+                            }
+                            else
+                            {
+                                <MudText>@(_employee.ScheduleName ?? "Sin horario asignado")</MudText>
+                            }
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Día de Descanso</MudText>
+                            <MudText>@(_employee.RestDayName ?? (_employee.ShiftType == ShiftType.Rotativo ? "Según ciclo de rotación" : "No asignado"))</MudText>
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
@@ -197,6 +220,13 @@
         }
     </DialogContent>
     <DialogActions>
+        @if (_employee?.ShiftType == ShiftType.Rotativo)
+        {
+            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.CalendarMonth" OnClick="OpenRosterProjection">
+                Ver Roster / Proyección
+            </MudButton>
+        }
+        <MudSpacer />
         <MudButton OnClick="Cancel">Cerrar</MudButton>
     </DialogActions>
 </MudDialog>
@@ -343,6 +373,20 @@
             _sending = false;
             StateHasChanged();
         }
+    }
+
+    private async Task OpenRosterProjection()
+    {
+        if (_employee == null) return;
+        var parameters = new DialogParameters
+        {
+            { nameof(RosterProjectionDialog.EmployeeId), _employee.Id },
+            { nameof(RosterProjectionDialog.EmployeeName), _employee.FullName },
+            { nameof(RosterProjectionDialog.SchemeName), "Rotativo" }
+        };
+
+        var options = new DialogOptions { MaxWidth = MaxWidth.Large, FullWidth = true, CloseButton = true };
+        await DialogService.ShowAsync<RosterProjectionDialog>($"Proyección de Turnos - {_employee.FullName}", parameters, options);
     }
 
     private void Cancel()

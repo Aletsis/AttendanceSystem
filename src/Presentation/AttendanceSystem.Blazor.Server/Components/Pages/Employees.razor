@@ -11,6 +11,7 @@
 @using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
 @using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
 @using AttendanceSystem.Domain.Enumerations
+@using AttendanceSystem.Blazor.Server.Components.Dialogs
 @using System.IO
 @inject ISender Sender
 @inject IDialogService DialogService
@@ -99,8 +100,32 @@ else
                     <PropertyColumn Property="x => x.FullName" Title="Nombre Completo" />
                     <PropertyColumn Property="x => x.BranchName" Title="Sucursal" />
                     <PropertyColumn Property="x => x.DepartmentName" Title="Departamento" />
-                    <PropertyColumn Property="x => x.ScheduleName" Title="Horario" />
-                    <PropertyColumn Property="x => x.RestDayName" Title="Descanso" />
+                    <TemplateColumn Title="Horario" Sortable="true" SortBy="@(x => x.ShiftType == ShiftType.Rotativo ? "Rotativo" : (x.ScheduleName ?? ""))">
+                        <CellTemplate>
+                            @if (context.Item.ShiftType == ShiftType.Rotativo)
+                            {
+                                <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Size="Size.Small" Icon="@Icons.Material.Filled.AutoMode">
+                                    Rotativo
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@(context.Item.ScheduleName ?? "—")</MudText>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
+                    <TemplateColumn Title="Descanso" Sortable="true" SortBy="@(x => x.RestDayName ?? "")">
+                        <CellTemplate>
+                            @if (context.Item.ShiftType == ShiftType.Rotativo && string.IsNullOrEmpty(context.Item.RestDayName))
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">Según ciclo</MudText>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2">@(context.Item.RestDayName ?? "—")</MudText>
+                            }
+                        </CellTemplate>
+                    </TemplateColumn>
                     <PropertyColumn Property="x => x.Status" Title="Estado">
                         <CellTemplate>
                             <MudChip T="string" Color="@(context.Item.Status == EmployeeStatus.Alta ? Color.Success : context.Item.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">
@@ -404,7 +429,52 @@ else
 
         if (result is not null && !result.Canceled)
         {
-            if (result.Data is CreateEmployeeCommand command)
+            if (result.Data is EmployeeDialogResult dialogResult)
+            {
+                if (dialogResult.CreateCommand != null)
+                {
+                    var createResult = await Sender.Send(dialogResult.CreateCommand);
+                    if (createResult.IsSuccess)
+                    {
+                        if (dialogResult.RotationPatternCommand != null)
+                        {
+                            try
+                            {
+                                await Sender.Send(dialogResult.RotationPatternCommand);
+                                Snackbar.Add("Empleado y proyección de turnos rotativos creados con éxito", Severity.Success);
+                            }
+                            catch (Exception ex)
+                            {
+                                Snackbar.Add($"Empleado creado, pero ocurrió un error en la proyección rotativa: {ex.Message}", Severity.Warning);
+                            }
+                        }
+                        else
+                        {
+                            Snackbar.Add("Empleado creado correctamente", Severity.Success);
+                        }
+                        await LoadEmployees();
+                    }
+                    else
+                    {
+                        Snackbar.Add($"Error al crear: {createResult.Error}", Severity.Error);
+                    }
+                }
+                else if (dialogResult.CreateExternalCommand != null)
+                {
+                    var createResult = await Sender.Send(dialogResult.CreateExternalCommand);
+                    if (createResult.IsSuccess)
+                    {
+                        Snackbar.Add("Empleado externo creado correctamente", Severity.Success);
+                        await LoadExternalEmployees();
+                        _externalEmployeesLoaded = true;
+                    }
+                    else
+                    {
+                        Snackbar.Add($"Error al crear empleado externo: {createResult.Error}", Severity.Error);
+                    }
+                }
+            }
+            else if (result.Data is CreateEmployeeCommand command)
             {
                  var createResult = await Sender.Send(command);
                  if (createResult.IsSuccess)
@@ -483,7 +553,51 @@ else
 
         if (result is not null && !result.Canceled)
         {
-            if (result.Data is UpdateEmployeeCommand command)
+            if (result.Data is EmployeeDialogResult dialogResult)
+            {
+                if (dialogResult.UpdateCommand != null)
+                {
+                    var updateResult = await Sender.Send(dialogResult.UpdateCommand);
+                    if (updateResult.IsSuccess)
+                    {
+                        if (dialogResult.RotationPatternCommand != null)
+                        {
+                            try
+                            {
+                                await Sender.Send(dialogResult.RotationPatternCommand);
+                                Snackbar.Add("Empleado y esquema rotativo actualizados con éxito", Severity.Success);
+                            }
+                            catch (Exception ex)
+                            {
+                                Snackbar.Add($"Empleado actualizado, pero ocurrió un error en la proyección rotativa: {ex.Message}", Severity.Warning);
+                            }
+                        }
+                        else
+                        {
+                            Snackbar.Add("Empleado actualizado correctamente", Severity.Success);
+                        }
+                        await LoadEmployees();
+                    }
+                    else
+                    {
+                        Snackbar.Add($"Error al actualizar: {updateResult.Error}", Severity.Error);
+                    }
+                }
+                else if (dialogResult.UpdateExternalCommand != null)
+                {
+                    var updateResult = await Sender.Send(dialogResult.UpdateExternalCommand);
+                    if (updateResult.IsSuccess)
+                    {
+                        Snackbar.Add("Empleado externo actualizado correctamente", Severity.Success);
+                        await LoadExternalEmployees();
+                    }
+                    else
+                    {
+                        Snackbar.Add($"Error al actualizar empleado externo: {updateResult.Error}", Severity.Error);
+                    }
+                }
+            }
+            else if (result.Data is UpdateEmployeeCommand command)
             {
                  var updateResult = await Sender.Send(command);
                  if (updateResult.IsSuccess)
@@ -537,17 +651,33 @@ else
         var dialog = await DialogService.ShowAsync<EmployeeDialog>("Editar Empleado Externo", parameters, options);
         var result = await dialog.Result;
 
-        if (result is not null && !result.Canceled && result.Data is UpdateExternalEmployeeCommand extCommand)
+        if (result is not null && !result.Canceled)
         {
-            var updateResult = await Sender.Send(extCommand);
-            if (updateResult.IsSuccess)
+            if (result.Data is EmployeeDialogResult dialogResult && dialogResult.UpdateExternalCommand != null)
             {
-                Snackbar.Add("Empleado externo actualizado correctamente", Severity.Success);
-                await LoadExternalEmployees();
+                var updateResult = await Sender.Send(dialogResult.UpdateExternalCommand);
+                if (updateResult.IsSuccess)
+                {
+                    Snackbar.Add("Empleado externo actualizado correctamente", Severity.Success);
+                    await LoadExternalEmployees();
+                }
+                else
+                {
+                    Snackbar.Add($"Error al actualizar empleado externo: {updateResult.Error}", Severity.Error);
+                }
             }
-            else
+            else if (result.Data is UpdateExternalEmployeeCommand extCommand)
             {
-                Snackbar.Add($"Error al actualizar empleado externo: {updateResult.Error}", Severity.Error);
+                var updateResult = await Sender.Send(extCommand);
+                if (updateResult.IsSuccess)
+                {
+                    Snackbar.Add("Empleado externo actualizado correctamente", Severity.Success);
+                    await LoadExternalEmployees();
+                }
+                else
+                {
+                    Snackbar.Add($"Error al actualizar empleado externo: {updateResult.Error}", Severity.Error);
+                }
             }
         }
     }
