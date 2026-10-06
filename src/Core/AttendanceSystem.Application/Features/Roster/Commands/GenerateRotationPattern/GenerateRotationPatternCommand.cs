@@ -12,12 +12,13 @@ public record CustomRotationSlotDto(Guid? ShiftId, bool IsRestDay, string? Notes
 public record GenerateRotationPatternCommand(
     List<string> EmployeeIds,
     DateTime StartDate,
-    DateTime EndDate,
-    RotationSchemeType SchemeType,
-    List<Guid> ShiftIds,
+    DateTime? EndDate = null,
+    RotationSchemeType SchemeType = RotationSchemeType.Rotativo3x8,
+    List<Guid>? ShiftIds = null,
     int DaysPerShift = 7,
     int RestDaysAfterRotation = 2,
-    List<CustomRotationSlotDto>? CustomSlots = null) : IRequest<int>;
+    List<CustomRotationSlotDto>? CustomSlots = null,
+    bool IsIndefinite = false) : IRequest<int>;
 
 public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRotationPatternCommand, int>
 {
@@ -37,11 +38,15 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         if (request.EmployeeIds == null || !request.EmployeeIds.Any())
             return 0;
 
-        if (request.EndDate < request.StartDate)
+        var effectiveEndDate = (request.IsIndefinite || !request.EndDate.HasValue)
+            ? (request.EndDate ?? request.StartDate.Date.AddYears(1)).Date
+            : request.EndDate.Value.Date;
+
+        if (effectiveEndDate < request.StartDate.Date)
             throw new ArgumentException("La fecha final no puede ser anterior a la fecha inicial.");
 
         int totalGenerated = 0;
-        var totalDays = (request.EndDate.Date - request.StartDate.Date).Days + 1;
+        var totalDays = (effectiveEndDate - request.StartDate.Date).Days + 1;
 
         foreach (var empIdStr in request.EmployeeIds)
         {
@@ -51,7 +56,7 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
             var existingRosters = (await _rosterRepository.GetByEmployeeAsync(
                 empId,
                 request.StartDate.Date,
-                request.EndDate.Date,
+                effectiveEndDate,
                 cancellationToken))
                 .ToDictionary(r => r.Date.Date);
 
@@ -90,13 +95,15 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         GenerateRotationPatternCommand request,
         int dayOffset)
     {
+        var shiftIds = request.ShiftIds ?? new List<Guid>();
+
         switch (request.SchemeType)
         {
             case RotationSchemeType.Esquema4x3:
                 {
                     // Ciclo de 7 días: 4 días trabajo, 3 días descanso
                     int dayInCycle = dayOffset % 7;
-                    var baseShift = request.ShiftIds.FirstOrDefault();
+                    var baseShift = shiftIds.FirstOrDefault();
                     if (dayInCycle < 4 && baseShift != Guid.Empty)
                     {
                         return (ShiftId.From(baseShift), false, "Esquema 4x3 (Jornada)");
@@ -111,7 +118,7 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
                 {
                     // Ciclo de 3 días: 1 día de guardia 24h, 2 días de descanso (48h)
                     int dayInCycle = dayOffset % 3;
-                    var baseShift = request.ShiftIds.FirstOrDefault();
+                    var baseShift = shiftIds.FirstOrDefault();
                     if (dayInCycle == 0 && baseShift != Guid.Empty)
                     {
                         return (ShiftId.From(baseShift), false, "Esquema 24x48 (Guardia 24h)");
@@ -127,12 +134,12 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
                     // 3 turnos rotativos: Mañana, Tarde, Noche
                     // Rota cada DaysPerShift días (ej. 7 días Mañana, 7 días Tarde, 7 días Noche)
                     // O ciclo de trabajo + descanso
-                    if (!request.ShiftIds.Any())
+                    if (!shiftIds.Any())
                         return (null, true, "Rotativo 3x8");
 
                     int daysPerShift = Math.Max(1, request.DaysPerShift);
-                    int shiftIndex = (dayOffset / daysPerShift) % request.ShiftIds.Count;
-                    var currentShiftGuid = request.ShiftIds[shiftIndex];
+                    int shiftIndex = (dayOffset / daysPerShift) % shiftIds.Count;
+                    var currentShiftGuid = shiftIds[shiftIndex];
 
                     // Si hay días de descanso tras completar un bloque de rotación
                     int dayInShiftBlock = dayOffset % daysPerShift;

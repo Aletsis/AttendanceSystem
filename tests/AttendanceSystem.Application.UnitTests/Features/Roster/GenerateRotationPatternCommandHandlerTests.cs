@@ -103,4 +103,54 @@ public class GenerateRotationPatternCommandHandlerTests
         savedRosters[4].IsRestDay.Should().BeTrue();
         savedRosters[5].IsRestDay.Should().BeTrue();
     }
+
+    [Fact]
+    public async Task Handle_WhenEndDateIsNull_ShouldDefaultToOneYearProjection()
+    {
+        // Arrange
+        var employeeId = "EMP-001";
+        var startDate = new DateTime(2026, 1, 1);
+        var shiftId = Guid.NewGuid();
+
+        _rosterRepoMock.Setup(r => r.GetByEmployeeAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster>());
+
+        List<ShiftRoster>? savedRosters = null;
+        _rosterRepoMock.Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<ShiftRoster>>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<ShiftRoster>, CancellationToken>((rosters, _) => savedRosters = rosters.ToList());
+
+        var command = new GenerateRotationPatternCommand(
+            new List<string> { employeeId },
+            startDate,
+            EndDate: null,
+            SchemeType: RotationSchemeType.Esquema4x3,
+            ShiftIds: new List<Guid> { shiftId },
+            IsIndefinite: true);
+
+        // Act
+        var result = await _handler.Handle(command, CancellationToken.None);
+
+        // Assert: 1 year from 2026-01-01 to 2027-01-01 is 366 days (inclusive)
+        var expectedDays = (startDate.AddYears(1) - startDate).Days + 1;
+        result.Should().Be(expectedDays);
+        savedRosters.Should().NotBeNull();
+        savedRosters!.Count.Should().Be(expectedDays);
+    }
+
+    [Fact]
+    public async Task Handle_WhenEndDateIsBeforeStartDate_ShouldThrowArgumentException()
+    {
+        // Arrange
+        var command = new GenerateRotationPatternCommand(
+            new List<string> { "EMP-001" },
+            StartDate: new DateTime(2026, 10, 10),
+            EndDate: new DateTime(2026, 10, 5),
+            SchemeType: RotationSchemeType.Esquema4x3,
+            ShiftIds: new List<Guid> { Guid.NewGuid() });
+
+        // Act & Assert
+        var act = () => _handler.Handle(command, CancellationToken.None);
+        await act.Should().ThrowAsync<ArgumentException>()
+            .WithMessage("*no puede ser anterior*");
+    }
 }

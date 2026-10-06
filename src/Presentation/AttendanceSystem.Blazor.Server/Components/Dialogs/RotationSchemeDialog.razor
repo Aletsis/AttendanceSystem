@@ -23,8 +23,31 @@
                 <MudDatePicker Label="Fecha Inicio" @bind-Date="_startDate" Required="true" DateFormat="dd/MM/yyyy" />
             </MudItem>
             <MudItem xs="12" sm="6">
-                <MudDatePicker Label="Fecha Fin" @bind-Date="_endDate" Required="true" DateFormat="dd/MM/yyyy" />
+                <MudDatePicker Label="Fecha Fin"
+                               @bind-Date="_endDate"
+                               Required="@(!_isIndefinite)"
+                               Disabled="@_isIndefinite"
+                               Clearable="true"
+                               DateFormat="dd/MM/yyyy"
+                               HelperText="@(_isIndefinite ? "Indefinida (sin fecha de término)" : null)" />
             </MudItem>
+            <MudItem xs="12" sm="@(_isIndefinite ? 6 : 12)">
+                <MudSwitch T="bool"
+                           Value="@_isIndefinite"
+                           ValueChanged="@OnIndefiniteChanged"
+                           Color="Color.Primary"
+                           Label="Sin fecha de término (Indefinido)" />
+            </MudItem>
+            @if (_isIndefinite)
+            {
+                <MudItem xs="12" sm="6">
+                    <MudSelect T="int" @bind-Value="_indefiniteHorizonMonths" Label="Proyección continua" Dense="true" HelperText="Período a proyectar inicialmente">
+                        <MudSelectItem Value="6">6 meses</MudSelectItem>
+                        <MudSelectItem Value="12">1 año (Recomendado)</MudSelectItem>
+                        <MudSelectItem Value="24">2 años</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+            }
 
             @if (_schemeType == RotationSchemeType.Rotativo3x8)
             {
@@ -127,6 +150,9 @@
     private DateTime? _startDate = DateTime.Today;
     private DateTime? _endDate = DateTime.Today.AddDays(30);
 
+    private bool _isIndefinite;
+    private int _indefiniteHorizonMonths = 12;
+
     private Guid _shift1;
     private Guid _shift2;
     private Guid _shift3;
@@ -160,6 +186,19 @@
         _employees = empsResult.IsSuccess ? empsResult.Value.OrderBy(e => e.FullName).ToList() : new();
     }
 
+    private void OnIndefiniteChanged(bool val)
+    {
+        _isIndefinite = val;
+        if (_isIndefinite)
+        {
+            _endDate = null;
+        }
+        else
+        {
+            _endDate = _startDate?.AddDays(30) ?? DateTime.Today.AddDays(30);
+        }
+    }
+
     private string GetMultiSelectionText(IReadOnlyList<string> selectedValues)
     {
         return $"{selectedValues.Count} empleado(s) seleccionado(s)";
@@ -169,9 +208,15 @@
 
     private async Task Submit()
     {
-        if (!_startDate.HasValue || !_endDate.HasValue)
+        if (!_startDate.HasValue)
         {
-            Snackbar.Add("Debe seleccionar las fechas de inicio y fin.", Severity.Warning);
+            Snackbar.Add("Debe seleccionar la fecha de inicio.", Severity.Warning);
+            return;
+        }
+
+        if (!_isIndefinite && !_endDate.HasValue)
+        {
+            Snackbar.Add("Debe seleccionar la fecha de fin o marcar el esquema como indefinido.", Severity.Warning);
             return;
         }
 
@@ -204,17 +249,32 @@
         try
         {
             _isProcessing = true;
+            DateTime? targetEndDate = _isIndefinite
+                ? _startDate.Value.AddMonths(_indefiniteHorizonMonths)
+                : _endDate;
+
             var command = new GenerateRotationPatternCommand(
                 _selectedEmployeeIds.ToList(),
                 _startDate.Value,
-                _endDate.Value,
+                targetEndDate,
                 _schemeType,
                 shiftIds,
                 _daysPerShift,
-                _restDaysAfterShift);
+                _restDaysAfterShift,
+                IsIndefinite: _isIndefinite);
 
             var count = await Sender.Send(command);
-            Snackbar.Add($"Se generaron {count} asignaciones de turno con éxito.", Severity.Success);
+            string horizonText = _indefiniteHorizonMonths switch
+            {
+                6 => "6 meses",
+                12 => "1 año",
+                24 => "2 años",
+                _ => $"{_indefiniteHorizonMonths} meses"
+            };
+            var successMsg = _isIndefinite
+                ? $"Se generaron {count} asignaciones continuas (esquema indefinido proyectado a {horizonText}) con éxito."
+                : $"Se generaron {count} asignaciones de turno con éxito.";
+            Snackbar.Add(successMsg, Severity.Success);
             MudDialog.Close(DialogResult.Ok(true));
         }
         catch (Exception ex)
