@@ -868,7 +868,8 @@ public class AdmsController : ControllerBase
                                 employee.CardNumber,
                                 employee.DevicePassword,
                                 employee.Photo,
-                                devPrivilege
+                                devPrivilege,
+                                employee.RestDays
                             );
                         }
                     }

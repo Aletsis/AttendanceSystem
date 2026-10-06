@@ -195,14 +195,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 }
                 else
                 {
-                    // Determinar día de descanso predeterminado del empleado
-                    if (employee.RestDay.HasValue)
+                    // Determinar día(s) de descanso predeterminado(s) del empleado
+                    if (employee.IsRestDay(date.DayOfWeek))
                     {
-                        var dayOfWeek = (WeekDay)(int)date.DayOfWeek;
-                        if (employee.RestDay == dayOfWeek)
-                        {
-                            isRestDay = true;
-                        }
+                        isRestDay = true;
                     }
 
                     // 3.2 Prioridad 2: Empleado con turno rotativo o sin horario fijo -> Detección automática por proximidad

@@ -22,7 +22,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     // Horario y configuración laboral
     public ShiftType? ShiftType { get; private set; }
     public ShiftId? ScheduleId { get; private set; } // Horario específico (puede ser diferente al turno)
-    public WeekDay? RestDay { get; private set; } // Día de descanso
+    public WeekDay? RestDay { get; private set; } // Día de descanso principal (mantenido por compatibilidad)
+    public List<WeekDay> RestDays { get; private set; } = new(); // Días de descanso
     public bool OvertimeAuthorized { get; private set; } // Horas extras autorizadas
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; private set; } // Nuevo campo
     public OvertimeCapType OvertimeCapType { get; private set; }
@@ -61,11 +62,19 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         string? cardNumber = null,
         string? devicePassword = null,
         string? photo = null,
-        DevicePrivilege devicePrivilege = DevicePrivilege.User)
+        DevicePrivilege devicePrivilege = DevicePrivilege.User,
+        IEnumerable<WeekDay>? restDays = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
         ValidateEmail(email);
+
+        var configuredRestDays = restDays?.Distinct().ToList() ?? new List<WeekDay>();
+        if (!configuredRestDays.Any() && restDay.HasValue)
+        {
+            configuredRestDays.Add(restDay.Value);
+        }
+        var primaryRestDay = configuredRestDays.Count > 0 ? (WeekDay?)configuredRestDays[0] : restDay;
 
         return new Employee
         {
@@ -82,7 +91,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             PositionId = positionId,
             ShiftType = shiftType,
             ScheduleId = scheduleId,
-            RestDay = restDay,
+            RestDay = primaryRestDay,
+            RestDays = configuredRestDays,
             OvertimeAuthorized = overtimeAuthorized,
             OvertimeCalculationMethod = overtimeCalculationMethod,
             OvertimeCapType = overtimeCapType,
@@ -143,11 +153,34 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         string? cardNumber = null,
         string? devicePassword = null,
         string? photo = null,
-        DevicePrivilege devicePrivilege = DevicePrivilege.User)
+        DevicePrivilege devicePrivilege = DevicePrivilege.User,
+        IEnumerable<WeekDay>? restDays = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
         ValidateEmail(email);
+
+        var configuredRestDays = restDays?.Distinct().ToList();
+        if (configuredRestDays != null && configuredRestDays.Any())
+        {
+            RestDays = configuredRestDays;
+            RestDay = configuredRestDays.FirstOrDefault();
+        }
+        else if (restDays != null)
+        {
+            RestDays = new List<WeekDay>();
+            RestDay = restDay;
+        }
+        else if (restDay.HasValue)
+        {
+            RestDays = new List<WeekDay> { restDay.Value };
+            RestDay = restDay;
+        }
+        else
+        {
+            RestDays = new List<WeekDay>();
+            RestDay = null;
+        }
 
         FirstName = firstName;
         LastName = lastName;
@@ -161,7 +194,6 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         PositionId = positionId;
         ShiftType = shiftType;
         ScheduleId = scheduleId;
-        RestDay = restDay;
         OvertimeAuthorized = overtimeAuthorized;
         OvertimeCalculationMethod = overtimeCalculationMethod;
         OvertimeCapType = overtimeCapType;
@@ -171,6 +203,34 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         DevicePassword = devicePassword;
         Photo = photo ?? Photo;
         DevicePrivilege = devicePrivilege;
+    }
+
+    public bool IsRestDay(DayOfWeek dayOfWeek)
+    {
+        var wd = (WeekDay)(int)dayOfWeek;
+        return IsRestDay(wd);
+    }
+
+    public bool IsRestDay(WeekDay dayOfWeek)
+    {
+        if (RestDays != null && RestDays.Count > 0)
+        {
+            return RestDays.Contains(dayOfWeek);
+        }
+        return RestDay.HasValue && RestDay.Value == dayOfWeek;
+    }
+
+    public IReadOnlyList<WeekDay> GetEffectiveRestDays()
+    {
+        if (RestDays != null && RestDays.Count > 0)
+        {
+            return RestDays.Distinct().OrderBy(d => (int)d).ToList();
+        }
+        if (RestDay.HasValue)
+        {
+            return new List<WeekDay> { RestDay.Value };
+        }
+        return Array.Empty<WeekDay>();
     }
 
     public void UpdateDevicePrivilege(DevicePrivilege devicePrivilege)

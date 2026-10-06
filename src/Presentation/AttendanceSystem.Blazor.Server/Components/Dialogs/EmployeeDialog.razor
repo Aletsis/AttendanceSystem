@@ -199,10 +199,10 @@
                                 </MudSelect>
                             </MudItem>
                             <MudItem xs="12" sm="6">
-                                <MudSelect T="WeekDayEnum?" @bind-Value="RestDay" Label="Día de Descanso" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                                <MudSelect T="WeekDayEnum" MultiSelection="true" @bind-SelectedValues="_selectedRestDays" Label="Día(s) de Descanso" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetRestDaysSelectionText))" Clearable="true" AnchorOrigin="Origin.BottomCenter" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
                                     @foreach (var day in Enum.GetValues<WeekDayEnum>())
                                     {
-                                        <MudSelectItem T="WeekDayEnum?" Value="@day">@day.ToString()</MudSelectItem>
+                                        <MudSelectItem T="WeekDayEnum" Value="@day">@GetWeekDaySpanish(day)</MudSelectItem>
                                     }
                                 </MudSelect>
                             </MudItem>
@@ -288,6 +288,7 @@
     [Parameter] public ShiftTypeEnum? ShiftType { get; set; }
     [Parameter] public Guid? ScheduleId { get; set; }
     [Parameter] public WeekDayEnum? RestDay { get; set; }
+    [Parameter] public IEnumerable<int>? RestDays { get; set; }
     [Parameter] public bool OvertimeAuthorized { get; set; }
     [Parameter] public GenderEnum Gender { get; set; }
     [Parameter] public OvertimeEnum OvertimeCalculationMethod { get; set; }
@@ -306,6 +307,7 @@
     private bool _canEditAll => _isAdmin || !_isEditing;
     private bool IsSelectedBranchExternal => _branches.FirstOrDefault(b => b.Id == BranchId)?.IsExternal ?? false;
     private ShiftTypeEnum? _selectedShiftType;
+    private IReadOnlyCollection<WeekDayEnum> _selectedRestDays = new HashSet<WeekDayEnum>();
     private List<BranchDto> _branches = new();
     private List<DepartmentDto> _departments = new();
     private List<PositionDto> _positions = new();
@@ -339,6 +341,19 @@
         if (!string.IsNullOrEmpty(EmployeeId) && string.IsNullOrEmpty(Id))
         {
             Id = EmployeeId;
+        }
+
+        if (RestDays != null && RestDays.Any())
+        {
+            _selectedRestDays = RestDays.Select(d => (WeekDayEnum)d).ToHashSet();
+            if (!RestDay.HasValue)
+            {
+                RestDay = _selectedRestDays.FirstOrDefault();
+            }
+        }
+        else if (RestDay.HasValue)
+        {
+            _selectedRestDays = new HashSet<WeekDayEnum> { RestDay.Value };
         }
 
         await LoadData();
@@ -433,6 +448,7 @@
             _selectedShiftType = null;
             ScheduleId = null;
             RestDay = null;
+            _selectedRestDays = new HashSet<WeekDayEnum>();
             OvertimeAuthorized = false;
             CalculateOvertimeBeforeEntry = false;
             OvertimeCalculationMethod = OvertimeEnum.NoRounding;
@@ -660,9 +676,10 @@
         }
         else
         {
-            // Determinar fallback de ScheduleId y RestDay para rotativo
+            // Determinar fallback de ScheduleId y RestDay / RestDays
             Guid? effectiveScheduleId = ScheduleId;
-            WeekDayEnum? effectiveRestDay = RestDay;
+            WeekDayEnum? effectiveRestDay = _selectedRestDays?.Cast<WeekDayEnum?>().FirstOrDefault() ?? RestDay;
+            List<int>? effectiveRestDays = _selectedRestDays?.Select(d => (int)d).ToList();
 
             if (_selectedShiftType == ShiftTypeEnum.Rotativo)
             {
@@ -672,6 +689,7 @@
                     if (_rotationModel.SelectedFixedRestDays != null && _rotationModel.SelectedFixedRestDays.Any())
                     {
                         effectiveRestDay = (WeekDayEnum?)(int)_rotationModel.SelectedFixedRestDays.First();
+                        effectiveRestDays = _rotationModel.SelectedFixedRestDays.Select(d => (int)d).ToList();
                     }
                 }
                 else
@@ -710,7 +728,8 @@
                     CardNumber,
                     DevicePassword,
                     Photo,
-                    DevicePrivilege);
+                    DevicePrivilege,
+                    effectiveRestDays);
             }
             else
             {
@@ -736,10 +755,36 @@
                     CardNumber,
                     DevicePassword,
                     Photo,
-                    DevicePrivilege);
+                    DevicePrivilege,
+                    effectiveRestDays);
             }
         }
 
         MudDialog.Close(DialogResult.Ok(result));
     }
+
+    private string GetRestDaysSelectionText(IReadOnlyList<string> selectedValues)
+    {
+        if (selectedValues == null || !selectedValues.Any()) return "Ningún día seleccionado";
+        return string.Join(", ", selectedValues.Select(v =>
+        {
+            if (Enum.TryParse<WeekDayEnum>(v, true, out var wd))
+            {
+                return GetWeekDaySpanish(wd);
+            }
+            return v;
+        }));
+    }
+
+    private static string GetWeekDaySpanish(WeekDayEnum day) => day switch
+    {
+        WeekDayEnum.Domingo => "Domingo",
+        WeekDayEnum.Lunes => "Lunes",
+        WeekDayEnum.Martes => "Martes",
+        WeekDayEnum.Miercoles => "Miércoles",
+        WeekDayEnum.Jueves => "Jueves",
+        WeekDayEnum.Viernes => "Viernes",
+        WeekDayEnum.Sabado => "Sábado",
+        _ => day.ToString()
+    };
 }

@@ -199,15 +199,12 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
 
         if (request.RestDayMode == RotationRestDayMode.FromEmployeeProfile)
         {
-            if (employee?.RestDay != null)
+            if (employee != null && employee.IsRestDay(currentDate.DayOfWeek))
             {
-                if ((int)currentDate.DayOfWeek == (int)employee.RestDay.Value)
-                {
-                    isRestDay = true;
-                    restDetail = GetDayName((DayOfWeek)(int)employee.RestDay.Value);
-                }
+                isRestDay = true;
+                restDetail = GetDayName(currentDate.DayOfWeek);
             }
-            else if (request.FixedRestDays != null && request.FixedRestDays.Any())
+            else if (employee == null && request.FixedRestDays != null && request.FixedRestDays.Any())
             {
                 if (request.FixedRestDays.Contains(currentDate.DayOfWeek))
                 {

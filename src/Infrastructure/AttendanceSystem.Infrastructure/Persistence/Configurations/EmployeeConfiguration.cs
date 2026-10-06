@@ -1,6 +1,8 @@
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
+using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace AttendanceSystem.Infrastructure.Persistence.Configurations;
@@ -81,6 +83,23 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
 
         builder.Property(e => e.RestDay)
             .HasConversion<int?>()
+            .IsRequired(false);
+
+        var weekDayListComparer = new ValueComparer<List<WeekDay>>(
+            (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
+            c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+            c => c.ToList());
+
+        builder.Property(e => e.RestDays)
+            .HasConversion(
+                days => days != null && days.Count > 0 ? string.Join(",", days.Select(d => (int)d)) : null,
+                str => string.IsNullOrWhiteSpace(str)
+                    ? new List<WeekDay>()
+                    : str.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                         .Select(s => (WeekDay)int.Parse(s))
+                         .ToList(),
+                weekDayListComparer)
+            .HasMaxLength(50)
             .IsRequired(false);
 
         builder.Property(e => e.OvertimeAuthorized)

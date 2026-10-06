@@ -98,7 +98,11 @@
         if (!string.IsNullOrEmpty(PreselectedEmployeeId))
         {
             var preselectedEmp = _employees.FirstOrDefault(e => e.Id == PreselectedEmployeeId);
-            if (preselectedEmp?.RestDay.HasValue == true)
+            if (preselectedEmp?.RestDays != null && preselectedEmp.RestDays.Any())
+            {
+                _model.SelectedFixedRestDays = preselectedEmp.RestDays.Select(d => (DayOfWeek)d).ToHashSet();
+            }
+            else if (preselectedEmp?.RestDay.HasValue == true)
             {
                 _model.SelectedFixedRestDays = new HashSet<DayOfWeek> { (DayOfWeek)preselectedEmp.RestDay.Value };
             }

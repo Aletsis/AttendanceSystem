@@ -145,4 +145,57 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
         // Sender should receive ProcessRegularAttendanceCommand with the Afternoon shift auto-detected and IsAutoDetectedShift == true!
         _senderMock.Verify(s => s.Send(It.Is<ProcessRegularAttendanceCommand>(c => c.Shift.Id == _afternoonShift.Id && c.IsAutoDetectedShift == true), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task Handle_WhenEmployeeHasMultipleRestDaysOnFixedShift_ShouldSetIsRestDayForBothDays()
+    {
+        // Arrange: Saturday (Oct 10) and Sunday (Oct 11)
+        var saturday = new DateTime(2026, 10, 10);
+        var sunday = new DateTime(2026, 10, 11);
+
+        var emp = Employee.Create(
+            id: EmployeeId.From("EMP-003"),
+            firstName: "Pedro",
+            lastName: "Ramirez",
+            email: "pedro@emp.com",
+            phoneNumber: null,
+            hireDate: new DateTime(2025, 1, 1),
+            gender: Gender.Male,
+            branchId: BranchId.CreateNew(),
+            departmentId: DepartmentId.CreateNew(),
+            positionId: PositionId.CreateNew(),
+            shiftType: ShiftType.Matutino,
+            scheduleId: _morningShift.Id,
+            restDays: new[] { WeekDay.Sabado, WeekDay.Domingo });
+
+        _employeeRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Employee> { emp });
+
+        _rosterRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster>());
+
+        _attendanceRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+
+        var handler = new ProcessDailyAttendanceCommandHandler(
+            _dailyRepoMock.Object,
+            _attendanceRepoMock.Object,
+            _employeeRepoMock.Object,
+            _shiftRepoMock.Object,
+            _rosterRepoMock.Object,
+            _unitOfWorkMock.Object,
+            _senderMock.Object,
+            _loggerMock.Object);
+
+        // Act: Process for both Saturday and Sunday
+        var command = new ProcessDailyAttendanceCommand(saturday, sunday, EmployeeId: emp.Id);
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().Be(2);
+
+        // Both Saturday and Sunday should have been sent to ProcessRegularAttendanceCommand with IsRestDay == true
+        _senderMock.Verify(s => s.Send(It.Is<ProcessRegularAttendanceCommand>(c => c.Date.Date == saturday.Date && c.IsRestDay == true), It.IsAny<CancellationToken>()), Times.Once);
+        _senderMock.Verify(s => s.Send(It.Is<ProcessRegularAttendanceCommand>(c => c.Date.Date == sunday.Date && c.IsRestDay == true), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

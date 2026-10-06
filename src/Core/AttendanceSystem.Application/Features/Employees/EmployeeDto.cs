@@ -24,6 +24,7 @@ public sealed record EmployeeDto
     public Guid? ScheduleId { get; init; }
     public string? ScheduleName { get; init; }
     public int? RestDay { get; init; } // 0=Domingo, 1=Lunes, etc.
+    public List<int> RestDays { get; init; } = new(); // Lista de días de descanso (0=Domingo, 1=Lunes, etc.)
     public string? RestDayName { get; init; }
     public bool OvertimeAuthorized { get; init; }
     public Gender Gender { get; init; }

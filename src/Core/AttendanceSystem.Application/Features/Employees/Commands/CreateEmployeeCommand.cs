@@ -37,7 +37,8 @@ public sealed record CreateEmployeeCommand(
     string? CardNumber = null,
     string? DevicePassword = null,
     string? Photo = null,
-    DevicePrivilege DevicePrivilege = DevicePrivilege.User) : IRequest<Result<EmployeeDto>>;
+    DevicePrivilege DevicePrivilege = DevicePrivilege.User,
+    List<int>? RestDays = null) : IRequest<Result<EmployeeDto>>;
 
 public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmployeeCommand, Result<EmployeeDto>>
 {
@@ -128,6 +129,8 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 }
             }
 
+            var restDays = request.RestDays?.Select(d => (WeekDay)d).ToList();
+
             var employee = Employee.Create(
                 employeeId,
                 request.FirstName,
@@ -150,10 +153,13 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 request.CardNumber,
                 request.DevicePassword,
                 request.Photo,
-                request.DevicePrivilege);
+                request.DevicePrivilege,
+                restDays);
 
             _employeeRepository.Add(employee);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            var effectiveRestDays = employee.GetEffectiveRestDays();
 
             var dto = new EmployeeDto
             {
@@ -175,7 +181,8 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 ScheduleId = employee.ScheduleId?.Value,
                 ScheduleName = schedule?.Name,
                 RestDay = (int?)employee.RestDay,
-                RestDayName = employee.RestDay.HasValue ? GetDayName((int)employee.RestDay.Value) : null,
+                RestDays = effectiveRestDays.Select(d => (int)d).ToList(),
+                RestDayName = effectiveRestDays.Any() ? string.Join(", ", effectiveRestDays.Select(d => GetDayName((int)d))) : null,
                 OvertimeAuthorized = employee.OvertimeAuthorized,
                 Gender = employee.Gender,
                 OvertimeCalculationMethod = employee.OvertimeCalculationMethod,
