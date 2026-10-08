@@ -61,8 +61,20 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
         var assignmentMap = new Dictionary<AttendanceRecordId, (string Type, DateTime Date)>();
         foreach (var da in processed)
         {
-            if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada", da.Date);
-            if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida", da.Date);
+            if (da.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido)
+            {
+                if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada B1", da.Date);
+                if (da.Block1CheckOutRecordId != null) assignmentMap[da.Block1CheckOutRecordId] = ("Salida B1", da.Date);
+                if (da.Block2CheckInRecordId != null) assignmentMap[da.Block2CheckInRecordId] = ("Entrada B2", da.Date);
+                if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida B2", da.Date);
+            }
+            else
+            {
+                if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada", da.Date);
+                if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida", da.Date);
+                if (da.Block1CheckOutRecordId != null) assignmentMap[da.Block1CheckOutRecordId] = ("Salida B1", da.Date);
+                if (da.Block2CheckInRecordId != null) assignmentMap[da.Block2CheckInRecordId] = ("Entrada B2", da.Date);
+            }
         }
 
         // 5. Mapear a DTO

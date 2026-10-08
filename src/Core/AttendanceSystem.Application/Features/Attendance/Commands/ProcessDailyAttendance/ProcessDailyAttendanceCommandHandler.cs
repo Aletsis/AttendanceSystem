@@ -92,9 +92,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             request.EmployeeId,
             cancellationToken);
 
-        var existingDaLookup = existingDailyAttendances
-            .GroupBy(da => (da.EmployeeId.Value, da.Date.Date))
-            .ToDictionary(g => g.Key, g => g.First());
         _logger.LogDebug("Obtenidos {DaCount} registros de asistencia diaria existentes para reprogramación", existingDailyAttendances.Count);
 
         // 1.25 Carga masiva de asignaciones de Roster de turnos para el rango de fechas
@@ -147,31 +144,43 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         _logger.LogDebug("Obtenidos {RecordCount} registros biométricos filtrados", filteredRecords.Count);
 
+        // 1.4 Limpieza previa completa del rango (re-procesamiento limpio):
+        // Eliminar registros de asistencia diaria existentes en el rango para los empleados a procesar
+        foreach (var existingDA in existingDailyAttendances)
+        {
+            if (processedEmployeeIds.Contains(existingDA.EmployeeId))
+            {
+                _dailyRepo.Remove(existingDA);
+            }
+        }
+
+        // Poner en estado Pending TODOS los marcajes biométricos en el rango de fechas
+        // (incluyendo el margen para turnos que cruzan la medianoche) de los empleados a procesar
+        var rangeStartLimit = request.StartDate.Date;
+        var rangeEndLimit = request.EndDate.Date.AddDays(2);
+
+        foreach (var record in filteredRecords)
+        {
+            if (record.CheckTime >= rangeStartLimit && record.CheckTime < rangeEndLimit)
+            {
+                if (record.Status != AttendanceStatus.Pending)
+                {
+                    record.ResetStatus();
+                    await _attendanceRepo.UpdateAsync(record, cancellationToken);
+                }
+            }
+        }
+
+        // Persistir la limpieza previa para garantizar que la base de datos y el Change Tracker queden limpios
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
         // 2. Iterar sobre cada día en el rango
         for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
         {
             foreach (var employee in employees)
             {
-                // Omitir si no está activo?
-                if (employee.Status != EmployeeStatus.Alta) continue; // Filtrar empleados activos
-
-                // 2.1 Limpiar el procesamiento existente para este día (Lógica de re-procesamiento)
-                // Debemos liberar los AttendanceRecords para que puedan ser re-evaluados o recogidos por la lógica correcta.
-                var lookupKey = (employee.Id.Value, date.Date);
-                if (existingDaLookup.TryGetValue(lookupKey, out var existingDA))
-                {
-                    if (existingDA.CheckInRecordId != null && recordsById.TryGetValue(existingDA.CheckInRecordId.Value, out var checkInRec))
-                    {
-                        checkInRec.ResetStatus();
-                        await _attendanceRepo.UpdateAsync(checkInRec, cancellationToken);
-                    }
-                    if (existingDA.CheckOutRecordId != null && recordsById.TryGetValue(existingDA.CheckOutRecordId.Value, out var checkOutRec))
-                    {
-                        checkOutRec.ResetStatus();
-                        await _attendanceRepo.UpdateAsync(checkOutRec, cancellationToken);
-                    }
-                    _dailyRepo.Remove(existingDA);
-                }
+                // Omitir si no está activo
+                if (employee.Status != EmployeeStatus.Alta) continue;
 
                 // Omitir si la fecha es anterior a su fecha de ingreso/alta
                 if (date < employee.HireDate.Date) continue;
@@ -260,7 +269,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         }
                     }
                     else if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible ||
-                             (shift.ShiftType == ShiftType.Partido && shift.SecondBlockEndTime.HasValue && shift.SecondBlockStartTime.HasValue && shift.SecondBlockEndTime.Value <= shift.SecondBlockStartTime.Value))
+                             shift.ShiftType == ShiftType.Partido)
                     {
                         isCrossDay = true;
                     }

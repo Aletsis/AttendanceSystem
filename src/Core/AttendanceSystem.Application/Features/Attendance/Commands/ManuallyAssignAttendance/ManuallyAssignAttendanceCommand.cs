@@ -96,37 +96,56 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
 
         // 3. Update Logic
         // 3. Actualizar el DailyAttendance según el tipo de asignación
-        if (request.AssignmentType == "Entrada") // CheckIn
+        if (request.AssignmentType == "Entrada" || request.AssignmentType == "Entrada B1") // CheckIn
         {
-            // Si el mismo registro se usó como CheckOut, primero elimínelo de CheckOut?
-            // "Validando que no haya 2 entradas o actualizaciones"
-            // Si ya hay un CheckIn, lo reemplazamos.
-            // Si el registro que estamos asignando es actualmente el CheckOut, debemos borrar CheckOut.
-
-            if (daily.CheckOutRecordId == recordId)
-            {
-                daily.RemoveCheckOut();
-            }
+            if (daily.CheckOutRecordId == recordId) daily.RemoveCheckOut();
+            if (daily.Block1CheckOutRecordId == recordId) daily.RemoveBlock1CheckOut();
+            if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
 
             daily.SetCheckIn(record.CheckTime, record.Id);
 
-            // Si el registro no está procesado, lo marcamos como procesado
             if (record.Status != AttendanceStatus.Processed)
             {
                 record.MarkAsProcessed();
                 await _attendanceRepo.UpdateAsync(record, cancellationToken);
             }
         }
-        else if (request.AssignmentType == "Salida") // CheckOut
+        else if (request.AssignmentType == "Salida B1")
         {
-            if (daily.CheckInRecordId == recordId)
+            if (daily.CheckInRecordId == recordId) daily.RemoveCheckIn();
+            if (daily.CheckOutRecordId == recordId) daily.RemoveCheckOut();
+            if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
+
+            daily.SetBlock1CheckOut(record.CheckTime, record.Id);
+
+            if (record.Status != AttendanceStatus.Processed)
             {
-                daily.RemoveCheckIn();
+                record.MarkAsProcessed();
+                await _attendanceRepo.UpdateAsync(record, cancellationToken);
             }
+        }
+        else if (request.AssignmentType == "Entrada B2")
+        {
+            if (daily.CheckInRecordId == recordId) daily.RemoveCheckIn();
+            if (daily.CheckOutRecordId == recordId) daily.RemoveCheckOut();
+            if (daily.Block1CheckOutRecordId == recordId) daily.RemoveBlock1CheckOut();
+
+            daily.SetBlock2CheckIn(record.CheckTime, record.Id);
+
+            if (record.Status != AttendanceStatus.Processed)
+            {
+                record.MarkAsProcessed();
+                await _attendanceRepo.UpdateAsync(record, cancellationToken);
+            }
+        }
+        else if (request.AssignmentType == "Salida" || request.AssignmentType == "Salida B2") // CheckOut
+        {
+            if (daily.CheckInRecordId == recordId) daily.RemoveCheckIn();
+            if (daily.Block1CheckOutRecordId == recordId) daily.RemoveBlock1CheckOut();
+            if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
 
             daily.SetCheckOut(record.CheckTime, record.Id);
 
-            // Si el registro no está procesado, lo marcamos como procesado
             if (record.Status != AttendanceStatus.Processed)
             {
                 record.MarkAsProcessed();
@@ -137,10 +156,15 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         {
             if (daily.CheckInRecordId == recordId) daily.RemoveCheckIn();
             if (daily.CheckOutRecordId == recordId) daily.RemoveCheckOut();
+            if (daily.Block1CheckOutRecordId == recordId) daily.RemoveBlock1CheckOut();
+            if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
+
+            record.ResetStatus();
+            await _attendanceRepo.UpdateAsync(record, cancellationToken);
         }
         else
         {
-            return Result.Failure("Tipo de asignación inválido. Use 'Entrada' o 'Salida'.");
+            return Result.Failure("Tipo de asignación inválido. Use 'Entrada', 'Salida B1', 'Entrada B2' o 'Salida'.");
         }
 
         // 4. Actualizamos el DailyAttendance en el repositorio

@@ -25,6 +25,15 @@ public sealed record AttendanceReportViewDto
     public bool MissingCheckIn { get; init; }
     public bool MissingCheckOut { get; init; }
 
+    // --- Turnos Partidos / Doble Turno ---
+    public ShiftType? ShiftType { get; init; }
+    public TimeSpan? ScheduledBlock2CheckIn { get; init; }
+    public TimeSpan? ScheduledBlock2CheckOut { get; init; }
+    public DateTime? ActualBlock1CheckOut { get; init; }
+    public DateTime? ActualBlock2CheckIn { get; init; }
+    public bool MissingBlock1CheckOut { get; init; }
+    public bool MissingBlock2CheckIn { get; init; }
+
     // --- Salidas Temporales Detectadas ---
     public bool HasTemporaryExits { get; init; }
     public int TemporaryExitMinutes { get; init; }

@@ -129,6 +129,14 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     WorkedOnRestDay = att.WorkedOnRestDay,
                     MissingCheckIn = att.MissingCheckIn,
                     MissingCheckOut = att.MissingCheckOut,
+                    // --- Turnos Partidos ---
+                    ShiftType = att.ShiftType,
+                    ScheduledBlock2CheckIn = att.ScheduledBlock2CheckIn,
+                    ScheduledBlock2CheckOut = att.ScheduledBlock2CheckOut,
+                    ActualBlock1CheckOut = att.ActualBlock1CheckOut,
+                    ActualBlock2CheckIn = att.ActualBlock2CheckIn,
+                    MissingBlock1CheckOut = att.MissingBlock1CheckOut,
+                    MissingBlock2CheckIn = att.MissingBlock2CheckIn,
                     OvertimeCalculationMethod = emp.OvertimeCalculationMethod,
                     // --- Salidas Temporales ---
                     HasTemporaryExits = att.HasTemporaryExits,

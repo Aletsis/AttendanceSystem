@@ -82,10 +82,66 @@
         <PropertyColumn Property="x => x.EmployeeName" Title="Empleado" />
         <PropertyColumn Property="x => x.Date" Title="Fecha" Format="dd/MM/yyyy" />
         <PropertyColumn Property="x => x.ShiftName" Title="Horario" />
-        <PropertyColumn Property="x => x.ScheduledCheckIn" Title="Entrada Prog." />
-        <PropertyColumn Property="x => x.ScheduledCheckOut" Title="Salida Prog." />
-        <PropertyColumn Property="x => x.ActualCheckIn" Title="Entrada Real" Format="HH:mm:ss" />
-        <PropertyColumn Property="x => x.ActualCheckOut" Title="Salida Real" Format="HH:mm:ss" />
+        <TemplateColumn Title="Entrada Prog.">
+            <CellTemplate>
+                @if (context.Item.ShiftType == ShiftType.Partido && context.Item.ScheduledBlock2CheckIn.HasValue)
+                {
+                    <div style="font-size: 0.82rem; line-height: 1.2;">
+                        <div><span class="mud-text-secondary">B1:</span> @(context.Item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</div>
+                        <div><span class="mud-text-secondary">B2:</span> @(context.Item.ScheduledBlock2CheckIn?.ToString(@"hh\:mm") ?? "--")</div>
+                    </div>
+                }
+                else
+                {
+                    @(context.Item.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Salida Prog.">
+            <CellTemplate>
+                @if (context.Item.ShiftType == ShiftType.Partido && context.Item.ScheduledBlock2CheckOut.HasValue)
+                {
+                    <div style="font-size: 0.82rem; line-height: 1.2;">
+                        <div><span class="mud-text-secondary">B1:</span> @(context.Item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")</div>
+                        <div><span class="mud-text-secondary">B2:</span> @(context.Item.ScheduledBlock2CheckOut?.ToString(@"hh\:mm") ?? "--")</div>
+                    </div>
+                }
+                else
+                {
+                    @(context.Item.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Entrada Real">
+            <CellTemplate>
+                @if (context.Item.ShiftType == ShiftType.Partido)
+                {
+                    <div style="font-size: 0.82rem; line-height: 1.2;">
+                        <div><span class="mud-text-secondary">B1:</span> @(context.Item.ActualCheckIn?.ToString("HH:mm") ?? (context.Item.MissingCheckIn ? "--" : ""))</div>
+                        <div><span class="mud-text-secondary">B2:</span> @(context.Item.ActualBlock2CheckIn?.ToString("HH:mm") ?? (context.Item.MissingBlock2CheckIn ? "--" : ""))</div>
+                    </div>
+                }
+                else
+                {
+                    @(context.Item.ActualCheckIn?.ToString("HH:mm:ss") ?? (context.Item.MissingCheckIn ? "--" : ""))
+                }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Salida Real">
+            <CellTemplate>
+                @if (context.Item.ShiftType == ShiftType.Partido)
+                {
+                    <div style="font-size: 0.82rem; line-height: 1.2;">
+                        <div><span class="mud-text-secondary">B1:</span> @(context.Item.ActualBlock1CheckOut?.ToString("HH:mm") ?? (context.Item.MissingBlock1CheckOut ? "--" : ""))</div>
+                        <div><span class="mud-text-secondary">B2:</span> @(context.Item.ActualCheckOut?.ToString("HH:mm") ?? (context.Item.MissingCheckOut ? "--" : ""))</div>
+                    </div>
+                }
+                else
+                {
+                    @(context.Item.ActualCheckOut?.ToString("HH:mm:ss") ?? (context.Item.MissingCheckOut ? "--" : ""))
+                }
+            </CellTemplate>
+        </TemplateColumn>
         <PropertyColumn Property="x => x.LateMinutes" Title="Retardo (min)" />
         <PropertyColumn Property="x => x.RoundedOvertimeMinutes" Title="Extra (min)" />
         <TemplateColumn Title="Estado">
@@ -94,8 +150,18 @@
                 @if (context.Item.IsAbsent) { <MudChip Color="Color.Error" Size="Size.Small">Falta</MudChip> }
                 @if (context.Item.IsRestDay) { <MudChip Color="Color.Info" Size="Size.Small">Descanso</MudChip> }
                 @if (context.Item.WorkedOnRestDay) { <MudChip Color="Color.Success" Size="Size.Small">Trabajo en Descanso</MudChip> }
-                @if (context.Item.MissingCheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Entrada</MudChip> }
-                @if (context.Item.MissingCheckOut) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Salida</MudChip> }
+                @if (context.Item.ShiftType == ShiftType.Partido)
+                {
+                    @if (context.Item.MissingCheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Ent B1</MudChip> }
+                    @if (context.Item.MissingBlock1CheckOut) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Sal B1</MudChip> }
+                    @if (context.Item.MissingBlock2CheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Ent B2</MudChip> }
+                    @if (context.Item.MissingCheckOut) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Sal B2</MudChip> }
+                }
+                else
+                {
+                    @if (context.Item.MissingCheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Entrada</MudChip> }
+                    @if (context.Item.MissingCheckOut) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Salida</MudChip> }
+                }
                 @if (context.Item.LateMinutes > 0) { <MudChip Color="Color.Warning" Size="Size.Small">Tarde</MudChip> }
                 @if (context.Item.HasTemporaryExits && context.Item.TemporaryExitStatus == 0)
                 {

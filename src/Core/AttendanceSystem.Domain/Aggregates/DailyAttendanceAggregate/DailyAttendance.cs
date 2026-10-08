@@ -441,15 +441,56 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
             // Cómputo de horas laboradas y horas extras
             double workedMinutesBlock1 = 0;
+            double otB1 = 0;
+            var schedB1Duration = (schedB1Out - schedB1In).TotalMinutes;
             if (ActualCheckIn.HasValue && ActualBlock1CheckOut.HasValue && ActualBlock1CheckOut.Value > ActualCheckIn.Value)
             {
-                workedMinutesBlock1 = (ActualBlock1CheckOut.Value - ActualCheckIn.Value).TotalMinutes;
+                var checkInB1NoSeconds = TruncateSeconds(ActualCheckIn.Value);
+                var delayB1 = (checkInB1NoSeconds - schedB1In).TotalMinutes;
+                DateTime refInB1;
+                if (delayB1 <= ToleranceMinutes)
+                {
+                    refInB1 = (CalculateOvertimeBeforeEntry && ActualCheckIn.Value < schedB1In)
+                        ? ActualCheckIn.Value
+                        : schedB1In;
+                }
+                else
+                {
+                    refInB1 = ActualCheckIn.Value;
+                }
+
+                workedMinutesBlock1 = Math.Max(0, (ActualBlock1CheckOut.Value - refInB1).TotalMinutes);
+                if (workedMinutesBlock1 > schedB1Duration)
+                {
+                    otB1 = workedMinutesBlock1 - schedB1Duration;
+                }
             }
 
             double workedMinutesBlock2 = 0;
+            double otB2 = 0;
+            var schedB2Duration = (schedB2Out - schedB2In).TotalMinutes;
             if (ActualBlock2CheckIn.HasValue && ActualCheckOut.HasValue && ActualCheckOut.Value > ActualBlock2CheckIn.Value)
             {
-                workedMinutesBlock2 = (ActualCheckOut.Value - ActualBlock2CheckIn.Value).TotalMinutes;
+                var checkInB2NoSeconds = TruncateSeconds(ActualBlock2CheckIn.Value);
+                var delayB2 = (checkInB2NoSeconds - schedB2In).TotalMinutes;
+                int tol2 = SecondBlockToleranceMinutes ?? ToleranceMinutes;
+                DateTime refInB2;
+                if (delayB2 <= tol2)
+                {
+                    refInB2 = (CalculateOvertimeBeforeEntry && ActualBlock2CheckIn.Value < schedB2In)
+                        ? ActualBlock2CheckIn.Value
+                        : schedB2In;
+                }
+                else
+                {
+                    refInB2 = ActualBlock2CheckIn.Value;
+                }
+
+                workedMinutesBlock2 = Math.Max(0, (ActualCheckOut.Value - refInB2).TotalMinutes);
+                if (workedMinutesBlock2 > schedB2Duration)
+                {
+                    otB2 = workedMinutesBlock2 - schedB2Duration;
+                }
             }
 
             double totalWorked = workedMinutesBlock1 + workedMinutesBlock2;
@@ -459,11 +500,16 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 totalWorked = Math.Max(0, totalWorked - TemporaryExitMinutes);
             }
 
-            double scheduledDuration = (schedB1Out - schedB1In).TotalMinutes + (schedB2Out - schedB2In).TotalMinutes;
+            TotalWorkedMinutes = (int)totalWorked;
 
-            if (totalWorked > scheduledDuration && OvertimeAuthorized)
+            if (OvertimeAuthorized)
             {
-                OvertimeMinutes = (int)(totalWorked - scheduledDuration);
+                double totalOvertime = otB1 + otB2;
+                OvertimeMinutes = (int)ApplyOvertimeRounding(totalOvertime, OvertimeCalculationMethod);
+            }
+            else
+            {
+                OvertimeMinutes = 0;
             }
 
             return;

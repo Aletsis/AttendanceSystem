@@ -67,8 +67,10 @@
                         }
                     </MudChip>
                     <MudMenu Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Dense="true">
-                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada</MudMenuItem>
-                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida"))">Asignar como Salida</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada (B1)</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida B1"))">Asignar como Salida B1</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada B2"))">Asignar como Entrada B2</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida"))">Asignar como Salida (B2)</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar</MudMenuItem>
                     </MudMenu>
                 </div>
@@ -123,8 +125,8 @@
     {
         return type switch
         {
-            "Entrada" => Color.Success,
-            "Salida" => Color.Info,
+            "Entrada" or "Entrada B1" or "Entrada B2" => Color.Success,
+            "Salida" or "Salida B1" or "Salida B2" => Color.Info,
             _ => Color.Default
         };
     }

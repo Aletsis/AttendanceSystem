@@ -61,8 +61,17 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             .Where(r => r.CheckTime < midpoint)
             .ToList();
 
+        // Límite superior para el Bloque 2: permite salidas con horas extra en la madrugada del día siguiente
+        // sin invadir la ventana de entrada de la jornada del día siguiente.
+        var tomorrowB1In = request.Date.Date.AddDays(1).Add(request.Shift.StartTime);
+        var maxB2CutoffTomorrow = tomorrowB1In.AddHours(-2.5);
+        var maxB2EndBySched = schedB2Out.AddHours(7);
+        var b2Cutoff = maxB2CutoffTomorrow > schedB2Out
+            ? (maxB2EndBySched < maxB2CutoffTomorrow ? maxB2EndBySched : maxB2CutoffTomorrow)
+            : maxB2EndBySched;
+
         var b2Records = pendingRecords
-            .Where(r => r.CheckTime >= midpoint && r.CheckTime <= schedB2Out.AddHours(4))
+            .Where(r => r.CheckTime >= midpoint && r.CheckTime <= b2Cutoff)
             .ToList();
 
         AttendanceRecord? b1InRecord = null;

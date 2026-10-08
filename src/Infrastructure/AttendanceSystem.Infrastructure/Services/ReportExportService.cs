@@ -233,7 +233,9 @@ public class ReportExportService : IReportExportService
             {
                 if (dict.TryGetValue(date.Date, out var item))
                 {
-                    var worked = (item.ActualCheckOut - item.ActualCheckIn) ?? TimeSpan.Zero;
+                    var worked = item.TotalWorkedMinutes > 0
+                        ? TimeSpan.FromMinutes(item.TotalWorkedMinutes)
+                        : ((item.ActualCheckOut - item.ActualCheckIn) ?? TimeSpan.Zero);
 
                     SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckIn, date, "--"));
                     SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckOut, date, "--"));
@@ -251,7 +253,9 @@ public class ReportExportService : IReportExportService
             }
 
             // Summary Data
-            var totalWorkedTicks = group.Sum(x => (x.ActualCheckOut - x.ActualCheckIn)?.Ticks ?? 0);
+            var totalWorkedTicks = group.Sum(x => x.TotalWorkedMinutes > 0
+                ? TimeSpan.FromMinutes(x.TotalWorkedMinutes).Ticks
+                : ((x.ActualCheckOut - x.ActualCheckIn)?.Ticks ?? 0));
             var totalOvertime = group.Sum(x => x.RoundedOvertimeMinutes);
             var totalAbsences = group.Count(x => x.IsAbsent);
             var totalLates = group.Sum(x => x.LateMinutes); // "La suma de todos los retardos" - Prompt said "Total Retardos (La suma de todos los retardos)". Could be minutes or count. Previously "numero de retardos". I'll format as minutes if it's "suma", or count.
@@ -802,13 +806,38 @@ public class ReportExportService : IReportExportService
                {
                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("dd/MM/yyyy"));
                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd"));
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
-                   var inStr = FormatDateTime(record.ActualCheckIn, record.Date);
-                   if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
+                   var schedInStr = (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido && record.ScheduledBlock2CheckIn.HasValue)
+                       ? $"{record.ScheduledCheckIn:hh\\:mm}\n{record.ScheduledBlock2CheckIn:hh\\:mm}"
+                       : (record.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
+                   var schedOutStr = (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido && record.ScheduledBlock2CheckOut.HasValue)
+                       ? $"{record.ScheduledCheckOut:hh\\:mm}\n{record.ScheduledBlock2CheckOut:hh\\:mm}"
+                       : (record.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(schedInStr);
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(schedOutStr);
+                   string inStr;
+                   string outStr;
+                   if (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido)
+                   {
+                       var b1In = FormatDateTime(record.ActualCheckIn, record.Date);
+                       if (string.IsNullOrEmpty(b1In) && record.MissingCheckIn) b1In = "--";
+                       var b2In = FormatDateTime(record.ActualBlock2CheckIn, record.Date);
+                       if (string.IsNullOrEmpty(b2In) && record.MissingBlock2CheckIn) b2In = "--";
+                       inStr = $"{b1In}\n{b2In}";
 
-                   var outStr = FormatDateTime(record.ActualCheckOut, record.Date);
-                   if (string.IsNullOrEmpty(outStr) && record.MissingCheckOut) outStr = "--";
+                       var b1Out = FormatDateTime(record.ActualBlock1CheckOut, record.Date);
+                       if (string.IsNullOrEmpty(b1Out) && record.MissingBlock1CheckOut) b1Out = "--";
+                       var b2Out = FormatDateTime(record.ActualCheckOut, record.Date);
+                       if (string.IsNullOrEmpty(b2Out) && record.MissingCheckOut) b2Out = "--";
+                       outStr = $"{b1Out}\n{b2Out}";
+                   }
+                   else
+                   {
+                       inStr = FormatDateTime(record.ActualCheckIn, record.Date);
+                       if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
+
+                       outStr = FormatDateTime(record.ActualCheckOut, record.Date);
+                       if (string.IsNullOrEmpty(outStr) && record.MissingCheckOut) outStr = "--";
+                   }
 
                    table.Cell().Border(1).AlignCenter().Padding(2).Text(inStr);
                    table.Cell().Border(1).AlignCenter().Padding(2).Text(outStr);

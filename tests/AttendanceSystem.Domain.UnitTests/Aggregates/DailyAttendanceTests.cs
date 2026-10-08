@@ -837,5 +837,49 @@ public class DailyAttendanceTests
         // Assert
         result.Should().Be(expectedMinutes);
     }
+
+    [Fact]
+    public void CalculateStatus_WhenShiftTypePartido_ShouldComputeWorkedMinutesAndAccumulateOvertimeFromBothBlocks()
+    {
+        // Arrange
+        // B1: 09:00 - 13:00 (4h), B2: 17:00 - 21:00 (4h)
+        var splitShift = Shift.Create(
+            name: "Partido 9-13 / 17-21",
+            startTime: new TimeSpan(9, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(17, 0, 0),
+            secondBlockEndTime: new TimeSpan(21, 0, 0));
+
+        var b1In = _date.AddHours(9); // 09:00
+        var b1Out = _date.AddHours(14); // 14:00 -> 5h worked (60 min overtime)
+        var b2In = _date.AddHours(17); // 17:00
+        var b2Out = _date.AddHours(22); // 22:00 -> 5h worked (60 min overtime)
+
+        // Act
+        var da = DailyAttendance.Create(
+            employeeId: _employeeId,
+            date: _date,
+            shift: splitShift,
+            checkIn: b1In,
+            checkOut: b2Out,
+            isRestDay: false,
+            calculateOvertimeBeforeEntry: false,
+            overtimeAuthorized: true);
+
+        da.SetBlock1CheckOut(b1Out, AttendanceRecordId.CreateNew());
+        da.SetBlock2CheckIn(b2In, AttendanceRecordId.CreateNew());
+
+        // Assert
+        // Total worked: 5h (300 min) + 5h (300 min) = 600 min
+        da.TotalWorkedMinutes.Should().Be(600);
+        // Overtime: 60 min (B1) + 60 min (B2) = 120 min
+        da.OvertimeMinutes.Should().Be(120);
+        da.LateMinutes.Should().Be(0);
+        da.EarlyDepartureMinutes.Should().Be(0);
+        da.MissingBlock1CheckOut.Should().BeFalse();
+        da.MissingBlock2CheckIn.Should().BeFalse();
+    }
 }
 

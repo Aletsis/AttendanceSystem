@@ -46,7 +46,8 @@ public class ProcessSplitAttendanceCommandHandlerTests
             branchId: BranchId.CreateNew(),
             departmentId: DepartmentId.CreateNew(),
             positionId: PositionId.CreateNew(),
-            shiftType: ShiftType.Partido);
+            shiftType: ShiftType.Partido,
+            overtimeAuthorized: true);
     }
 
     [Fact]
@@ -140,5 +141,91 @@ public class ProcessSplitAttendanceCommandHandlerTests
         savedDa.ActualCheckOut.Should().Be(punch4.CheckTime);
         savedDa.MissingBlock1CheckOut.Should().BeTrue();
         savedDa.MissingBlock2CheckIn.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Handle_WithNextDayEarlyMorningOvertimeCheckout_ShouldAssignAsBlock2CheckoutAndMarkProcessed()
+    {
+        // Arrange: Block 1: 09:00 - 13:00, Block 2: 17:00 - 21:00 (ends same day)
+        var splitShift = Shift.Create(
+            name: "Partido 9-13 / 17-21",
+            startTime: new TimeSpan(9, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(17, 0, 0),
+            secondBlockEndTime: new TimeSpan(21, 0, 0),
+            secondBlockToleranceMinutes: 10);
+
+        var punch1 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(9), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        var punch2 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(13), VerifyMethod.Fingerprint, CheckType.CheckOut);
+        var punch3 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(17), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        // Employee left at 00:45 next day (+3h 45m overtime)
+        var nextDayCheckout = _date.AddDays(1).AddHours(0).AddMinutes(45);
+        var punch4 = AttendanceRecord.Create(_employee.Id, _deviceId, nextDayCheckout, VerifyMethod.Fingerprint, CheckType.CheckOut);
+
+        DailyAttendance? savedDa = null;
+        _dailyRepoMock.Setup(r => r.Add(It.IsAny<DailyAttendance>()))
+            .Callback<DailyAttendance>(da => savedDa = da);
+
+        var command = new ProcessSplitAttendanceCommand(
+            _employee,
+            _date,
+            splitShift,
+            new List<AttendanceRecord> { punch1, punch2, punch3, punch4 },
+            IsRestDay: false);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        savedDa.Should().NotBeNull();
+        savedDa!.ActualCheckIn.Should().Be(punch1.CheckTime);
+        savedDa.ActualBlock1CheckOut.Should().Be(punch2.CheckTime);
+        savedDa.ActualBlock2CheckIn.Should().Be(punch3.CheckTime);
+        savedDa.ActualCheckOut.Should().Be(nextDayCheckout);
+        savedDa.MissingCheckOut.Should().BeFalse();
+        punch4.Status.Should().Be(AttendanceStatus.Processed);
+        savedDa.OvertimeMinutes.Should().Be(225); // 3h 45m = 225 minutes
+    }
+
+    [Fact]
+    public async Task Handle_WithOvertimeInBothBlocks_ShouldAccumulateOvertimeAndSetTotalWorked()
+    {
+        // Arrange: Block 1: 09:00 - 13:00 (4h), Block 2: 17:00 - 21:00 (4h)
+        var splitShift = Shift.Create(
+            name: "Partido 9-13 / 17-21",
+            startTime: new TimeSpan(9, 0, 0),
+            toleranceMinutes: 10,
+            workHours: new TimeSpan(4, 0, 0),
+            shiftType: ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(17, 0, 0),
+            secondBlockEndTime: new TimeSpan(21, 0, 0));
+
+        // Block 1 worked: 09:00 - 14:00 (5h -> +60 min overtime)
+        var punch1 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(9), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        var punch2 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(14), VerifyMethod.Fingerprint, CheckType.CheckOut);
+        // Block 2 worked: 17:00 - 22:30 (5.5h -> +90 min overtime)
+        var punch3 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(17), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        var punch4 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(22).AddMinutes(30), VerifyMethod.Fingerprint, CheckType.CheckOut);
+
+        DailyAttendance? savedDa = null;
+        _dailyRepoMock.Setup(r => r.Add(It.IsAny<DailyAttendance>()))
+            .Callback<DailyAttendance>(da => savedDa = da);
+
+        var command = new ProcessSplitAttendanceCommand(
+            _employee,
+            _date,
+            splitShift,
+            new List<AttendanceRecord> { punch1, punch2, punch3, punch4 },
+            IsRestDay: false);
+
+        // Act
+        await _handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        savedDa.Should().NotBeNull();
+        savedDa!.TotalWorkedMinutes.Should().Be(630); // 300 + 330 = 630 min (10.5 hours)
+        savedDa.OvertimeMinutes.Should().Be(150); // 60 + 90 = 150 min (2.5 hours)
     }
 }

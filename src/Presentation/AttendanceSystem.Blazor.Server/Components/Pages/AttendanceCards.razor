@@ -296,10 +296,58 @@
                             <tr>
                                 <td>@day.Date.ToString("dd/MM/yyyy")</td>
                                 <td>@day.Date.ToString("ddd")</td>
-                                <td>@(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</td>
-                                <td>@(day.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")</td>
-                                <td>@(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</td>
-                                <td>@(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</td>
+                                <td>
+                                    @if (day.ShiftType == ShiftType.Partido && day.ScheduledBlock2CheckIn.HasValue)
+                                    {
+                                        <div style="font-size: 0.8em; line-height: 1.1;">
+                                            <div>B1: @(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</div>
+                                            <div>B2: @(day.ScheduledBlock2CheckIn?.ToString(@"hh\:mm") ?? "--")</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")
+                                    }
+                                </td>
+                                <td>
+                                    @if (day.ShiftType == ShiftType.Partido && day.ScheduledBlock2CheckOut.HasValue)
+                                    {
+                                        <div style="font-size: 0.8em; line-height: 1.1;">
+                                            <div>B1: @(day.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")</div>
+                                            <div>B2: @(day.ScheduledBlock2CheckOut?.ToString(@"hh\:mm") ?? "--")</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @(day.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")
+                                    }
+                                </td>
+                                <td>
+                                    @if (day.ShiftType == ShiftType.Partido)
+                                    {
+                                        <div style="font-size: 0.8em; line-height: 1.1;">
+                                            <div>B1: @(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</div>
+                                            <div>B2: @(day.ActualBlock2CheckIn?.ToString("HH:mm") ?? (day.MissingBlock2CheckIn ? "--" : ""))</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))
+                                    }
+                                </td>
+                                <td>
+                                    @if (day.ShiftType == ShiftType.Partido)
+                                    {
+                                        <div style="font-size: 0.8em; line-height: 1.1;">
+                                            <div>B1: @(day.ActualBlock1CheckOut?.ToString("HH:mm") ?? (day.MissingBlock1CheckOut ? "--" : ""))</div>
+                                            <div>B2: @(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        @(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))
+                                    }
+                                </td>
                                 @if (IncludeOvertime)
                                 {
                                     <td>@(FormatMinuteString(day.RoundedOvertimeMinutes))</td>
