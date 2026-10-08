@@ -10,7 +10,9 @@
 @inject ISnackbar Snackbar
 @using AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance
 @using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
+@using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance
 @using AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift
+@using AttendanceSystem.Domain.ValueObjects
 @inject IDialogService DialogService
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
@@ -153,21 +155,42 @@
     {
         if (SelectedEmployeeObj == null) return;
 
-        var command = new RegisterManualAttendanceCommand(
-            SelectedEmployeeObj.Id,
-            dateTime,
-            type);
-
-        var result = await Mediator.Send(command);
-
-        if (result.IsSuccess)
+        try
         {
-            Snackbar.Add("Registro manual agregado correctamente", Severity.Success);
-            await LoadData();
+            var command = new RegisterManualAttendanceCommand(
+                SelectedEmployeeObj.Id,
+                dateTime,
+                type);
+
+            var result = await Mediator.Send(command);
+
+            if (result.IsSuccess)
+            {
+                Snackbar.Add("Registro manual agregado correctamente", Severity.Success);
+
+                try
+                {
+                    await Mediator.Send(new ProcessDailyAttendanceCommand(
+                        dateTime.Date,
+                        dateTime.Date,
+                        EmployeeId: EmployeeId.From(SelectedEmployeeObj.Id)));
+                    Snackbar.Add("Asistencia recalculada correctamente", Severity.Info);
+                }
+                catch (Exception ex)
+                {
+                    Snackbar.Add($"Error al recalcular asistencia: {ex.Message}", Severity.Warning);
+                }
+
+                await LoadData();
+            }
+            else
+            {
+                Snackbar.Add(result.Error, Severity.Error);
+            }
         }
-        else
+        catch (Exception ex)
         {
-            Snackbar.Add(result.Error, Severity.Error);
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
         }
     }
 

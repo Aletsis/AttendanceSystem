@@ -7,6 +7,7 @@
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Abstractions
 @using AttendanceSystem.Application.DTOs.Import
+@using AttendanceSystem.Domain.ValueObjects
 @using MediatR
 @using Microsoft.AspNetCore.Components.Forms
 @inject IMediator Mediator
@@ -176,6 +177,7 @@
         int successCount = 0;
         int errorCount = 0;
         var errorMessages = new List<string>();
+        var affectedEmployeeIds = new HashSet<string>();
 
         try
         {
@@ -191,7 +193,10 @@
                     {
                         var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, _type));
                         if (result.IsSuccess)
+                        {
                             successCount++;
+                            affectedEmployeeIds.Add(empId);
+                        }
                         else
                         {
                             errorCount++;
@@ -221,6 +226,20 @@
                 {
                     Snackbar.Add(error, Severity.Error);
                 }
+            }
+
+            // Recalcular asistencia para cada empleado y el rango de fechas
+            if (affectedEmployeeIds.Any() && _dateRange.Start.HasValue && _dateRange.End.HasValue)
+            {
+                Snackbar.Add("Calculando asistencia...", Severity.Info);
+                foreach (var empId in affectedEmployeeIds)
+                {
+                    await Mediator.Send(new ProcessDailyAttendanceCommand(
+                        _dateRange.Start.Value.Date,
+                        _dateRange.End.Value.Date,
+                        EmployeeId: EmployeeId.From(empId)));
+                }
+                Snackbar.Add("Asistencia calculada exitosamente.", Severity.Success);
             }
         }
         catch (Exception ex)
@@ -279,8 +298,7 @@
 
             int successCount = 0;
             int errorCount = 0;
-            DateTime? minDate = null;
-            DateTime? maxDate = null;
+            var affectedEmployees = new Dictionary<string, (DateTime MinDate, DateTime MaxDate)>();
 
             foreach (var entry in importResult.ValidEntries)
             {
@@ -288,8 +306,17 @@
                  if (result.IsSuccess)
                  {
                      successCount++;
-                     if (minDate == null || entry.DateTime.Date < minDate) minDate = entry.DateTime.Date;
-                     if (maxDate == null || entry.DateTime.Date > maxDate) maxDate = entry.DateTime.Date;
+                     var entryDate = entry.DateTime.Date;
+                     if (!affectedEmployees.TryGetValue(entry.EmployeeId, out var currentRange))
+                     {
+                         affectedEmployees[entry.EmployeeId] = (entryDate, entryDate);
+                     }
+                     else
+                     {
+                         var newMin = entryDate < currentRange.MinDate ? entryDate : currentRange.MinDate;
+                         var newMax = entryDate > currentRange.MaxDate ? entryDate : currentRange.MaxDate;
+                         affectedEmployees[entry.EmployeeId] = (newMin, newMax);
+                     }
                  }
                  else
                  {
@@ -301,11 +328,17 @@
             if (successCount > 0)
             {
                 Snackbar.Add($"Importación completada: {successCount} registros creados.", Severity.Success);
-                if (minDate.HasValue && maxDate.HasValue)
+                if (affectedEmployees.Any())
                 {
                     Snackbar.Add("Calculando asistencia...", Severity.Info);
-                    await Mediator.Send(new ProcessDailyAttendanceCommand(minDate.Value, maxDate.Value));
-                    Snackbar.Add("Asistencia calculada.", Severity.Success);
+                    foreach (var (empId, (empMinDate, empMaxDate)) in affectedEmployees)
+                    {
+                        await Mediator.Send(new ProcessDailyAttendanceCommand(
+                            empMinDate,
+                            empMaxDate,
+                            EmployeeId: EmployeeId.From(empId)));
+                    }
+                    Snackbar.Add("Asistencia calculada exitosamente.", Severity.Success);
                 }
             }
             
