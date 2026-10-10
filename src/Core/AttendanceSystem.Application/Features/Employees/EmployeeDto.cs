@@ -40,4 +40,10 @@ public sealed record EmployeeDto
     public int FingerprintCount { get; init; }
     public bool HasFace { get; init; }
     public string? Photo { get; init; }
+
+    // Auditoría
+    public DateTime CreatedAt { get; init; }
+    public string? CreatedBy { get; init; }
+    public DateTime? UpdatedAt { get; init; }
+    public string? UpdatedBy { get; init; }
 }

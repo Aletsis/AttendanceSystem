@@ -178,6 +178,8 @@ try
     builder.Services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
     builder.Services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
     builder.Services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
+    builder.Services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();
+    builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
     builder.Services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();
 
     // ===== IDENTITY & AUTHENTICATION =====

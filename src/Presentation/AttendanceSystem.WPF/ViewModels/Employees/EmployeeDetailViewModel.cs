@@ -52,6 +52,19 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private string? _devicePassword;
         private string? _photo;
 
+        // Auditoría
+        private DateTime _createdAt;
+        private string? _createdBy;
+        private DateTime? _updatedAt;
+        private string? _updatedBy;
+
+        public DateTime CreatedAt { get => _createdAt; set => SetProperty(ref _createdAt, value); }
+        public string? CreatedBy { get => _createdBy; set => SetProperty(ref _createdBy, value); }
+        public DateTime? UpdatedAt { get => _updatedAt; set => SetProperty(ref _updatedAt, value); }
+        public string? UpdatedBy { get => _updatedBy; set => SetProperty(ref _updatedBy, value); }
+
+        public ObservableCollection<EmployeeAuditLogDto> AuditLogs { get; } = new();
+
         // Validation
         private string _title = "Nuevo Empleado";
 
@@ -296,6 +309,28 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     CardNumber = emp.CardNumber;
                     DevicePassword = emp.DevicePassword;
                     Photo = emp.Photo;
+
+                    CreatedAt = emp.CreatedAt;
+                    CreatedBy = emp.CreatedBy;
+                    UpdatedAt = emp.UpdatedAt;
+                    UpdatedBy = emp.UpdatedBy;
+
+                    AuditLogs.Clear();
+                    try
+                    {
+                        var auditResult = await _mediator.Send(new GetEmployeeAuditLogsQuery(Id));
+                        if (auditResult.IsSuccess)
+                        {
+                            foreach (var log in auditResult.Value)
+                            {
+                                AuditLogs.Add(log);
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        // Fallback silencioso si falla la bitácora
+                    }
                 }
                 else
                 {

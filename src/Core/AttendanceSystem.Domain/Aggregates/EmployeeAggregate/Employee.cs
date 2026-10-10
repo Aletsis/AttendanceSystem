@@ -12,6 +12,12 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     public EmployeeStatus Status { get; private set; }
     public Gender Gender { get; private set; } // Nuevo campo
 
+    // Auditoría de registro y modificaciones
+    public DateTime CreatedAt { get; private set; }
+    public string? CreatedBy { get; private set; }
+    public DateTime? UpdatedAt { get; private set; }
+    public string? UpdatedBy { get; private set; }
+
     public DevicePrivilege DevicePrivilege { get; private set; }
 
     // Relaciones con otros agregados
@@ -63,7 +69,9 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         string? devicePassword = null,
         string? photo = null,
         DevicePrivilege devicePrivilege = DevicePrivilege.User,
-        IEnumerable<WeekDay>? restDays = null)
+        IEnumerable<WeekDay>? restDays = null,
+        string? createdBy = null,
+        DateTime? createdAt = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -101,7 +109,9 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             CardNumber = cardNumber,
             DevicePassword = devicePassword,
             Photo = photo,
-            DevicePrivilege = devicePrivilege
+            DevicePrivilege = devicePrivilege,
+            CreatedAt = createdAt ?? DateTime.UtcNow,
+            CreatedBy = createdBy
         };
     }
 
@@ -256,6 +266,18 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     public void SetShiftType(ShiftType? shiftType)
     {
         ShiftType = shiftType;
+    }
+
+    public void SetCreatedAudit(DateTime createdAt, string? createdBy)
+    {
+        CreatedAt = createdAt;
+        CreatedBy = createdBy;
+    }
+
+    public void SetUpdatedAudit(DateTime updatedAt, string? updatedBy)
+    {
+        UpdatedAt = updatedAt;
+        UpdatedBy = updatedBy;
     }
 
     public string GetFullName() => $"{FirstName} {LastName}";

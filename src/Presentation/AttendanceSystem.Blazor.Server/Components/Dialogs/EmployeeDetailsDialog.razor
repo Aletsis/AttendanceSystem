@@ -91,6 +91,25 @@
                             <MudText Typo="Typo.subtitle2">Día(s) de Descanso</MudText>
                             <MudText>@(_employee.RestDayName ?? (_employee.ShiftType == ShiftType.Rotativo ? "Según ciclo de rotación" : "No asignado"))</MudText>
                         </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Alta en Sistema</MudText>
+                            <MudText>@(_employee.CreatedAt == default ? "Histórico" : _employee.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss"))</MudText>
+                        </MudItem>
+                        <MudItem xs="6">
+                            <MudText Typo="Typo.subtitle2">Registrado por</MudText>
+                            <MudText>@(string.IsNullOrWhiteSpace(_employee.CreatedBy) ? "Sistema" : _employee.CreatedBy)</MudText>
+                        </MudItem>
+                        @if (_employee.UpdatedAt.HasValue)
+                        {
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.subtitle2">Última Modificación</MudText>
+                                <MudText>@_employee.UpdatedAt.Value.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")</MudText>
+                            </MudItem>
+                            <MudItem xs="6">
+                                <MudText Typo="Typo.subtitle2">Modificado por</MudText>
+                                <MudText>@(string.IsNullOrWhiteSpace(_employee.UpdatedBy) ? "Sistema" : _employee.UpdatedBy)</MudText>
+                            </MudItem>
+                        }
                     </MudGrid>
                 </MudTabPanel>
                 <MudTabPanel Text="Biometría y Acceso">
@@ -216,6 +235,86 @@
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
+                <MudTabPanel Text="Bitácora de Cambios" Icon="@Icons.Material.Filled.History">
+                    @if (_loadingAuditLogs)
+                    {
+                        <div class="d-flex justify-center pa-6">
+                            <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                        </div>
+                    }
+                    else if (_auditLogs == null || !_auditLogs.Any())
+                    {
+                        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="my-3">
+                            No se han registrado modificaciones o eventos en la bitácora para este empleado.
+                        </MudAlert>
+                    }
+                    else
+                    {
+                        <MudTimeline TimelinePosition="TimelinePosition.Start" TimelineOrientation="TimelineOrientation.Vertical" Class="pa-2">
+                            @foreach (var log in _auditLogs)
+                            {
+                                var badgeColor = log.Action == "Alta de Empleado" 
+                                    ? Color.Success 
+                                    : (log.Action == "Cambio de Estado" ? Color.Warning : Color.Primary);
+
+                                <MudTimelineItem Color="@badgeColor" Elevation="2" Size="Size.Small">
+                                    <ItemContent>
+                                        <MudCard Outlined="true" Class="mb-3">
+                                            <MudCardHeader Class="pb-1 pt-2">
+                                                <CardHeaderAvatar>
+                                                    <MudAvatar Color="@badgeColor" Size="Size.Small">
+                                                        <MudIcon Icon="@(log.Action == "Alta de Empleado" ? Icons.Material.Filled.PersonAdd : (log.Action == "Cambio de Estado" ? Icons.Material.Filled.SwapHoriz : Icons.Material.Filled.EditNote))" Size="Size.Small" />
+                                                    </MudAvatar>
+                                                </CardHeaderAvatar>
+                                                <CardHeaderContent>
+                                                    <div class="d-flex align-center justify-space-between flex-wrap gap-2">
+                                                        <div>
+                                                            <MudText Typo="Typo.subtitle2">@log.Action</MudText>
+                                                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                                                Por: <strong>@(string.IsNullOrWhiteSpace(log.UserName) ? "Sistema" : log.UserName)</strong>
+                                                            </MudText>
+                                                        </div>
+                                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Default" Icon="@Icons.Material.Filled.AccessTime">
+                                                            @log.Timestamp.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")
+                                                        </MudChip>
+                                                    </div>
+                                                </CardHeaderContent>
+                                            </MudCardHeader>
+                                            <MudCardContent Class="pt-1 pb-2">
+                                                @if (log.Changes != null && log.Changes.Any())
+                                                {
+                                                    <MudSimpleTable Dense="true" Hover="true" Bordered="false" Striped="true" Style="overflow-x: auto;">
+                                                        <thead>
+                                                            <tr>
+                                                                <th style="width: 30%;">Campo</th>
+                                                                <th style="width: 35%;">Valor Anterior</th>
+                                                                <th style="width: 35%;">Valor Nuevo</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            @foreach (var change in log.Changes)
+                                                            {
+                                                                <tr>
+                                                                    <td><strong>@change.DisplayName</strong></td>
+                                                                    <td><span class="text-secondary">@(change.OldValue ?? "-")</span></td>
+                                                                    <td><span class="mud-primary-text font-weight-bold">@(change.NewValue ?? "-")</span></td>
+                                                                </tr>
+                                                            }
+                                                        </tbody>
+                                                    </MudSimpleTable>
+                                                }
+                                                else if (!string.IsNullOrWhiteSpace(log.Details))
+                                                {
+                                                    <MudText Typo="Typo.body2">@log.Details</MudText>
+                                                }
+                                            </MudCardContent>
+                                        </MudCard>
+                                    </ItemContent>
+                                </MudTimelineItem>
+                            }
+                        </MudTimeline>
+                    }
+                </MudTabPanel>
             </MudTabs>
         }
     </DialogContent>
@@ -302,7 +401,33 @@
             }
         }
 
+        await LoadAuditLogsAsync();
+
         _loading = false;
+    }
+
+    private List<EmployeeAuditLogDto> _auditLogs = new();
+    private bool _loadingAuditLogs = false;
+
+    private async Task LoadAuditLogsAsync()
+    {
+        _loadingAuditLogs = true;
+        try
+        {
+            var auditResult = await Sender.Send(new GetEmployeeAuditLogsQuery(EmployeeId));
+            if (auditResult.IsSuccess)
+            {
+                _auditLogs = auditResult.Value.ToList();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al cargar bitácora: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _loadingAuditLogs = false;
+        }
     }
 
     private async Task SavePrivilege()

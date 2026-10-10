@@ -507,7 +507,7 @@ else
     private async Task OpenDetailsDialog(EmployeeDto employee)
     {
         var parameters = new DialogParameters { { "EmployeeId", employee.Id } };
-        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Small, FullWidth = true };
+        var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
         
         var dialog = await DialogService.ShowAsync<EmployeeDetailsDialog>("Detalles del Empleado", parameters, options);
         var result = await dialog.Result;

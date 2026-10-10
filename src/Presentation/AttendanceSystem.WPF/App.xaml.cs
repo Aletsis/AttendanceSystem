@@ -92,6 +92,9 @@ namespace AttendanceSystem.WPF
             // Add Repositories
             services.AddScoped<IEmployeeRepository, EmployeeRepository>();
             services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
+            services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();
+            services.AddSingleton<IAuthenticationStateService, AuthenticationStateService>();
+            services.AddSingleton<ICurrentUserService, WpfCurrentUserService>();
             services.AddScoped<IDepartmentRepository, DepartmentRepository>();
             services.AddScoped<IPositionRepository, PositionRepository>();
             services.AddScoped<IBranchRepository, BranchRepository>();
@@ -146,10 +149,8 @@ namespace AttendanceSystem.WPF
                 () => _serviceProvider.CreateScope().ServiceProvider.GetRequiredService<AttendanceDbContext>());
 
             // WPF Services
-            // AuthenticationStateService necesita UserManager<ApplicationUser> del ServiceProvider
-            containerRegistry.RegisterSingleton<IAuthenticationStateService>(() =>
-                new AuthenticationStateService(
-                    _serviceProvider!.GetRequiredService<UserManager<ApplicationUser>>()));
+            containerRegistry.RegisterInstance<IAuthenticationStateService>(_serviceProvider.GetRequiredService<IAuthenticationStateService>());
+            containerRegistry.RegisterInstance<ICurrentUserService>(_serviceProvider.GetRequiredService<ICurrentUserService>());
             containerRegistry.RegisterSingleton<IFrameNavigationService, FrameNavigationService>();
             containerRegistry.RegisterSingleton<IMessageService, MessageService>();
 

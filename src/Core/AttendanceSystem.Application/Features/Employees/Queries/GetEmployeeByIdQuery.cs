@@ -91,7 +91,11 @@ public sealed class GetEmployeeByIdQueryHandler : IRequestHandler<GetEmployeeByI
                 OvertimeCapMinutes = employee.OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry = employee.CalculateOvertimeBeforeEntry,
                 DevicePrivilege = employee.DevicePrivilege,
-                Photo = employee.Photo
+                Photo = employee.Photo,
+                CreatedAt = employee.CreatedAt,
+                CreatedBy = employee.CreatedBy,
+                UpdatedAt = employee.UpdatedAt,
+                UpdatedBy = employee.UpdatedBy
             };
 
             return Result<EmployeeDto>.Success(dto);

@@ -263,6 +263,68 @@
                         </Border>
                     </StackPanel>
                 </Grid>
+
+                <!-- Audit & History Card (Only visible when editing) -->
+                <Border Style="{StaticResource SectionCardStyle}"
+                        Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        Margin="0,0,0,20">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
+                            <iconPacks:PackIconMaterial Kind="History" Width="20" Height="20" Foreground="#4E73DF" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBlock Text="Bitácora de Cambios y Auditoría" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" VerticalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- Summary of Creation and Modification -->
+                        <Grid Margin="0,0,0,15">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="20"/>
+                                <ColumnDefinition Width="*"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Background="#F8F9FC" CornerRadius="8" Padding="15" BorderBrush="#EAECF4" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="Alta en Sistema" FontWeight="Bold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                    <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Foreground="#858796" Margin="0,0,0,3"/>
+                                    <TextBlock>
+                                        <Run Text="Registrado por: " Foreground="#858796"/>
+                                        <Run Text="{Binding CreatedBy, TargetNullValue='Sistema'}" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Grid.Column="2" Background="#F8F9FC" CornerRadius="8" Padding="15" BorderBrush="#EAECF4" BorderThickness="1">
+                                <StackPanel>
+                                    <TextBlock Text="Última Modificación" FontWeight="Bold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                    <TextBlock Text="{Binding UpdatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}', TargetNullValue='Sin modificaciones'}" Foreground="#858796" Margin="0,0,0,3"/>
+                                    <TextBlock>
+                                        <Run Text="Modificado por: " Foreground="#858796"/>
+                                        <Run Text="{Binding UpdatedBy, TargetNullValue='-'}" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- Audit History Table -->
+                        <TextBlock Text="Historial de Movimientos" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,10"/>
+                        <DataGrid ItemsSource="{Binding AuditLogs}"
+                                  AutoGenerateColumns="False"
+                                  IsReadOnly="True"
+                                  HeadersVisibility="Column"
+                                  GridLinesVisibility="Horizontal"
+                                  MaxHeight="250"
+                                  Background="White"
+                                  BorderBrush="#EAECF4"
+                                  BorderThickness="1">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="Fecha / Hora" Binding="{Binding Timestamp, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Width="160"/>
+                                <DataGridTextColumn Header="Acción" Binding="{Binding Action}" Width="150"/>
+                                <DataGridTextColumn Header="Usuario" Binding="{Binding UserName}" Width="130"/>
+                                <DataGridTextColumn Header="Detalle de Modificaciones" Binding="{Binding Details}" Width="*"/>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </StackPanel>
+                </Border>
                 
                 <Rectangle Height="40" Fill="Transparent"/>
             </StackPanel>

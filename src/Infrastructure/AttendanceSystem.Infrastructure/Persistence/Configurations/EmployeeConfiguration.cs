@@ -124,6 +124,22 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             .HasConversion<int>()
             .HasDefaultValue(AttendanceSystem.Domain.Enumerations.DevicePrivilege.User);
 
+        // Configuración de auditoría
+        builder.Property(e => e.CreatedAt)
+            .IsRequired()
+            .HasDefaultValueSql("CURRENT_TIMESTAMP");
+
+        builder.Property(e => e.CreatedBy)
+            .IsRequired(false)
+            .HasMaxLength(256);
+
+        builder.Property(e => e.UpdatedAt)
+            .IsRequired(false);
+
+        builder.Property(e => e.UpdatedBy)
+            .IsRequired(false)
+            .HasMaxLength(256);
+
         // Índices para mejorar el rendimiento de las consultas
         builder.HasIndex(e => e.BranchId);
         builder.HasIndex(e => e.DepartmentId);

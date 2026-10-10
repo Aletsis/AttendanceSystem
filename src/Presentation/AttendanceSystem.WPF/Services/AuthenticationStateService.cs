@@ -6,6 +6,7 @@ namespace AttendanceSystem.WPF.Services
     public interface IAuthenticationStateService
     {
         bool IsAuthenticated { get; }
+        string? CurrentUserId { get; }
         string? CurrentUserName { get; }
         string? CurrentUserRole { get; }
         Task<bool> LoginAsync(string username, string password);
@@ -17,6 +18,7 @@ namespace AttendanceSystem.WPF.Services
         private readonly UserManager<ApplicationUser> _userManager;
 
         public bool IsAuthenticated { get; private set; }
+        public string? CurrentUserId { get; private set; }
         public string? CurrentUserName { get; private set; }
         public string? CurrentUserRole { get; private set; }
 
@@ -43,6 +45,7 @@ namespace AttendanceSystem.WPF.Services
             // Si el hash necesita actualización (PasswordVerificationResult.SuccessRehashNeeded)
             // lo marcamos igual como éxito; el rehash se haría en la siguiente operación.
             IsAuthenticated = true;
+            CurrentUserId = user.Id;
             CurrentUserName = user.UserName;
 
             // Obtener rol principal para futuro control de acceso
@@ -55,6 +58,7 @@ namespace AttendanceSystem.WPF.Services
         public Task LogoutAsync()
         {
             IsAuthenticated = false;
+            CurrentUserId = null;
             CurrentUserName = null;
             CurrentUserRole = null;
             return Task.CompletedTask;
