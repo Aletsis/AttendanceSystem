@@ -836,11 +836,12 @@ public class AdmsController : ControllerBase
 
                     string? pass = null;
                     if (data.TryGetValue("Password", out var p) && !string.IsNullOrWhiteSpace(p)) pass = p;
+                    else if (data.TryGetValue("Passwd", out var pw) && !string.IsNullOrWhiteSpace(pw)) pass = pw;
 
                     employee.UpdateBiometrics(cardNumber: card, devicePassword: pass);
 
-                    // Privilegio del dispositivo (privilege=14 admin/superadmin, 0 usuario)
-                    if (data.TryGetValue("privilege", out var privStr) && int.TryParse(privStr, out var priv))
+                    // Privilegio del dispositivo (privilege/pri: 14 superadmin, 2 admin, 0 usuario)
+                    if ((data.TryGetValue("privilege", out var privStr) || data.TryGetValue("pri", out privStr)) && int.TryParse(privStr, out var priv))
                     {
                         var devPrivilege = DevicePrivilegeMapper.MapFromProtocolValue(DeviceBrand.ZKTeco, DeviceDownloadMethod.Adms, priv);
 

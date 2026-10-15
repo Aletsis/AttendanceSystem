@@ -287,16 +287,6 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
                 int userCount = 0, fingerprintCount = 0, faceCount = 0, recordCount = 0;
                 int userCapacity = 0, fingerprintCapacity = 0, faceCapacity = 0, recordCapacity = 0;
 
-                // --- OBTENER CONTEOS ACTUALES (GetDeviceStatus) ---
-                int value = 0;
-                if (_device.GetDeviceStatus(1, 2, ref value)) userCount = value;           // 2: Usuarios
-                if (_device.GetDeviceStatus(1, 3, ref value)) fingerprintCount = value;    // 3: Huellas
-                if (_device.GetDeviceStatus(1, 21, ref value)) faceCount = value;          // 21: Rostros
-                if (_device.GetDeviceStatus(1, 6, ref value)) recordCount = value;         // 6: Registros (SSR)
-                if (recordCount == 0 && _device.GetDeviceStatus(1, 1, ref value)) recordCount = value; // Fallback 1: Registros (General)
-
-                // --- OBTENER CAPACIDADES ---
-
                 // Helper para limpiar strings que vienen de COM interop (con null terminators)
                 bool TryParseClean(string val, out int result)
                 {
@@ -336,41 +326,86 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
                     return 0;
                 }
 
-                // Intentar leer múltiples opciones y quedarse con la que parezca una capacidad válida (generalmente números redondos o mayores a 1000)
-                int[] sysUserOptions = { TryGetSysOption("~MaxUserCount"), TryGetSysOption("MaxUser"), TryGetSysOption("MaxUserCapacity") };
-                int[] sysFingerOptions = { TryGetSysOption("~MaxFingerCount"), TryGetSysOption("MaxFinger"), TryGetSysOption("MaxFingerCapacity") };
-                int[] sysFaceOptions = { TryGetSysOption("~MaxFaceCount"), TryGetSysOption("MaxFace"), TryGetSysOption("MaxFaceCapacity") };
-                int[] sysRecordOptions = { TryGetSysOption("~MaxAttLogCount"), TryGetSysOption("MaxAttLog"), TryGetSysOption("MaxAttLogCapacity") };
+                // --- OBTENER CONTEOS ACTUALES (GetDeviceStatus) ---
+                userCount = TryGetDeviceStatus(2);           // 2: Usuarios
+                fingerprintCount = TryGetDeviceStatus(3);    // 3: Huellas
+                faceCount = TryGetDeviceStatus(21);          // 21: Rostros
 
-                userCapacity = sysUserOptions.Max();
-                fingerprintCapacity = sysFingerOptions.Max();
-                faceCapacity = sysFaceOptions.Max();
-                recordCapacity = sysRecordOptions.Max();
+                // Status 6 es el estándar de registros de asistencia en terminales TFT/Faciales.
+                // Status 1 en terminales TFT es el número de administradores, y en modelos B&W antiguos es registros generales.
+                int dsRecord6 = TryGetDeviceStatus(6);       // 6: Registros de asistencia (AttLog)
+                int dsRecord1 = TryGetDeviceStatus(1);       // 1: Admins (TFT) o Registros (General/Legacy)
 
-                // Intento 2: GetDeviceStatus (7, 8, 9, 10, 22)
+                recordCount = dsRecord6 > 0 ? dsRecord6 : dsRecord1;
+
+                // --- OBTENER CAPACIDADES ---
+                // Prioridad 1: GetDeviceStatus es la API nativa autoritativa de ZKTeco para capacidades exactas:
+                // 8: Capacidad de Usuarios (Max User Count)
+                // 7: Capacidad de Huellas (Max Fingerprint Count)
+                // 9: Capacidad de Registros de Asistencia (Max AttLog Count)
+                // 22: Capacidad de Rostros (Max Face Count) - OJO: Código 10 es Admin/OPLog, NO rostros.
                 int dsUserCap = TryGetDeviceStatus(8);
                 int dsFingerCap = TryGetDeviceStatus(7);
                 int dsRecordCap = TryGetDeviceStatus(9);
-                int dsFaceCap = TryGetDeviceStatus(10);
-                int dsFaceCap2 = TryGetDeviceStatus(22);
+                int dsFaceCap = TryGetDeviceStatus(22);
 
-                // Si GetDeviceStatus nos da exactamente el mismo número que el count, ES UN BUG DEL FIRMWARE (está devolviendo el count en lugar de capacity).
-                // Ignorar capacidades menores a 1000 (excepto rostros) o que sean exactamente igual al conteo (falso positivo).
-                if (userCapacity <= 0 && dsUserCap > 0 && dsUserCap != userCount) userCapacity = dsUserCap;
-                if (fingerprintCapacity <= 0 && dsFingerCap > 0 && dsFingerCap != fingerprintCount) fingerprintCapacity = dsFingerCap;
-                if (recordCapacity <= 0 && dsRecordCap > 0 && dsRecordCap != recordCount) recordCapacity = dsRecordCap;
+                userCapacity = dsUserCap;
+                fingerprintCapacity = dsFingerCap;
+                recordCapacity = dsRecordCap;
+                faceCapacity = dsFaceCap;
+
+                // Prioridad 2: Fallback con GetSysOption si GetDeviceStatus no devolvió valor (> 0)
+                // Importante: En firmwares ZKTeco, los valores de SysOption (~MaxUserCount, ~MaxAttLogCount, etc.)
+                // suelen venir expresados en factores de escala (centenas x100 o decenas de miles x10,000).
+                if (userCapacity <= 0)
+                {
+                    int[] sysUserOptions = { TryGetSysOption("~MaxUserCount"), TryGetSysOption("MaxUser"), TryGetSysOption("MaxUserCapacity") };
+                    int sysUser = sysUserOptions.Max();
+                    if (sysUser > 0)
+                    {
+                        userCapacity = (sysUser <= 100) ? sysUser * 100 : sysUser;
+                    }
+                }
+
+                if (recordCapacity <= 0)
+                {
+                    int[] sysRecordOptions = { TryGetSysOption("~MaxAttLogCount"), TryGetSysOption("MaxAttLog"), TryGetSysOption("MaxAttLogCapacity") };
+                    int sysRecord = sysRecordOptions.Max();
+                    if (sysRecord > 0)
+                    {
+                        recordCapacity = (sysRecord <= 100) ? sysRecord * 10000 : sysRecord;
+                    }
+                }
 
                 if (faceCapacity <= 0)
                 {
-                    if (dsFaceCap > 0 && dsFaceCap != faceCount) faceCapacity = dsFaceCap;
-                    else if (dsFaceCap2 > 0 && dsFaceCap2 != faceCount) faceCapacity = dsFaceCap2;
+                    int[] sysFaceOptions = { TryGetSysOption("~MaxFaceCount"), TryGetSysOption("MaxFace"), TryGetSysOption("MaxFaceCapacity") };
+                    int sysFace = sysFaceOptions.Max();
+                    if (sysFace > 0)
+                    {
+                        faceCapacity = (sysFace <= 100) ? sysFace * 100 : sysFace;
+                    }
                 }
 
-                // Ajuste final de seguridad: Si todo falló o dio el conteo exacto, poner capacidades por defecto estándar de ZKTeco
-                if (userCapacity <= userCount) userCapacity = Math.Max(userCount > 3000 ? 10000 : 3000, userCount);
-                if (fingerprintCapacity <= fingerprintCount) fingerprintCapacity = Math.Max(fingerprintCount > 3000 ? 10000 : 3000, fingerprintCount);
-                if (faceCapacity <= faceCount && faceCount > 0) faceCapacity = Math.Max(faceCount > 1500 ? 3000 : 1500, faceCount);
-                if (recordCapacity <= recordCount) recordCapacity = Math.Max(recordCount > 50000 ? 100000 : 50000, recordCount);
+                if (fingerprintCapacity <= 0)
+                {
+                    // Si el dispositivo tiene huellas enroladas pero GetDeviceStatus(7) dio 0, consultar GetSysOption
+                    if (fingerprintCount > 0)
+                    {
+                        int[] sysFingerOptions = { TryGetSysOption("~MaxFingerCount"), TryGetSysOption("MaxFinger"), TryGetSysOption("MaxFingerCapacity") };
+                        int sysFinger = sysFingerOptions.Max();
+                        if (sysFinger > 0)
+                        {
+                            fingerprintCapacity = (sysFinger <= 100) ? sysFinger * 100 : sysFinger;
+                        }
+                    }
+                }
+
+                // Prioridad 3: Ajuste de seguridad final (la capacidad no puede ser inferior al número de elementos enrolados)
+                if (userCapacity < userCount) userCapacity = Math.Max(userCount > 3000 ? 10000 : 3000, userCount);
+                if (fingerprintCapacity < fingerprintCount) fingerprintCapacity = Math.Max(fingerprintCount > 3000 ? 10000 : 3000, fingerprintCount);
+                if (faceCapacity < faceCount && faceCount > 0) faceCapacity = Math.Max(faceCount > 1500 ? 3000 : 1500, faceCount);
+                if (recordCapacity < recordCount) recordCapacity = Math.Max(recordCount > 50000 ? 100000 : 50000, recordCount);
 
                 // --- OBTENER VERSIÓN SDK, PUSH Y MAC ---
                 string sdkVersion = string.Empty;
