@@ -170,7 +170,7 @@ public class AdmsController : ControllerBase
             : "1970-01-01 00:00:00";
 
         // TransTables compatible con ambos modos (Transaction y User Transaction, Push 2.0 y 3.x)
-        var transTable = "Transaction,User Transaction,User,UserPic,BioPhoto,BioData,Fingerprint,Face,USERINFO,USERPIC,BIODATA,BIOPHOTO,templatev10";
+        var transTable = isAccessMode ? "Transaction,User Transaction" : "Transaction";
 
         var tzOffsetHours = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
 
@@ -404,6 +404,18 @@ public class AdmsController : ControllerBase
         }
 
         _logger.LogInformation("📬 devicecmd SN:{SN} ID:{ID} Return:{Return} CMD:{CMD}", sn, id, ret, cmd);
+
+        // Si el body contiene opciones o parámetros del dispositivo devueltos por INFO o DATA QUERY
+        if (!string.IsNullOrEmpty(sn) &&
+            (cmd.Equals("INFO", StringComparison.OrdinalIgnoreCase) ||
+             body.Contains("FirmwareVersion", StringComparison.OrdinalIgnoreCase) ||
+             body.Contains("~SerialNumber", StringComparison.OrdinalIgnoreCase) ||
+             body.Contains("UserCount", StringComparison.OrdinalIgnoreCase) ||
+             body.Contains("~UserCount", StringComparison.OrdinalIgnoreCase)))
+        {
+            _logger.LogInformation("📋 [ADMS] Información del dispositivo recibida en devicecmd para SN: {SN}:\n{Body}", sn, body);
+            await ProcessDeviceOptions(body, sn);
+        }
 
         // Si el body contiene registros de asistencia (en formato TSV o key=value) devueltos por DATA QUERY
         if (!string.IsNullOrEmpty(sn) && (body.Contains("\t") || body.Contains("pin=") || body.Contains("PIN=")))
@@ -1046,6 +1058,26 @@ public class AdmsController : ControllerBase
 
             _logger.LogInformation("✅ [ADMS] Información del dispositivo {SN} actualizada desde opciones: FW={FW}, PushVer={PushVer}, SDKVer={SDKVer}, Platform={Platform}, MAC={MAC}, Users={Users}/{UserCap}",
                 SN, updatedHw.FirmwareVersion, updatedHw.PushVersion, updatedHw.SdkVersion, updatedHw.Platform, updatedHw.MacAddress, updatedHw.UserCount, updatedHw.UserCapacity);
+
+            var deviceInfoDto = new AttendanceSystem.Application.DTOs.DeviceInfoDto(
+                SN,
+                device.Name,
+                updatedHw.FirmwareVersion ?? "Desconocido",
+                updatedHw.Platform ?? "ZKTeco",
+                updatedHw.UserCount ?? 0,
+                updatedHw.FingerprintCount ?? 0,
+                updatedHw.FaceCount ?? 0,
+                updatedHw.AttendanceRecordCount ?? 0,
+                updatedHw.UserCapacity ?? 0,
+                updatedHw.FingerprintCapacity ?? 0,
+                updatedHw.FaceCapacity ?? 0,
+                updatedHw.AttendanceRecordCapacity ?? 0,
+                updatedHw.PushVersion,
+                updatedHw.SdkVersion,
+                updatedHw.MacAddress
+            );
+
+            _admsCommandService.NotifyDeviceInfoReceived(SN, deviceInfoDto);
         }
         catch (Exception ex)
         {

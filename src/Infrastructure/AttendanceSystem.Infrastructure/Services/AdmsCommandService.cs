@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.DTOs;
 
 namespace AttendanceSystem.Infrastructure.Services;
 
@@ -11,6 +12,9 @@ public class AdmsCommandService : IAdmsCommandService
 
     // Map CommandID (sent to device) -> DownloadLogId
     private readonly ConcurrentDictionary<string, Guid> _pendingExecutions = new();
+
+    // SerialNumber -> TaskCompletionSource<DeviceInfoDto?>
+    private readonly ConcurrentDictionary<string, TaskCompletionSource<DeviceInfoDto?>> _deviceInfoWaiters = new(StringComparer.OrdinalIgnoreCase);
 
     public void EnqueueCommand(string serialNumber, string command, Guid? downloadLogId = null)
     {
@@ -54,5 +58,43 @@ public class AdmsCommandService : IAdmsCommandService
             return logId;
         }
         return null;
+    }
+
+    public async Task<DeviceInfoDto?> WaitForDeviceInfoAsync(string serialNumber, TimeSpan timeout, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(serialNumber)) return null;
+
+        var tcs = new TaskCompletionSource<DeviceInfoDto?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        _deviceInfoWaiters.AddOrUpdate(serialNumber, tcs, (_, oldTcs) =>
+        {
+            oldTcs.TrySetResult(null);
+            return tcs;
+        });
+
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(timeout);
+
+            using (cts.Token.Register(() => tcs.TrySetResult(null)))
+            {
+                return await tcs.Task;
+            }
+        }
+        finally
+        {
+            _deviceInfoWaiters.TryRemove(new KeyValuePair<string, TaskCompletionSource<DeviceInfoDto?>>(serialNumber, tcs));
+        }
+    }
+
+    public void NotifyDeviceInfoReceived(string serialNumber, DeviceInfoDto deviceInfo)
+    {
+        if (string.IsNullOrWhiteSpace(serialNumber)) return;
+
+        if (_deviceInfoWaiters.TryGetValue(serialNumber, out var tcs))
+        {
+            tcs.TrySetResult(deviceInfo);
+        }
     }
 }

@@ -602,29 +602,14 @@
         _refreshingInfo = true;
         try
         {
-            if (Device.DownloadMethod == AttendanceSystem.Domain.Enumerations.DeviceDownloadMethod.Adms)
+            var refreshResult = await Sender.Send(new RefreshDeviceInfoCommand(Guid.Parse(Device.DeviceId)));
+            if (refreshResult.IsSuccess)
             {
-                var cmdResult = await Sender.Send(new QueryDeviceOptionsCommand(Device.DeviceId));
-                if (cmdResult.IsSuccess)
-                {
-                    Snackbar.Add("Solicitud de consulta de opciones enviada al reloj ADMS. El dispositivo responderá en su siguiente sincronización.", Severity.Info);
-                }
-                else
-                {
-                    Snackbar.Add($"Aviso ADMS: {cmdResult.Error}", Severity.Warning);
-                }
+                Snackbar.Add("Información del dispositivo actualizada correctamente.", Severity.Success);
             }
             else
             {
-                var refreshResult = await Sender.Send(new RefreshDeviceInfoCommand(Guid.Parse(Device.DeviceId)));
-                if (refreshResult.IsSuccess)
-                {
-                    Snackbar.Add("Información del dispositivo actualizada en tiempo real vía SDK.", Severity.Success);
-                }
-                else
-                {
-                    Snackbar.Add($"No se pudo conectar directamente con el dispositivo: {refreshResult.Error}", Severity.Warning);
-                }
+                Snackbar.Add($"No se pudo obtener la información del dispositivo: {refreshResult.Error}", Severity.Warning);
             }
 
             var updated = await DeviceQueries.GetDeviceByIdAsync(Device.DeviceId);

@@ -68,12 +68,12 @@ public class AdmsDeviceClient : IDeviceClient
 
     public async Task<DeviceInfoDto?> GetDeviceInfoAsync(CancellationToken cancellationToken = default)
     {
-        // Intento 1: SDK
+        // Intento 1: SDK (solo información del dispositivo)
         if (!string.IsNullOrEmpty(_ipAddress) && _port > 0)
         {
             try
             {
-                _logger.LogInformation("Intentando obtener info del dispositivo vía SDK como primera opción para ADMS {SN}", _serialNumber);
+                _logger.LogInformation("Intentando obtener info del dispositivo vía SDK como primera opción para ADMS {SN} ({Ip}:{Port})", _serialNumber ?? "desconocido", _ipAddress, _port);
                 var sdkClient = _serviceProvider.GetRequiredService<GrpcZKTecoDeviceClient>();
                 var connected = await sdkClient.ConnectAsync(_ipAddress, _port, _username, _password, cancellationToken);
                 if (connected)
@@ -92,11 +92,38 @@ public class AdmsDeviceClient : IDeviceClient
                         await sdkClient.DisconnectAsync(cancellationToken);
                     }
                 }
-                _logger.LogWarning("No se pudo obtener info del dispositivo {SN} vía SDK.", _serialNumber);
+                _logger.LogWarning("No se pudo conectar u obtener info del dispositivo {SN} vía SDK. Procediendo a fallback vía comando ADMS...", _serialNumber);
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Excepción al intentar usar SDK para obtener info del dispositivo.");
+                _logger.LogWarning(ex, "Excepción al intentar usar SDK para obtener info del dispositivo {SN}. Procediendo a fallback vía comando ADMS...", _serialNumber);
+            }
+        }
+
+        // Intento 2: Fallback vía comando ADMS (solo información del dispositivo)
+        if (!string.IsNullOrEmpty(_serialNumber))
+        {
+            try
+            {
+                _logger.LogInformation("Intentando obtener info del dispositivo vía comando ADMS (fallback) para {SN}", _serialNumber);
+
+                // Encolar comando INFO y DATA QUERY tablename=options (solo parámetros/info de dispositivo)
+                _admsCommandService.EnqueueCommand(_serialNumber, "INFO");
+                _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=options");
+
+                // Esperar respuesta con timeout prudente (4 segundos)
+                var admsInfo = await _admsCommandService.WaitForDeviceInfoAsync(_serialNumber, TimeSpan.FromSeconds(4), cancellationToken);
+                if (admsInfo != null)
+                {
+                    _logger.LogInformation("Info obtenida exitosamente vía comando ADMS del dispositivo {SN}", _serialNumber);
+                    return admsInfo;
+                }
+
+                _logger.LogWarning("No hubo respuesta a través de comando ADMS para {SN} dentro del tiempo límite.", _serialNumber);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Excepción al intentar obtener info vía comando ADMS para {SN}.", _serialNumber);
             }
         }
 
