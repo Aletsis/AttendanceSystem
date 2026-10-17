@@ -31,10 +31,10 @@ public class TimeNormalizerTests
     [Fact]
     public void ToUtc_WithSpecificTimeZone_ShouldConvertToCorrectUtcInstant()
     {
-        // Arrange: 08:00 en zona UTC-6 (Central Standard Time o America/Mexico_City)
+        // Arrange: 08:00 en zona UTC-6 (Central Standard Time (Mexico) o America/Mexico_City)
         // En octubre, México no tiene horario de verano (UTC-6 todo el año)
         var localTime = new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Unspecified);
-        var timeZoneId = OperatingSystem.IsWindows() ? "Central Standard Time" : "America/Mexico_City";
+        var timeZoneId = OperatingSystem.IsWindows() ? "Central Standard Time (Mexico)" : "America/Mexico_City";
 
         // Act
         var utcResult = _normalizer.ToUtc(localTime, timeZoneId);
@@ -50,7 +50,7 @@ public class TimeNormalizerTests
     {
         // Arrange: Marcaje a las 20:00 (8:00 PM) del 17 de octubre en UTC-6
         // En UTC esto corresponde a las 02:00 AM del 18 de octubre
-        var timeZoneId = OperatingSystem.IsWindows() ? "Central Standard Time" : "America/Mexico_City";
+        var timeZoneId = OperatingSystem.IsWindows() ? "Central Standard Time (Mexico)" : "America/Mexico_City";
         var utcInstant = new DateTime(2026, 10, 18, 2, 0, 0, DateTimeKind.Utc);
 
         // Act
@@ -64,7 +64,7 @@ public class TimeNormalizerTests
     public void ToCivilTime_ShouldConvertFromUtcBackToLocalClock()
     {
         // Arrange
-        var timeZoneId = OperatingSystem.IsWindows() ? "Central Standard Time" : "America/Mexico_City";
+        var timeZoneId = OperatingSystem.IsWindows() ? "Central Standard Time (Mexico)" : "America/Mexico_City";
         var utcInstant = new DateTime(2026, 10, 17, 14, 30, 0, DateTimeKind.Utc);
 
         // Act
