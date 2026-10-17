@@ -210,6 +210,11 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     {
                         var backendUrl = _configuration["BackendUrl"] ?? "http://localhost:18372";
                         using var httpClient = new System.Net.Http.HttpClient();
+                        var apiKey = _configuration["ApiKey"] ?? _configuration["ZKTecoService:ApiKey"];
+                        if (!string.IsNullOrWhiteSpace(apiKey))
+                        {
+                            httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
+                        }
                         var reloadResponse = await httpClient.PostAsync($"{backendUrl}/api/configuration/reload-jobs", null);
                         if (!reloadResponse.IsSuccessStatusCode)
                         {

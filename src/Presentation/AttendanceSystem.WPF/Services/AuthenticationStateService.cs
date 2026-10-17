@@ -36,11 +36,22 @@ namespace AttendanceSystem.WPF.Services
             if (user == null || !user.IsActive)
                 return false;
 
+            // H14: Validar si la cuenta está bloqueada por intentos fallidos previos
+            if (await _userManager.IsLockedOutAsync(user))
+                return false;
+
             var result = _userManager.PasswordHasher.VerifyHashedPassword(
                 user, user.PasswordHash!, password);
 
             if (result == PasswordVerificationResult.Failed)
+            {
+                // Incrementar contador de accesos fallidos (activa bloqueo si alcanza el límite)
+                await _userManager.AccessFailedAsync(user);
                 return false;
+            }
+
+            // Restablecer contador de accesos fallidos tras autenticación exitosa
+            await _userManager.ResetAccessFailedCountAsync(user);
 
             // Si el hash necesita actualización (PasswordVerificationResult.SuccessRehashNeeded)
             // lo marcamos igual como éxito; el rehash se haría en la siguiente operación.

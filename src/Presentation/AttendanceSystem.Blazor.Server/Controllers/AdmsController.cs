@@ -10,6 +10,8 @@ using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
 using System.Globalization;
+using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authorization;
 
 namespace AttendanceSystem.Blazor.Server.Controllers;
 
@@ -56,6 +58,34 @@ public class AdmsController : ControllerBase
         _externalLogRepository = externalLogRepository;
     }
 
+    private async Task<Device?> ValidateAuthorizedDeviceAsync(string? sn)
+    {
+        if (string.IsNullOrWhiteSpace(sn))
+        {
+            _logger.LogWarning("Intento de acceso a endpoint ADMS sin número de serie (SN).");
+            return null;
+        }
+
+        var device = await _deviceRepository.GetBySerialNumberAsync(sn);
+        if (device == null || !device.IsActive)
+        {
+            _logger.LogWarning("Intento de acceso ADMS rechazado para dispositivo no registrado o inactivo: {SN}", sn);
+            return null;
+        }
+
+        return device;
+    }
+
+    private static string SanitizeCommand(string command)
+    {
+        if (string.IsNullOrEmpty(command)) return command;
+        return Regex.Replace(
+            command,
+            @"(Passwd|Password|Pin|TMP|FP|PHOTO)=([^,\t\r\n]+)",
+            "$1=[REDACTED]",
+            RegexOptions.IgnoreCase);
+    }
+
     // 1. GET /iclock/cdata — opciones de configuración o verificación de registro
     [HttpGet("cdata")]
     public async Task<IActionResult> CheckData(
@@ -64,32 +94,31 @@ public class AdmsController : ControllerBase
         [FromQuery] string? PushOptionsFlag = null,
         [FromQuery] string? pushver = null)
     {
+        var device = await ValidateAuthorizedDeviceAsync(SN);
+        if (device == null)
+        {
+            return Unauthorized("Dispositivo no registrado o inactivo");
+        }
+
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
         _logger.LogInformation("🔧 GET cdata {SN} (options: {Options}, pushver: {PushVer}, PushOptionsFlag: {PushOptionsFlag})",
             SN, options ?? "null", pushver ?? "null", PushOptionsFlag ?? "null");
 
-        if (!string.IsNullOrEmpty(SN))
+        bool changed = false;
+        if (!string.IsNullOrEmpty(pushver) && device.HardwareInfo?.PushVersion != pushver)
         {
-            var device = await _deviceRepository.GetBySerialNumberAsync(SN);
-            if (device != null)
-            {
-                bool changed = false;
-                if (!string.IsNullOrEmpty(pushver) && device.HardwareInfo?.PushVersion != pushver)
-                {
-                    device.UpdateDeviceInfo((device.HardwareInfo ?? DeviceHardwareInfo.Empty) with { PushVersion = pushver });
-                    changed = true;
-                }
-                if (device.Status != DeviceStatus.Online)
-                {
-                    device.MarkAsOnline();
-                    changed = true;
-                }
-                if (changed)
-                {
-                    await _deviceRepository.UpdateAsync(device);
-                    await _unitOfWork.SaveChangesAsync();
-                }
-            }
+            device.UpdateDeviceInfo((device.HardwareInfo ?? DeviceHardwareInfo.Empty) with { PushVersion = pushver });
+            changed = true;
+        }
+        if (device.Status != DeviceStatus.Online)
+        {
+            device.MarkAsOnline();
+            changed = true;
+        }
+        if (changed)
+        {
+            await _deviceRepository.UpdateAsync(device);
+            await _unitOfWork.SaveChangesAsync();
         }
 
         // Si el dispositivo solicita las opciones del servidor (ej. tras CHECK o al inicializar pushver 3.x)
@@ -107,6 +136,12 @@ public class AdmsController : ControllerBase
     [HttpPost("registry")]
     public async Task<IActionResult> Registry([FromQuery] string SN)
     {
+        var device = await ValidateAuthorizedDeviceAsync(SN);
+        if (device == null)
+        {
+            return Unauthorized("Dispositivo no registrado o inactivo");
+        }
+
         using var reader = new StreamReader(Request.Body);
         var body = await reader.ReadToEndAsync();
         _logger.LogInformation("🤝 Registry {SN}", SN);
@@ -119,16 +154,11 @@ public class AdmsController : ControllerBase
 
         fields.TryGetValue("DeviceType", out var deviceType); // "acc" o "att"
 
-        // Persistir en tu entidad de dispositivo
-        var device = await _deviceRepository.GetBySerialNumberAsync(SN);
-        if (device != null)
-        {
-            device.SetDeviceType(deviceType ?? "att");
-            device.MarkAsOnline();
-            device.ResetLastDownloadAt();
-            await _deviceRepository.UpdateAsync(device);
-            await _unitOfWork.SaveChangesAsync();
-        }
+        device.SetDeviceType(deviceType ?? "att");
+        device.MarkAsOnline();
+        device.ResetLastDownloadAt();
+        await _deviceRepository.UpdateAsync(device);
+        await _unitOfWork.SaveChangesAsync();
 
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
 
@@ -141,6 +171,12 @@ public class AdmsController : ControllerBase
     [HttpPost("push")]
     public async Task<IActionResult> Push([FromQuery] string SN)
     {
+        var device = await ValidateAuthorizedDeviceAsync(SN);
+        if (device == null)
+        {
+            return Unauthorized("Dispositivo no registrado o inactivo");
+        }
+
         using var reader = new StreamReader(Request.Body);
         var body = await reader.ReadToEndAsync();
         _logger.LogInformation("📥 POST push {SN}", SN);
@@ -214,6 +250,12 @@ public class AdmsController : ControllerBase
     [HttpPost("cdata")]
     public async Task<IActionResult> ReceiveData([FromQuery] string SN, [FromQuery] string? table = null)
     {
+        var device = await ValidateAuthorizedDeviceAsync(SN);
+        if (device == null)
+        {
+            return Unauthorized("Dispositivo no registrado o inactivo");
+        }
+
         using var reader = new StreamReader(Request.Body);
         var body = await reader.ReadToEndAsync();
         _logger.LogInformation("📥 POST cdata SN:{SN} table:{Table}", SN, table);
@@ -227,7 +269,11 @@ public class AdmsController : ControllerBase
             table?.Equals("Transaction", StringComparison.OrdinalIgnoreCase) == true)
         {
             var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            await ProcessAttLogs(lines, SN);
+            var processedCount = await ProcessAttLogs(lines, SN);
+            if (processedCount < 0)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "ERROR: Batch persistence failed\n");
+            }
             return Content($"OK: {lines.Length}", "text/plain");
         }
 
@@ -249,7 +295,7 @@ public class AdmsController : ControllerBase
         if (table?.Equals("options", StringComparison.OrdinalIgnoreCase) == true ||
             table?.Equals("tabledata", StringComparison.OrdinalIgnoreCase) == true)
         {
-            _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en cdata para SN: {SN}:\n{Body}", SN, body);
+            _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en cdata para SN: {SN}", SN);
             await ProcessDeviceOptions(body, SN);
             return Content("OK", "text/plain");
         }
@@ -266,6 +312,12 @@ public class AdmsController : ControllerBase
         [FromQuery] string? table = null,
         [FromQuery] string? type = null)
     {
+        var device = await ValidateAuthorizedDeviceAsync(SN);
+        if (device == null)
+        {
+            return Unauthorized("Dispositivo no registrado o inactivo");
+        }
+
         using var reader = new StreamReader(Request.Body);
         var body = await reader.ReadToEndAsync();
         var targetTable = tablename ?? table ?? "";
@@ -276,7 +328,7 @@ public class AdmsController : ControllerBase
         if (targetTable.Equals("options", StringComparison.OrdinalIgnoreCase) ||
             targetTable.Equals("tabledata", StringComparison.OrdinalIgnoreCase))
         {
-            _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en querydata para SN: {SN}:\n{Body}", SN, body);
+            _logger.LogInformation("📋 [ADMS DIAGNÓSTICO] Opciones/Parámetros recibidos en querydata para SN: {SN}", SN);
             await ProcessDeviceOptions(body, SN);
             return Content("OK", "text/plain");
         }
@@ -288,7 +340,11 @@ public class AdmsController : ControllerBase
             targetTable.Equals("rtlog", StringComparison.OrdinalIgnoreCase))
         {
             var lines = body.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            await ProcessAttLogs(lines, SN);
+            var processedCount = await ProcessAttLogs(lines, SN);
+            if (processedCount < 0)
+            {
+                return StatusCode(StatusCodes.Status500InternalServerError, "ERROR: Batch persistence failed\n");
+            }
             // Protocolo Push de ZKTeco: en /iclock/querydata el dispositivo requiere estrictamente la respuesta "OK"
             // para confirmar el paquete recibido (packidx) y proceder a enviar los siguientes paquetes (hasta packcnt).
             return Content("OK", "text/plain");
@@ -316,18 +372,20 @@ public class AdmsController : ControllerBase
     [HttpGet("getrequest")]
     public async Task<IActionResult> GetRequest([FromQuery] string SN)
     {
+        var device = await ValidateAuthorizedDeviceAsync(SN);
+        if (device == null)
+        {
+            return Unauthorized("Dispositivo no registrado o inactivo");
+        }
+
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd-MMM-yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
         _logger.LogInformation("🔔 getrequest {SN}", SN);
 
-        if (!string.IsNullOrEmpty(SN))
+        if (device.Status != DeviceStatus.Online)
         {
-            var device = await _deviceRepository.GetBySerialNumberAsync(SN);
-            if (device != null && device.Status != DeviceStatus.Online)
-            {
-                device.MarkAsOnline();
-                await _deviceRepository.UpdateAsync(device);
-                await _unitOfWork.SaveChangesAsync();
-            }
+            device.MarkAsOnline();
+            await _deviceRepository.UpdateAsync(device);
+            await _unitOfWork.SaveChangesAsync();
         }
 
         if (_admsCommandService.HasPendingCommands(SN))
@@ -339,7 +397,7 @@ public class AdmsController : ControllerBase
                 if (logId.HasValue)
                     _admsCommandService.RegisterPendingExecution(SN, cmdId, logId.Value);
 
-                _logger.LogInformation("📤 Comando → {SN}: {Command}", SN, command);
+                _logger.LogInformation("📤 Comando → {SN}: {Command}", SN, SanitizeCommand(command));
                 return Content($"C:{cmdId}:{command}\n", "text/plain;charset=ISO-8859-1");
             }
         }
@@ -348,6 +406,7 @@ public class AdmsController : ControllerBase
     }
 
     // Diagnostic endpoint to check pending commands
+    [Authorize(Roles = "Administrador")]
     [HttpGet("debug/pending-commands")]
     public IActionResult GetPendingCommandsDebug([FromQuery] string? SN = null)
     {
@@ -403,6 +462,12 @@ public class AdmsController : ControllerBase
             _logger.LogWarning(ex, "Error leyendo request en DeviceCmd");
         }
 
+        var device = await ValidateAuthorizedDeviceAsync(sn);
+        if (device == null)
+        {
+            return Unauthorized("Dispositivo no registrado o inactivo");
+        }
+
         _logger.LogInformation("📬 devicecmd SN:{SN} ID:{ID} Return:{Return} CMD:{CMD}", sn, id, ret, cmd);
 
         // Si el body contiene opciones o parámetros del dispositivo devueltos por INFO o DATA QUERY
@@ -451,8 +516,7 @@ public class AdmsController : ControllerBase
                             log.MarkAsSuccessful(0, 0);
 
                             // Actualizar LastDownloadAt del dispositivo usando el ToDate solicitado
-                            var device = await _deviceRepository.GetBySerialNumberAsync(sn);
-                            if (device != null && log.ToDate.HasValue)
+                            if (log.ToDate.HasValue)
                             {
                                 device.RecordSuccessfulDownload(0, log.ToDate);
                                 await _deviceRepository.UpdateAsync(device);
@@ -687,6 +751,7 @@ public class AdmsController : ControllerBase
             if (!batchResult.IsSuccess)
             {
                 _logger.LogError("Error al procesar lote de asistencia ADMS: {Error}", batchResult.Error);
+                return -1; // F01-P02 / H11: Indicar fallo explícito para no confirmar al terminal ni avanzar cursor
             }
         }
 

@@ -116,26 +116,22 @@ try
     // gRPC Client al servicio Windows
     builder.Services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
     {
-        options.Address = new Uri(builder.Configuration["ZKTecoService:Url"]!);
+        var url = builder.Configuration["ZKTecoService:Url"] ?? "http://localhost:5001";
+        options.Address = new Uri(url);
     })
     .ConfigureHttpClient((sp, client) =>
     {
         var config = sp.GetRequiredService<IConfiguration>();
-        var apiKey = config["ZKTecoService:ApiKey"] ?? "AttendanceSystemSecretApiKey123!";
+        var apiKey = config["ZKTecoService:ApiKey"] ?? config["ApiKey"];
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new InvalidOperationException("La clave 'ZKTecoService:ApiKey' o 'ApiKey' no está configurada.");
+        }
         client.DefaultRequestHeaders.Add("x-api-key", apiKey);
-    })
-    .ConfigurePrimaryHttpMessageHandler(() =>
-    {
-        var handler = new HttpClientHandler();
-        // Permitir HTTP/2 sin TLS para conexiones locales
-        handler.ServerCertificateCustomValidationCallback =
-            HttpClientHandler.DangerousAcceptAnyServerCertificateValidator;
-        return handler;
     })
     .ConfigureChannel(options =>
     {
-        // Configurar para usar HTTP en lugar de HTTPS
-        options.UnsafeUseInsecureChannelCallCredentials = true;
+        // Canal seguro con límites ampliados
         options.MaxReceiveMessageSize = 10 * 1024 * 1024; // 10 MB
         options.MaxSendMessageSize = 10 * 1024 * 1024; // 10 MB
     });
@@ -214,10 +210,9 @@ try
         options.AccessDeniedPath = "/AccessDenied";
     });
 
-    // Servicios de autenticación para Blazor
+    // Servicios de autenticación para Blazor con revalidación periódica de SecurityStamp e IsActive
     builder.Services.AddCascadingAuthenticationState();
-    // builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
-    builder.Services.AddScoped<AuthenticationStateProvider, ServerAuthenticationStateProvider>();
+    builder.Services.AddScoped<AuthenticationStateProvider, AttendanceSystem.Blazor.Server.Services.IdentityRevalidatingAuthenticationStateProvider>();
 
     // ===== HANGFIRE =====
     builder.Services.AddHangfire(config => config

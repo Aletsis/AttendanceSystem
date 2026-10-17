@@ -115,7 +115,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         var startQueryDate = DateOnly.FromDateTime(request.StartDate.Date.AddDays(-1));
         var endQueryDate = DateOnly.FromDateTime(request.EndDate.Date.AddDays(2));
 
-        var processedEmployeeIds = employees.Select(e => e.Id).ToHashSet();
+        // F01-P02 / H08: Solo procesar y limpiar empleados activos para no destruir históricos de empleados dados de baja
+        var activeEmployees = employees.Where(e => e.Status == EmployeeStatus.Alta).ToList();
+        var processedEmployeeIds = activeEmployees.Select(e => e.Id).ToHashSet();
 
         IReadOnlyList<AttendanceRecord> allRecords;
         if (request.EmployeeId != null)
@@ -148,7 +150,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         _logger.LogDebug("Obtenidos {RecordCount} registros biométricos filtrados", filteredRecords.Count);
 
-        // 1.4 Limpieza previa completa del rango (re-procesamiento limpio):
+        // 1.4 Limpieza previa del rango para los empleados a procesar (solo empleados activos)
         // Eliminar registros de asistencia diaria existentes en el rango para los empleados a procesar
         foreach (var existingDA in existingDailyAttendances)
         {
@@ -158,8 +160,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             }
         }
 
-        // Poner en estado Pending TODOS los marcajes biométricos en el rango de fechas
-        // (incluyendo el margen para turnos que cruzan la medianoche) de los empleados a procesar
+        // Poner en estado Pending marcajes biométricos en el rango de fechas de los empleados a procesar
         var rangeStartLimit = request.StartDate.Date;
         var rangeEndLimit = request.EndDate.Date.AddDays(2);
 
@@ -174,9 +175,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 }
             }
         }
-
-        // Persistir la limpieza previa para garantizar que la base de datos y el Change Tracker queden limpios
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // 2. Iterar sobre cada día en el rango
         for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))

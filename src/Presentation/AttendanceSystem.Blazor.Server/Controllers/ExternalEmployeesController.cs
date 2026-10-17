@@ -2,12 +2,14 @@ using AttendanceSystem.Application.Features.ExternalEmployees;
 using AttendanceSystem.Application.Features.ExternalEmployees.Commands;
 using AttendanceSystem.Application.Features.ExternalEmployees.Queries;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace AttendanceSystem.Blazor.Server.Controllers;
 
 [ApiController]
 [Route("api/external-employees")]
+[Authorize(Roles = "Administrador")]
 public class ExternalEmployeesController : ControllerBase
 {
     private readonly ISender _sender;

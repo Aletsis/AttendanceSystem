@@ -136,7 +136,7 @@ public class ProcessDailyAttendanceReprocessingCleanupTests
             It.Is<ProcessSplitAttendanceCommand>(c => c.Records.Count == 4),
             It.IsAny<CancellationToken>()), Times.Once);
 
-        // 4. SaveChangesAsync was called at least twice (once for pre-cleanup, once at the end)
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.AtLeast(2));
+        // 4. SaveChangesAsync was called once at the end (atomic commit, premature save removed for H06)
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

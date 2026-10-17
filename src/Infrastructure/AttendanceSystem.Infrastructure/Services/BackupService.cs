@@ -372,13 +372,25 @@ public class BackupService : IBackupService
                 }
                 else
                 {
-                    _logger.LogWarning("No se pudo generar el snapshot de seguridad previo: {Message}. Se continuará con precaución.", safetyResult.Message);
-                    progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", $"Aviso: No se pudo generar snapshot previo ({safetyResult.Message}). Continuando con precaución.", IsError: false, ProgressPercentage: 25));
+                    _logger.LogError("Fallo al generar el snapshot de seguridad previo: {Message}.", safetyResult.Message);
                 }
             }
             catch (Exception snapEx)
             {
-                _logger.LogWarning(snapEx, "Excepción al intentar crear snapshot de seguridad previo");
+                _logger.LogError(snapEx, "Excepción al intentar crear snapshot de seguridad previo");
+            }
+
+            if (!safetyBackupCreated)
+            {
+                var errorMsg = "Cancelando restauración: No se pudo generar el snapshot de seguridad previo. Por contención de seguridad (H04/F01-P02), no se permite continuar sin una copia de respaldo recuperable verificada.";
+                _logger.LogError(errorMsg);
+                progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", errorMsg, IsError: true, ProgressPercentage: 25));
+                _restoreStateService.ExitRestoreMode();
+                return new RestoreResultDto
+                {
+                    Success = false,
+                    Message = errorMsg
+                };
             }
 
 

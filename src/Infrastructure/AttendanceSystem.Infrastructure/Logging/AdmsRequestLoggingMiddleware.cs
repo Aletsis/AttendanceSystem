@@ -59,18 +59,27 @@ public class AdmsRequestLoggingMiddleware
         var pathAndQuery = $"{request.Path}{request.QueryString}";
         var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "Unknown";
 
-        // Formatear cabeceras
+        // Formatear cabeceras sanitizando tokens y cookies
         var headersSb = new StringBuilder();
+        var sensitiveHeaders = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "Authorization", "Cookie", "Set-Cookie", "x-api-key", "Proxy-Authorization"
+        };
+
         foreach (var header in request.Headers)
         {
-            headersSb.AppendLine($"    {header.Key}: {header.Value}");
+            var headerValue = sensitiveHeaders.Contains(header.Key)
+                ? "[REDACTED]"
+                : header.Value.ToString();
+            headersSb.AppendLine($"    {header.Key}: {headerValue}");
         }
 
-        // Leer payload
-        string bodyContent = string.Empty;
+        // Leer y sanitizar payload
+        string bodyDisplay;
         request.EnableBuffering();
         if (request.ContentLength is > 0 || request.Body.CanSeek)
         {
+            string bodyContent;
             using (var reader = new StreamReader(
                 request.Body,
                 Encoding.UTF8,
@@ -81,9 +90,45 @@ public class AdmsRequestLoggingMiddleware
                 bodyContent = await reader.ReadToEndAsync();
                 request.Body.Position = 0;
             }
-        }
 
-        var bodyDisplay = string.IsNullOrWhiteSpace(bodyContent) ? "[Vacío / Sin payload]" : bodyContent;
+            if (string.IsNullOrWhiteSpace(bodyContent))
+            {
+                bodyDisplay = "[Vacío / Sin payload]";
+            }
+            else
+            {
+                // Detectar si el payload contiene biometría o contraseñas
+                var isSensitiveTable = pathAndQuery.Contains("table=USER", StringComparison.OrdinalIgnoreCase) ||
+                                      pathAndQuery.Contains("table=BIODATA", StringComparison.OrdinalIgnoreCase) ||
+                                      pathAndQuery.Contains("table=FINGERTMP", StringComparison.OrdinalIgnoreCase) ||
+                                      pathAndQuery.Contains("table=BIOPHOTO", StringComparison.OrdinalIgnoreCase) ||
+                                      pathAndQuery.Contains("table=USERPIC", StringComparison.OrdinalIgnoreCase) ||
+                                      pathAndQuery.Contains("table=TEMPLATE", StringComparison.OrdinalIgnoreCase) ||
+                                      pathAndQuery.Contains("table=FINGERPRINT", StringComparison.OrdinalIgnoreCase);
+
+                var containsSensitiveFields = bodyContent.Contains("Passwd", StringComparison.OrdinalIgnoreCase) ||
+                                              bodyContent.Contains("Password", StringComparison.OrdinalIgnoreCase) ||
+                                              bodyContent.Contains("TMP=", StringComparison.OrdinalIgnoreCase) ||
+                                              bodyContent.Contains("BIODATA", StringComparison.OrdinalIgnoreCase);
+
+                if (isSensitiveTable || containsSensitiveFields)
+                {
+                    bodyDisplay = $"[REDACTED: Contenido sensible protegido ({bodyContent.Length} bytes)]";
+                }
+                else
+                {
+                    // Limitar tamaño de logging de payloads a un máximo seguro
+                    const int maxLogLength = 512;
+                    bodyDisplay = bodyContent.Length > maxLogLength
+                        ? $"{bodyContent.Substring(0, maxLogLength)}... [Truncado, total {bodyContent.Length} bytes]"
+                        : bodyContent;
+                }
+            }
+        }
+        else
+        {
+            bodyDisplay = "[Vacío / Sin payload]";
+        }
 
         _logger.LogInformation(
             "📥 [ADMS REQUEST] {Method} {PathAndQuery} | IP: {RemoteIp}\n--- CABECERAS ---\n{Headers}\n--- PAYLOAD ---\n{Payload}",

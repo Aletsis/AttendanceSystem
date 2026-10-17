@@ -3,15 +3,17 @@ setlocal
 set PGPASSWORD=%~1
 set PGUSER=postgres
 set PGBIN=%~2
+set APP_DB_PASSWORD=%~3
+
+if "%APP_DB_PASSWORD%"=="" set APP_DB_PASSWORD=%ATTENDANCE_DB_PASSWORD%
+if "%APP_DB_PASSWORD%"=="" set APP_DB_PASSWORD=AttendanceSystem_SecDb%RANDOM%#
 
 if "%PGBIN%"=="" set PGBIN=psql
 
 echo Configurando Base de Datos...
 
-REM 1. Crear Usuario (Ignorar error si existe)
-"%PGBIN%" -U %PGUSER% -d postgres -c "CREATE ROLE attendancesystem_user LOGIN PASSWORD 'Blanquita.123';" 2>nul
-REM Asegurar contraseña correcta
-"%PGBIN%" -U %PGUSER% -d postgres -c "ALTER ROLE attendancesystem_user WITH PASSWORD 'Blanquita.123';"
+REM 1. Crear Usuario si no existe (No sobreescribir contrasenas existentes)
+"%PGBIN%" -U %PGUSER% -d postgres -c "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = 'attendancesystem_user') THEN CREATE ROLE attendancesystem_user LOGIN PASSWORD '%APP_DB_PASSWORD%'; END IF; END $$;" 2>nul
 
 REM 2. Crear Base de Datos
 "%PGBIN%" -U %PGUSER% -d postgres -c "CREATE DATABASE \"AttendanceSystem\" OWNER attendancesystem_user;" 2>nul

@@ -25,7 +25,8 @@ public class IdentityRevalidatingAuthenticationStateProvider : RevalidatingServe
         _options = optionsAccessor.Value;
     }
 
-    protected override TimeSpan RevalidationInterval => TimeSpan.FromMinutes(30);
+    // F01-P05 / H12: Revalidar cada 2 minutos para propagación rápida de revocación de usuario y security stamp
+    protected override TimeSpan RevalidationInterval => TimeSpan.FromMinutes(2);
 
     protected override async Task<bool> ValidateAuthenticationStateAsync(
         AuthenticationState authenticationState, CancellationToken cancellationToken)

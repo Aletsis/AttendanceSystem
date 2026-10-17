@@ -15,6 +15,7 @@ public class ExternalLogsController : ControllerBase
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
     private readonly IBranchRepository _branchRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
     private readonly ILogger<ExternalLogsController> _logger;
 
     public ExternalLogsController(
@@ -22,18 +23,39 @@ public class ExternalLogsController : ControllerBase
         IExternalAttendanceLogRepository externalLogRepository,
         IBranchRepository branchRepository,
         IUnitOfWork unitOfWork,
+        Microsoft.Extensions.Configuration.IConfiguration configuration,
         ILogger<ExternalLogsController> logger)
     {
         _sender = sender;
         _externalLogRepository = externalLogRepository;
         _branchRepository = branchRepository;
         _unitOfWork = unitOfWork;
+        _configuration = configuration;
         _logger = logger;
     }
 
     [HttpPost("receive")]
     public async Task<IActionResult> ReceiveLog([FromBody] ExternalLogRequest request)
     {
+        // H01: Validar autorización (Rol Administrador o cabecera x-api-key autorizada)
+        var isAuthorized = User.IsInRole("Administrador");
+        if (!isAuthorized)
+        {
+            var configuredApiKey = _configuration["ApiKey"] ?? _configuration["ZKTecoService:ApiKey"] ?? _configuration["ExternalLogs:ApiKey"];
+            if (Request.Headers.TryGetValue("x-api-key", out var providedApiKey) &&
+                !string.IsNullOrWhiteSpace(configuredApiKey) &&
+                string.Equals(providedApiKey.ToString(), configuredApiKey, StringComparison.Ordinal))
+            {
+                isAuthorized = true;
+            }
+        }
+
+        if (!isAuthorized)
+        {
+            _logger.LogWarning("Intento no autorizado de enviar log externo para empleado {EmployeeId}", request.EmployeeId);
+            return Unauthorized(new { Success = false, Message = "Acceso no autorizado: Se requiere cabecera x-api-key válida o rol Administrador." });
+        }
+
         _logger.LogInformation("Recibiendo log para empleado {EmployeeId} (Sucursal: {BranchCode})",
             request.EmployeeId, request.BranchCode ?? "N/A");
 

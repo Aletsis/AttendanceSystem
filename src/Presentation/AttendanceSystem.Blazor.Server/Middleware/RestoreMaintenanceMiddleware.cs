@@ -27,13 +27,18 @@ public class RestoreMaintenanceMiddleware
         {
             var path = context.Request.Path.Value ?? string.Empty;
 
-            // Interceptar peticiones ADMS de terminales biométricos (/iclock/*)
+            // Interceptar peticiones ADMS de terminales biométricos y APIs de datos
             if (path.StartsWith("/iclock", StringComparison.OrdinalIgnoreCase) ||
                 path.Equals("/cdata", StringComparison.OrdinalIgnoreCase) ||
                 path.Equals("/getrequest", StringComparison.OrdinalIgnoreCase) ||
-                path.Equals("/devicecmd", StringComparison.OrdinalIgnoreCase))
+                path.Equals("/devicecmd", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("/registry", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("/push", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("/querydata", StringComparison.OrdinalIgnoreCase) ||
+                path.Equals("/ping", StringComparison.OrdinalIgnoreCase) ||
+                (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/backup", StringComparison.OrdinalIgnoreCase)))
             {
-                _logger.LogWarning("Rechazando petición ADMS {Path} con HTTP 503: Base de datos en proceso de restauración.", path);
+                _logger.LogWarning("Rechazando petición {Path} con HTTP 503: Base de datos en proceso de restauración.", path);
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 context.Response.ContentType = "text/plain";
                 await context.Response.WriteAsync("Service Unavailable: Database restore in progress");

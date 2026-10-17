@@ -11,15 +11,18 @@ namespace AttendanceSystem.Blazor.Server.Controllers;
 public class AccountController : Controller
 {
     private readonly SignInManager<ApplicationUser> _signInManager;
+    private readonly UserManager<ApplicationUser> _userManager;
     private readonly IAuthenticationService _authService;
     private readonly ILogger<AccountController> _logger;
 
     public AccountController(
         SignInManager<ApplicationUser> signInManager,
+        UserManager<ApplicationUser> userManager,
         IAuthenticationService authService,
         ILogger<AccountController> logger)
     {
         _signInManager = signInManager;
+        _userManager = userManager;
         _authService = authService;
         _logger = logger;
     }
@@ -36,12 +39,22 @@ public class AccountController : Controller
 
         try
         {
-            // Usar SignInManager directamente aquí porque estamos en un contexto HTTP tradicional
+            // H12: Validar si el usuario existe y está inactivo antes de iniciar sesión
+            var user = await _userManager.FindByNameAsync(model.Username)
+                       ?? await _userManager.FindByEmailAsync(model.Username);
+
+            if (user != null && !user.IsActive)
+            {
+                _logger.LogWarning("Intento de inicio de sesión rechazado: usuario {Username} inactivo", model.Username);
+                return Redirect("/login?error=" + Uri.EscapeDataString("Su cuenta se encuentra inactiva. Contacte al administrador."));
+            }
+
+            // H14: Habilitar lockoutOnFailure: true para bloquear tras superar intentos fallidos
             var result = await _signInManager.PasswordSignInAsync(
                 model.Username,
                 model.Password,
                 isPersistent: true,
-                lockoutOnFailure: false);
+                lockoutOnFailure: true);
 
             if (result.Succeeded)
             {
@@ -51,8 +64,8 @@ public class AccountController : Controller
 
             if (result.IsLockedOut)
             {
-                _logger.LogWarning("Cuenta de usuario bloqueada");
-                return Redirect("/login?error=" + Uri.EscapeDataString("Su cuenta está bloqueada"));
+                _logger.LogWarning("Cuenta de usuario {Username} bloqueada por intentos fallidos", model.Username);
+                return Redirect("/login?error=" + Uri.EscapeDataString("Su cuenta ha sido bloqueada temporalmente por exceso de intentos fallidos."));
             }
 
             _logger.LogWarning("Intento de inicio de sesión inválido para {Username}", model.Username);

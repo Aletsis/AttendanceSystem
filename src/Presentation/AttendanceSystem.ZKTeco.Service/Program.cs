@@ -131,14 +131,25 @@ public class Program
             builder.Services.AddSingleton<IZKTecoSessionManager, ZKTecoSessionManager>();
             builder.Services.AddSingleton<IDeviceDiscoveryService, ZKTecoDiscoveryService>();
 
-            // Configurar Kestrel para gRPC en HTTP/2 sin TLS (h2c)
+            // Configurar Kestrel para gRPC en HTTP/2 sin TLS (h2c) - Restringir a loopback por defecto (H02)
             builder.WebHost.ConfigureKestrel(options =>
             {
                 var port = builder.Configuration.GetValue<int>("GrpcPort", 5001);
-                options.ListenAnyIP(port, listenOptions =>
+                var bindLocalOnly = builder.Configuration.GetValue<bool>("GrpcBindLocalOnly", true);
+                if (bindLocalOnly)
                 {
-                    listenOptions.Protocols = HttpProtocols.Http2;
-                });
+                    options.ListenLocalhost(port, listenOptions =>
+                    {
+                        listenOptions.Protocols = HttpProtocols.Http2;
+                    });
+                }
+                else
+                {
+                    options.ListenAnyIP(port, listenOptions =>
+                    {
+                        listenOptions.Protocols = HttpProtocols.Http2;
+                    });
+                }
             });
 
             var app = builder.Build();

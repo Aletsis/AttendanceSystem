@@ -188,4 +188,98 @@ public class AdmsControllerTests
         _employeeRepositoryMock.Verify(r => r.Update(_employee), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
+
+    [Fact]
+    public async Task ReceiveData_WhenDeviceNotFound_ShouldReturnUnauthorized()
+    {
+        // Arrange
+        SetRequestBody("dummy");
+        _deviceRepositoryMock.Setup(r => r.GetBySerialNumberAsync("UNKNOWN_DEVICE", default))
+            .ReturnsAsync((Device?)null);
+
+        // Act
+        var result = await _controller.ReceiveData("UNKNOWN_DEVICE", "ATTLOG");
+
+        // Assert
+        result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task ReceiveData_WhenDeviceInactive_ShouldReturnUnauthorized()
+    {
+        // Arrange
+        var inactiveDevice = Device.Create(
+            "2",
+            "Inactive Clock",
+            "192.168.0.206",
+            8083,
+            DeviceBrand.ZKTeco,
+            downloadMethod: DeviceDownloadMethod.Adms,
+            serialNumber: "INACTIVE_SN"
+        );
+        inactiveDevice.Deactivate();
+
+        _deviceRepositoryMock.Setup(r => r.GetBySerialNumberAsync("INACTIVE_SN", default))
+            .ReturnsAsync(inactiveDevice);
+        SetRequestBody("dummy");
+
+        // Act
+        var result = await _controller.ReceiveData("INACTIVE_SN", "ATTLOG");
+
+        // Assert
+        result.Should().BeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task ReceiveData_WhenProcessAttLogsFails_ShouldReturn500InternalServerError()
+    {
+        // Arrange
+        var line = "1\t2026-03-01 08:00:00\t1\t1";
+        SetRequestBody(line);
+
+        _mediatorMock.Setup(m => m.Send(It.IsAny<IRequest<Result<int>>>(), default))
+            .ReturnsAsync(Result<int>.Failure("Database connection dropped"));
+
+        // Act
+        var result = await _controller.ReceiveData("CL5Z202660239", "ATTLOG");
+
+        // Assert: must return HTTP 500 to prevent device cursor advance
+        var statusResult = result.Should().BeOfType<ObjectResult>().Subject;
+        statusResult.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        statusResult.Value.Should().Be("ERROR: Batch persistence failed\n");
+    }
+
+    [Fact]
+    public async Task QueryData_WhenProcessAttLogsFails_ShouldReturn500InternalServerError()
+    {
+        // Arrange
+        var line = "1\t2026-03-01 08:00:00\t1\t1";
+        SetRequestBody(line);
+
+        _mediatorMock.Setup(m => m.Send(It.IsAny<IRequest<Result<int>>>(), default))
+            .ReturnsAsync(Result<int>.Failure("DB timeout"));
+
+        // Act
+        var result = await _controller.QueryData("CL5Z202660239", tablename: "Transaction", type: "tabledata");
+
+        // Assert: must return HTTP 500 so device does not advance cursor or drop records
+        var statusResult = result.Should().BeOfType<ObjectResult>().Subject;
+        statusResult.StatusCode.Should().Be(StatusCodes.Status500InternalServerError);
+        statusResult.Value.Should().Be("ERROR: Batch persistence failed\n");
+    }
+
+    [Fact]
+    public void DebugPendingCommands_ShouldHaveAuthorizeAttributeWithAdminRole()
+    {
+        // Arrange
+        var method = typeof(AdmsController).GetMethod(nameof(AdmsController.GetPendingCommandsDebug));
+
+        // Act
+        var attr = method?.GetCustomAttributes(typeof(Microsoft.AspNetCore.Authorization.AuthorizeAttribute), true)
+            .FirstOrDefault() as Microsoft.AspNetCore.Authorization.AuthorizeAttribute;
+
+        // Assert
+        attr.Should().NotBeNull();
+        attr!.Roles.Should().Be("Administrador");
+    }
 }

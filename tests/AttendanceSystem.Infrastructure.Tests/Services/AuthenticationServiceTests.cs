@@ -42,8 +42,13 @@ public class AuthenticationServiceTests
     public async Task AuthenticateAsync_WhenCredentialsValid_ShouldReturnTrue()
     {
         // Arrange
+        var user = new ApplicationUser { UserName = "admin", IsActive = true };
+        _userManagerMock
+            .Setup(u => u.FindByNameAsync("admin"))
+            .ReturnsAsync(user);
+
         _signInManagerMock
-            .Setup(s => s.PasswordSignInAsync("admin", "Admin123!", true, false))
+            .Setup(s => s.PasswordSignInAsync("admin", "Admin123!", true, true))
             .ReturnsAsync(SignInResult.Success);
 
         // Act
@@ -57,8 +62,13 @@ public class AuthenticationServiceTests
     public async Task AuthenticateAsync_WhenCredentialsInvalid_ShouldReturnFalse()
     {
         // Arrange
+        var user = new ApplicationUser { UserName = "admin", IsActive = true };
+        _userManagerMock
+            .Setup(u => u.FindByNameAsync("admin"))
+            .ReturnsAsync(user);
+
         _signInManagerMock
-            .Setup(s => s.PasswordSignInAsync("admin", "WrongPass", true, false))
+            .Setup(s => s.PasswordSignInAsync("admin", "WrongPass", true, true))
             .ReturnsAsync(SignInResult.Failed);
 
         // Act
@@ -66,6 +76,81 @@ public class AuthenticationServiceTests
 
         // Assert
         result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_WhenUserInactive_ShouldReturnFalseWithoutAttemptingSignIn()
+    {
+        // Arrange
+        var user = new ApplicationUser { UserName = "inactive_user", IsActive = false };
+        _userManagerMock
+            .Setup(u => u.FindByNameAsync("inactive_user"))
+            .ReturnsAsync(user);
+
+        // Act
+        var result = await _service.AuthenticateAsync("inactive_user", "AnyPassword123!");
+
+        // Assert
+        result.Should().BeFalse();
+        _signInManagerMock.Verify(
+            s => s.PasswordSignInAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task AuthenticateAsync_WhenUserLockedOut_ShouldReturnFalse()
+    {
+        // Arrange
+        var user = new ApplicationUser { UserName = "locked_user", IsActive = true };
+        _userManagerMock
+            .Setup(u => u.FindByNameAsync("locked_user"))
+            .ReturnsAsync(user);
+
+        _signInManagerMock
+            .Setup(s => s.PasswordSignInAsync("locked_user", "Pass123!", true, true))
+            .ReturnsAsync(SignInResult.LockedOut);
+
+        // Act
+        var result = await _service.AuthenticateAsync("locked_user", "Pass123!");
+
+        // Assert
+        result.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task IsAdministratorAsync_WhenUserInAdminRole_ShouldReturnTrue()
+    {
+        // Arrange
+        var user = new ApplicationUser { UserName = "admin_user", IsActive = true };
+        _userManagerMock
+            .Setup(u => u.FindByNameAsync("admin_user"))
+            .ReturnsAsync(user);
+        _userManagerMock
+            .Setup(u => u.IsInRoleAsync(user, "Administrador"))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _service.IsAdministratorAsync("admin_user");
+
+        // Assert
+        result.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task IsAdministratorAsync_WhenUserInactive_ShouldReturnFalse()
+    {
+        // Arrange
+        var user = new ApplicationUser { UserName = "inactive_admin", IsActive = false };
+        _userManagerMock
+            .Setup(u => u.FindByNameAsync("inactive_admin"))
+            .ReturnsAsync(user);
+
+        // Act
+        var result = await _service.IsAdministratorAsync("inactive_admin");
+
+        // Assert
+        result.Should().BeFalse();
+        _userManagerMock.Verify(u => u.IsInRoleAsync(It.IsAny<ApplicationUser>(), It.IsAny<string>()), Times.Never);
     }
 
     [Fact]

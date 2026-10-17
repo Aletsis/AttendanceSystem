@@ -13,22 +13,44 @@ public class ConfigurationController : ControllerBase
 {
     private readonly ISystemConfigurationRepository _repository;
     private readonly IAttendanceJobScheduler _jobScheduler;
+    private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
     private readonly ILogger<ConfigurationController> _logger;
 
     public ConfigurationController(
         ISystemConfigurationRepository repository,
         IAttendanceJobScheduler jobScheduler,
+        Microsoft.Extensions.Configuration.IConfiguration configuration,
         ILogger<ConfigurationController> logger)
     {
         _repository = repository;
         _jobScheduler = jobScheduler;
+        _configuration = configuration;
         _logger = logger;
     }
 
     [HttpPost("reload-jobs")]
     public async Task<IActionResult> ReloadJobs()
     {
-        _logger.LogInformation("Recibida solicitud de recarga de tareas programadas desde WPF.");
+        // H01: Exigir autorización: Rol Administrador o x-api-key válida
+        var isAuthorized = User.IsInRole("Administrador");
+        if (!isAuthorized)
+        {
+            var configuredApiKey = _configuration["ApiKey"] ?? _configuration["ZKTecoService:ApiKey"];
+            if (Request.Headers.TryGetValue("x-api-key", out var providedApiKey) &&
+                !string.IsNullOrWhiteSpace(configuredApiKey) &&
+                string.Equals(providedApiKey.ToString(), configuredApiKey, StringComparison.Ordinal))
+            {
+                isAuthorized = true;
+            }
+        }
+
+        if (!isAuthorized)
+        {
+            _logger.LogWarning("Intento no autorizado de recargar tareas programadas.");
+            return Unauthorized(new { Success = false, Message = "Acceso no autorizado: Se requiere rol Administrador o x-api-key válida." });
+        }
+
+        _logger.LogInformation("Recibida solicitud autorizada de recarga de tareas programadas.");
         try
         {
             var config = await _repository.GetConfigurationAsync(default);

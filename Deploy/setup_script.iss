@@ -77,7 +77,7 @@ Source: "dotnet-hosting.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Run]
 ; 1. Instalar PostgreSQL silenciosamente (SOLO SI NO ESTÁ INSTALADO)
-Filename: "{tmp}\postgresql-installer.exe"; Parameters: "--mode unattended --unattendedmodeui none --superpassword ""Blanquita.123"" --serverport 5432 --servicepassword ""Blanquita.123"""; \
+Filename: "{tmp}\postgresql-installer.exe"; Parameters: "--mode unattended --unattendedmodeui none --superpassword ""{code:GetPostgresPassword}"" --serverport 5432 --servicepassword ""{code:GetPostgresPassword}"""; \
     StatusMsg: "Instalando base de datos PostgreSQL... (Esto puede tardar unos minutos)"; \
     Check: PostgresNotInstalled
 
@@ -112,10 +112,8 @@ Filename: "timeout"; Parameters: "/t 5"; Flags: runhidden; StatusMsg: "Esperando
 Filename: "{sys}\sc.exe"; Parameters: "start AttendanceSystem.ZKTeco.Service"; \
     Flags: runhidden; StatusMsg: "Iniciando servicio..."
 
-; 7. Abrir Puertos en Firewall
+; 7. Abrir Puertos en Firewall para Web (el servicio gRPC 5001 se mantiene local/loopback por seguridad H02)
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AttendanceSystem Web"" dir=in action=allow protocol=TCP localport=8081"; \
-    Flags: runhidden; StatusMsg: "Configurando Firewall..."
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AttendanceSystem Service"" dir=in action=allow protocol=TCP localport=5001"; \
     Flags: runhidden; StatusMsg: "Configurando Firewall..."
 
 ; 8. Habilitar IIS y Componentes (Solo si se seleccionó la tarea IIS)

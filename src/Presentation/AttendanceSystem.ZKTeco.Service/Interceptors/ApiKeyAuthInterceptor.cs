@@ -20,13 +20,11 @@ public class ApiKeyAuthInterceptor : Interceptor
 
         if (string.IsNullOrWhiteSpace(configuredKey))
         {
-            _logger.LogWarning("⚠️ No se ha configurado 'ApiKey' en appsettings o variables de entorno. Usando clave de desarrollo por defecto. Configure una clave segura en producción.");
-            _apiKey = "AttendanceSystemSecretApiKey123!";
+            _logger.LogError("Error crítico de seguridad: No se ha configurado 'ApiKey' en appsettings o variables de entorno. Configure una clave segura antes de iniciar el servicio.");
+            throw new InvalidOperationException("Clave de API no configurada para el servicio ZKTeco. Configure 'ApiKey' en appsettings.json o mediante variables de entorno.");
         }
-        else
-        {
-            _apiKey = configuredKey;
-        }
+
+        _apiKey = configuredKey;
     }
 
     public override async Task<TResponse> UnaryServerHandler<TRequest, TResponse>(

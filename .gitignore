@@ -128,3 +128,6 @@ Output/
 [Pp]ublish/
 scratch/*.*
 
+# Own Docs
+/Docs/PlanRemediacion/
+.initial_admin_credentials.txt

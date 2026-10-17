@@ -82,8 +82,8 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
 
             if (!response.Success)
             {
-                _logger.LogWarning("Sesión {SessionId}: Error al obtener logs: {Message}", _sessionId, response.Message);
-                return Array.Empty<RawAttendanceRecord>();
+                _logger.LogError("Sesión {SessionId}: Error al obtener logs del dispositivo {DeviceId}: {Message}", _sessionId, deviceId, response.Message);
+                throw new InvalidOperationException($"Error al obtener logs del dispositivo {deviceId}: {response.Message}");
             }
 
             return response.Records.Select(r => new RawAttendanceRecord(
@@ -97,7 +97,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         catch (Exception ex)
         {
             _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo logs del dispositivo {DeviceId}", _sessionId, deviceId);
-            return Array.Empty<RawAttendanceRecord>();
+            throw;
         }
     }
 

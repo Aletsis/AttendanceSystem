@@ -5,7 +5,7 @@
 SELECT 'CREATE DATABASE "AttendanceSystem"'
 WHERE NOT EXISTS (SELECT FROM pg_database WHERE datname = 'AttendanceSystem')\gexec
 
--- 2. Crear o Actualizar Usuario (Idempotente + Reset Password)
+-- 2. Crear Usuario si no existe (Idempotente, preserva credenciales rotadas)
 DO
 $do$
 BEGIN
@@ -13,10 +13,7 @@ BEGIN
       SELECT FROM pg_catalog.pg_roles
       WHERE  rolname = 'attendancesystem_user') THEN
       
-      CREATE ROLE attendancesystem_user LOGIN PASSWORD 'Blanquita.123';
-   ELSE
-      -- Si ya existe, aseguramos que la contraseña sea la correcta
-      ALTER ROLE attendancesystem_user WITH PASSWORD 'Blanquita.123';
+      CREATE ROLE attendancesystem_user LOGIN PASSWORD 'REEMPLAZAR_CON_CONTRASENA_SEGURA';
    END IF;
 END
 $do$;

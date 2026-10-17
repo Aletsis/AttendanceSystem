@@ -26,12 +26,27 @@ public class AuthenticationService : IAuthenticationService
     {
         try
         {
-            var result = await _signInManager.PasswordSignInAsync(username, password, isPersistent: true, lockoutOnFailure: false);
+            // H12: Validar si el usuario está inactivo
+            var user = await _userManager.FindByNameAsync(username) ?? await _userManager.FindByEmailAsync(username);
+            if (user != null && !user.IsActive)
+            {
+                _logger.LogWarning("Intento de autenticación rechazado: usuario {Username} inactivo", username);
+                return false;
+            }
+
+            // H14: Habilitar lockoutOnFailure: true
+            var result = await _signInManager.PasswordSignInAsync(username, password, isPersistent: true, lockoutOnFailure: true);
 
             if (result.Succeeded)
             {
                 _logger.LogInformation("Usuario {Username} autenticado existosamente", username);
                 return true;
+            }
+
+            if (result.IsLockedOut)
+            {
+                _logger.LogWarning("Cuenta de usuario {Username} bloqueada por exceso de intentos", username);
+                return false;
             }
 
             _logger.LogWarning("Fallo en autenticación para usuario {Username}", username);
@@ -47,13 +62,10 @@ public class AuthenticationService : IAuthenticationService
     /// <inheritdoc/>
     public async Task<bool> IsAdministratorAsync(string username)
     {
-        var user = await _userManager.FindByNameAsync(username);
-        if (user == null) return false;
+        var user = await _userManager.FindByNameAsync(username) ?? await _userManager.FindByEmailAsync(username);
+        if (user == null || !user.IsActive) return false;
 
-        // Por ahora retornamos true si el usuario existe. 
-        // TODO: Implementar roles reales
-        return true;
-        // return await _userManager.IsInRoleAsync(user, "Admin");
+        return await _userManager.IsInRoleAsync(user, "Administrador");
     }
 
     /// <inheritdoc/>

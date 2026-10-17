@@ -402,10 +402,10 @@ public sealed class DownloadFromDeviceCommandHandler
             // Guardar actualizaciones finales (Device y Log)
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // 8. Opcional: Limpiar dispositivo físico
+            // 8. Limpiar dispositivo físico (F01-P02 / H03: Deshabilitar limpieza automática no verificable)
             if (shouldClear)
             {
-                await deviceClient.ClearLogsAsync(deviceIdValue, cancellationToken: cancellationToken);
+                _logger.LogWarning("⚠️ La limpieza automática de marcajes en el dispositivo {DeviceId} ha sido deshabilitada por contención de seguridad (F01-P02 / H03) hasta la implementación del borrado seguro verificado en Fase 04.", deviceIdValue);
             }
 
             await deviceClient.DisconnectAsync(cancellationToken);

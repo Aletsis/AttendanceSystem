@@ -68,6 +68,13 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
             }
         }
 
+        // H12: Si se desactiva el usuario o se modifican roles/contraseña, invalidar de inmediato su SecurityStamp
+        // para revocar cookies, sesiones y circuitos Blazor activos en el siguiente ciclo de validación
+        if (!request.IsActive || rolesToAdd.Any() || rolesToRemove.Any() || !string.IsNullOrWhiteSpace(request.NewPassword))
+        {
+            await _userManager.UpdateSecurityStampAsync(user);
+        }
+
         return Unit.Value;
     }
 }
