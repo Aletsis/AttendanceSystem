@@ -1,6 +1,12 @@
 namespace AttendanceSystem.Domain.Primitives;
 
-public abstract class AggregateRoot<TId> : Entity<TId>
+public interface IAggregateRoot
+{
+    IReadOnlyCollection<DomainEvent> DomainEvents { get; }
+    void ClearDomainEvents();
+}
+
+public abstract class AggregateRoot<TId> : Entity<TId>, IAggregateRoot
 {
     private readonly List<DomainEvent> _domainEvents = new();
 

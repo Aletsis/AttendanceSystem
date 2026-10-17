@@ -68,10 +68,36 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
                 value => value == null ? null : DownloadLogId.From(value.Value))
             .IsRequired(false);
 
-        // Ignorar eventos de dominio (no se persisten)
+        builder.Property(x => x.OriginalCheckTime)
+            .IsRequired(false);
+
+        builder.Property(x => x.WorkDate)
+            .IsRequired(false);
+
+        builder.Property(x => x.TimeZoneId)
+            .HasMaxLength(100)
+            .IsRequired(false);
+
+        builder.Property(x => x.Source)
+            .HasMaxLength(50)
+            .IsRequired(false);
+
+        builder.Property(x => x.OriginalCheckType)
+            .HasConversion(
+                ct => ct == null ? (int?)null : ct.Id,
+                value => value == null ? null : CheckType.FromValue(value.Value))
+            .HasColumnName("OriginalCheckTypeId")
+            .HasColumnType("int")
+            .IsRequired(false);
+
+        // Ignorar eventos de dominio (no se persisten en esta tabla)
         builder.Ignore(x => x.DomainEvents);
 
-        builder.HasIndex(x => new { x.EmployeeId, x.CheckTime });
+        // H09: Restricción única de marcaje para prevenir duplicados técnicos en base de datos
+        builder.HasIndex(x => new { x.EmployeeId, x.CheckTime })
+            .IsUnique();
+
+        builder.HasIndex(x => new { x.EmployeeId, x.WorkDate });
         builder.HasIndex(x => x.DeviceId);
     }
 }

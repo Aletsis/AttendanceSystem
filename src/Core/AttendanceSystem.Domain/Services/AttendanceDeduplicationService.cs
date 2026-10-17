@@ -17,7 +17,7 @@ public sealed class AttendanceDeduplicationService
 
         // 1. Deduplicar candidatos internamente (por si el dispositivo envía duplicados en el mismo lote)
         var distinctCandidates = candidates
-            .DistinctBy(r => new { r.EmployeeId, r.CheckTime })
+            .DistinctBy(r => (r.EmployeeId.Value, r.CheckTime))
             .ToList();
 
         if (!existing.Any())
@@ -25,12 +25,12 @@ public sealed class AttendanceDeduplicationService
 
         // 2. Crear HashSet de claves existentes para búsqueda O(1)
         var existingKeys = existing
-            .Select(r => new { r.EmployeeId, r.CheckTime })
+            .Select(r => (r.EmployeeId.Value, r.CheckTime))
             .ToHashSet();
 
         // 3. Filtrar candidatos que no estén en el conjunto existente
         return distinctCandidates
-            .Where(candidate => !existingKeys.Contains(new { candidate.EmployeeId, candidate.CheckTime }))
+            .Where(candidate => !existingKeys.Contains((candidate.EmployeeId.Value, candidate.CheckTime)))
             .ToList();
     }
 }

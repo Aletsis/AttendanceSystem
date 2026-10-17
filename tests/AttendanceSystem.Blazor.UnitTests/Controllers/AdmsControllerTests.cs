@@ -30,6 +30,7 @@ public class AdmsControllerTests
     private readonly Mock<ILogTransferService> _logTransferServiceMock = new();
     private readonly Mock<IAttendanceJobScheduler> _jobSchedulerMock = new();
     private readonly Mock<IExternalAttendanceLogRepository> _externalLogRepositoryMock = new();
+    private readonly Mock<ITimeNormalizer> _timeNormalizerMock = new();
 
     private readonly AdmsController _controller;
     private readonly Employee _employee;
@@ -37,6 +38,11 @@ public class AdmsControllerTests
 
     public AdmsControllerTests()
     {
+        _timeNormalizerMock.Setup(t => t.ToUtc(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns<DateTime, string?>((dt, tz) => DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+        _timeNormalizerMock.Setup(t => t.ToWorkDate(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns<DateTime, string?>((dt, tz) => DateOnly.FromDateTime(dt));
+
         _controller = new AdmsController(
             _loggerMock.Object,
             _mediatorMock.Object,
@@ -48,7 +54,8 @@ public class AdmsControllerTests
             _branchRepositoryMock.Object,
             _logTransferServiceMock.Object,
             _jobSchedulerMock.Object,
-            _externalLogRepositoryMock.Object
+            _externalLogRepositoryMock.Object,
+            _timeNormalizerMock.Object
         );
 
         _employee = Employee.Create(

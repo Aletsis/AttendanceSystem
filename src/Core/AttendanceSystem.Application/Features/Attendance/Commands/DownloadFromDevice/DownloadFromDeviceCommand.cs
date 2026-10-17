@@ -41,6 +41,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IAttendanceJobScheduler _jobScheduler;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
+    private readonly ITimeNormalizer _timeNormalizer;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -57,7 +58,8 @@ public sealed class DownloadFromDeviceCommandHandler
         ILogTransferService logTransferService,
         IAttendanceJobScheduler jobScheduler,
         IEmployeeRepository employeeRepository,
-        IExternalAttendanceLogRepository externalLogRepository)
+        IExternalAttendanceLogRepository externalLogRepository,
+        ITimeNormalizer timeNormalizer)
     {
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -74,6 +76,7 @@ public sealed class DownloadFromDeviceCommandHandler
         _jobScheduler = jobScheduler;
         _employeeRepository = employeeRepository;
         _externalLogRepository = externalLogRepository;
+        _timeNormalizer = timeNormalizer;
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
@@ -331,12 +334,18 @@ public sealed class DownloadFromDeviceCommandHandler
 
                 if (!isExternal)
                 {
+                    var utcCheckTime = _timeNormalizer.ToUtc(raw.CheckTime);
+                    var workDate = _timeNormalizer.ToWorkDate(utcCheckTime);
+
                     domainRecords.Add(AttendanceRecord.Create(
                         EmployeeId.From(raw.UserId),
                         deviceId,
-                        raw.CheckTime,
+                        utcCheckTime,
                         VerifyMethod.FromValue(raw.VerifyMethod),
-                        CheckType.FromValue(raw.InOutMode)
+                        CheckType.FromValue(raw.InOutMode),
+                        workDate: workDate,
+                        originalCheckTime: raw.CheckTime,
+                        source: deviceBrand.ToString()
                     ));
                 }
             }

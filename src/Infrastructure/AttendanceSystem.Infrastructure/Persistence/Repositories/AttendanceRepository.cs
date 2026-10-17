@@ -23,6 +23,19 @@ public class AttendanceRepository : IAttendanceRepository
             .FirstOrDefaultAsync(x => x.Id == id, cancellationToken);
     }
 
+    public async Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(
+        EmployeeId employeeId,
+        DateTime checkTime,
+        CancellationToken cancellationToken = default)
+    {
+        var utcCheckTime = checkTime.Kind == DateTimeKind.Utc
+            ? checkTime
+            : (checkTime.Kind == DateTimeKind.Local ? checkTime.ToUniversalTime() : DateTime.SpecifyKind(checkTime, DateTimeKind.Utc));
+
+        return await _context.AttendanceRecords
+            .FirstOrDefaultAsync(x => x.EmployeeId == employeeId && x.CheckTime == utcCheckTime, cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AttendanceRecord>> GetByDateRangeAsync(
         DateOnly startDate,
         DateOnly endDate,

@@ -31,6 +31,7 @@ public class AdmsController : ControllerBase
     private readonly ILogTransferService _logTransferService;
     private readonly IAttendanceJobScheduler _jobScheduler;
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
+    private readonly ITimeNormalizer _timeNormalizer;
 
     public AdmsController(
         ILogger<AdmsController> logger,
@@ -43,7 +44,8 @@ public class AdmsController : ControllerBase
         IBranchRepository branchRepository,
         ILogTransferService logTransferService,
         IAttendanceJobScheduler jobScheduler,
-        IExternalAttendanceLogRepository externalLogRepository)
+        IExternalAttendanceLogRepository externalLogRepository,
+        ITimeNormalizer timeNormalizer)
     {
         _logger = logger;
         _mediator = mediator;
@@ -56,6 +58,7 @@ public class AdmsController : ControllerBase
         _logTransferService = logTransferService;
         _jobScheduler = jobScheduler;
         _externalLogRepository = externalLogRepository;
+        _timeNormalizer = timeNormalizer;
     }
 
     private async Task<Device?> ValidateAuthorizedDeviceAsync(string? sn)
@@ -689,10 +692,12 @@ public class AdmsController : ControllerBase
                             _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Almacenando localmente y transfiriendo empleado {Id} a Cloud DB",
                                 branchCode, actualEmployeeId);
 
+                            var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
+
                             var localExtLog = ExternalAttendanceLog.Create(
                                 branchCode,
                                 actualEmployeeId,
-                                checkTime,
+                                utcCheckTime,
                                 verifyMethod,
                                 checkType,
                                 SN);
@@ -703,7 +708,7 @@ public class AdmsController : ControllerBase
                             var transferResult = await _logTransferService.TransferLogAsync(
                                 branchCode,
                                 actualEmployeeId,
-                                checkTime,
+                                utcCheckTime,
                                 verifyMethod,
                                 checkType,
                                 SN);
@@ -724,11 +729,21 @@ public class AdmsController : ControllerBase
 
                     if (!isExternal)
                     {
-                        localLogs.Add(new AttendanceLogDto(pin, checkTime, verifyMethod, checkType));
+                        var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
+                        var workDate = _timeNormalizer.ToWorkDate(utcCheckTime);
+
+                        localLogs.Add(new AttendanceLogDto(
+                            pin,
+                            utcCheckTime,
+                            verifyMethod,
+                            checkType,
+                            OriginalCheckTime: checkTime,
+                            WorkDate: workDate,
+                            Source: "ADMS"));
                         processed++;
 
-                        // Collect for calculation
-                        uniqueCalculations.Add((pin, checkTime.Date));
+                        // H17: Agrupar cálculo por la fecha civil/laboral real del trabajador, no por fecha UTC
+                        uniqueCalculations.Add((pin, workDate.ToDateTime(TimeOnly.MinValue)));
                     }
 
                     // Rastrear el timestamp más reciente del batch (incluso si es externo, para no repetir descarga si aplica)

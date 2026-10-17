@@ -34,6 +34,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate.ShiftRoster> ShiftRosters => Set<AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate.ShiftRoster>();
     public DbSet<AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployee> ExternalEmployees => Set<AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployee>();
     public DbSet<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeAuditLog> EmployeeAuditLogs => Set<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeAuditLog>();
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
 
     private readonly ICurrentUserService? _currentUserService;
 
@@ -68,7 +69,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
                 {
                     property.SetValueConverter(
                         new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(
-                            v => v.Kind == DateTimeKind.Utc ? v : DateTime.SpecifyKind(v, DateTimeKind.Utc),
+                            v => v.Kind == DateTimeKind.Utc ? v : (v.Kind == DateTimeKind.Local ? v.ToUniversalTime() : DateTime.SpecifyKind(v, DateTimeKind.Utc)),
                             v => DateTime.SpecifyKind(v, DateTimeKind.Utc)));
                 }
             }
@@ -78,35 +79,61 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public override async Task<int> SaveChangesAsync(
         CancellationToken cancellationToken = default)
     {
-        // Publicar eventos de dominio antes de guardar
-        var domainEntities = ChangeTracker.Entries()
-            .Where(e => e.Entity.GetType().BaseType != null &&
-                       e.Entity.GetType().BaseType!.IsGenericType &&
-                       e.Entity.GetType().BaseType!.GetGenericTypeDefinition() == typeof(AggregateRoot<>))
+        // 1. H24: Recolectar eventos de dominio de entidades IAggregateRoot y preparar Outbox
+        var domainEntities = ChangeTracker.Entries<IAggregateRoot>()
+            .Where(e => e.Entity.DomainEvents.Any())
             .Select(e => e.Entity)
             .ToList();
 
         var domainEvents = new List<DomainEvent>();
+        var outboxMessages = new List<OutboxMessage>();
+
         foreach (var entity in domainEntities)
         {
-            var eventsProperty = entity.GetType().GetProperty("DomainEvents");
-            if (eventsProperty != null)
+            foreach (var domainEvent in entity.DomainEvents)
             {
-                var events = eventsProperty.GetValue(entity) as IEnumerable<DomainEvent>;
-                if (events != null)
-                {
-                    domainEvents.AddRange(events);
-                }
+                domainEvents.Add(domainEvent);
+                var content = JsonSerializer.Serialize(domainEvent, domainEvent.GetType());
+                var message = OutboxMessage.Create(domainEvent, content);
+                outboxMessages.Add(message);
+                OutboxMessages.Add(message);
             }
+            // H24: Limpiar eventos inmediatamente de la entidad para evitar duplicación en re-saves
+            entity.ClearDomainEvents();
         }
 
         await AuditEmployeeChangesAsync(cancellationToken);
 
+        // 2. Persistir agregados y Outbox en la misma transacción atómica
         var result = await base.SaveChangesAsync(cancellationToken);
 
-        foreach (var domainEvent in domainEvents)
+        // 3. Despachar eventos inmediatamente en memoria tras commit exitoso
+        if (domainEvents.Count > 0)
         {
-            await _publisher.Publish(domainEvent, cancellationToken);
+            for (int i = 0; i < domainEvents.Count; i++)
+            {
+                var domainEvent = domainEvents[i];
+                var outboxMsg = outboxMessages[i];
+                try
+                {
+                    await _publisher.Publish(domainEvent, cancellationToken);
+                    outboxMsg.MarkAsProcessed();
+                }
+                catch (Exception ex)
+                {
+                    // Si el despacho en memoria falla, capturar y registrar en Outbox para background retry
+                    outboxMsg.MarkAsFailed(ex.Message);
+                }
+            }
+
+            try
+            {
+                await base.SaveChangesAsync(cancellationToken);
+            }
+            catch
+            {
+                // Ignorar error de actualización de estado; OutboxBackgroundProcessor reintentará los pendientes
+            }
         }
 
         return result;

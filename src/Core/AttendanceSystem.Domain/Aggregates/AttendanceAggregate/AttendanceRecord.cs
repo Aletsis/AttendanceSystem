@@ -9,6 +9,11 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
     public required CheckType CheckType { get; set; }
     public required AttendanceStatus Status { get; set; }
     public DownloadLogId? DownloadLogId { get; set; }
+    public DateTime? OriginalCheckTime { get; set; }
+    public DateOnly? WorkDate { get; set; }
+    public string? TimeZoneId { get; set; }
+    public string? Source { get; set; }
+    public CheckType? OriginalCheckType { get; set; }
 
     // Constructor privado - solo se crea mediante Factory
     private AttendanceRecord() { }
@@ -19,17 +24,30 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
         DeviceId deviceId,
         DateTime checkTime,
         VerifyMethod verifyMethod,
-        CheckType checkType)
+        CheckType checkType,
+        DateOnly? workDate = null,
+        DateTime? originalCheckTime = null,
+        string? timeZoneId = null,
+        string? source = null)
     {
+        var utcCheckTime = checkTime.Kind == DateTimeKind.Utc
+            ? checkTime
+            : (checkTime.Kind == DateTimeKind.Local ? checkTime.ToUniversalTime() : DateTime.SpecifyKind(checkTime, DateTimeKind.Utc));
+
         var record = new AttendanceRecord
         {
             Id = AttendanceRecordId.CreateNew(),
             EmployeeId = employeeId,
             DeviceId = deviceId,
-            CheckTime = checkTime,
+            CheckTime = utcCheckTime,
             VerifyMethod = verifyMethod,
             CheckType = checkType,
-            Status = AttendanceStatus.Pending
+            Status = AttendanceStatus.Pending,
+            OriginalCheckType = checkType,
+            OriginalCheckTime = originalCheckTime ?? checkTime,
+            WorkDate = workDate ?? DateOnly.FromDateTime(originalCheckTime ?? checkTime),
+            TimeZoneId = timeZoneId,
+            Source = source
         };
 
         // Regla de negocio: validar horario

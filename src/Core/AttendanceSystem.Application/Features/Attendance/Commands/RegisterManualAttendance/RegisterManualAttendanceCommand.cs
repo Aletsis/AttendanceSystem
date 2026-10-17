@@ -13,29 +13,34 @@ namespace AttendanceSystem.Application.Features.Attendance.Commands.RegisterManu
 public sealed record RegisterManualAttendanceCommand(
     string EmployeeId,
     DateTime CheckTime,
-    string Type) : IRequest<Result>;
+    string Type,
+    string? TimeZoneId = null) : IRequest<Result>;
 
 public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<RegisterManualAttendanceCommand, Result>
 {
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IUnitOfWork _unitOfWork;
-
+    private readonly ITimeNormalizer _timeNormalizer;
 
     public RegisterManualAttendanceCommandHandler(
         IAttendanceRepository attendanceRepo,
         IDailyAttendanceRepository dailyRepo,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        ITimeNormalizer timeNormalizer)
     {
         _attendanceRepo = attendanceRepo;
         _dailyRepo = dailyRepo;
         _unitOfWork = unitOfWork;
+        _timeNormalizer = timeNormalizer;
     }
 
     public async Task<Result> Handle(RegisterManualAttendanceCommand request, CancellationToken cancellationToken)
     {
         var employeeId = EmployeeId.From(request.EmployeeId);
-        var date = request.CheckTime.Date;
+        var utcCheckTime = _timeNormalizer.ToUtc(request.CheckTime, request.TimeZoneId);
+        var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, request.TimeZoneId);
+        var date = workDate.ToDateTime(TimeOnly.MinValue);
 
         // 1. Obtener Asistencia Diaria existente si ya fue procesada/creada
         var daily = await _dailyRepo.GetByEmployeeAndDateAsync(
@@ -75,9 +80,13 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         var record = AttendanceRecord.Create(
             employeeId,
             manualDeviceId,
-            request.CheckTime,
+            utcCheckTime,
             VerifyMethod.Manual,
-            checkType);
+            checkType,
+            workDate: workDate,
+            originalCheckTime: request.CheckTime,
+            timeZoneId: request.TimeZoneId,
+            source: "Manual");
 
         // 3. Guardar Registro
         await _attendanceRepo.AddAsync(record, cancellationToken);

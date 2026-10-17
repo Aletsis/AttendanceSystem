@@ -17,6 +17,7 @@ public class RegisterManualAttendanceCommandHandlerTests
     private readonly Mock<IAttendanceRepository> _attendanceRepoMock;
     private readonly Mock<IDailyAttendanceRepository> _dailyRepoMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ITimeNormalizer> _timeNormalizerMock;
     private readonly RegisterManualAttendanceCommandHandler _handler;
 
     private readonly EmployeeId _employeeId = EmployeeId.From("EMP-001");
@@ -27,11 +28,18 @@ public class RegisterManualAttendanceCommandHandlerTests
         _attendanceRepoMock = new Mock<IAttendanceRepository>();
         _dailyRepoMock = new Mock<IDailyAttendanceRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _timeNormalizerMock = new Mock<ITimeNormalizer>();
+
+        _timeNormalizerMock.Setup(t => t.ToUtc(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns<DateTime, string?>((dt, tz) => DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+        _timeNormalizerMock.Setup(t => t.ToWorkDate(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns<DateTime, string?>((dt, tz) => DateOnly.FromDateTime(dt));
 
         _handler = new RegisterManualAttendanceCommandHandler(
             _attendanceRepoMock.Object,
             _dailyRepoMock.Object,
-            _unitOfWorkMock.Object);
+            _unitOfWorkMock.Object,
+            _timeNormalizerMock.Object);
     }
 
     [Fact]

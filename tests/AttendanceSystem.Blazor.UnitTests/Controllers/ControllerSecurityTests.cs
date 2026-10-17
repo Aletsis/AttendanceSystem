@@ -46,12 +46,17 @@ public class ControllerSecurityTests
             .AddInMemoryCollection(inMemorySettings)
             .Build();
 
+        var timeNormalizerMock = new Mock<ITimeNormalizer>();
+        timeNormalizerMock.Setup(t => t.ToUtc(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns<DateTime, string?>((dt, tz) => dt);
+
         var controller = new ExternalLogsController(
             senderMock.Object,
             logRepoMock.Object,
             branchRepoMock.Object,
             uowMock.Object,
             config,
+            timeNormalizerMock.Object,
             NullLogger<ExternalLogsController>.Instance);
 
         var httpContext = new DefaultHttpContext();
@@ -85,12 +90,17 @@ public class ControllerSecurityTests
             .AddInMemoryCollection(inMemorySettings)
             .Build();
 
+        var timeNormalizerMock = new Mock<ITimeNormalizer>();
+        timeNormalizerMock.Setup(t => t.ToUtc(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns<DateTime, string?>((dt, tz) => dt);
+
         var controller = new ExternalLogsController(
             senderMock.Object,
             logRepoMock.Object,
             branchRepoMock.Object,
             uowMock.Object,
             config,
+            timeNormalizerMock.Object,
             NullLogger<ExternalLogsController>.Instance);
 
         var httpContext = new DefaultHttpContext();

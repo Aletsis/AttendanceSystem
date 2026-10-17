@@ -23,6 +23,11 @@ public interface IAttendanceRepository
         DownloadLogId downloadLogId,
         CancellationToken cancellationToken = default);
 
+    Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(
+        EmployeeId employeeId,
+        DateTime checkTime,
+        CancellationToken cancellationToken = default);
+
     Task AddAsync(
         AttendanceRecord record,
         CancellationToken cancellationToken = default);

@@ -101,6 +101,9 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
+        services.AddSingleton<ITimeNormalizer, TimeNormalizer>();
+        services.AddSingleton<OutboxBackgroundProcessor>();
+        services.AddHostedService(sp => sp.GetRequiredService<OutboxBackgroundProcessor>());
 
         // 6. Cliente gRPC para Windows Service ZKTeco
         services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>

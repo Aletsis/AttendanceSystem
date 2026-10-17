@@ -13,15 +13,19 @@ public class LogTransferService : ILogTransferService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<LogTransferService> _logger;
 
+    private readonly ITimeNormalizer _timeNormalizer;
+
     public LogTransferService(
         ISystemConfigurationRepository configurationRepository,
         IExternalAttendanceLogRepository externalLogRepository,
         IUnitOfWork unitOfWork,
+        ITimeNormalizer timeNormalizer,
         ILogger<LogTransferService> logger)
     {
         _configurationRepository = configurationRepository;
         _externalLogRepository = externalLogRepository;
         _unitOfWork = unitOfWork;
+        _timeNormalizer = timeNormalizer;
         _logger = logger;
     }
 
@@ -72,9 +76,7 @@ public class LogTransferService : ILogTransferService
                 VALUES (@id, @branchCode, @employeeId, @checkTime, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE);";
 
             var logId = Guid.NewGuid();
-            var utcCheckTime = checkTime.Kind == DateTimeKind.Utc
-                ? checkTime
-                : DateTime.SpecifyKind(checkTime, DateTimeKind.Utc);
+            var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
 
             await using var cmd = new NpgsqlCommand(insertSql, conn);
             cmd.Parameters.AddWithValue("id", logId);

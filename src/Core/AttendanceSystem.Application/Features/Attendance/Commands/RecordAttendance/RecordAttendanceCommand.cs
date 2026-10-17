@@ -1,3 +1,11 @@
+using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
+using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Domain.ValueObjects;
+using AttendanceSystem.Domain.Primitives;
+using Microsoft.Extensions.Logging;
+
 namespace AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
 
 public sealed record RecordAttendanceCommand(
@@ -5,7 +13,9 @@ public sealed record RecordAttendanceCommand(
     string DeviceId,
     DateTime CheckTime,
     int VerifyMethodCode,
-    int CheckTypeCode) : IRequest<Result<Guid>>;
+    int CheckTypeCode,
+    string? TimeZoneId = null,
+    string? Source = null) : IRequest<Result<Guid>>;
 
 // Handler
 public sealed class RecordAttendanceCommandHandler
@@ -13,16 +23,19 @@ public sealed class RecordAttendanceCommandHandler
 {
     private readonly IAttendanceRepository _attendanceRepository;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IPublisher _publisher;
+    private readonly ITimeNormalizer _timeNormalizer;
+    private readonly ILogger<RecordAttendanceCommandHandler> _logger;
 
     public RecordAttendanceCommandHandler(
         IAttendanceRepository attendanceRepository,
         IUnitOfWork unitOfWork,
-        IPublisher publisher)
+        ITimeNormalizer timeNormalizer,
+        ILogger<RecordAttendanceCommandHandler> logger)
     {
         _attendanceRepository = attendanceRepository;
         _unitOfWork = unitOfWork;
-        _publisher = publisher;
+        _timeNormalizer = timeNormalizer;
+        _logger = logger;
     }
 
     public async Task<Result<Guid>> Handle(
@@ -31,31 +44,63 @@ public sealed class RecordAttendanceCommandHandler
     {
         try
         {
-            // 1. Crear Value Objects
+            // 1. Crear Value Objects y normalizar tiempo a UTC
             var employeeId = EmployeeId.From(command.EmployeeId);
             var deviceId = DeviceId.From(command.DeviceId);
             var verifyMethod = VerifyMethod.FromValue(command.VerifyMethodCode);
             var checkType = CheckType.FromValue(command.CheckTypeCode);
 
-            // 2. Crear el agregado (contiene lógica de negocio)
+            var utcCheckTime = _timeNormalizer.ToUtc(command.CheckTime, command.TimeZoneId);
+            var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, command.TimeZoneId);
+
+            // 2. Comprobar si ya existe el registro (Idempotencia preventiva)
+            var existingRecord = await _attendanceRepository.GetByEmployeeAndCheckTimeAsync(
+                employeeId,
+                utcCheckTime,
+                cancellationToken);
+
+            if (existingRecord != null)
+            {
+                _logger.LogInformation("Marcaje existente detectado para empleado {EmployeeId} a las {CheckTime} UTC. Retornando ID existente {Id}.",
+                    command.EmployeeId, utcCheckTime, existingRecord.Id.Value);
+                return Result<Guid>.Success(existingRecord.Id.Value);
+            }
+
+            // 3. Crear el agregado (contiene lógica de negocio)
             var record = AttendanceRecord.Create(
                 employeeId,
                 deviceId,
-                command.CheckTime,
+                utcCheckTime,
                 verifyMethod,
-                checkType);
+                checkType,
+                workDate: workDate,
+                originalCheckTime: command.CheckTime,
+                timeZoneId: command.TimeZoneId,
+                source: command.Source ?? "API");
 
-            // 3. Persistir
-            await _attendanceRepository.AddAsync(record, cancellationToken);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-            // 4. Publicar eventos de dominio
-            foreach (var domainEvent in record.DomainEvents)
+            // 4. Persistir con manejo de conflicto esperado de concurrencia
+            try
             {
-                await _publisher.Publish(domainEvent, cancellationToken);
+                await _attendanceRepository.AddAsync(record, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Posible carrera de concurrencia al insertar marcaje para empleado {EmployeeId} a las {CheckTime} UTC.",
+                    command.EmployeeId, utcCheckTime);
 
-            record.ClearDomainEvents();
+                var concurrentRecord = await _attendanceRepository.GetByEmployeeAndCheckTimeAsync(
+                    employeeId,
+                    utcCheckTime,
+                    cancellationToken);
+
+                if (concurrentRecord != null)
+                {
+                    return Result<Guid>.Success(concurrentRecord.Id.Value);
+                }
+
+                throw;
+            }
 
             return Result<Guid>.Success(record.Id.Value);
         }

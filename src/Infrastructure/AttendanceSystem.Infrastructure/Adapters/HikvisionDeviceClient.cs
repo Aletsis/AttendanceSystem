@@ -90,8 +90,23 @@ public class HikvisionDeviceClient : IDeviceClient
 
             // Major 5 y Minor 1 ó 38 suelen ser eventos de acceso/asistencia válidos
             // 1 = Legal Card, 38 = Face Match
-            if (!string.IsNullOrEmpty(employeeId) && DateTime.TryParse(timeStr, out var time))
+            if (!string.IsNullOrEmpty(employeeId))
             {
+                DateTime time;
+                if (DateTimeOffset.TryParse(timeStr, out var dto))
+                {
+                    time = dto.UtcDateTime;
+                }
+                else if (DateTime.TryParse(timeStr, out var dt))
+                {
+                    time = dt;
+                }
+                else
+                {
+                    currentPos = endPos + 11;
+                    continue;
+                }
+
                 // Mapear el "minor" a CheckType si es posible
                 // Por defecto entrada (0) si no sabemos
                 records.Add(new RawAttendanceRecord(employeeId, time, 0, 0, 0));

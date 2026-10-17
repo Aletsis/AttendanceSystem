@@ -17,6 +17,7 @@ public class ExternalLogsController : ControllerBase
     private readonly IUnitOfWork _unitOfWork;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
     private readonly ILogger<ExternalLogsController> _logger;
+    private readonly ITimeNormalizer _timeNormalizer;
 
     public ExternalLogsController(
         ISender sender,
@@ -24,6 +25,7 @@ public class ExternalLogsController : ControllerBase
         IBranchRepository branchRepository,
         IUnitOfWork unitOfWork,
         Microsoft.Extensions.Configuration.IConfiguration configuration,
+        ITimeNormalizer timeNormalizer,
         ILogger<ExternalLogsController> logger)
     {
         _sender = sender;
@@ -31,6 +33,7 @@ public class ExternalLogsController : ControllerBase
         _branchRepository = branchRepository;
         _unitOfWork = unitOfWork;
         _configuration = configuration;
+        _timeNormalizer = timeNormalizer;
         _logger = logger;
     }
 
@@ -59,6 +62,8 @@ public class ExternalLogsController : ControllerBase
         _logger.LogInformation("Recibiendo log para empleado {EmployeeId} (Sucursal: {BranchCode})",
             request.EmployeeId, request.BranchCode ?? "N/A");
 
+        var utcCheckTime = _timeNormalizer.ToUtc(request.CheckTime);
+
         // Si se provee código de sucursal y corresponde a una sucursal externa, almacenar en ExternalAttendanceLogs
         if (!string.IsNullOrWhiteSpace(request.BranchCode))
         {
@@ -70,7 +75,7 @@ public class ExternalLogsController : ControllerBase
                 var externalLog = ExternalAttendanceLog.Create(
                     branch.Code,
                     request.EmployeeId.Trim(),
-                    request.CheckTime,
+                    utcCheckTime,
                     request.VerifyMethod,
                     request.CheckType,
                     request.SourceDevice ?? "EXTERNAL_API"
@@ -87,9 +92,10 @@ public class ExternalLogsController : ControllerBase
         var command = new RecordAttendanceCommand(
             request.EmployeeId,
             request.SourceDevice ?? "EXTERNAL_API",
-            request.CheckTime,
+            utcCheckTime,
             request.VerifyMethod,
-            request.CheckType
+            request.CheckType,
+            Source: "ExternalApi"
         );
 
         var result = await _sender.Send(command);
