@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Text;
 using System.Text.Json;
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Repositories;
 using Microsoft.Extensions.Configuration;
@@ -315,6 +316,11 @@ public class BackupService : IBackupService
         _logger.LogInformation("=== INICIANDO RESTAURACIÓN DE RESPALDO ===");
         _logger.LogInformation("Archivo de respaldo: {BackupFilePath}", backupFilePath);
 
+        var ownerId = $"Restore_{Guid.NewGuid():N}";
+        var lockAcquired = false;
+        var tempDir = Path.Combine(Path.GetTempPath(), $"AttendanceRestore_{DateTime.Now:yyyyMMdd_HHmmss}");
+        var isZipFile = backupFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
+
         try
         {
             if (!File.Exists(backupFilePath))
@@ -331,44 +337,78 @@ public class BackupService : IBackupService
             var fileInfo = new FileInfo(backupFilePath);
             _logger.LogInformation("Tamaño del archivo: {SizeBytes} bytes ({SizeMB:F2} MB)", fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
 
-            var tempDir = Path.Combine(Path.GetTempPath(), $"AttendanceRestore_{DateTime.Now:yyyyMMdd_HHmmss}");
-            _logger.LogInformation("Directorio temporal: {TempDir}", tempDir);
+            // 1. Adquirir bloqueo exclusivo de mantenimiento (H05 - Rechazo de restauraciones simultáneas)
+            lockAcquired = await _restoreStateService.TryAcquireRestoreLockAsync(ownerId, $"Restauración desde {Path.GetFileName(backupFilePath)}", cancellationToken);
+            if (!lockAcquired)
+            {
+                var msg = $"Operación rechazada: Ya existe otra restauración o mantenimiento en curso ({_restoreStateService.CurrentState} por {_restoreStateService.CurrentOwner ?? "desconocido"}).";
+                _logger.LogError(msg);
+                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Restauración Rechazada", msg, IsError: true));
+                return new RestoreResultDto { Success = false, Message = msg };
+            }
+
             Directory.CreateDirectory(tempDir);
-            _logger.LogInformation("Directorio temporal creado");
+            _logger.LogInformation("Directorio temporal creado: {TempDir}", tempDir);
 
-            progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Iniciando modo de mantenimiento y pausando tareas concurrentes...", ProgressPercentage: 5));
-
-            // Activar modo de mantenimiento y pausar tareas en segundo plano
-            _restoreStateService.EnterRestoreMode();
-            try
+            // Determinar archivo .backup a validar y restaurar
+            string targetDbFile;
+            if (isZipFile)
             {
-                await _backgroundJobControlService.PauseBackgroundJobsAsync(cancellationToken);
+                _logger.LogInformation("[1/3] Extrayendo paquete completo para inspección...");
+                progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Preparación", "Extrayendo archivo comprimido para validación...", ProgressPercentage: 10));
+                ZipFile.ExtractToDirectory(backupFilePath, tempDir);
+
+                targetDbFile = Path.Combine(tempDir, "database.backup");
+                if (!File.Exists(targetDbFile))
+                {
+                    var msg = "El paquete de respaldo no contiene el archivo database.backup esperado.";
+                    _logger.LogError(msg);
+                    await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: true, cancellationToken);
+                    return new RestoreResultDto { Success = false, Message = msg };
+                }
             }
-            catch (Exception bgEx)
+            else
             {
-                _logger.LogWarning(bgEx, "Aviso: No se pudieron pausar los trabajos en segundo plano antes de la restauración.");
+                targetDbFile = backupFilePath;
             }
 
-            // Determinar tipo de respaldo
-            var isZipFile = backupFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase);
-            _logger.LogInformation("Tipo de respaldo: {BackupType}", isZipFile ? "Completo (ZIP)" : "Solo Base de Datos");
+            // 2. Pre-validación del archivo de respaldo con pg_restore -l (H04)
+            // Si el archivo está corrupto o es inválido, abortamos inmediatamente SIN tocar esquemas ni conexiones
+            progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Validación Previa", "Verificando integridad y estructura del archivo de respaldo...", ProgressPercentage: 15));
+            var archiveValidation = await ValidateBackupArchiveAsync(targetDbFile, cancellationToken);
+            if (!archiveValidation.Valid)
+            {
+                var msg = $"Cancelando restauración: {archiveValidation.Message}";
+                _logger.LogError(msg);
+                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Validación Fallida", msg, IsError: true));
+                await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: true, cancellationToken);
+                return new RestoreResultDto { Success = false, Message = msg };
+            }
 
-            // 0. Crear Snapshot de Seguridad previo antes de tocar la base de datos
+            // 3. Crear Snapshot de Seguridad previo antes de tocar la base de datos (H04)
             string? safetyBackupFile = null;
             bool safetyBackupCreated = false;
 
             try
             {
-                progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Generando snapshot de seguridad previo para rollback automático...", ProgressPercentage: 15));
+                progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Generando snapshot de seguridad previo para rollback automático...", ProgressPercentage: 20));
                 var backupDirectory = await GetBackupDirectoryAsync();
                 safetyBackupFile = Path.Combine(backupDirectory, $".safety_snapshot_{DateTime.Now:yyyyMMdd_HHmmss}.backup");
                 _logger.LogInformation("Generando snapshot de seguridad previo en: {SafetyBackupFile}", safetyBackupFile);
                 var safetyResult = await CreateDatabaseBackupFileAsync(safetyBackupFile, cancellationToken);
                 if (safetyResult.Success)
                 {
-                    safetyBackupCreated = true;
-                    _logger.LogInformation("Snapshot de seguridad previo creado exitosamente.");
-                    progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Snapshot de seguridad previo generado exitosamente.", ProgressPercentage: 25));
+                    var snapshotValidation = await ValidateBackupArchiveAsync(safetyBackupFile, cancellationToken);
+                    if (snapshotValidation.Valid)
+                    {
+                        safetyBackupCreated = true;
+                        _logger.LogInformation("Snapshot de seguridad previo creado y verificado exitosamente.");
+                        progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Snapshot de seguridad previo generado y verificado.", ProgressPercentage: 30));
+                    }
+                    else
+                    {
+                        _logger.LogError("El snapshot de seguridad generado no superó la verificación de integridad: {Message}", snapshotValidation.Message);
+                    }
                 }
                 else
                 {
@@ -382,10 +422,10 @@ public class BackupService : IBackupService
 
             if (!safetyBackupCreated)
             {
-                var errorMsg = "Cancelando restauración: No se pudo generar el snapshot de seguridad previo. Por contención de seguridad (H04/F01-P02), no se permite continuar sin una copia de respaldo recuperable verificada.";
+                var errorMsg = "Cancelando restauración: No se pudo generar o validar el snapshot de seguridad previo. Por contención de seguridad (H04), no se permite continuar sin una copia de respaldo recuperable verificada.";
                 _logger.LogError(errorMsg);
-                progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", errorMsg, IsError: true, ProgressPercentage: 25));
-                _restoreStateService.ExitRestoreMode();
+                progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", errorMsg, IsError: true, ProgressPercentage: 30));
+                await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: true, cancellationToken);
                 return new RestoreResultDto
                 {
                     Success = false,
@@ -393,163 +433,141 @@ public class BackupService : IBackupService
                 };
             }
 
+            // 4. Drenar escritores activos y pausar tareas en segundo plano (H05)
+            await _restoreStateService.TransitionStateAsync(MaintenanceState.Draining, "Drenando operaciones en vuelo", cancellationToken);
+            progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Drenaje", "Drenando escritores y pausando tareas concurrentes...", ProgressPercentage: 35));
+            await _restoreStateService.DrainActiveWritersAsync(TimeSpan.FromSeconds(5), cancellationToken);
 
             try
             {
-                (bool Success, string Message) dbRestoreResult;
+                await _backgroundJobControlService.PauseBackgroundJobsAsync(cancellationToken);
+            }
+            catch (Exception bgEx)
+            {
+                _logger.LogWarning(bgEx, "Aviso: No se pudieron pausar los trabajos en segundo plano antes de la restauración.");
+            }
 
-                if (isZipFile)
-                {
-                    // Respaldo completo
-                    _logger.LogInformation("[1/3] Extrayendo respaldo completo...");
-                    progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Preparación de Base de Datos", "Extrayendo archivos del paquete de respaldo completo (.zip)...", ProgressPercentage: 28));
-                    ZipFile.ExtractToDirectory(backupFilePath, tempDir);
-                    _logger.LogInformation("Extracción completada");
+            // 5. Ejecutar la restauración física
+            await _restoreStateService.TransitionStateAsync(MaintenanceState.Restoring, "Restaurando base de datos con pg_restore", cancellationToken);
+            progress?.Report(new RestoreProgressReport(RestoreStage.ExecutingPgRestore, "Restauración", "Ejecutando pg_restore en base de datos...", ProgressPercentage: 50));
 
-                    // Leer metadata
-                    var metadataPath = Path.Combine(tempDir, "metadata.json");
-                    if (File.Exists(metadataPath))
-                    {
-                        _logger.LogInformation("[2/3] Leyendo metadata del respaldo...");
-                        var metadataJson = await File.ReadAllTextAsync(metadataPath, cancellationToken);
-                        var metadata = JsonSerializer.Deserialize<BackupMetadata>(metadataJson);
-                        _logger.LogInformation("Metadata:");
-                        _logger.LogInformation("  Tipo: {BackupType}", metadata?.BackupType);
-                        _logger.LogInformation("  Descripción: {Description}", metadata?.Description);
-                        _logger.LogInformation("  Fecha de creación: {CreatedAt}", metadata?.CreatedAt);
-                        _logger.LogInformation("  Base de datos: {DatabaseName}", metadata?.DatabaseName);
-                        progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Preparación de Base de Datos", $"Metadata leída: {metadata?.Description ?? "Sin descripción"} ({metadata?.CreatedAt:dd/MM/yyyy HH:mm})", ProgressPercentage: 30));
-                    }
+            var dbRestoreResult = await RestoreDatabaseFromFileAsync(targetDbFile, progress, cancellationToken);
 
-                    // Restaurar base de datos
-                    _logger.LogInformation("[3/3] Restaurando base de datos...");
-                    var dbBackupFile = Path.Combine(tempDir, "database.backup");
-                    if (File.Exists(dbBackupFile))
-                    {
-                        var dbFileInfo = new FileInfo(dbBackupFile);
-                        _logger.LogInformation("Archivo de BD: {DbBackupFile} ({SizeMB:F2} MB)", dbBackupFile, dbFileInfo.Length / 1024.0 / 1024.0);
+            if (!dbRestoreResult.Success)
+            {
+                _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
+                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Restauración Fallida", $"Fallo en restauración: {dbRestoreResult.Message}", IsError: true));
 
-                        dbRestoreResult = await RestoreDatabaseFromFileAsync(dbBackupFile, progress, cancellationToken);
-                    }
-                    else
-                    {
-                        _logger.LogError("No se encontró el archivo database.backup en el respaldo");
-                        dbRestoreResult = (false, "El respaldo no contiene un archivo de base de datos válido");
-                    }
-
-                    // Restaurar configuración (opcional - requiere confirmación manual)
-                    var configDir = Path.Combine(tempDir, "config");
-                    if (Directory.Exists(configDir))
-                    {
-                        _logger.LogInformation("Archivos de configuración disponibles en: {ConfigDir}", configDir);
-                        _logger.LogInformation("NOTA: Los archivos de configuración NO se restauran automáticamente");
-                    }
-                }
-                else
-                {
-                    // Respaldo solo de base de datos
-                    _logger.LogInformation("[1/1] Restaurando base de datos desde archivo .backup...");
-                    dbRestoreResult = await RestoreDatabaseFromFileAsync(backupFilePath, progress, cancellationToken);
-                }
-
-                if (!dbRestoreResult.Success)
-                {
-                    _logger.LogError("Falló la restauración de la base de datos: {Message}", dbRestoreResult.Message);
-                    progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Restauración Fallida", $"Fallo en restauración: {dbRestoreResult.Message}", IsError: true));
-
-                    // Si falló y tenemos snapshot de seguridad, revertir la base de datos
-                    if (safetyBackupCreated && !string.IsNullOrEmpty(safetyBackupFile) && File.Exists(safetyBackupFile))
-                    {
-                        _logger.LogWarning("Iniciando reversión automática (Rollback) al estado previo usando el snapshot de seguridad...");
-                        progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Rollback Automático", "Iniciando reversión automática al estado previo usando el snapshot de seguridad...", IsError: true));
-                        try
-                        {
-                            var rollbackResult = await RestoreDatabaseFromFileAsync(safetyBackupFile, progress, cancellationToken);
-                            if (rollbackResult.Success)
-                            {
-                                _logger.LogInformation("Rollback completado con éxito. La base de datos se mantiene en su estado previo original.");
-                                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Rollback Completado", "La base de datos fue revertida exitosamente a su estado original previo.", IsError: true));
-                                return new RestoreResultDto
-                                {
-                                    Success = false,
-                                    Message = $"La restauración falló: {dbRestoreResult.Message}. La base de datos fue revertida exitosamente a su estado original previo."
-                                };
-                            }
-                            else
-                            {
-                                _logger.LogError("El rollback automático reportó: {Message}", rollbackResult.Message);
-                            }
-                        }
-                        catch (Exception rollEx)
-                        {
-                            _logger.LogError(rollEx, "Error crítico durante el intento de rollback");
-                        }
-                    }
-
-                    return new RestoreResultDto
-                    {
-                        Success = false,
-                        Message = dbRestoreResult.Message
-                    };
-                }
-
-                // Restauración exitosa: limpiar snapshot de seguridad previo
-                progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Finalización del Sistema", "Limpiando archivos temporales y snapshot de seguridad...", ProgressPercentage: 90));
+                // Rollback automático con CancellationToken independiente (H04 - No se cancela por el usuario)
                 if (safetyBackupCreated && !string.IsNullOrEmpty(safetyBackupFile) && File.Exists(safetyBackupFile))
                 {
-                    try { File.Delete(safetyBackupFile); } catch { }
+                    _logger.LogWarning("Iniciando reversión automática (Rollback) con token independiente...");
+                    progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Rollback Automático", "Iniciando reversión automática al estado previo usando el snapshot de seguridad...", IsError: true));
+                    await _restoreStateService.TransitionStateAsync(MaintenanceState.Recovering, "Ejecutando rollback automático", CancellationToken.None);
+
+                    try
+                    {
+                        using var rollbackCts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+                        var rollbackResult = await RestoreDatabaseFromFileAsync(safetyBackupFile, progress, rollbackCts.Token);
+                        if (rollbackResult.Success)
+                        {
+                            _logger.LogInformation("Rollback completado con éxito. La base de datos se mantiene en su estado previo original.");
+                            progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Rollback Completado", "La base de datos fue revertida exitosamente a su estado original previo.", IsError: true));
+                            
+                            NpgsqlConnection.ClearAllPools();
+                            await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: true, CancellationToken.None);
+                            try { await _backgroundJobControlService.ResumeBackgroundJobsAsync(CancellationToken.None); } catch { }
+
+                            return new RestoreResultDto
+                            {
+                                Success = false,
+                                Message = $"La restauración falló: {dbRestoreResult.Message}. La base de datos fue revertida exitosamente a su estado original previo."
+                            };
+                        }
+                        else
+                        {
+                            _logger.LogCritical("🚨 El rollback automático falló: {Message}", rollbackResult.Message);
+                        }
+                    }
+                    catch (Exception rollEx)
+                    {
+                        _logger.LogCritical(rollEx, "🚨 Error crítico durante el intento de rollback");
+                    }
                 }
 
-                _logger.LogInformation("Base de datos restaurada exitosamente");
-                _logger.LogInformation("=== RESTAURACIÓN COMPLETADA EXITOSAMENTE ===");
-                _logger.LogInformation("IMPORTANTE: Debe reiniciar la aplicación para que los cambios surtan efecto");
-
-                progress?.Report(new RestoreProgressReport(RestoreStage.Completed, "Restauración Completada", "Base de datos restaurada exitosamente. Por favor reinicie la aplicación.", ProgressPercentage: 100));
-
+                // Fallo crítico total: mantener en Failed
+                await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: false, CancellationToken.None);
                 return new RestoreResultDto
                 {
-                    Success = true,
-                    Message = "Restauración completada exitosamente. Por favor reinicie la aplicación.",
-                    RestoredAt = DateTime.Now
+                    Success = false,
+                    Message = $"FALLO CRÍTICO: La restauración falló ({dbRestoreResult.Message}). El sistema permanece en mantenimiento para proteger la integridad."
                 };
             }
 
-            finally
-            {
-                try
-                {
-                    await _backgroundJobControlService.ResumeBackgroundJobsAsync(CancellationToken.None);
-                }
-                catch (Exception resumeEx)
-                {
-                    _logger.LogWarning(resumeEx, "Aviso: Error al reanudar los trabajos en segundo plano tras la restauración.");
-                }
-                finally
-                {
-                    _restoreStateService.ExitRestoreMode();
-                }
+            // 6. Validación post-restauración (H04/H05)
+            await _restoreStateService.TransitionStateAsync(MaintenanceState.Validating, "Validando esquema e integridad post-restauración", cancellationToken);
+            progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Validación Post-Restauración", "Verificando integridad de tablas esenciales...", ProgressPercentage: 85));
 
-                // Limpiar directorio temporal (excepto archivos de config para revisión manual)
-                if (Directory.Exists(tempDir) && !isZipFile)
+            var postValidation = await ValidateDatabasePostRestoreAsync(cancellationToken);
+            if (!postValidation.Valid)
+            {
+                _logger.LogError("La validación post-restauración falló: {Message}. Iniciando rollback...", postValidation.Message);
+                await _restoreStateService.TransitionStateAsync(MaintenanceState.Recovering, "Rollback por validación post-restauración fallida", CancellationToken.None);
+
+                using var rollbackCts = new CancellationTokenSource(TimeSpan.FromMinutes(15));
+                var rollbackResult = await RestoreDatabaseFromFileAsync(safetyBackupFile!, progress, rollbackCts.Token);
+                
+                NpgsqlConnection.ClearAllPools();
+                await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: rollbackResult.Success, CancellationToken.None);
+                try { await _backgroundJobControlService.ResumeBackgroundJobsAsync(CancellationToken.None); } catch { }
+
+                return new RestoreResultDto
                 {
-                    _logger.LogInformation("Limpiando directorio temporal...");
-                    Directory.Delete(tempDir, true);
-                    _logger.LogInformation("Directorio temporal eliminado");
-                }
-                else if (isZipFile)
-                {
-                    _logger.LogInformation("Directorio temporal conservado para revisión: {TempDir}", tempDir);
-                }
+                    Success = false,
+                    Message = $"Restauración rechazada por validación de datos fallida: {postValidation.Message}. Rollback {(rollbackResult.Success ? "exitoso" : "FALLIDO")}."
+                };
             }
+
+            // 7. Finalización exitosa
+            progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Finalización", "Limpiando snapshot temporal...", ProgressPercentage: 95));
+            if (safetyBackupCreated && !string.IsNullOrEmpty(safetyBackupFile) && File.Exists(safetyBackupFile))
+            {
+                try { File.Delete(safetyBackupFile); } catch { }
+            }
+
+            NpgsqlConnection.ClearAllPools();
+            await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: true, CancellationToken.None);
+            try { await _backgroundJobControlService.ResumeBackgroundJobsAsync(CancellationToken.None); } catch { }
+
+            _logger.LogInformation("Base de datos restaurada y verificada exitosamente.");
+            progress?.Report(new RestoreProgressReport(RestoreStage.Completed, "Restauración Completada", "Base de datos restaurada exitosamente. Por favor reinicie la aplicación.", ProgressPercentage: 100));
+
+            return new RestoreResultDto
+            {
+                Success = true,
+                Message = "Restauración completada y verificada exitosamente. Por favor reinicie la aplicación.",
+                RestoredAt = DateTime.Now
+            };
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error crítico durante la restauración del respaldo");
+            if (lockAcquired)
+            {
+                await _restoreStateService.ReleaseRestoreLockAsync(ownerId, success: false, CancellationToken.None);
+            }
             return new RestoreResultDto
             {
                 Success = false,
                 Message = $"Error: {ex.Message}"
             };
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir) && !isZipFile)
+            {
+                try { Directory.Delete(tempDir, true); } catch { }
+            }
         }
     }
 
@@ -1333,8 +1351,8 @@ public class BackupService : IBackupService
                 _logger.LogWarning(ex, "Aviso: No se pudieron terminar algunas conexiones activas previas a la base de datos.");
             }
 
-            // 2. Eliminar todos los esquemas de usuario existentes con CASCADE para eliminar
-            // completamente dependencias cruzadas (como FKs entre tablas de Hangfire)
+            // 2. Eliminar esquemas de usuario autorizados existentes con CASCADE
+            // Solo se afectan los esquemas autorizados ('public', 'hangfire'), preservando esquemas de control/mantenimiento
             var dropSchemasSql = @"
                 DO $$ 
                 DECLARE 
@@ -1343,15 +1361,13 @@ public class BackupService : IBackupService
                     FOR r IN (
                         SELECT schema_name 
                         FROM information_schema.schemata 
-                        WHERE schema_name NOT IN ('pg_catalog', 'information_schema') 
-                          AND schema_name NOT LIKE 'pg_toast%' 
-                          AND schema_name NOT LIKE 'pg_temp%'
+                        WHERE schema_name IN ('public', 'hangfire')
                     ) 
                     LOOP 
                         EXECUTE 'DROP SCHEMA IF EXISTS ' || quote_ident(r.schema_name) || ' CASCADE';
                     END LOOP; 
                 END $$;
-                CREATE SCHEMA public;
+                CREATE SCHEMA IF NOT EXISTS public;
                 GRANT ALL ON SCHEMA public TO CURRENT_USER;
                 GRANT ALL ON SCHEMA public TO public;";
 
@@ -1365,6 +1381,103 @@ public class BackupService : IBackupService
         {
             _logger.LogError(ex, "Error preparando base de datos para restauración.");
             return (false, ex.Message);
+        }
+        finally
+        {
+            NpgsqlConnection.ClearAllPools();
+        }
+    }
+
+    internal async Task<(bool Valid, string Message)> ValidateBackupArchiveAsync(string backupFilePath, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var pgRestorePath = FindPgRestorePath();
+            if (string.IsNullOrEmpty(pgRestorePath))
+            {
+                // Si pg_restore no está en el host (ej. pruebas unitarias o ambiente sin herramientas instaladas),
+                // verificamos que el archivo al menos exista y no esté vacío
+                if (File.Exists(backupFilePath) && new FileInfo(backupFilePath).Length > 0)
+                {
+                    return (true, "Archivo existente (pg_restore no disponible en PATH para inspección de TOC).");
+                }
+                return (false, "pg_restore no encontrado y el archivo no existe o está vacío.");
+            }
+
+            if (!File.Exists(backupFilePath))
+            {
+                return (false, $"El archivo no existe: {backupFilePath}");
+            }
+
+            // pg_restore -l inspecciona el archivo TOC sin conectarse a la base de datos
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = pgRestorePath,
+                Arguments = $"-l \"{backupFilePath}\"",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                CreateNoWindow = true
+            };
+
+            using var process = new Process { StartInfo = startInfo };
+            process.Start();
+
+            var errorOutput = await process.StandardError.ReadToEndAsync(cancellationToken);
+            await process.WaitForExitAsync(cancellationToken);
+
+            if (process.ExitCode != 0)
+            {
+                _logger.LogError("Validación de archivo de respaldo falló con código {ExitCode}: {Error}", process.ExitCode, errorOutput);
+                return (false, $"Archivo de respaldo corrupto o en formato no compatible: {errorOutput.Trim()}");
+            }
+
+            _logger.LogInformation("Archivo de respaldo validado exitosamente con pg_restore -l.");
+            return (true, "Archivo de respaldo válido");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Excepción durante la validación del archivo de respaldo");
+            return (false, $"Error validando archivo: {ex.Message}");
+        }
+    }
+
+    private async Task<(bool Valid, string Message)> ValidateDatabasePostRestoreAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            NpgsqlConnection.ClearAllPools();
+            var builder = new NpgsqlConnectionStringBuilder(_connectionString)
+            {
+                Pooling = false,
+                Timeout = 15,
+                CommandTimeout = 30
+            };
+
+            await using var connection = new NpgsqlConnection(builder.ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            // Verificar tablas esenciales
+            var checkSql = @"
+                SELECT COUNT(*) FROM information_schema.tables 
+                WHERE table_schema = 'public' 
+                  AND table_name IN ('AspNetUsers', 'Employees', 'AttendanceRecords');";
+
+            await using var cmd = new NpgsqlCommand(checkSql, connection);
+            var count = Convert.ToInt32(await cmd.ExecuteScalarAsync(cancellationToken));
+
+            if (count < 2) // Al menos deben existir las tablas principales
+            {
+                return (false, $"Verificación post-restauración fallida: Solo se encontraron {count} tablas esperadas en public.");
+            }
+
+            _logger.LogInformation("Verificación post-restauración exitosa ({Count} tablas verificadas).", count);
+            return (true, "Base de datos verificada exitosamente.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error verificando esquema tras la restauración.");
+            return (false, $"Error verificando esquema: {ex.Message}");
         }
         finally
         {

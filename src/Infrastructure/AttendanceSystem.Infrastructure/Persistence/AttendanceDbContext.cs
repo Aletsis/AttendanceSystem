@@ -112,6 +112,21 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
         return result;
     }
 
+    public async Task<IAsyncDisposable> BeginTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        return await Database.BeginTransactionAsync(cancellationToken);
+    }
+
+    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        await Database.CommitTransactionAsync(cancellationToken);
+    }
+
+    public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
+    {
+        await Database.RollbackTransactionAsync(cancellationToken);
+    }
+
     private async Task AuditEmployeeChangesAsync(CancellationToken cancellationToken)
     {
         var userName = _currentUserService?.UserName;

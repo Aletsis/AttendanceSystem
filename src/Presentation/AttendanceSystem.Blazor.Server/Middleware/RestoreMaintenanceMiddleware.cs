@@ -38,10 +38,11 @@ public class RestoreMaintenanceMiddleware
                 path.Equals("/ping", StringComparison.OrdinalIgnoreCase) ||
                 (path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("/api/backup", StringComparison.OrdinalIgnoreCase)))
             {
-                _logger.LogWarning("Rechazando petición {Path} con HTTP 503: Base de datos en proceso de restauración.", path);
+                _logger.LogWarning("Rechazando petición {Path} con HTTP 503: Base de datos en proceso de restauración ({State}).", path, restoreState.CurrentState);
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 context.Response.ContentType = "text/plain";
-                await context.Response.WriteAsync("Service Unavailable: Database restore in progress");
+                context.Response.Headers.RetryAfter = "30";
+                await context.Response.WriteAsync($"Service Unavailable: Database restore in progress ({restoreState.CurrentState})");
                 return;
             }
         }

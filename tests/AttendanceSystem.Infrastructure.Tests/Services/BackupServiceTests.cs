@@ -25,7 +25,9 @@ public class BackupServiceTests
         };
     }
 
-    private BackupService CreateService(Dictionary<string, string?>? customConfig = null)
+    private BackupService CreateService(
+        Dictionary<string, string?>? customConfig = null,
+        AttendanceSystem.Application.Abstractions.IRestoreStateService? restoreStateService = null)
     {
         var dict = new Dictionary<string, string?>(_configDict);
         if (customConfig != null)
@@ -43,7 +45,8 @@ public class BackupServiceTests
         return new BackupService(
             config,
             NullLogger<BackupService>.Instance,
-            _systemConfigRepoMock.Object);
+            _systemConfigRepoMock.Object,
+            restoreStateService);
     }
 
 
@@ -185,5 +188,52 @@ public class BackupServiceTests
                 Directory.Delete(tempBackupDir, true);
             }
         }
+    }
+
+    [Fact]
+    public async Task RestoreBackupAsync_WhenAnotherRestoreInProgress_ShouldRejectImmediately_H05()
+    {
+        var restoreStateMock = new Mock<AttendanceSystem.Application.Abstractions.IRestoreStateService>();
+        restoreStateMock.Setup(s => s.TryAcquireRestoreLockAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+        restoreStateMock.SetupGet(s => s.CurrentState).Returns(AttendanceSystem.Application.Common.MaintenanceState.Restoring);
+        restoreStateMock.SetupGet(s => s.CurrentOwner).Returns("Another_Admin");
+
+        var tempFile = Path.GetTempFileName();
+        try
+        {
+            var service = CreateService(restoreStateService: restoreStateMock.Object);
+
+            var result = await service.RestoreBackupAsync(tempFile);
+
+            result.Success.Should().BeFalse();
+            result.Message.Should().Contain("Ya existe otra restauración");
+        }
+        finally
+        {
+            if (File.Exists(tempFile)) File.Delete(tempFile);
+        }
+    }
+
+    [Fact]
+    public async Task RestoreBackupAsync_WhenFileDoesNotExist_ShouldFailImmediately()
+    {
+        var service = CreateService();
+
+        var result = await service.RestoreBackupAsync("non_existent_file_12345.backup");
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("no existe");
+    }
+
+    [Fact]
+    public async Task ValidateBackupArchiveAsync_WhenFileDoesNotExist_ShouldReturnInvalid()
+    {
+        var service = CreateService();
+
+        var result = await service.ValidateBackupArchiveAsync("non_existent_archive_file.backup");
+
+        result.Valid.Should().BeFalse();
+        result.Message.Should().Contain("no existe");
     }
 }

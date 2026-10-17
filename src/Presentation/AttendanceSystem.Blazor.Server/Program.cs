@@ -26,6 +26,8 @@ using AttendanceSystem.Application.Features.Branches.Queries;
 using AttendanceSystem.Application.Features.Departments.Queries;
 using AttendanceSystem.Application.Features.Positions.Queries;
 using AttendanceSystem.Infrastructure.Logging;
+using AttendanceSystem.Application.DependencyInjection;
+using AttendanceSystem.Infrastructure.DependencyInjection;
 using Serilog;
 using Serilog.Events;
 
@@ -80,103 +82,11 @@ try
     builder.Services.AddHttpClient();
     builder.Services.AddSingleton<UpdateCheckerService>();
 
-    // ===== DOMAIN LAYER =====
-    // Servicios de dominio
-    builder.Services.AddScoped<AttendanceDeduplicationService>();
-
-    // ===== APPLICATION LAYER =====
-    builder.Services.AddMediatR(cfg =>
-    {
-        cfg.RegisterServicesFromAssembly(typeof(RecordAttendanceCommand).Assembly);
-        // Agregar behavior de logging para todas las solicitudes
-        cfg.AddOpenBehavior(typeof(LoggingBehavior<,>));
-    });
-
-    builder.Services.AddScoped<AttendanceValidationService>();
-
-    // ===== INFRASTRUCTURE LAYER =====
-    builder.Services.AddDbContext<AttendanceDbContext>(options =>
-        options.UseNpgsql(
-            builder.Configuration.GetConnectionString("AttendanceDb"),
-            b => b.MigrationsAssembly("AttendanceSystem.Infrastructure")));
-
-    builder.Services.AddDbContextFactory<AttendanceDbContext>(options =>
-        options.UseNpgsql(
-            builder.Configuration.GetConnectionString("AttendanceDb"),
-            b => b.MigrationsAssembly("AttendanceSystem.Infrastructure")),
-        ServiceLifetime.Scoped);
-
-    builder.Services.AddScoped<IUnitOfWork>(sp =>
-        sp.GetRequiredService<AttendanceDbContext>());
-
-    // Repositorios
-    builder.Services.AddScoped<IAttendanceRepository, AttendanceRepository>();
-    builder.Services.AddScoped<IDeviceRepository, DeviceRepository>();
-
-    // gRPC Client al servicio Windows
-    builder.Services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
-    {
-        var url = builder.Configuration["ZKTecoService:Url"] ?? "http://localhost:5001";
-        options.Address = new Uri(url);
-    })
-    .ConfigureHttpClient((sp, client) =>
-    {
-        var config = sp.GetRequiredService<IConfiguration>();
-        var apiKey = config["ZKTecoService:ApiKey"] ?? config["ApiKey"];
-        if (string.IsNullOrWhiteSpace(apiKey))
-        {
-            throw new InvalidOperationException("La clave 'ZKTecoService:ApiKey' o 'ApiKey' no está configurada.");
-        }
-        client.DefaultRequestHeaders.Add("x-api-key", apiKey);
-    })
-    .ConfigureChannel(options =>
-    {
-        // Canal seguro con límites ampliados
-        options.MaxReceiveMessageSize = 10 * 1024 * 1024; // 10 MB
-        options.MaxSendMessageSize = 10 * 1024 * 1024; // 10 MB
-    });
-
-    // Clientes de dispositivos (Implementaciones)
-    builder.Services.AddScoped<GrpcZKTecoDeviceClient>();
-    builder.Services.AddHttpClient<HikvisionDeviceClient>();
-    builder.Services.AddScoped<AdmsDeviceClient>();
-
-    // Fábrica de clientes para resolver por marca
-    builder.Services.AddScoped<IDeviceClientFactory, DeviceClientFactory>();
-    builder.Services.AddScoped<IDeviceDiscoveryService, GrpcZKTecoDiscoveryService>();
-
-    // Servicios de infraestructura
-    builder.Services.AddScoped<IEmailService, SmtpEmailService>();
-    builder.Services.AddScoped<IAuthenticationService, AuthenticationService>();
-    builder.Services.AddSingleton<IDeviceLockService, DeviceLockService>();
-    builder.Services.AddSingleton<IRestoreStateService, RestoreStateService>();
-    builder.Services.AddScoped<IBackupService, BackupService>();
-    builder.Services.AddScoped<ILogTransferService, LogTransferService>();
-
-    // Servicios de Query (CQRS - Lectura)
-    builder.Services.AddScoped<IDeviceQueries, DeviceQueries>();
-    builder.Services.AddScoped<IShiftQueries, ShiftQueries>();
-    builder.Services.AddScoped<IBranchQueries, BranchQueries>();
-    builder.Services.AddScoped<IDepartmentQueries, DepartmentQueries>();
-    builder.Services.AddScoped<IPositionQueries, PositionQueries>();
-    builder.Services.AddSingleton<IAdmsCommandService, AdmsCommandService>();
-
-    // Repositorios
-    builder.Services.AddScoped<IShiftRepository, ShiftRepository>();
-    builder.Services.AddScoped<IShiftRosterRepository, ShiftRosterRepository>();
-    builder.Services.AddScoped<IBranchRepository, BranchRepository>();
-    builder.Services.AddScoped<IDepartmentRepository, DepartmentRepository>();
-    builder.Services.AddScoped<IPositionRepository, PositionRepository>();
-    builder.Services.AddScoped<IEmployeeRepository, EmployeeRepository>();
-    builder.Services.AddScoped<IDailyAttendanceRepository, DailyAttendanceRepository>();
-    builder.Services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
-    builder.Services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
-    builder.Services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
-    builder.Services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
-    builder.Services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
-    builder.Services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();
+    // ===== APPLICATION & INFRASTRUCTURE LAYERS (H13 & H15) =====
+    builder.Services.AddApplicationServices();
+    builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+    builder.Services.AddInfrastructureServices(builder.Configuration);
     builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
-    builder.Services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();
 
     // ===== IDENTITY & AUTHENTICATION =====
     builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>

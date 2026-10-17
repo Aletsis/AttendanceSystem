@@ -24,6 +24,8 @@ using AttendanceSystem.Application.Features.Shifts.Queries;
 using AttendanceSystem.Application.Features.Devices.Queries;
 using AttendanceSystem.Infrastructure.Persistence.Queries;
 using Microsoft.AspNetCore.Identity;
+using AttendanceSystem.Application.DependencyInjection;
+using AttendanceSystem.Infrastructure.DependencyInjection;
 using AttendanceSystem.Domain.Entities;
 
 namespace AttendanceSystem.WPF
@@ -60,70 +62,23 @@ namespace AttendanceSystem.WPF
                 .CreateLogger();
 
             // Build a ServiceProvider for MediatR and EF Core
-            var connectionString = Configuration.GetConnectionString("AttendanceDb");
             var services = new ServiceCollection();
 
-            // Add Configuration
+            // Add Configuration & Logging
             services.AddSingleton<IConfiguration>(Configuration);
-
-            // Add Logging
             services.AddLogging(builder =>
             {
                 builder.AddSerilog();
             });
 
-            // Add MediatR
-            services.AddMediatR(cfg =>
-            {
-                cfg.RegisterServicesFromAssembly(typeof(AttendanceSystem.Application.Features.Employees.Commands.CreateEmployeeCommand).Assembly);
-            });
+            // Registrar servicios compartidos de Aplicación e Infraestructura (H13 & H15)
+            services.AddApplicationServices();
+            services.AddInfrastructureServices(Configuration);
 
-            // Add DbContext
-            services.AddDbContext<AttendanceDbContext>(options =>
-            {
-                options.UseNpgsql(connectionString);
-            });
-            // Register IDbContextFactory for services that require it (e.g. DeviceQueries)
-            services.AddDbContextFactory<AttendanceDbContext>(options =>
-            {
-                options.UseNpgsql(connectionString);
-            });
-
-            // Add Repositories
-            services.AddScoped<IEmployeeRepository, EmployeeRepository>();
-            services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
-            services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();
+            // Servicios específicos de cliente WPF
             services.AddSingleton<IAuthenticationStateService, AuthenticationStateService>();
             services.AddSingleton<ICurrentUserService, WpfCurrentUserService>();
-            services.AddScoped<IDepartmentRepository, DepartmentRepository>();
-            services.AddScoped<IPositionRepository, PositionRepository>();
-            services.AddScoped<IBranchRepository, BranchRepository>();
-            services.AddScoped<IShiftRepository, ShiftRepository>();
-            services.AddScoped<IShiftRosterRepository, ShiftRosterRepository>();
-            services.AddScoped<IDeviceRepository, DeviceRepository>();
-            services.AddScoped<IAttendanceRepository, AttendanceRepository>();
-            services.AddScoped<IDailyAttendanceRepository, DailyAttendanceRepository>();
-            services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
-            services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
-
-            // Add Queries (Dapper/EF Core Raw)
-            services.AddScoped<IDepartmentQueries, DepartmentQueries>();
-            services.AddScoped<IPositionQueries, PositionQueries>();
-            services.AddScoped<IBranchQueries, BranchQueries>();
-            services.AddScoped<IShiftQueries, ShiftQueries>();
-            services.AddScoped<IDeviceQueries, DeviceQueries>();
-
-            // Add UnitOfWork
-            services.AddScoped<IUnitOfWork, AttendanceSystem.Infrastructure.Common.UnitOfWork>();
-
-            // Add Services
-            services.AddScoped<IImportService, ImportService>();
-            services.AddScoped<IReportExportService, ReportExportService>();
-            services.AddSingleton<IRestoreStateService, RestoreStateService>();
             services.AddSingleton<IBackgroundJobControlService, NullBackgroundJobControlService>();
-            services.AddScoped<IBackupService, BackupService>();
-
-            // Add JobScheduler implementation for WPF Client (No-Op)
             services.AddSingleton<IAttendanceJobScheduler, WpfAttendanceJobScheduler>();
 
             // Add Identity Core (UserManager only — sin cookies, SignInManager ni HTTP context)
@@ -142,20 +97,19 @@ namespace AttendanceSystem.WPF
             .AddRoles<IdentityRole>()
             .AddEntityFrameworkStores<AttendanceDbContext>();
 
-            _serviceProvider = services.BuildServiceProvider();
+            _serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
+            {
+                ValidateScopes = true
+            });
 
             // Register services in Prism container
-            // We register the IMediator instance resolved from our ServiceProvider
-            containerRegistry.RegisterInstance<IMediator>(_serviceProvider.GetRequiredService<IMediator>());
-
-            // Register factories for scoped services (DbContext and Repositories)
-            // Using a factory pattern to get fresh scoped instances
-            containerRegistry.RegisterSingleton<Func<AttendanceDbContext>>(() =>
-                () => _serviceProvider.CreateScope().ServiceProvider.GetRequiredService<AttendanceDbContext>());
+            // Usar WpfScopedMediator para ejecutar cada operación en un IServiceScope aislado y dispuesto inmediatamente (H15)
+            containerRegistry.RegisterInstance<IMediator>(new WpfScopedMediator(_serviceProvider));
 
             // WPF Services
             containerRegistry.RegisterInstance<IAuthenticationStateService>(_serviceProvider.GetRequiredService<IAuthenticationStateService>());
             containerRegistry.RegisterInstance<ICurrentUserService>(_serviceProvider.GetRequiredService<ICurrentUserService>());
+            containerRegistry.RegisterInstance<IRestoreStateService>(_serviceProvider.GetRequiredService<IRestoreStateService>());
             containerRegistry.RegisterSingleton<IFrameNavigationService, FrameNavigationService>();
             containerRegistry.RegisterSingleton<IMessageService, MessageService>();
 
