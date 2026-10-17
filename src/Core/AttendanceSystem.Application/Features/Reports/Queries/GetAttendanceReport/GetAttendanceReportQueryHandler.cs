@@ -19,34 +19,44 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
     private readonly IBranchRepository _branchRepository;
     private readonly IDepartmentRepository _departmentRepository;
     private readonly IPositionRepository _positionRepository;
+    private readonly ISystemConfigurationRepository _systemConfigurationRepository;
 
     public GetAttendanceReportQueryHandler(
         IDailyAttendanceRepository dailyAttendanceRepository,
         IEmployeeRepository employeeRepository,
         IBranchRepository branchRepository,
         IDepartmentRepository departmentRepository,
-        IPositionRepository positionRepository)
+        IPositionRepository positionRepository,
+        ISystemConfigurationRepository systemConfigurationRepository)
     {
         _dailyAttendanceRepository = dailyAttendanceRepository;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
         _departmentRepository = departmentRepository;
         _positionRepository = positionRepository;
+        _systemConfigurationRepository = systemConfigurationRepository;
     }
 
     public async Task<IEnumerable<AttendanceReportViewDto>> Handle(GetAttendanceReportQuery request, CancellationToken cancellationToken)
     {
         EmployeeId? empId = !string.IsNullOrEmpty(request.EmployeeId) ? EmployeeId.From(request.EmployeeId) : null;
 
-        // 1. Obtener Asistencia Procesada
+        // 1. Obtener Configuración del Sistema para determinar el día de inicio de semana
+        var config = await _systemConfigurationRepository.GetConfigurationAsync(cancellationToken);
+        var weeklyStartDay = config?.WeeklyStartDay ?? DayOfWeek.Monday;
+
+        // Determinar la fecha de inicio de la semana de corte más temprana para calcular fielmente la bolsa semanal
+        var earliestWeekStart = Common.WeeklyHoursCalculationHelper.GetWeekStart(request.StartDate, weeklyStartDay);
+
+        // 2. Obtener Asistencia Procesada desde el inicio de la semana para acumulados semanales fiables
         var attendanceData = await _dailyAttendanceRepository.GetByDateRangeAsync(
-            request.StartDate,
+            earliestWeekStart,
             request.EndDate,
             request.BranchId,
             empId,
             cancellationToken);
 
-        // 2. Obtener Empleados, Sucursales, Departamentos y Puestos
+        // 3. Obtener Empleados, Sucursales, Departamentos y Puestos
         var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
         var employees = allEmployees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
@@ -58,10 +68,10 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
         var deptDict = departments.ToDictionary(d => d.Id, d => d.Name);
         var posDict = positions.ToDictionary(p => p.Id, p => p.Name);
 
-        // 3. Mapear a DTO
+        // 4. Mapear a DTO
         var dtos = new List<AttendanceReportViewDto>();
 
-        // Agrupar por empleado para manejar la ordenación y los límites del período
+        // Agrupar por empleado para calcular acumulados semanales y límites
         var attByEmployee = attendanceData.GroupBy(a => a.EmployeeId);
 
         foreach (var group in attByEmployee)
@@ -80,10 +90,11 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                 branchName = reqBranchName;
             }
 
-            // Logica de cálculo para el límite de horas extra
-            double accumulatedOvertime = 0;
-            double? periodCap = (emp.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Period) ? emp.OvertimeCapMinutes : null;
-            double? dailyCap = (emp.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Daily) ? emp.OvertimeCapMinutes : null;
+            // Calcular las horas extras efectivas soportando bolsa diaria y bolsa semanal del período
+            var overtimeByRecordId = Common.WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
+                group,
+                emp,
+                weeklyStartDay);
 
             var sortedRecords = group.OrderBy(x => x.Date).ToList();
 
@@ -92,22 +103,10 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                 // Si la fecha del registro es anterior a la fecha de ingreso del empleado, ignorar
                 if (att.Date.Date < emp.HireDate.Date) continue;
 
-                double effectiveOvertime = att.OvertimeMinutes;
+                // Solo incluir en el reporte los registros que caen dentro del rango solicitado
+                if (att.Date.Date < request.StartDate.Date || att.Date.Date > request.EndDate.Date) continue;
 
-                // Si hay un límite diario, se aplica primero
-                if (dailyCap.HasValue && dailyCap.Value >= 0)
-                {
-                    effectiveOvertime = Math.Min(effectiveOvertime, dailyCap.Value);
-                }
-
-                // Si hay un límite de período, se aplica después del límite diario
-                if (periodCap.HasValue && periodCap.Value >= 0)
-                {
-                    double remaining = Math.Max(0, periodCap.Value - accumulatedOvertime);
-                    effectiveOvertime = Math.Min(effectiveOvertime, remaining);
-
-                    accumulatedOvertime += effectiveOvertime;
-                }
+                int effectiveOvertime = overtimeByRecordId.TryGetValue(att.Id, out var ot) ? ot : att.OvertimeMinutes;
 
                 dtos.Add(new AttendanceReportViewDto
                 {

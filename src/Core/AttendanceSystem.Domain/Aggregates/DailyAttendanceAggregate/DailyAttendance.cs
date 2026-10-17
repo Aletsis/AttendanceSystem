@@ -246,6 +246,11 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         CalculateStatus();
     }
 
+    public void SetCalculatedOvertime(int overtimeMinutes)
+    {
+        OvertimeMinutes = Math.Max(0, overtimeMinutes);
+    }
+
     public void UpdateShift(Shift shift, bool isAutoDetectedShift = false)
     {
         if (shift == null) throw new ArgumentNullException(nameof(shift));

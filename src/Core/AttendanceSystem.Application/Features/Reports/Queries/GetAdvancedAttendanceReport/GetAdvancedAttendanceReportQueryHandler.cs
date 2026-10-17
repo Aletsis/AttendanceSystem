@@ -19,26 +19,36 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
     private readonly IDepartmentRepository _departmentRepository;
     private readonly IPositionRepository _positionRepository;
     private readonly IBranchRepository _branchRepository;
+    private readonly ISystemConfigurationRepository _systemConfigurationRepository;
 
     public GetAdvancedAttendanceReportQueryHandler(
         IDailyAttendanceRepository dailyAttendanceRepository,
         IEmployeeRepository employeeRepository,
         IDepartmentRepository departmentRepository,
         IPositionRepository positionRepository,
-        IBranchRepository branchRepository)
+        IBranchRepository branchRepository,
+        ISystemConfigurationRepository systemConfigurationRepository)
     {
         _dailyAttendanceRepository = dailyAttendanceRepository;
         _employeeRepository = employeeRepository;
         _departmentRepository = departmentRepository;
         _positionRepository = positionRepository;
         _branchRepository = branchRepository;
+        _systemConfigurationRepository = systemConfigurationRepository;
     }
 
     public async Task<IEnumerable<AdvancedReportSummaryDto>> Handle(GetAdvancedAttendanceReportQuery request, CancellationToken cancellationToken)
     {
-        // 1. Obtener datos de asistencia
+        // 1. Obtener Configuración del Sistema para determinar el día de inicio de semana
+        var config = await _systemConfigurationRepository.GetConfigurationAsync(cancellationToken);
+        var weeklyStartDay = config?.WeeklyStartDay ?? DayOfWeek.Monday;
+
+        // Determinar la fecha de inicio de la semana de corte más temprana para calcular fielmente la bolsa semanal
+        var earliestWeekStart = Common.WeeklyHoursCalculationHelper.GetWeekStart(request.StartDate, weeklyStartDay);
+
+        // 2. Obtener datos de asistencia desde el inicio de la semana de corte
         var attendanceData = await _dailyAttendanceRepository.GetByDateRangeAsync(
-            request.StartDate,
+            earliestWeekStart,
             request.EndDate,
             request.BranchId,
             request.EmployeeId,
@@ -90,6 +100,9 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             // Descartar registros anteriores a la fecha de ingreso/alta
             if (item.Date.Date < emp.HireDate.Date) continue;
 
+            // Solo incluir en los resultados del reporte los registros dentro del rango solicitado
+            if (item.Date.Date < request.StartDate.Date || item.Date.Date > request.EndDate.Date) continue;
+
             bool include = false;
             switch (request.ReportType)
             {
@@ -140,6 +153,13 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             var empRef = g.First().Emp;
             var details = g.Select(x => x.Att).OrderBy(d => d.Date).ToList();
 
+            // Calcular acumulados de tiempo extra soportando bolsa diaria y bolsa semanal del período
+            var empAllRecords = attendanceData.Where(r => r.EmployeeId == g.Key);
+            var overtimeByRecordId = Common.WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
+                empAllRecords,
+                empRef,
+                weeklyStartDay);
+
             // Filtro para "DescansoErroneo": Solo incluir empleados que tengan al menos un registro de trabajo en día de descanso y al menos una falta.
             if (request.ReportType == "DescansoErroneo")
             {
@@ -162,7 +182,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 PositionName = posName,
                 BranchName = branchName,
                 Count = details.Count,
-                Details = details.Select(d => MapToDetail(d, empRef)).ToList()
+                Details = details.Select(d => MapToDetail(d, empRef, overtimeByRecordId)).ToList()
             };
 
             // Totales
@@ -173,8 +193,8 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             }
             else if (request.ReportType == "HorasExtra" || request.ReportType == "HorasExtraPorDepartamento")
             {
-                // Calcular primero el tiempo extra efectivo diario (maneja el límite diario)
-                double totalOvertime = details.Sum(d => GetEffectiveOvertime(d, empRef));
+                // Calcular tiempo extra efectivo considerando la bolsa semanal si aplica
+                double totalOvertime = details.Sum(d => overtimeByRecordId.TryGetValue(d.Id, out var ot) ? ot : GetEffectiveOvertime(d, empRef));
 
                 // Calcular primero el tiempo trabajado total (para mostrarlo en el resumen)
                 double totalWorkedHours = 0;
@@ -229,7 +249,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                         .ThenBy(s => s.EmployeeId);
     }
 
-    private AdvancedReportDetailDto MapToDetail(DailyAttendance att, Employee emp)
+    private AdvancedReportDetailDto MapToDetail(DailyAttendance att, Employee emp, Dictionary<DailyAttendanceId, int> overtimeByRecordId)
     {
         // 1. Determine Reference Entry (Entrada de Referencia)
         DateTime? referenceEntry = GetReferenceEntry(att);
@@ -242,7 +262,9 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
         string workedStr = workedVal.HasValue ? $"{(int)workedVal.Value.TotalHours:00}:{workedVal.Value.Minutes:00}" : "--:--";
 
-        double effectiveOvertime = GetEffectiveOvertime(att, emp);
+        double effectiveOvertime = overtimeByRecordId.TryGetValue(att.Id, out var ot)
+            ? ot
+            : GetEffectiveOvertime(att, emp);
 
         // Logica para las cadenas de CheckIn/CheckOut
         string checkInStr = "--";

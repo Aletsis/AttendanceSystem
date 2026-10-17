@@ -7,6 +7,7 @@ using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
+using AttendanceSystem.Application.Common;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
@@ -19,6 +20,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IEmployeeRepository _employeeRepo;
     private readonly IShiftRepository _shiftRepo;
     private readonly IShiftRosterRepository _rosterRepo;
+    private readonly ISystemConfigurationRepository _systemConfigRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISender _sender;
     private readonly ILogger<ProcessDailyAttendanceCommandHandler> _logger;
@@ -29,6 +31,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IEmployeeRepository employeeRepo,
         IShiftRepository shiftRepo,
         IShiftRosterRepository rosterRepo,
+        ISystemConfigurationRepository systemConfigRepo,
         IUnitOfWork unitOfWork,
         ISender sender,
         ILogger<ProcessDailyAttendanceCommandHandler> logger)
@@ -38,6 +41,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         _employeeRepo = employeeRepo;
         _shiftRepo = shiftRepo;
         _rosterRepo = rosterRepo;
+        _systemConfigRepo = systemConfigRepo;
         _unitOfWork = unitOfWork;
         _sender = sender;
         _logger = logger;
@@ -369,7 +373,51 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             }
         }
 
+        // 1. Persistir los registros diarios generados
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // 2. Recalcular y persistir horas extras semanales para empleados con turnos de bolsa semanal
+        var systemConfig = await _systemConfigRepo.GetConfigurationAsync(cancellationToken);
+        var weeklyStartDay = systemConfig?.WeeklyStartDay ?? DayOfWeek.Monday;
+        var earliestWeekStart = WeeklyHoursCalculationHelper.GetWeekStart(request.StartDate, weeklyStartDay);
+
+        bool hasAnyWeeklyUpdates = false;
+        foreach (var employee in employees)
+        {
+            if (employee.Status != EmployeeStatus.Alta) continue;
+
+            var empAttendances = (await _dailyRepo.GetByEmployeeAndDateRangeAsync(
+                employee.Id,
+                earliestWeekStart,
+                request.EndDate,
+                cancellationToken)) ?? new List<DailyAttendance>();
+
+            if (empAttendances.Any(a => a.WeeklyWorkHours.HasValue && a.WeeklyWorkHours.Value > TimeSpan.Zero))
+            {
+                var overtimeMap = WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
+                    empAttendances,
+                    employee,
+                    weeklyStartDay);
+
+                foreach (var att in empAttendances)
+                {
+                    if (overtimeMap.TryGetValue(att.Id, out var effectiveOt))
+                    {
+                        if (att.OvertimeMinutes != effectiveOt)
+                        {
+                            att.SetCalculatedOvertime(effectiveOt);
+                            _dailyRepo.Update(att);
+                            hasAnyWeeklyUpdates = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (hasAnyWeeklyUpdates)
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
 
         _logger.LogInformation(
             "Procesamiento de asistencia diaria completado. Registros procesados: {ProcessedCount}",

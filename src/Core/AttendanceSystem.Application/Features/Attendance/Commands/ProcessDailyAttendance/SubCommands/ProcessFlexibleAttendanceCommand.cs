@@ -38,8 +38,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         if (request.Shift.PunchTrackingMode == PunchTrackingMode.MultiInterval)
         {
             var pendingRecords = request.Records
-                .Where(r => r.Status == AttendanceStatus.Pending &&
-                           (r.CheckTime.Date == request.Date.Date || (r.CheckTime - request.Date).TotalHours <= 24))
+                .Where(r => r.Status == AttendanceStatus.Pending && r.CheckTime.Date == request.Date.Date)
                 .OrderBy(r => r.CheckTime)
                 .ToList();
 
@@ -117,7 +116,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         AttendanceRecord? checkOutRecord = null;
         (int Lunch, bool HasTempExits, int TempMinutes)? intermediateAnalysis = null;
 
-        // Marcajes del día (o dentro de las siguientes 24 horas para turnos que puedan cruzar la noche)
+        // Marcajes del día
         var pendingDayRecords = request.Records
             .Where(r => r.Status == AttendanceStatus.Pending && r.CheckTime.Date == request.Date.Date)
             .OrderBy(r => r.CheckTime)
@@ -129,21 +128,38 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             checkInRecord = pendingDayRecords.First();
             checkIn = checkInRecord.CheckTime;
 
-            // 2. Buscar salida: el último marcaje del día o hasta 24h tras la entrada
-            var exitCandidates = request.Records
-                .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 24)
+            // 2. Buscar salida: si hay registros en el mismo día posteriores a la entrada, la salida es el último de ellos.
+            var sameDayExits = request.Records
+                .Where(r => r.CheckTime.Date == request.Date.Date && r.CheckTime > checkIn.Value)
                 .OrderBy(r => r.CheckTime)
                 .ToList();
 
-            if (exitCandidates.Any())
+            if (sameDayExits.Any())
             {
-                checkOutRecord = exitCandidates.Last();
+                checkOutRecord = sameDayExits.Last();
                 checkOut = checkOutRecord.CheckTime;
+            }
+            else
+            {
+                // Solo si no hubo salida el mismo día, buscar en la madrugada/mañana siguiente (turno que cruza medianoche)
+                var nextDayExits = request.Records
+                    .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 18)
+                    .OrderBy(r => r.CheckTime)
+                    .ToList();
 
-                // 3. Registros intermedios entre entrada y salida
-                var middleRecords = exitCandidates
-                    .Take(exitCandidates.Count - 1)
-                    .Where(r => r.Id != checkInRecord.Id && r.Id != checkOutRecord.Id)
+                if (nextDayExits.Any())
+                {
+                    checkOutRecord = nextDayExits.First();
+                    checkOut = checkOutRecord.CheckTime;
+                }
+            }
+
+            if (checkOutRecord != null && checkOut.HasValue)
+            {
+                // 3. Registros intermedios estrictamente entre entrada y salida
+                var middleRecords = request.Records
+                    .Where(r => r.CheckTime > checkIn.Value && r.CheckTime < checkOut.Value && r.Id != checkInRecord.Id && r.Id != checkOutRecord.Id)
+                    .OrderBy(r => r.CheckTime)
                     .ToList();
 
                 if (middleRecords.Any())

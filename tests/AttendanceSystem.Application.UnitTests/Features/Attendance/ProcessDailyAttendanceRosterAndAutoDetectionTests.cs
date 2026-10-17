@@ -24,6 +24,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
     private readonly Mock<IEmployeeRepository> _employeeRepoMock = new();
     private readonly Mock<IShiftRepository> _shiftRepoMock = new();
     private readonly Mock<IShiftRosterRepository> _rosterRepoMock = new();
+    private readonly Mock<ISystemConfigurationRepository> _systemConfigRepoMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly Mock<ISender> _senderMock = new();
     private readonly Mock<ILogger<ProcessDailyAttendanceCommandHandler>> _loggerMock = new();
@@ -81,6 +82,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
             _employeeRepoMock.Object,
             _shiftRepoMock.Object,
             _rosterRepoMock.Object,
+            _systemConfigRepoMock.Object,
             _unitOfWorkMock.Object,
             _senderMock.Object,
             _loggerMock.Object);
@@ -131,6 +133,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
             _employeeRepoMock.Object,
             _shiftRepoMock.Object,
             _rosterRepoMock.Object,
+            _systemConfigRepoMock.Object,
             _unitOfWorkMock.Object,
             _senderMock.Object,
             _loggerMock.Object);
@@ -183,6 +186,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
             _employeeRepoMock.Object,
             _shiftRepoMock.Object,
             _rosterRepoMock.Object,
+            _systemConfigRepoMock.Object,
             _unitOfWorkMock.Object,
             _senderMock.Object,
             _loggerMock.Object);

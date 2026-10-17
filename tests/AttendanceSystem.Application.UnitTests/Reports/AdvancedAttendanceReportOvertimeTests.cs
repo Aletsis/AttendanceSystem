@@ -77,12 +77,14 @@ public class AdvancedAttendanceReportOvertimeTests
         positionRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Position>());
         branchRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Branch>());
 
+        var configRepoMock = new Mock<ISystemConfigurationRepository>();
         var handler = new GetAdvancedAttendanceReportQueryHandler(
             dailyRepoMock.Object,
             employeeRepoMock.Object,
             departmentRepoMock.Object,
             positionRepoMock.Object,
-            branchRepoMock.Object);
+            branchRepoMock.Object,
+            configRepoMock.Object);
 
         var query = new GetAdvancedAttendanceReportQuery(date, date, "HorasExtra");
 
@@ -150,12 +152,14 @@ public class AdvancedAttendanceReportOvertimeTests
         positionRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Position>());
         branchRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Branch>());
 
+        var configRepoMock = new Mock<ISystemConfigurationRepository>();
         var handler = new GetAdvancedAttendanceReportQueryHandler(
             dailyRepoMock.Object,
             employeeRepoMock.Object,
             departmentRepoMock.Object,
             positionRepoMock.Object,
-            branchRepoMock.Object);
+            branchRepoMock.Object,
+            configRepoMock.Object);
 
         var query = new GetAdvancedAttendanceReportQuery(date, date, "HorasExtra");
 
@@ -222,12 +226,14 @@ public class AdvancedAttendanceReportOvertimeTests
         positionRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Position>());
         branchRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Branch>());
 
+        var configRepoMock = new Mock<ISystemConfigurationRepository>();
         var handler = new GetAdvancedAttendanceReportQueryHandler(
             dailyRepoMock.Object,
             employeeRepoMock.Object,
             departmentRepoMock.Object,
             positionRepoMock.Object,
-            branchRepoMock.Object);
+            branchRepoMock.Object,
+            configRepoMock.Object);
 
         var query = new GetAdvancedAttendanceReportQuery(date, date, "HorasExtra");
 

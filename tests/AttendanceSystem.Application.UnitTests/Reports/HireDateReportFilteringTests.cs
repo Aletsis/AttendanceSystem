@@ -86,12 +86,15 @@ public class HireDateReportFilteringTests
             .Setup(r => r.GetByDateRangeAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<AttendanceRecord>());
 
+        var systemConfigRepoMock = new Mock<ISystemConfigurationRepository>();
+
         var handler = new ProcessDailyAttendanceCommandHandler(
             dailyRepoMock.Object,
             attendanceRepoMock.Object,
             employeeRepoMock.Object,
             shiftRepoMock.Object,
             rosterRepoMock.Object,
+            systemConfigRepoMock.Object,
             unitOfWorkMock.Object,
             senderMock.Object,
             loggerMock.Object);
@@ -137,12 +140,15 @@ public class HireDateReportFilteringTests
             .Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<DailyAttendance> { record1, record2, record3, record4 });
 
+        var configRepoMock = new Mock<ISystemConfigurationRepository>();
+
         var handler = new GetAttendanceReportQueryHandler(
             dailyRepoMock.Object,
             employeeRepoMock.Object,
             branchRepoMock.Object,
             departmentRepoMock.Object,
-            positionRepoMock.Object);
+            positionRepoMock.Object,
+            configRepoMock.Object);
 
         var query = new GetAttendanceReportQuery(new DateTime(2026, 8, 10), new DateTime(2026, 8, 20));
 
@@ -163,6 +169,7 @@ public class HireDateReportFilteringTests
         var departmentRepoMock = new Mock<IDepartmentRepository>();
         var positionRepoMock = new Mock<IPositionRepository>();
         var branchRepoMock = new Mock<IBranchRepository>();
+        var configRepoMock = new Mock<ISystemConfigurationRepository>();
 
         employeeRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Employee> { _employee });
         departmentRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Department>());
@@ -182,7 +189,8 @@ public class HireDateReportFilteringTests
             employeeRepoMock.Object,
             departmentRepoMock.Object,
             positionRepoMock.Object,
-            branchRepoMock.Object);
+            branchRepoMock.Object,
+            configRepoMock.Object);
 
         var query = new GetAdvancedAttendanceReportQuery(new DateTime(2026, 8, 1), new DateTime(2026, 8, 31), "Faltas");
 
