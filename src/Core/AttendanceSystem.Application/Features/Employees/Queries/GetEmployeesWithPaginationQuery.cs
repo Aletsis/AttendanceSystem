@@ -50,10 +50,21 @@ public sealed class GetEmployeesWithPaginationQueryHandler : IRequestHandler<Get
     {
         try
         {
-            var employees = await _employeeRepository.GetAllAsync(cancellationToken);
+            var (employeesPage, totalCount) = await _employeeRepository.GetPaginatedAsync(
+                request.PageNumber,
+                request.PageSize,
+                request.SearchString,
+                request.SortLabel,
+                request.SortDirection,
+                request.IdFilter,
+                request.NameFilter,
+                request.BranchFilter,
+                request.DepartmentFilter,
+                request.PositionFilter,
+                request.StatusFilter,
+                cancellationToken);
 
-            // Cargar datos relacionados para mostrar nombres (esto se hace en memoria por ahora)
-            // Una optimización futura sería hacerlo via DB query con includes
+            // Cargar diccionarios sólo para los elementos de la página actual (o catálogos livianos)
             var branches = await _branchRepository.GetAllAsync(cancellationToken);
             var departments = await _departmentRepository.GetAllAsync(cancellationToken);
             var positions = await _positionRepository.GetAllAsync(cancellationToken);
@@ -64,8 +75,8 @@ public sealed class GetEmployeesWithPaginationQueryHandler : IRequestHandler<Get
             var positionDict = positions.ToDictionary(p => p.Id, p => p.Name);
             var shiftDict = shifts.ToDictionary(s => s.Id, s => s.Name);
 
-            // Mapeo inicial a DTO
-            var query = employees.Select(e => new EmployeeDto
+            // Mapeo selectivo únicamente para los elementos paginados
+            var items = employeesPage.Select(e => new EmployeeDto
             {
                 Id = e.Id.Value,
                 FirstName = e.FirstName,
@@ -103,79 +114,7 @@ public sealed class GetEmployeesWithPaginationQueryHandler : IRequestHandler<Get
                 CreatedBy = e.CreatedBy,
                 UpdatedAt = e.UpdatedAt,
                 UpdatedBy = e.UpdatedBy
-            }).AsQueryable();
-
-            // 1. Filtrado Global
-            if (!string.IsNullOrWhiteSpace(request.SearchString))
-            {
-                query = query.Where(e =>
-                    e.FullName.Contains(request.SearchString, StringComparison.OrdinalIgnoreCase) ||
-                    e.Id.Contains(request.SearchString, StringComparison.OrdinalIgnoreCase) ||
-                    e.BranchName.Contains(request.SearchString, StringComparison.OrdinalIgnoreCase) ||
-                    e.DepartmentName.Contains(request.SearchString, StringComparison.OrdinalIgnoreCase) ||
-                    e.PositionName.Contains(request.SearchString, StringComparison.OrdinalIgnoreCase));
-            }
-
-            // 2. Filtrado por Columna
-            if (!string.IsNullOrWhiteSpace(request.IdFilter))
-                query = query.Where(e => e.Id.Contains(request.IdFilter, StringComparison.OrdinalIgnoreCase));
-
-            if (!string.IsNullOrWhiteSpace(request.NameFilter))
-                query = query.Where(e => e.FullName.Contains(request.NameFilter, StringComparison.OrdinalIgnoreCase));
-
-            if (request.BranchFilter != null && request.BranchFilter.Any())
-            {
-                // Filter by any of the selected branches
-                query = query.Where(e => request.BranchFilter.Contains(e.BranchName));
-            }
-
-            if (request.DepartmentFilter != null && request.DepartmentFilter.Any())
-            {
-                query = query.Where(e => request.DepartmentFilter.Contains(e.DepartmentName));
-            }
-
-            if (request.PositionFilter != null && request.PositionFilter.Any())
-            {
-                query = query.Where(e => request.PositionFilter.Contains(e.PositionName));
-            }
-
-            if (request.StatusFilter != null && request.StatusFilter.Any())
-            {
-                // Status is enum, we compare string representation
-                query = query.Where(e => request.StatusFilter.Contains(e.Status.ToString()));
-            }
-
-            // 2. Sorting
-            // MudBlazor SortDirection: 0=None, 1=Ascending, 2=Descending
-            if (!string.IsNullOrEmpty(request.SortLabel))
-            {
-                // Simple dynamic sorting based on property name
-                // Note: Generics or Reflection is often used here, but specific switch is safer/faster
-                bool ascending = request.SortDirection == 1;
-
-                query = request.SortLabel switch
-                {
-                    "ID" => ascending ? query.OrderBy(e => e.Id.Length).ThenBy(e => e.Id) : query.OrderByDescending(e => e.Id.Length).ThenByDescending(e => e.Id),
-                    "Nombre Completo" => ascending ? query.OrderBy(e => e.FullName) : query.OrderByDescending(e => e.FullName),
-                    "Sucursal" => ascending ? query.OrderBy(e => e.BranchName) : query.OrderByDescending(e => e.BranchName),
-                    "Departamento" => ascending ? query.OrderBy(e => e.DepartmentName) : query.OrderByDescending(e => e.DepartmentName),
-                    "Puesto" => ascending ? query.OrderBy(e => e.PositionName) : query.OrderByDescending(e => e.PositionName),
-                    "Estado" => ascending ? query.OrderBy(e => e.Status) : query.OrderByDescending(e => e.Status),
-                    _ => query // Default no sort change
-                };
-            }
-            else
-            {
-                // Default sort
-                query = query.OrderBy(e => e.Id.Length).ThenBy(e => e.Id);
-            }
-
-            // 3. Paging
-            var totalCount = query.Count();
-            var items = query
-                .Skip(request.PageNumber * request.PageSize) // MudTable uses 0-index pages? verify. Yes, assumption: PageNumber is 0-indexed.
-                .Take(request.PageSize)
-                .ToList();
+            }).ToList();
 
             return Result<PaginatedEmployeesDto>.Success(new PaginatedEmployeesDto(items, totalCount));
         }

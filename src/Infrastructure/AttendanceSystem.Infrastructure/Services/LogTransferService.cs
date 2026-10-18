@@ -14,18 +14,21 @@ public class LogTransferService : ILogTransferService
     private readonly ILogger<LogTransferService> _logger;
 
     private readonly ITimeNormalizer _timeNormalizer;
+    private readonly ICloudDataSourceProvider _dataSourceProvider;
 
     public LogTransferService(
         ISystemConfigurationRepository configurationRepository,
         IExternalAttendanceLogRepository externalLogRepository,
         IUnitOfWork unitOfWork,
         ITimeNormalizer timeNormalizer,
+        ICloudDataSourceProvider dataSourceProvider,
         ILogger<LogTransferService> logger)
     {
         _configurationRepository = configurationRepository;
         _externalLogRepository = externalLogRepository;
         _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
+        _dataSourceProvider = dataSourceProvider;
         _logger = logger;
     }
 
@@ -66,10 +69,16 @@ public class LogTransferService : ILogTransferService
                 return Result<bool>.Failure("La cadena de conexión a la base de datos en la nube no está configurada.");
             }
 
-            await using var dataSource = NpgsqlDataSource.Create(connStr);
+            // F06-P03 / H22: Reutilizar NpgsqlDataSource desde el provider singleton para no agotar ni recrear pools
+            var dataSource = _dataSourceProvider.GetDataSource(connStr);
             await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
 
-            await EnsureSchemaAsync(conn, cancellationToken);
+            // Solo aplicar DDL si aún no ha sido asegurado en esta sesión para esta base de datos
+            if (!_dataSourceProvider.IsSchemaEnsured(connStr))
+            {
+                await EnsureSchemaAsync(conn, cancellationToken);
+                _dataSourceProvider.MarkSchemaEnsured(connStr);
+            }
 
             const string insertSql = @"
                 INSERT INTO external_attendance_logs 
@@ -165,13 +174,15 @@ public class LogTransferService : ILogTransferService
                 return Result<bool>.Failure("La cadena de conexión a la base de datos en la nube no está configurada.");
             }
 
-            await using var dataSource = NpgsqlDataSource.Create(connStr);
+            // Reutilizar NpgsqlDataSource desde el provider singleton
+            var dataSource = _dataSourceProvider.GetDataSource(connStr);
             await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
 
             await using var cmd = new NpgsqlCommand("SELECT 1;", conn);
             await cmd.ExecuteScalarAsync(cancellationToken);
 
             await EnsureSchemaAsync(conn, cancellationToken);
+            _dataSourceProvider.MarkSchemaEnsured(connStr);
 
             return Result<bool>.Success(true);
         }

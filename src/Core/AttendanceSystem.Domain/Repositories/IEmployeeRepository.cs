@@ -16,4 +16,17 @@ public interface IEmployeeRepository
     Task<bool> IsShiftInUseAsync(ShiftId shiftId, CancellationToken cancellationToken = default);
     Task<bool> IsDepartmentInUseAsync(DepartmentId departmentId, CancellationToken cancellationToken = default);
     Task<bool> IsPositionInUseAsync(PositionId positionId, CancellationToken cancellationToken = default);
+    Task<(IReadOnlyList<Employee> Items, int TotalCount)> GetPaginatedAsync(
+        int pageNumber,
+        int pageSize,
+        string? searchString,
+        string? sortLabel,
+        int? sortDirection,
+        string? idFilter = null,
+        string? nameFilter = null,
+        IEnumerable<string>? branchFilter = null,
+        IEnumerable<string>? departmentFilter = null,
+        IEnumerable<string>? positionFilter = null,
+        IEnumerable<string>? statusFilter = null,
+        CancellationToken cancellationToken = default);
 }

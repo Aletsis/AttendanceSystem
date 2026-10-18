@@ -1,3 +1,4 @@
+using AttendanceSystem.Domain.Aggregates.BranchAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.ValueObjects;
@@ -91,5 +92,51 @@ public class EmployeeRepositoryTests
 
         // Assert
         exists.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetPaginatedAsync_ShouldFilterAndPaginateCorrectly()
+    {
+        // Arrange
+        using var context = CreateInMemoryDbContext();
+        var repository = new EmployeeRepository(context);
+
+        var branchA = Branch.Create("B01", "Branch Alpha", "Calle 1");
+        var branchB = Branch.Create("B02", "Branch Beta", "Calle 2");
+        context.Branches.AddRange(branchA, branchB);
+
+        var dept = DepartmentId.CreateNew();
+
+        for (int i = 1; i <= 15; i++)
+        {
+            var emp = Employee.Create(
+                id: EmployeeId.From($"EMP-{i:D3}"),
+                firstName: $"Name{i}",
+                lastName: $"Last{i}",
+                email: $"emp{i}@empresa.com",
+                phoneNumber: null,
+                hireDate: new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+                gender: Gender.Male,
+                branchId: i <= 10 ? branchA.Id : branchB.Id,
+                departmentId: dept,
+                positionId: PositionId.CreateNew(),
+                shiftType: null);
+            repository.Add(emp);
+        }
+        await context.SaveChangesAsync();
+
+        // Act - Page 1 of branchA (pageSize = 5)
+        var (items, total) = await repository.GetPaginatedAsync(
+            pageNumber: 1,
+            pageSize: 5,
+            searchString: null,
+            sortLabel: null,
+            sortDirection: null,
+            branchFilter: new[] { "Branch Alpha" });
+
+        // Assert
+        total.Should().Be(10);
+        items.Should().HaveCount(5);
+        items.All(x => x.BranchId == branchA.Id).Should().BeTrue();
     }
 }

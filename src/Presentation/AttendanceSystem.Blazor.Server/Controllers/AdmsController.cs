@@ -572,6 +572,13 @@ public class AdmsController : ControllerBase
         var localLogs = new List<AttendanceLogDto>();
         var incidents = new List<AdmsIngestionIncident>();
 
+        // F06-P03 / H22: Precargar sucursales externas una sola vez para todo el lote
+        var externalBranches = (await _branchRepository.GetAllAsync())
+            .Where(b => b.IsExternal)
+            .ToDictionary(b => b.Code, StringComparer.OrdinalIgnoreCase);
+
+        var pendingExternalLogs = new List<ExternalAttendanceLog>();
+
         foreach (var line in lines)
         {
             try
@@ -689,14 +696,12 @@ public class AdmsController : ControllerBase
                     if (pin.Length > 3)
                     {
                         var branchCode = pin.Substring(0, 3);
-                        var externalBranch = (await _branchRepository.GetAllAsync()).FirstOrDefault(b => b.IsExternal && b.Code == branchCode);
-
-                        if (externalBranch != null)
+                        if (externalBranches.TryGetValue(branchCode, out var externalBranch))
                         {
                             isExternal = true;
                             var actualEmployeeId = pin.Substring(3);
 
-                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Almacenando localmente y transfiriendo empleado {Id} a Cloud DB",
+                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Almacenando localmente (transferencia diferida) para empleado {Id}",
                                 branchCode, actualEmployeeId);
 
                             var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
@@ -709,29 +714,8 @@ public class AdmsController : ControllerBase
                                 checkType,
                                 SN);
 
-                            await _externalLogRepository.AddAsync(localExtLog);
-                            await _unitOfWork.SaveChangesAsync();
-
-                            var transferResult = await _logTransferService.TransferLogAsync(
-                                branchCode,
-                                actualEmployeeId,
-                                utcCheckTime,
-                                verifyMethod,
-                                checkType,
-                                SN,
-                                localExtLog.Id);
-
-                            if (transferResult.IsSuccess)
-                            {
-                                localExtLog.MarkAsTransferred();
-                            }
-                            else
-                            {
-                                localExtLog.MarkAsFailed(transferResult.Error);
-                            }
-
-                            await _externalLogRepository.UpdateAsync(localExtLog);
-                            await _unitOfWork.SaveChangesAsync();
+                            pendingExternalLogs.Add(localExtLog);
+                            processed++;
                         }
                     }
 
@@ -775,6 +759,28 @@ public class AdmsController : ControllerBase
                     SN,
                     line,
                     $"Excepción parseando línea: {ex.Message}"));
+            }
+        }
+
+        if (pendingExternalLogs.Count > 0)
+        {
+            try
+            {
+                foreach (var extLog in pendingExternalLogs)
+                {
+                    await _externalLogRepository.AddAsync(extLog);
+                }
+                await _unitOfWork.SaveChangesAsync();
+                _logger.LogInformation("ADMS: Se almacenaron localmente {Count} registros externos pendientes de sincronización cloud", pendingExternalLogs.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al persistir registros externos ADMS locales");
+                batchHasFailures = true;
+                incidents.Add(AdmsIngestionIncident.Create(
+                    SN,
+                    $"ExternalBatchCount={pendingExternalLogs.Count}",
+                    $"Error al guardar logs externos: {ex.Message}"));
             }
         }
 
@@ -831,18 +837,28 @@ public class AdmsController : ControllerBase
             _logger.LogInformation("✅ {Count} registros de {SN}, stamp actualizado a {Stamp} (fallas={HasFailures})",
                 processed, SN, (!batchHasFailures && lastCheckTime.HasValue ? lastCheckTime.ToString() : "NO_AVANZADO"), batchHasFailures);
 
-            // Trigger attendance calculation for each affected employee and day
-            foreach (var (pin, date) in uniqueCalculations)
+            // F06-P04 / H23: Coalescer intenciones de recálculo por empleado y ventana afectada
+            var coalescedByPin = uniqueCalculations
+                .GroupBy(u => u.Pin)
+                .Select(g => new
+                {
+                    Pin = g.Key,
+                    MinDate = g.Min(x => x.Date),
+                    MaxDate = g.Max(x => x.Date)
+                });
+
+            foreach (var calc in coalescedByPin)
             {
                 try
                 {
                     // Expand range by 1 day back to ensure night shifts are caught correctly
-                    var processStartDate = date.AddDays(-1);
-                    _jobScheduler.EnqueueAttendanceProcessing(processStartDate, date, pin);
+                    var processStartDate = calc.MinDate.AddDays(-1);
+                    _jobScheduler.EnqueueAttendanceProcessing(processStartDate, calc.MaxDate, calc.Pin);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error encolando cálculo de asistencia para empleado {Pin} en fecha {Date}", pin, date);
+                    _logger.LogError(ex, "Error encolando cálculo coalescido de asistencia para empleado {Pin} en rango {Start} - {End}",
+                        calc.Pin, calc.MinDate, calc.MaxDate);
                 }
             }
         }

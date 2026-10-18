@@ -131,49 +131,101 @@ public class AttendanceJobs
     [JobDisplayName("Download Logs from All Devices")]
     public async Task DownloadFromAllDevices()
     {
-        await _mediator.Send(new DownloadFromAllDevicesCommand(null, null));
+        var result = await _mediator.Send(new DownloadFromAllDevicesCommand(null, null));
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Download Logs from All Devices", result.Error);
+        }
+
+        if (result.Value.Any(d => !d.Success))
+        {
+            var failedDevices = result.Value.Where(d => !d.Success).Select(d => $"{d.DeviceId}: {d.ErrorMessage}");
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Download Logs from All Devices",
+                $"Fallo en uno o más dispositivos: {string.Join("; ", failedDevices)}");
+        }
     }
 
     [JobDisplayName("Check for Critical Position Absences")]
     public async Task CheckCriticalAbsences()
     {
-        await _mediator.Send(new CheckCriticalAbsencesCommand());
+        var result = await _mediator.Send(new CheckCriticalAbsencesCommand());
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Check for Critical Position Absences", result.Error);
+        }
     }
 
     [JobDisplayName("Automated Database Backup")]
     public async Task PerformAutoBackup()
     {
-        await _mediator.Send(new AttendanceSystem.Application.Features.Backup.Commands.CreateBackupCommand("Full", "Respaldo Automático Programado"));
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Backup.Commands.CreateBackupCommand("Full", "Respaldo Automático Programado"));
+        if (!result.Success)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Automated Database Backup", result.Message);
+        }
     }
 
     [JobDisplayName("Automated Daily Report")]
     public async Task SendAutoReport()
     {
-        await _mediator.Send(new AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand());
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand());
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Automated Daily Report", result.Error);
+        }
     }
 
     [JobDisplayName("Monitor Device Health (Heartbeat)")]
     public async Task MonitorDeviceHealth()
     {
-        await _mediator.Send(new AttendanceSystem.Application.Features.Devices.Commands.MonitorDeviceHealth.MonitorDeviceHealthCommand());
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Devices.Commands.MonitorDeviceHealth.MonitorDeviceHealthCommand());
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Monitor Device Health (Heartbeat)", result.Error);
+        }
     }
 
     [JobDisplayName("Sync Biometrics for Employee {1} from Device {0}")]
     public async Task SyncEmployeeBiometrics(string deviceId, string employeeId)
     {
-        await _mediator.Send(new AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics.SyncEmployeeBiometricsCommand(deviceId, employeeId));
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics.SyncEmployeeBiometricsCommand(deviceId, employeeId));
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                $"Sync Biometrics for Employee {employeeId} from Device {deviceId}", result.Error);
+        }
     }
 
     [JobDisplayName("Sync Logs with Cloud DB")]
     public async Task SyncCloudLogs()
     {
-        await _mediator.Send(new AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs.SyncCloudLogsCommand());
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs.SyncCloudLogsCommand());
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Sync Logs with Cloud DB", result.Error);
+        }
     }
 
     [JobDisplayName("Process Attendance for Employee {2} from {0:yyyy-MM-dd} to {1:yyyy-MM-dd}")]
     public async Task ProcessAttendance(DateTime startDate, DateTime endDate, string? employeeId)
     {
         var empId = string.IsNullOrEmpty(employeeId) ? null : AttendanceSystem.Domain.ValueObjects.EmployeeId.From(employeeId);
-        await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(startDate, endDate, EmployeeId: empId));
+        try
+        {
+            await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.ProcessDailyAttendanceCommand(startDate, endDate, EmployeeId: empId));
+        }
+        catch (Exception ex)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                $"Process Attendance for Employee {employeeId ?? "ALL"} from {startDate:yyyy-MM-dd} to {endDate:yyyy-MM-dd}",
+                ex.Message, ex);
+        }
     }
 }

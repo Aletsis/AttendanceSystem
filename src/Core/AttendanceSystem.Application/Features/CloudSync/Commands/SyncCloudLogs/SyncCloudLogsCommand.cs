@@ -35,7 +35,12 @@ public sealed class SyncCloudLogsCommandHandler : IRequestHandler<SyncCloudLogsC
         {
             // 1. Reintentar subida de logs externos locales pendientes hacia la nube
             var uploadResult = await _logTransferService.RetryPendingTransfersAsync(cancellationToken);
-            int uploadedCount = uploadResult.IsSuccess ? uploadResult.Value : 0;
+            if (!uploadResult.IsSuccess)
+            {
+                _logger.LogError("Fallo durante la subida de logs externos pendientes: {Error}", uploadResult.Error);
+                return Result<SyncCloudLogsResultDto>.Failure($"Fallo en subida a la nube: {uploadResult.Error}");
+            }
+            int uploadedCount = uploadResult.Value;
 
             // 2. Obtener los códigos de las sucursales locales (las que no son externas)
             var allBranches = await _branchRepository.GetAllAsync(cancellationToken);
@@ -49,14 +54,12 @@ public sealed class SyncCloudLogsCommandHandler : IRequestHandler<SyncCloudLogsC
             if (localBranchCodes.Any())
             {
                 var downloadResult = await _cloudLogSyncService.SyncPendingLogsForBranchesAsync(localBranchCodes, cancellationToken);
-                if (downloadResult.IsSuccess)
+                if (!downloadResult.IsSuccess)
                 {
-                    downloadedCount = downloadResult.Value;
+                    _logger.LogError("Error al sincronizar descargas de la nube: {Error}", downloadResult.Error);
+                    return Result<SyncCloudLogsResultDto>.Failure($"Fallo en descarga desde la nube: {downloadResult.Error}");
                 }
-                else
-                {
-                    _logger.LogWarning("Error al sincronizar descargas de la nube: {Error}", downloadResult.Error);
-                }
+                downloadedCount = downloadResult.Value;
             }
 
             return Result<SyncCloudLogsResultDto>.Success(new SyncCloudLogsResultDto(downloadedCount, uploadedCount));

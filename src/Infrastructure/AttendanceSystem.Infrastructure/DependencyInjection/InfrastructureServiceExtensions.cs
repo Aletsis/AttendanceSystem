@@ -96,6 +96,7 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IDeviceLockService, DeviceLockService>();
         services.AddSingleton<IAttendanceCalculationLockService, AttendanceCalculationLockService>();
         services.AddSingleton<IRestoreStateService, RestoreStateService>();
+        services.AddSingleton<ICloudDataSourceProvider, CloudDataSourceProvider>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<ILogTransferService, LogTransferService>();
         services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();

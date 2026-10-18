@@ -147,6 +147,7 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.HasIndex(e => e.BranchId);
         builder.HasIndex(e => e.DepartmentId);
         builder.HasIndex(e => e.PositionId);
+        builder.HasIndex(e => new { e.Status, e.BranchId, e.DepartmentId });
         builder.Property(e => e.CardNumber)
             .IsRequired(false)
             .HasMaxLength(50); // Tarjetas RFID suelen ser cortas, 50 es seguro

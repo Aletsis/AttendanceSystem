@@ -89,13 +89,18 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
         var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
 
+        // F06-P04 / H23: Diccionario O(1) de empleados para eliminar búsquedas lineales FirstOrDefault por cada registro
+        var employeeDict = employees.ToDictionary(e => e.Id);
+        var attendanceByEmployee = attendanceData
+            .GroupBy(r => r.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var processed = new List<(Employee Emp, DailyAttendance Att)>();
 
-        // 4. Logica de filtrado
+        // 4. Logica de filtrado optimizada con lookups O(1)
         foreach (var item in attendanceData)
         {
-            var emp = employees.FirstOrDefault(e => e.Id == item.EmployeeId);
-            if (emp == null) continue;
+            if (!employeeDict.TryGetValue(item.EmployeeId, out var emp)) continue;
 
             // Descartar registros anteriores a la fecha de ingreso/alta
             if (item.Date.Date < emp.HireDate.Date) continue;
@@ -153,8 +158,11 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             var empRef = g.First().Emp;
             var details = g.Select(x => x.Att).OrderBy(d => d.Date).ToList();
 
-            // Calcular acumulados de tiempo extra soportando bolsa diaria y bolsa semanal del período
-            var empAllRecords = attendanceData.Where(r => r.EmployeeId == g.Key);
+            // F06-P04 / H23: Utilizar el mapa precargado attendanceByEmployee en vez de Where() sobre toda la colección
+            var empAllRecords = attendanceByEmployee.TryGetValue(g.Key, out var allRecs)
+                ? allRecs
+                : Enumerable.Empty<DailyAttendance>();
+
             var overtimeByRecordId = Common.WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
                 empAllRecords,
                 empRef,
@@ -163,7 +171,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             // Filtro para "DescansoErroneo": Solo incluir empleados que tengan al menos un registro de trabajo en día de descanso y al menos una falta.
             if (request.ReportType == "DescansoErroneo")
             {
-                var empRecords = attendanceData.Where(r => r.EmployeeId == g.Key && r.Date.Date >= empRef.HireDate.Date).ToList();
+                var empRecords = empAllRecords.Where(r => r.Date.Date >= empRef.HireDate.Date).ToList();
                 bool hasWorkedRest = empRecords.Any(r => r.WorkedOnRestDay);
                 bool hasAbsence = empRecords.Any(r => r.IsAbsent);
 

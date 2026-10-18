@@ -12,15 +12,18 @@ public class CloudLogSyncService : ICloudLogSyncService
 {
     private readonly ISystemConfigurationRepository _configurationRepository;
     private readonly ISender _sender;
+    private readonly ICloudDataSourceProvider _dataSourceProvider;
     private readonly ILogger<CloudLogSyncService> _logger;
 
     public CloudLogSyncService(
         ISystemConfigurationRepository configurationRepository,
         ISender sender,
+        ICloudDataSourceProvider dataSourceProvider,
         ILogger<CloudLogSyncService> logger)
     {
         _configurationRepository = configurationRepository;
         _sender = sender;
+        _dataSourceProvider = dataSourceProvider;
         _logger = logger;
     }
 
@@ -45,22 +48,26 @@ public class CloudLogSyncService : ICloudLogSyncService
                 return Result<IReadOnlyList<CloudLogItemDto>>.Failure("La cadena de conexión a la base de datos en la nube no está configurada.");
             }
 
-            await using var dataSource = NpgsqlDataSource.Create(connStr);
+            var dataSource = _dataSourceProvider.GetDataSource(connStr);
             await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
 
-            // Asegurar que las columnas de reclamo concurrente existan
-            const string ddlSql = @"
-                ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_token VARCHAR(64);
-                ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP;
-                CREATE INDEX IF NOT EXISTS ix_ext_logs_claim ON external_attendance_logs (branch_code, is_downloaded, claim_expires_at);";
-            try
+            // Asegurar que las columnas de reclamo concurrente existan solo una vez
+            if (!_dataSourceProvider.IsSchemaEnsured(connStr + "_claim"))
             {
-                await using var ddlCmd = new NpgsqlCommand(ddlSql, conn);
-                await ddlCmd.ExecuteNonQueryAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "No se pudo verificar o aplicar esquema de reclamo en la nube (continuando con consulta estándar)");
+                const string ddlSql = @"
+                    ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_token VARCHAR(64);
+                    ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP;
+                    CREATE INDEX IF NOT EXISTS ix_ext_logs_claim ON external_attendance_logs (branch_code, is_downloaded, claim_expires_at);";
+                try
+                {
+                    await using var ddlCmd = new NpgsqlCommand(ddlSql, conn);
+                    await ddlCmd.ExecuteNonQueryAsync(cancellationToken);
+                    _dataSourceProvider.MarkSchemaEnsured(connStr + "_claim");
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "No se pudo verificar o aplicar esquema de reclamo en la nube (continuando con consulta estándar)");
+                }
             }
 
             var claimToken = Guid.NewGuid().ToString("N");
@@ -204,7 +211,7 @@ public class CloudLogSyncService : ICloudLogSyncService
             if (string.IsNullOrWhiteSpace(connStr))
                 return Result<bool>.Failure("La cadena de conexión a la base de datos en la nube no está configurada.");
 
-            await using var dataSource = NpgsqlDataSource.Create(connStr);
+            var dataSource = _dataSourceProvider.GetDataSource(connStr);
             await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
 
             const string sql = @"
