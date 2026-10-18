@@ -1,3 +1,5 @@
+using Microsoft.Extensions.DependencyInjection;
+using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using MediatR;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
@@ -32,6 +34,7 @@ public class AdmsController : ControllerBase
     private readonly IAttendanceJobScheduler _jobScheduler;
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
     private readonly ITimeNormalizer _timeNormalizer;
+    private readonly IServiceScopeFactory? _scopeFactory;
 
     public AdmsController(
         ILogger<AdmsController> logger,
@@ -45,7 +48,8 @@ public class AdmsController : ControllerBase
         ILogTransferService logTransferService,
         IAttendanceJobScheduler jobScheduler,
         IExternalAttendanceLogRepository externalLogRepository,
-        ITimeNormalizer timeNormalizer)
+        ITimeNormalizer timeNormalizer,
+        IServiceScopeFactory? scopeFactory = null)
     {
         _logger = logger;
         _mediator = mediator;
@@ -59,6 +63,7 @@ public class AdmsController : ControllerBase
         _jobScheduler = jobScheduler;
         _externalLogRepository = externalLogRepository;
         _timeNormalizer = timeNormalizer;
+        _scopeFactory = scopeFactory;
     }
 
     private async Task<Device?> ValidateAuthorizedDeviceAsync(string? sn)
@@ -277,7 +282,7 @@ public class AdmsController : ControllerBase
             {
                 return StatusCode(StatusCodes.Status500InternalServerError, "ERROR: Batch persistence failed\n");
             }
-            return Content($"OK: {lines.Length}", "text/plain");
+            return Content($"OK: {processedCount}", "text/plain");
         }
 
         if (table?.Equals("USER", StringComparison.OrdinalIgnoreCase) == true ||
@@ -393,13 +398,9 @@ public class AdmsController : ControllerBase
 
         if (_admsCommandService.HasPendingCommands(SN))
         {
-            var (command, logId) = _admsCommandService.GetNextCommand(SN);
-            if (!string.IsNullOrEmpty(command))
+            var (cmdId, command, logId) = _admsCommandService.GetNextCommand(SN);
+            if (!string.IsNullOrEmpty(command) && !string.IsNullOrEmpty(cmdId))
             {
-                var cmdId = new Random().Next(1000, 9999).ToString();
-                if (logId.HasValue)
-                    _admsCommandService.RegisterPendingExecution(SN, cmdId, logId.Value);
-
                 _logger.LogInformation("📤 Comando → {SN}: {Command}", SN, SanitizeCommand(command));
                 return Content($"C:{cmdId}:{command}\n", "text/plain;charset=ISO-8859-1");
             }
@@ -505,14 +506,18 @@ public class AdmsController : ControllerBase
         {
             if (!string.IsNullOrEmpty(id))
             {
-                var logId = _admsCommandService.GetAndRemovePendingExecution(id);
+                var returnCode = int.TryParse(ret, out var r) ? r : -1;
+                var logId = await _admsCommandService.AcknowledgeCommandExecutionAsync(sn, id, returnCode);
+                if (!logId.HasValue)
+                {
+                    logId = _admsCommandService.GetAndRemovePendingExecution(sn, id);
+                }
+
                 if (logId.HasValue)
                 {
                     var log = await _downloadLogRepository.GetByIdAsync(new AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLogId(logId.Value));
                     if (log != null)
                     {
-                        var returnCode = int.TryParse(ret, out var r) ? r : -1;
-
                         if (returnCode >= 0 || returnCode == -2)
                         {
                             // Return >= 0 o -2 = éxito o sin datos nuevos en el rango
@@ -561,9 +566,11 @@ public class AdmsController : ControllerBase
         var device = await _deviceRepository.GetBySerialNumberAsync(SN);
         if (device == null) return 0;
         int processed = 0;
+        bool batchHasFailures = false;
         DateTime? lastCheckTime = null;
         var uniqueCalculations = new HashSet<(string Pin, DateTime Date)>();
         var localLogs = new List<AttendanceLogDto>();
+        var incidents = new List<AdmsIngestionIncident>();
 
         foreach (var line in lines)
         {
@@ -711,7 +718,8 @@ public class AdmsController : ControllerBase
                                 utcCheckTime,
                                 verifyMethod,
                                 checkType,
-                                SN);
+                                SN,
+                                localExtLog.Id);
 
                             if (transferResult.IsSuccess)
                             {
@@ -750,10 +758,23 @@ public class AdmsController : ControllerBase
                     if (lastCheckTime == null || checkTime > lastCheckTime)
                         lastCheckTime = checkTime;
                 }
+                else
+                {
+                    batchHasFailures = true;
+                    incidents.Add(AdmsIngestionIncident.Create(
+                        SN,
+                        line,
+                        "Línea de asistencia malformada o campos obligatorios no válidos"));
+                }
             }
             catch (Exception ex)
             {
+                batchHasFailures = true;
                 _logger.LogError(ex, "Error línea: {Line}", line);
+                incidents.Add(AdmsIngestionIncident.Create(
+                    SN,
+                    line,
+                    $"Excepción parseando línea: {ex.Message}"));
             }
         }
 
@@ -766,7 +787,29 @@ public class AdmsController : ControllerBase
             if (!batchResult.IsSuccess)
             {
                 _logger.LogError("Error al procesar lote de asistencia ADMS: {Error}", batchResult.Error);
+                batchHasFailures = true;
+                incidents.Add(AdmsIngestionIncident.Create(
+                    SN,
+                    $"BatchCount={localLogs.Count}",
+                    $"Error al guardar lote en base de datos: {batchResult.Error}"));
+                processed = 0;
                 return -1; // F01-P02 / H11: Indicar fallo explícito para no confirmar al terminal ni avanzar cursor
+            }
+        }
+
+        if (incidents.Count > 0 && _scopeFactory != null)
+        {
+            try
+            {
+                using var scope = _scopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+                await dbContext.AdmsIngestionIncidents.AddRangeAsync(incidents);
+                await dbContext.SaveChangesAsync();
+                _logger.LogWarning("⚠️ ADMS: Se registraron {Count} incidentes de ingesta para SN: {SN}", incidents.Count, SN);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error al guardar incidentes de ingesta ADMS para SN: {SN}", SN);
             }
         }
 
@@ -775,12 +818,18 @@ public class AdmsController : ControllerBase
             device.RecordSuccessfulDownload(processed);
             await _deviceRepository.UpdateAsync(device);
 
-            if (lastCheckTime.HasValue)
+            if (!batchHasFailures && lastCheckTime.HasValue)
+            {
                 await _deviceRepository.UpdateLastAttLogTimestampAsync(SN, lastCheckTime.Value);
+            }
+            else if (batchHasFailures)
+            {
+                _logger.LogWarning("⚠️ ADMS: Cursor temporal no avanzado para {SN} debido a fallas/rechazos en el lote", SN);
+            }
 
             await _unitOfWork.SaveChangesAsync();
-            _logger.LogInformation("✅ {Count} registros de {SN}, stamp actualizado a {Stamp}",
-                processed, SN, lastCheckTime);
+            _logger.LogInformation("✅ {Count} registros de {SN}, stamp actualizado a {Stamp} (fallas={HasFailures})",
+                processed, SN, (!batchHasFailures && lastCheckTime.HasValue ? lastCheckTime.ToString() : "NO_AVANZADO"), batchHasFailures);
 
             // Trigger attendance calculation for each affected employee and day
             foreach (var (pin, date) in uniqueCalculations)

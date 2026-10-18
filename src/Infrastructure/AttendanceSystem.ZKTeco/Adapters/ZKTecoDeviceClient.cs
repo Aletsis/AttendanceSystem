@@ -80,7 +80,7 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
     }
 
     // ... (Métodos intermedios sin cambios hasta SetUserAsync) ...
-    public async Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(
+    public async Task<DeviceLogsResult> GetAttendanceLogsAsync(
         string deviceId,
         DateTime? fromDate,
         DateTime? toDate = null,
@@ -93,7 +93,7 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
         try
         {
             var records = new List<RawAttendanceRecord>();
-            await Task.Run(() =>
+            var readResult = await Task.Run<DeviceLogsResult>(() =>
         {
             _device.EnableDevice(1, false);
 
@@ -156,12 +156,14 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
                     _logger.LogInformation("Lectura completada. Leídos: {TotalRead}, Agregados: {AddedCount}. Rango en Dispositivo: {Min} - {Max}. Filtros (hora local): From={From}, To={To}",
                         totalRead, addedCount, minDeviceDate, maxDeviceDate, localFromDate, localToDate);
 
+                    return records.Count == 0 ? DeviceLogsResult.Empty(totalRead) : DeviceLogsResult.Success(records, totalRead);
                 }
                 else
                 {
                     int errorCode = 0;
                     _device.GetLastError(ref errorCode);
-                    _logger.LogWarning("ReadAllGLogData devolvió false. Código de error: {ErrorCode}", errorCode);
+                    _logger.LogError("ReadAllGLogData devolvió false. Código de error SDK: {ErrorCode}", errorCode);
+                    return DeviceLogsResult.Failed($"Fallo al leer datos del dispositivo ZKTeco (SDK Error Code: {errorCode})");
                 }
             }
             finally
@@ -170,7 +172,7 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
             }
         }, cancellationToken);
 
-            return records;
+            return readResult;
         }
         finally
         {
@@ -187,45 +189,37 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
         if (!_isConnected)
             throw new InvalidOperationException("Dispositivo no conectado");
 
+        if (!fromDate.HasValue && !toDate.HasValue)
+        {
+            _logger.LogError("Intento de borrado no acotado (ClearGLog) bloqueado por seguridad en ZKTeco para dispositivo {DeviceId}.", deviceId);
+            throw new ArgumentException("La limpieza de marcajes requiere fechas límite confirmadas (fromDate y toDate) para evitar borrado total accidental.");
+        }
+
         await _lock.WaitAsync(cancellationToken);
         try
         {
             return await Task.Run(() =>
             {
-                if (fromDate.HasValue || toDate.HasValue)
+                var start = fromDate ?? new DateTime(2000, 1, 1);
+                var end = toDate ?? DateTime.UtcNow;
+
+                var startStr = start.ToString("yyyy-MM-dd HH:mm:ss");
+                var endStr = end.ToString("yyyy-MM-dd HH:mm:ss");
+
+                _logger.LogInformation("Borrando logs del dispositivo ZKTeco en el rango confirmado: {Start} - {End}", startStr, endStr);
+
+                bool success = _device.DeleteAttlogBetweenTheDate(1, startStr, endStr);
+                if (success)
                 {
-                    // Si falta una de las fechas, tomamos un valor extremo para cubrir el rango completo
-                    var start = fromDate ?? new DateTime(2000, 1, 1);
-                    var end = toDate ?? DateTime.Now.AddYears(1);
-
-                    var startStr = start.ToString("yyyy-MM-dd HH:mm:ss");
-                    var endStr = end.ToString("yyyy-MM-dd HH:mm:ss");
-
-                    _logger.LogInformation("Borrando logs del dispositivo ZKTeco en el rango: {Start} - {End}", startStr, endStr);
-
-                    bool success = _device.DeleteAttlogBetweenTheDate(1, startStr, endStr);
-                    if (success)
-                    {
-                        _device.RefreshData(1);
-                    }
-                    else
-                    {
-                        int errorCode = 0;
-                        _device.GetLastError(ref errorCode);
-                        _logger.LogError("Fallo al borrar logs por rango en el dispositivo. SDK Error Code: {ErrorCode}", errorCode);
-                    }
-                    return success;
+                    _device.RefreshData(1);
                 }
                 else
                 {
-                    _logger.LogInformation("Borrando todos los logs del dispositivo ZKTeco (ClearGLog)...");
-                    bool success = _device.ClearGLog(1);
-                    if (success)
-                    {
-                        _device.RefreshData(1);
-                    }
-                    return success;
+                    int errorCode = 0;
+                    _device.GetLastError(ref errorCode);
+                    _logger.LogError("Fallo al borrar logs por rango en el dispositivo. SDK Error Code: {ErrorCode}", errorCode);
                 }
+                return success;
             }, cancellationToken);
         }
         finally
@@ -865,10 +859,14 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
         }
     }
 
+    private int _disposed;
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
+
         try
         {
+            _lock.Wait(TimeSpan.FromSeconds(3));
             if (_isConnected)
             {
                 _device.Disconnect();
@@ -881,9 +879,17 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
         }
         finally
         {
+            try { _lock.Release(); } catch { }
             if (OperatingSystem.IsWindows() && System.Runtime.InteropServices.Marshal.IsComObject(_device))
             {
-                System.Runtime.InteropServices.Marshal.FinalReleaseComObject(_device);
+                try
+                {
+                    System.Runtime.InteropServices.Marshal.FinalReleaseComObject(_device);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error liberando objeto COM");
+                }
             }
             _lock.Dispose();
         }

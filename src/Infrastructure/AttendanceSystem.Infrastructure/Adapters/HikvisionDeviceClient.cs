@@ -2,7 +2,9 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Enumerations;
 using Microsoft.Extensions.Logging;
+using System.Globalization;
 using System.Net.Http;
+using System.Xml.Linq;
 
 namespace AttendanceSystem.Infrastructure.Adapters;
 
@@ -38,81 +40,158 @@ public class HikvisionDeviceClient : IDeviceClient
         }
     }
 
-    public async Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(string deviceId, DateTime? fromDate, DateTime? toDate = null, CancellationToken cancellationToken = default)
+    public async Task<DeviceLogsResult> GetAttendanceLogsAsync(string deviceId, DateTime? fromDate, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("Obteniendo logs de Hikvision para {DeviceId} desde {From} hasta {To}...", deviceId, fromDate, toDate);
 
         var start = fromDate?.ToString("yyyy-MM-ddTHH:mm:ss") ?? DateTime.Today.AddDays(-1).ToString("yyyy-MM-ddTHH:mm:ss");
         var end = toDate?.ToString("yyyy-MM-ddTHH:mm:ss") ?? DateTime.Now.ToString("yyyy-MM-ddTHH:mm:ss");
 
-        var filter = $@"<AcsEventSearchDescription>
-            <searchID>{Guid.NewGuid()}</searchID>
-            <searchResultPosition>0</searchResultPosition>
-            <maxResults>1000</maxResults>
+        var records = new List<RawAttendanceRecord>();
+        int searchPosition = 0;
+        const int pageSize = 50;
+        int totalMatches = 0;
+        var searchId = Guid.NewGuid().ToString();
+
+        try
+        {
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var filter = $@"<AcsEventSearchDescription>
+            <searchID>{searchId}</searchID>
+            <searchResultPosition>{searchPosition}</searchResultPosition>
+            <maxResults>{pageSize}</maxResults>
             <startTime>{start}</startTime>
             <endTime>{end}</endTime>
         </AcsEventSearchDescription>";
 
-        try
-        {
-            var response = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/AcsEvent", filter, cancellationToken);
-            if (!response.IsSuccessStatusCode) return new List<RawAttendanceRecord>();
+                var response = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/AcsEvent", filter, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    var statusCode = (int)response.StatusCode;
+                    var errorMsg = $"Error HTTP {statusCode} ({response.ReasonPhrase}) al consultar eventos en posición {searchPosition}";
+                    _logger.LogError("Hikvision {DeviceId}: {Error}", deviceId, errorMsg);
 
-            var xml = await response.Content.ReadAsStringAsync(cancellationToken);
-            return ParseAcsEvents(xml);
+                    if (records.Count > 0)
+                    {
+                        return DeviceLogsResult.Partial(records, errorMsg, totalMatches > 0 ? totalMatches : records.Count);
+                    }
+                    return DeviceLogsResult.Failed(errorMsg);
+                }
+
+                var xml = await response.Content.ReadAsStringAsync(cancellationToken);
+                var pageRecords = ParseAcsEventsXml(xml, out var statusStr, out var numOfMatches, out var reportedTotal);
+
+                if (reportedTotal > 0)
+                {
+                    totalMatches = reportedTotal;
+                }
+
+                records.AddRange(pageRecords);
+
+                if (string.Equals(statusStr, "NO MATCH", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+
+                if (numOfMatches <= 0 || pageRecords.Count == 0)
+                {
+                    break;
+                }
+
+                searchPosition += numOfMatches;
+
+                if (totalMatches > 0 && searchPosition >= totalMatches)
+                {
+                    break;
+                }
+
+                if (!string.IsNullOrEmpty(statusStr) &&
+                    !string.Equals(statusStr, "MORE", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(statusStr, "OK", StringComparison.OrdinalIgnoreCase))
+                {
+                    break;
+                }
+            }
+
+            if (records.Count == 0)
+            {
+                return DeviceLogsResult.Empty(totalMatches);
+            }
+
+            return DeviceLogsResult.Success(records, totalMatches > 0 ? totalMatches : records.Count);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Descarga cancelada para dispositivo Hikvision {DeviceId}", deviceId);
+            return DeviceLogsResult.Cancelled();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error obteniendo logs de Hikvision");
-            return new List<RawAttendanceRecord>();
+            _logger.LogError(ex, "Excepción obteniendo logs de Hikvision para {DeviceId}", deviceId);
+            if (records.Count > 0)
+            {
+                return DeviceLogsResult.Partial(records, ex.Message, totalMatches > 0 ? totalMatches : records.Count);
+            }
+            return DeviceLogsResult.Failed(ex.Message);
         }
     }
 
-    private IReadOnlyList<RawAttendanceRecord> ParseAcsEvents(string xml)
+    private static IReadOnlyList<RawAttendanceRecord> ParseAcsEventsXml(
+        string xml,
+        out string? statusStr,
+        out int numOfMatches,
+        out int totalMatches)
     {
+        statusStr = null;
+        numOfMatches = 0;
+        totalMatches = 0;
         var records = new List<RawAttendanceRecord>();
 
-        // El XML de Hikvision tiene múltiples <AcsEvent> dentro de <AcsEventSearchList>
-        var searchPattern = "<AcsEvent>";
-        var currentPos = 0;
-
-        while ((currentPos = xml.IndexOf(searchPattern, currentPos)) != -1)
+        try
         {
-            var endPos = xml.IndexOf("</AcsEvent>", currentPos);
-            if (endPos == -1) break;
+            var doc = XDocument.Parse(xml);
+            var root = doc.Root;
+            if (root == null) return records;
 
-            var eventXml = xml[currentPos..(endPos + 11)];
+            statusStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "responseStatusStrg")?.Value;
+            var numStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "numOfMatches")?.Value;
+            var totStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "totalMatches")?.Value;
 
-            var employeeId = ExtractXmlValue(eventXml, "employeeNoString");
-            var timeStr = ExtractXmlValue(eventXml, "time");
-            var major = ExtractXmlValue(eventXml, "major");
-            var minor = ExtractXmlValue(eventXml, "minor");
+            if (int.TryParse(numStr, out var n)) numOfMatches = n;
+            if (int.TryParse(totStr, out var t)) totalMatches = t;
 
-            // Major 5 y Minor 1 ó 38 suelen ser eventos de acceso/asistencia válidos
-            // 1 = Legal Card, 38 = Face Match
-            if (!string.IsNullOrEmpty(employeeId))
+            foreach (var eventElem in root.Descendants().Where(e => e.Name.LocalName == "AcsEvent"))
             {
+                var employeeId = eventElem.Elements().FirstOrDefault(e => e.Name.LocalName == "employeeNoString")?.Value;
+                var timeStr = eventElem.Elements().FirstOrDefault(e => e.Name.LocalName == "time")?.Value;
+                var minorStr = eventElem.Elements().FirstOrDefault(e => e.Name.LocalName == "minor")?.Value;
+
+                if (string.IsNullOrEmpty(employeeId)) continue;
+
                 DateTime time;
-                if (DateTimeOffset.TryParse(timeStr, out var dto))
+                if (DateTimeOffset.TryParse(timeStr, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dto))
                 {
                     time = dto.UtcDateTime;
                 }
-                else if (DateTime.TryParse(timeStr, out var dt))
+                else if (DateTime.TryParse(timeStr, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
                 {
                     time = dt;
                 }
                 else
                 {
-                    currentPos = endPos + 11;
                     continue;
                 }
 
-                // Mapear el "minor" a CheckType si es posible
-                // Por defecto entrada (0) si no sabemos
-                records.Add(new RawAttendanceRecord(employeeId, time, 0, 0, 0));
+                int inOutMode = 0;
+                records.Add(new RawAttendanceRecord(employeeId, time, 0, inOutMode, 0));
             }
-
-            currentPos = endPos + 11;
+        }
+        catch
+        {
+            // Fallback en caso de XML malformado
         }
 
         return records;
@@ -124,8 +203,8 @@ public class HikvisionDeviceClient : IDeviceClient
         DateTime? toDate = null,
         CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("Hikvision no soporta limpieza remota de logs vía ISAPI de forma estándar o requiere privilegios especiales.");
-        return Task.FromResult(true);
+        _logger.LogWarning("Hikvision no soporta limpieza de logs vía ISAPI de forma estándar. Operación rechazada de forma segura.");
+        return Task.FromResult(false);
     }
 
     public Task DisconnectAsync(CancellationToken cancellationToken = default)
@@ -199,26 +278,39 @@ public class HikvisionDeviceClient : IDeviceClient
 
     public async Task<IReadOnlyList<DeviceUserDto>> GetAllUsersAsync(CancellationToken cancellationToken = default)
     {
-        var searchXml = $@"<UserInfoSearchCond>
-            <searchID>{Guid.NewGuid()}</searchID>
-            <maxResults>1000</maxResults>
-            <searchResultPosition>0</searchResultPosition>
-        </UserInfoSearchCond>";
-
         var faceDict = new Dictionary<string, string>();
         try
         {
-            var faceSearchXml = $@"<FaceInfoSearchCond>
-                <searchID>{Guid.NewGuid()}</searchID>
-                <maxResults>1000</maxResults>
-                <searchResultPosition>0</searchResultPosition>
-            </FaceInfoSearchCond>";
+            int facePosition = 0;
+            const int facePageSize = 50;
+            var faceSearchId = Guid.NewGuid().ToString();
 
-            var faceResponse = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/UserInfo/Face/Search", faceSearchXml, cancellationToken);
-            if (faceResponse.IsSuccessStatusCode)
+            while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var faceSearchXml = $@"<FaceInfoSearchCond>
+                    <searchID>{faceSearchId}</searchID>
+                    <maxResults>{facePageSize}</maxResults>
+                    <searchResultPosition>{facePosition}</searchResultPosition>
+                </FaceInfoSearchCond>";
+
+                var faceResponse = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/UserInfo/Face/Search", faceSearchXml, cancellationToken);
+                if (!faceResponse.IsSuccessStatusCode) break;
+
                 var faceXml = await faceResponse.Content.ReadAsStringAsync(cancellationToken);
-                faceDict = ParseFaces(faceXml);
+                var (pageFaces, statusStr, numMatches, totalMatches) = ParseFacesXml(faceXml);
+                foreach (var kvp in pageFaces)
+                {
+                    faceDict[kvp.Key] = kvp.Value;
+                }
+
+                if (numMatches <= 0 || pageFaces.Count == 0) break;
+                facePosition += numMatches;
+                if (totalMatches > 0 && facePosition >= totalMatches) break;
+                if (!string.IsNullOrEmpty(statusStr) &&
+                    !string.Equals(statusStr, "MORE", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(statusStr, "OK", StringComparison.OrdinalIgnoreCase)) break;
             }
         }
         catch (Exception ex)
@@ -226,75 +318,133 @@ public class HikvisionDeviceClient : IDeviceClient
             _logger.LogWarning(ex, "Error buscando rostros/fotos en Hikvision. Continuando sin fotos.");
         }
 
+        var users = new List<DeviceUserDto>();
         try
         {
-            var response = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/UserInfo/Search", searchXml, cancellationToken);
-            if (!response.IsSuccessStatusCode) return new List<DeviceUserDto>();
+            int userPosition = 0;
+            const int userPageSize = 50;
+            var userSearchId = Guid.NewGuid().ToString();
 
-            var xml = await response.Content.ReadAsStringAsync(cancellationToken);
-            return ParseUsers(xml, faceDict);
+            while (true)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var searchXml = $@"<UserInfoSearchCond>
+                    <searchID>{userSearchId}</searchID>
+                    <maxResults>{userPageSize}</maxResults>
+                    <searchResultPosition>{userPosition}</searchResultPosition>
+                </UserInfoSearchCond>";
+
+                var response = await SendRequestAsync(HttpMethod.Post, "/ISAPI/AccessControl/UserInfo/Search", searchXml, cancellationToken);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogError("Error HTTP al consultar usuarios en posición {Pos} de Hikvision", userPosition);
+                    break;
+                }
+
+                var xml = await response.Content.ReadAsStringAsync(cancellationToken);
+                var (pageUsers, statusStr, numMatches, totalMatches) = ParseUsersXml(xml, faceDict);
+                users.AddRange(pageUsers);
+
+                if (numMatches <= 0 || pageUsers.Count == 0) break;
+                userPosition += numMatches;
+                if (totalMatches > 0 && userPosition >= totalMatches) break;
+                if (!string.IsNullOrEmpty(statusStr) &&
+                    !string.Equals(statusStr, "MORE", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(statusStr, "OK", StringComparison.OrdinalIgnoreCase)) break;
+            }
+
+            return users;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error buscando usuarios en Hikvision");
-            return new List<DeviceUserDto>();
+            return users;
         }
     }
 
-    private List<DeviceUserDto> ParseUsers(string xml, Dictionary<string, string>? faceDict = null)
+    private static (List<DeviceUserDto> Users, string? StatusStr, int NumMatches, int TotalMatches) ParseUsersXml(string xml, Dictionary<string, string>? faceDict = null)
     {
         var users = new List<DeviceUserDto>();
-        var pattern = "<UserInfo>";
-        var pos = 0;
+        string? statusStr = null;
+        int numMatches = 0;
+        int totalMatches = 0;
 
-        while ((pos = xml.IndexOf(pattern, pos)) != -1)
+        try
         {
-            var end = xml.IndexOf("</UserInfo>", pos);
-            if (end == -1) break;
+            var doc = XDocument.Parse(xml);
+            var root = doc.Root;
+            if (root == null) return (users, null, 0, 0);
 
-            var userXml = xml[pos..(end + 11)];
-            var pin = ExtractXmlValue(userXml, "employeeNo");
-            var name = ExtractXmlValue(userXml, "name");
-            var userType = ExtractXmlValue(userXml, "userType");
-            var privilege = (int)DevicePrivilegeMapper.MapFromHikvisionUserType(userType);
+            statusStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "responseStatusStrg")?.Value;
+            var numStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "numOfMatches")?.Value;
+            var totStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "totalMatches")?.Value;
 
-            string? photo = null;
-            if (pin != null && faceDict?.TryGetValue(pin, out photo) == true)
+            if (int.TryParse(numStr, out var n)) numMatches = n;
+            if (int.TryParse(totStr, out var t)) totalMatches = t;
+
+            foreach (var userElem in root.Descendants().Where(e => e.Name.LocalName == "UserInfo"))
             {
-                // Hikvision photo is in faceDict
-            }
+                var pin = userElem.Elements().FirstOrDefault(e => e.Name.LocalName == "employeeNo")?.Value;
+                var name = userElem.Elements().FirstOrDefault(e => e.Name.LocalName == "name")?.Value;
+                var userType = userElem.Elements().FirstOrDefault(e => e.Name.LocalName == "userType")?.Value;
+                var privilege = (int)DevicePrivilegeMapper.MapFromHikvisionUserType(userType);
 
-            if (!string.IsNullOrEmpty(pin))
-            {
-                users.Add(new DeviceUserDto(pin, name ?? string.Empty, string.Empty, privilege, true, Photo: photo));
+                string? photo = null;
+                if (pin != null && faceDict?.TryGetValue(pin, out photo) == true)
+                {
+                    // Photo exists
+                }
+
+                if (!string.IsNullOrEmpty(pin))
+                {
+                    users.Add(new DeviceUserDto(pin, name ?? string.Empty, string.Empty, privilege, true, Photo: photo));
+                }
             }
-            pos = end + 11;
         }
-        return users;
+        catch
+        {
+        }
+
+        return (users, statusStr, numMatches, totalMatches);
     }
 
-    private Dictionary<string, string> ParseFaces(string xml)
+    private static (Dictionary<string, string> Faces, string? StatusStr, int NumMatches, int TotalMatches) ParseFacesXml(string xml)
     {
         var faceDict = new Dictionary<string, string>();
-        var pattern = "<FaceInfo>";
-        var pos = 0;
+        string? statusStr = null;
+        int numMatches = 0;
+        int totalMatches = 0;
 
-        while ((pos = xml.IndexOf(pattern, pos)) != -1)
+        try
         {
-            var end = xml.IndexOf("</FaceInfo>", pos);
-            if (end == -1) break;
+            var doc = XDocument.Parse(xml);
+            var root = doc.Root;
+            if (root == null) return (faceDict, null, 0, 0);
 
-            var faceXml = xml[pos..(end + 11)];
-            var pin = ExtractXmlValue(faceXml, "employeeNo");
-            var faceData = ExtractXmlValue(faceXml, "faceData"); // This is the Base64 image data
+            statusStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "responseStatusStrg")?.Value;
+            var numStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "numOfMatches")?.Value;
+            var totStr = root.Descendants().FirstOrDefault(e => e.Name.LocalName == "totalMatches")?.Value;
 
-            if (!string.IsNullOrEmpty(pin) && !string.IsNullOrEmpty(faceData))
+            if (int.TryParse(numStr, out var n)) numMatches = n;
+            if (int.TryParse(totStr, out var t)) totalMatches = t;
+
+            foreach (var faceElem in root.Descendants().Where(e => e.Name.LocalName == "FaceInfo"))
             {
-                faceDict[pin] = faceData;
+                var pin = faceElem.Elements().FirstOrDefault(e => e.Name.LocalName == "employeeNo")?.Value;
+                var faceData = faceElem.Elements().FirstOrDefault(e => e.Name.LocalName == "faceData")?.Value;
+
+                if (!string.IsNullOrEmpty(pin) && !string.IsNullOrEmpty(faceData))
+                {
+                    faceDict[pin] = faceData;
+                }
             }
-            pos = end + 11;
         }
-        return faceDict;
+        catch
+        {
+        }
+
+        return (faceDict, statusStr, numMatches, totalMatches);
     }
 
     public async Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
@@ -428,7 +578,7 @@ public class HikvisionDeviceClient : IDeviceClient
             if (!response.IsSuccessStatusCode) return null;
 
             var xml = await response.Content.ReadAsStringAsync(cancellationToken);
-            var users = ParseUsers(xml);
+            var (users, _, _, _) = ParseUsersXml(xml);
             return users.FirstOrDefault();
         }
         catch (Exception ex)

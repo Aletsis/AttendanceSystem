@@ -103,7 +103,10 @@ public sealed record DownloadResultDto(
     DateTime? MaxDate = null,
     bool Success = true,
     string? ErrorMessage = null,
-    List<string>? AffectedEmployeeIds = null);
+    List<string>? AffectedEmployeeIds = null,
+    DeviceReadStatus ReadStatus = DeviceReadStatus.SuccessWithData,
+    bool LogsCleared = false,
+    string? ClearErrorMessage = null);
 
 public sealed record BulkDownloadResultDto(
     int TotalDevices,

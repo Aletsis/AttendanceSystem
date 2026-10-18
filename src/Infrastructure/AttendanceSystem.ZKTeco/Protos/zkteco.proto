@@ -80,6 +80,7 @@ message GetAttendanceLogsResponse {
   string message = 2;
   repeated AttendanceRecord records = 3;
   int32 total_count = 4;
+  int32 read_status = 5;
 }
 
 message AttendanceRecord {

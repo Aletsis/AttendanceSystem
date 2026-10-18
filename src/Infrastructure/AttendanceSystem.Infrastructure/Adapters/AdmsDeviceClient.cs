@@ -49,10 +49,10 @@ public class AdmsDeviceClient : IDeviceClient
 
     public Task DisconnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 
-    public Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(string deviceId, DateTime? fromDate, DateTime? toDate = null, CancellationToken cancellationToken = default)
+    public Task<DeviceLogsResult> GetAttendanceLogsAsync(string deviceId, DateTime? fromDate, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
-        // Logs en ADMS son empujados en tiempo real.
-        return Task.FromResult<IReadOnlyList<RawAttendanceRecord>>(new List<RawAttendanceRecord>());
+        // Logs en ADMS son empujados en tiempo real vía HTTP push.
+        return Task.FromResult(DeviceLogsResult.Empty());
     }
 
     public Task<bool> ClearLogsAsync(
@@ -62,6 +62,7 @@ public class AdmsDeviceClient : IDeviceClient
         CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
+        _logger.LogWarning("Comando de limpieza remota ADMS CLEAR ATTLOG encolado para SN {SN}. Atención: ADMS ejecuta borrado total del buffer del reloj.", _serialNumber);
         _admsCommandService.EnqueueCommand(_serialNumber, "CLEAR ATTLOG");
         return Task.FromResult(true);
     }

@@ -72,7 +72,8 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
 
         try
         {
-            var client = await _sessionManager.GetSessionAsync(sessionId);
+            await using var lease = await _sessionManager.AcquireSessionLeaseAsync(sessionId, context.CancellationToken);
+            var client = lease.Client;
 
             DateTime? fromDate = null;
             if (!string.IsNullOrEmpty(request.FromDate) && DateTime.TryParse(request.FromDate, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var fDate))
@@ -86,16 +87,17 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
                 toDate = tDate;
             }
 
-            var logs = await client.GetAttendanceLogsAsync(request.DeviceId, fromDate, toDate, context.CancellationToken);
+            var readResult = await client.GetAttendanceLogsAsync(request.DeviceId, fromDate, toDate, context.CancellationToken);
 
             var response = new GetAttendanceLogsResponse
             {
-                Success = true,
-                Message = $"Se obtuvieron {logs.Count} registros",
-                TotalCount = logs.Count
+                Success = readResult.IsSuccess,
+                Message = readResult.ErrorMessage ?? $"Se obtuvieron {readResult.Records.Count} registros (Estado: {readResult.Status})",
+                TotalCount = readResult.TotalRecordsOnDevice ?? readResult.Records.Count,
+                ReadStatus = (int)readResult.Status
             };
 
-            foreach (var log in logs)
+            foreach (var log in readResult.Records)
             {
                 response.Records.Add(new AttendanceRecord
                 {
@@ -116,7 +118,8 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
             return new GetAttendanceLogsResponse
             {
                 Success = false,
-                Message = $"Error: {ex.Message}"
+                Message = $"Error: {ex.Message}",
+                ReadStatus = (int)AttendanceSystem.Application.DTOs.DeviceReadStatus.Failed
             };
         }
     }

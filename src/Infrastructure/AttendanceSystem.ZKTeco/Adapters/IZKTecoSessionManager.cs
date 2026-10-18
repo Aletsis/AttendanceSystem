@@ -24,6 +24,11 @@ public interface IZKTecoSessionManager : IAsyncDisposable
     Task<IDeviceClient> GetSessionAsync(string sessionId);
 
     /// <summary>
+    /// Adquiere un lease de operación para la sesión especificada, protegiéndola contra expiración por inactividad.
+    /// </summary>
+    Task<IDeviceSessionLease> AcquireSessionLeaseAsync(string sessionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Desconecta y libera los recursos del dispositivo para la sesión especificada.
     /// </summary>
     Task<bool> DisconnectSessionAsync(string sessionId, CancellationToken cancellationToken = default);

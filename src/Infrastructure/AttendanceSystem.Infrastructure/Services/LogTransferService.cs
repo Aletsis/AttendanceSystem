@@ -47,6 +47,7 @@ public class LogTransferService : ILogTransferService
         int verifyMethod,
         int checkType,
         string? sourceDevice = null,
+        Guid? logId = null,
         CancellationToken cancellationToken = default)
     {
         try
@@ -73,13 +74,14 @@ public class LogTransferService : ILogTransferService
             const string insertSql = @"
                 INSERT INTO external_attendance_logs 
                 (id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at, is_downloaded)
-                VALUES (@id, @branchCode, @employeeId, @checkTime, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE);";
+                VALUES (@id, @branchCode, @employeeId, @checkTime, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE)
+                ON CONFLICT (id) DO NOTHING;";
 
-            var logId = Guid.NewGuid();
+            var targetId = logId ?? Guid.NewGuid();
             var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
 
             await using var cmd = new NpgsqlCommand(insertSql, conn);
-            cmd.Parameters.AddWithValue("id", logId);
+            cmd.Parameters.AddWithValue("id", targetId);
             cmd.Parameters.AddWithValue("branchCode", branchCode.ToUpperInvariant());
             cmd.Parameters.AddWithValue("employeeId", employeeId);
             cmd.Parameters.AddWithValue("checkTime", utcCheckTime);
@@ -90,7 +92,7 @@ public class LogTransferService : ILogTransferService
             await cmd.ExecuteNonQueryAsync(cancellationToken);
 
             _logger.LogInformation("Log para empleado externo {EmployeeId} (Sucursal: {BranchCode}) transferido a la BD en la nube. ID: {LogId}",
-                employeeId, branchCode, logId);
+                employeeId, branchCode, targetId);
 
             return Result<bool>.Success(true);
         }
@@ -121,6 +123,7 @@ public class LogTransferService : ILogTransferService
                     log.VerifyMethod,
                     log.CheckType,
                     log.SourceDevice,
+                    log.Id,
                     cancellationToken);
 
                 if (result.IsSuccess)
@@ -194,8 +197,13 @@ public class LogTransferService : ILogTransferService
                 created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
                 is_downloaded BOOLEAN NOT NULL DEFAULT FALSE,
                 downloaded_at TIMESTAMP WITH TIME ZONE,
-                downloaded_by_branch VARCHAR(10)
+                downloaded_by_branch VARCHAR(10),
+                claim_token VARCHAR(50),
+                claim_expires_at TIMESTAMP WITH TIME ZONE
             );
+
+            CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_logs_branch_emp_time 
+                ON external_attendance_logs(branch_code, employee_id, check_time);
 
             CREATE INDEX IF NOT EXISTS idx_ext_logs_branch_downloaded 
                 ON external_attendance_logs(branch_code, is_downloaded);";

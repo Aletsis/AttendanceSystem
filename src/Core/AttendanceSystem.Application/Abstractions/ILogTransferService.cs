@@ -14,6 +14,7 @@ public interface ILogTransferService
         int verifyMethod,
         int checkType,
         string? sourceDevice = null,
+        Guid? logId = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

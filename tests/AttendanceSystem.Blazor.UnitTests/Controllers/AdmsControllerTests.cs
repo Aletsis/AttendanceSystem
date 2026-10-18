@@ -1,6 +1,7 @@
 using System.Text;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
+using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
 using AttendanceSystem.Blazor.Server.Controllers;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
@@ -288,5 +289,26 @@ public class AdmsControllerTests
         // Assert
         attr.Should().NotBeNull();
         attr!.Roles.Should().Be("Administrador");
+    }
+
+    [Fact]
+    public async Task ReceiveData_WhenPartialLinesMalformed_ReturnsOkWithStrictCountOfProcessedRecords_H11()
+    {
+        // Arrange: 1 valid line and 1 malformed line
+        var payload = "475\t2026-03-01 08:00:00\t1\t1\nmalformed_line_without_tabs";
+        SetRequestBody(payload);
+
+        _mediatorMock.Setup(m => m.Send(It.IsAny<RecordAttendanceBatchCommand>(), default))
+            .ReturnsAsync(Result<int>.Success(1));
+
+        // Act
+        var result = await _controller.ReceiveData("CL5Z202660239", "ATTLOG");
+
+        // Assert: must return "OK: 1" (only confirmed records, not total lines)
+        var contentResult = result.Should().BeOfType<ContentResult>().Subject;
+        contentResult.Content.Should().Be("OK: 1");
+
+        // Cursor must NOT advance because batch had malformed line
+        _deviceRepositoryMock.Verify(r => r.UpdateLastAttLogTimestampAsync(It.IsAny<string>(), It.IsAny<DateTime>(), default), Times.Never());
     }
 }

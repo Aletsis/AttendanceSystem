@@ -265,12 +265,40 @@ public sealed class DownloadFromDeviceCommandHandler
                 return Result<DownloadResultDto>.Failure("No se pudo conectar al dispositivo");
             }
 
-            // 5. Descargar registros
-            var rawRecords = await deviceClient.GetAttendanceLogsAsync(
+            // 5. Descargar registros mediante contrato explícito de resultados
+            var readResult = await deviceClient.GetAttendanceLogsAsync(
                 deviceIdValue,
                 filterDate,
                 requestToDate,
                 cancellationToken);
+
+            if (readResult.Status == DeviceReadStatus.Failed)
+            {
+                var failedLog = await _downloadLogRepository.GetByIdAsync(downloadLogId, cancellationToken);
+                if (failedLog != null)
+                {
+                    failedLog.MarkAsFailed(readResult.ErrorMessage ?? "Error al obtener registros del dispositivo");
+                    await _downloadLogRepository.UpdateAsync(failedLog, cancellationToken);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                }
+                await deviceClient.DisconnectAsync(cancellationToken);
+                return Result<DownloadResultDto>.Failure(readResult.ErrorMessage ?? "Error al obtener registros del dispositivo");
+            }
+
+            if (readResult.Status == DeviceReadStatus.Cancelled)
+            {
+                var cancelledLog = await _downloadLogRepository.GetByIdAsync(downloadLogId, cancellationToken);
+                if (cancelledLog != null)
+                {
+                    cancelledLog.MarkAsFailed("Descarga cancelada");
+                    await _downloadLogRepository.UpdateAsync(cancelledLog, cancellationToken);
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                }
+                await deviceClient.DisconnectAsync(cancellationToken);
+                return Result<DownloadResultDto>.Failure("Descarga cancelada");
+            }
+
+            var rawRecords = readResult.Records;
 
             // 5. Convertir a entidades de dominio
             // Nota: Usamos deviceId (ValueObject) que creamos al principio
@@ -316,6 +344,7 @@ public sealed class DownloadFromDeviceCommandHandler
                             raw.VerifyMethod,
                             raw.InOutMode,
                             deviceSerial,
+                            localExtLog.Id,
                             cancellationToken);
 
                         if (transferResult.IsSuccess)
@@ -382,19 +411,18 @@ public sealed class DownloadFromDeviceCommandHandler
             }
 
             // 7. Actualizar el dispositivo
-            // RE-OBTENER instancia fresca. Esto es lo más importante para la concurrencia.
+            // RE-OBTENER instancia fresca.
             var deviceToUpdate = await _deviceRepository.GetByIdAsync(deviceId, cancellationToken);
             if (deviceToUpdate != null)
             {
-                // Aplicar logic
-                if (newRecordsCount > 0 || domainRecords.Count > 0)
+                // Solo avanzar LastDownloadAt si la lectura fue completa (no parcial)
+                if (readResult.Status != DeviceReadStatus.Partial)
                 {
                     deviceToUpdate.RecordSuccessfulDownload(newRecordsCount, requestToDate);
                 }
                 else
                 {
-                    // Mantener lógica de negocio
-                    deviceToUpdate.RecordSuccessfulDownload(0, requestToDate);
+                    _logger.LogWarning("Lectura parcial para dispositivo {DeviceId}. No se avanza el cursor LastDownloadAt para reintentar el intervalo en la próxima sincronización.", deviceIdValue);
                 }
 
                 await _deviceRepository.UpdateAsync(deviceToUpdate, cancellationToken);
@@ -404,17 +432,56 @@ public sealed class DownloadFromDeviceCommandHandler
             var successLog = await _downloadLogRepository.GetByIdAsync(downloadLogId, cancellationToken);
             if (successLog != null)
             {
-                successLog.MarkAsSuccessful(domainRecords.Count, newRecordsCount);
+                if (readResult.Status == DeviceReadStatus.Partial)
+                {
+                    successLog.MarkAsFailed($"Lectura parcial ({domainRecords.Count} registros obtenidos antes de error: {readResult.ErrorMessage})");
+                }
+                else
+                {
+                    successLog.MarkAsSuccessful(domainRecords.Count, newRecordsCount);
+                }
                 await _downloadLogRepository.UpdateAsync(successLog, cancellationToken);
             }
 
             // Guardar actualizaciones finales (Device y Log)
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-            // 8. Limpiar dispositivo físico (F01-P02 / H03: Deshabilitar limpieza automática no verificable)
+            // 8. Limpiar dispositivo físico de forma segura y acotada (F04-P02 / H03)
+            bool logsCleared = false;
+            string? clearErrorMessage = null;
+
             if (shouldClear)
             {
-                _logger.LogWarning("⚠️ La limpieza automática de marcajes en el dispositivo {DeviceId} ha sido deshabilitada por contención de seguridad (F01-P02 / H03) hasta la implementación del borrado seguro verificado en Fase 04.", deviceIdValue);
+                // Regla de seguridad: SOLO limpiar si la lectura fue completamente exitosa con datos persistidos
+                if (readResult.Status == DeviceReadStatus.SuccessWithData && domainRecords.Any() && minDate.HasValue && maxDate.HasValue)
+                {
+                    try
+                    {
+                        _logger.LogInformation("Ejecutando limpieza segura acotada en {DeviceId} para el rango confirmado: {Min} - {Max}",
+                            deviceIdValue, minDate.Value, maxDate.Value);
+
+                        logsCleared = await deviceClient.ClearLogsAsync(deviceIdValue, minDate.Value, maxDate.Value, cancellationToken);
+                        if (!logsCleared)
+                        {
+                            clearErrorMessage = "El dispositivo no soporta borrado acotado por rango o la operación fue rechazada.";
+                            _logger.LogWarning("Limpieza en {DeviceId}: {Error}", deviceIdValue, clearErrorMessage);
+                        }
+                    }
+                    catch (Exception clearEx)
+                    {
+                        clearErrorMessage = clearEx.Message;
+                        _logger.LogError(clearEx, "Excepción durante la limpieza segura en {DeviceId}", deviceIdValue);
+                    }
+                }
+                else if (readResult.Status == DeviceReadStatus.Partial)
+                {
+                    clearErrorMessage = "Limpieza omitida por seguridad debido a lectura parcial de registros.";
+                    _logger.LogWarning("Limpieza en {DeviceId} omitida: {Error}", deviceIdValue, clearErrorMessage);
+                }
+                else
+                {
+                    _logger.LogInformation("No hay registros en el dispositivo {DeviceId} para limpiar en este rango.", deviceIdValue);
+                }
             }
 
             await deviceClient.DisconnectAsync(cancellationToken);
@@ -455,7 +522,12 @@ public sealed class DownloadFromDeviceCommandHandler
                 DateTime.UtcNow,
                 minDate,
                 maxDate,
-                AffectedEmployeeIds: affectedEmployeeIds));
+                Success: readResult.Status != DeviceReadStatus.Partial,
+                ErrorMessage: readResult.ErrorMessage,
+                AffectedEmployeeIds: affectedEmployeeIds,
+                ReadStatus: readResult.Status,
+                LogsCleared: logsCleared,
+                ClearErrorMessage: clearErrorMessage));
         }
         catch (Exception ex)
         {

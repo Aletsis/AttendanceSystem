@@ -9,7 +9,7 @@ public interface IDeviceClient
 {
     Task<bool> ConnectAsync(string ipAddress, int port, string? username = null, string? password = null, CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(
+    Task<DeviceLogsResult> GetAttendanceLogsAsync(
         string deviceId,
         DateTime? fromDate,
         DateTime? toDate = null,

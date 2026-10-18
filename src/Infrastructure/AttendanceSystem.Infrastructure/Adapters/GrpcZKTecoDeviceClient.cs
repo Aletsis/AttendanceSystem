@@ -63,7 +63,7 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         }
     }
 
-    public async Task<IReadOnlyList<RawAttendanceRecord>> GetAttendanceLogsAsync(
+    public async Task<DeviceLogsResult> GetAttendanceLogsAsync(
         string deviceId,
         DateTime? fromDate,
         DateTime? toDate = null,
@@ -80,24 +80,50 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
 
             var response = await _client.GetAttendanceLogsAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
 
-            if (!response.Success)
-            {
-                _logger.LogError("Sesión {SessionId}: Error al obtener logs del dispositivo {DeviceId}: {Message}", _sessionId, deviceId, response.Message);
-                throw new InvalidOperationException($"Error al obtener logs del dispositivo {deviceId}: {response.Message}");
-            }
-
-            return response.Records.Select(r => new RawAttendanceRecord(
+            var records = response.Records.Select(r => new RawAttendanceRecord(
                 r.UserId,
-                DateTime.Parse(r.CheckTime),
+                DateTime.Parse(r.CheckTime, System.Globalization.CultureInfo.InvariantCulture),
                 r.VerifyMode,
                 r.InOutMode,
                 r.WorkCode
             )).ToList();
+
+            var status = (DeviceReadStatus)response.ReadStatus;
+            if (!Enum.IsDefined(typeof(DeviceReadStatus), status) || status == 0)
+            {
+                status = response.Success
+                    ? (records.Count > 0 ? DeviceReadStatus.SuccessWithData : DeviceReadStatus.SuccessEmpty)
+                    : DeviceReadStatus.Failed;
+            }
+
+            if (status == DeviceReadStatus.Failed)
+            {
+                _logger.LogError("Sesión {SessionId}: Error reportado por bridge ZKTeco para {DeviceId}: {Message}", _sessionId, deviceId, response.Message);
+                return DeviceLogsResult.Failed(response.Message);
+            }
+
+            if (status == DeviceReadStatus.Partial)
+            {
+                _logger.LogWarning("Sesión {SessionId}: Lectura parcial reportada por bridge ZKTeco para {DeviceId}: {Message}", _sessionId, deviceId, response.Message);
+                return DeviceLogsResult.Partial(records, response.Message, response.TotalCount);
+            }
+
+            if (status == DeviceReadStatus.SuccessEmpty || records.Count == 0)
+            {
+                return DeviceLogsResult.Empty(response.TotalCount);
+            }
+
+            return DeviceLogsResult.Success(records, response.TotalCount);
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Sesión {SessionId}: Descarga cancelada para dispositivo {DeviceId}", _sessionId, deviceId);
+            return DeviceLogsResult.Cancelled();
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Sesión {SessionId}: Error obteniendo logs del dispositivo {DeviceId}", _sessionId, deviceId);
-            throw;
+            _logger.LogError(ex, "Sesión {SessionId}: Error de comunicación obteniendo logs del dispositivo {DeviceId}", _sessionId, deviceId);
+            return DeviceLogsResult.Failed($"Error de comunicación con bridge ZKTeco: {ex.Message}");
         }
     }
 
@@ -107,6 +133,12 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         DateTime? toDate = null,
         CancellationToken cancellationToken = default)
     {
+        if (!fromDate.HasValue && !toDate.HasValue)
+        {
+            _logger.LogError("Intento de borrado no acotado en gRPC ZKTeco bloqueado para dispositivo {DeviceId}.", deviceId);
+            return false;
+        }
+
         try
         {
             var request = new ClearDeviceLogsRequest

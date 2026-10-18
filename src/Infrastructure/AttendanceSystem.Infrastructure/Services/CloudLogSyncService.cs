@@ -48,14 +48,41 @@ public class CloudLogSyncService : ICloudLogSyncService
             await using var dataSource = NpgsqlDataSource.Create(connStr);
             await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
 
+            // Asegurar que las columnas de reclamo concurrente existan
+            const string ddlSql = @"
+                ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_token VARCHAR(64);
+                ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP;
+                CREATE INDEX IF NOT EXISTS ix_ext_logs_claim ON external_attendance_logs (branch_code, is_downloaded, claim_expires_at);";
+            try
+            {
+                await using var ddlCmd = new NpgsqlCommand(ddlSql, conn);
+                await ddlCmd.ExecuteNonQueryAsync(cancellationToken);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "No se pudo verificar o aplicar esquema de reclamo en la nube (continuando con consulta estándar)");
+            }
+
+            var claimToken = Guid.NewGuid().ToString("N");
             const string sql = @"
-                SELECT id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at
-                FROM external_attendance_logs
-                WHERE branch_code = @branchCode AND is_downloaded = FALSE
-                ORDER BY check_time ASC;";
+                UPDATE external_attendance_logs
+                SET claim_token = @claimToken,
+                    claim_expires_at = NOW() + INTERVAL '5 minutes'
+                WHERE id IN (
+                    SELECT id
+                    FROM external_attendance_logs
+                    WHERE branch_code = @branchCode 
+                      AND is_downloaded = FALSE
+                      AND (claim_token IS NULL OR claim_expires_at < NOW())
+                    ORDER BY check_time ASC
+                    LIMIT 200
+                    FOR UPDATE SKIP LOCKED
+                )
+                RETURNING id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at;";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("branchCode", branchCode.ToUpperInvariant());
+            cmd.Parameters.AddWithValue("claimToken", claimToken);
 
             var items = new List<CloudLogItemDto>();
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
@@ -117,7 +144,9 @@ public class CloudLogSyncService : ICloudLogSyncService
                         sourceDeviceId,
                         log.CheckTime,
                         log.VerifyMethod,
-                        log.CheckType
+                        log.CheckType,
+                        TimeZoneId: null,
+                        Source: "CLOUD_SYNC"
                     );
 
                     var recordResult = await _sender.Send(recordCommand, cancellationToken);
@@ -144,7 +173,12 @@ public class CloudLogSyncService : ICloudLogSyncService
 
                 if (downloadedIds.Any())
                 {
-                    await MarkLogsAsDownloadedAsync(downloadedIds, code, cancellationToken);
+                    var markResult = await MarkLogsAsDownloadedAsync(downloadedIds, code, cancellationToken);
+                    if (!markResult.IsSuccess)
+                    {
+                        _logger.LogError("Error al confirmar descarga de {Count} logs en la nube para {Code}: {Error}",
+                            downloadedIds.Count, code, markResult.Error);
+                    }
                 }
             }
 
@@ -177,7 +211,9 @@ public class CloudLogSyncService : ICloudLogSyncService
                 UPDATE external_attendance_logs
                 SET is_downloaded = TRUE,
                     downloaded_at = NOW(),
-                    downloaded_by_branch = @branchCode
+                    downloaded_by_branch = @branchCode,
+                    claim_token = NULL,
+                    claim_expires_at = NULL
                 WHERE id = ANY(@ids);";
 
             await using var cmd = new NpgsqlCommand(sql, conn);

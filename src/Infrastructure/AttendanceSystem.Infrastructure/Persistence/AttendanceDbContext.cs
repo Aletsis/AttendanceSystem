@@ -35,6 +35,8 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployee> ExternalEmployees => Set<AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployee>();
     public DbSet<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeAuditLog> EmployeeAuditLogs => Set<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeAuditLog>();
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
+    public DbSet<AdmsCommand> AdmsCommands => Set<AdmsCommand>();
+    public DbSet<AdmsIngestionIncident> AdmsIngestionIncidents => Set<AdmsIngestionIncident>();
 
     private readonly ICurrentUserService? _currentUserService;
 
