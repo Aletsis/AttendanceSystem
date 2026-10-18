@@ -45,6 +45,9 @@ jobs:
       - name: Restore Dependencies
         run: dotnet restore AttendanceSystem.sln
 
+      - name: Package Vulnerability Audit
+        run: dotnet list package --vulnerable --include-transitive
+
       - name: Verify Code Formatting
         run: dotnet format --verify-no-changes --verbosity normal
         continue-on-error: true

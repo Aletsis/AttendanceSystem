@@ -53,8 +53,8 @@ El instalador ofrece una opción llamada **"Configurar como servidor IIS"**.
     - Si IIS no está instalado, esta opción simplemente se omitirá y la app quedará instalada pero sin configurar en IIS.
 
 ## Notas Técnicas
-- **Usuario de Base de Datos**: El instalador crea un usuario PostgreSQL llamado `attendancesystem_user` con contraseña `Blanquita.123`.
-- **Puertos**: El instalador abre automáticamente los puertos 8081 (Web) y 5001 (Servicio) en el Firewall de Windows.
+- **Usuario de Base de Datos**: El instalador crea un usuario PostgreSQL llamado `attendancesystem_user` con contraseña generada de forma dinámica y aleatoria o provista vía la variable de entorno `ATTENDANCE_DB_PASSWORD` (resolviendo H02 sin contraseñas predecibles).
+- **Puertos y Red**: El instalador expone el puerto 8081 (Web) en el Firewall de Windows. El servicio gRPC del puente de dispositivos (puerto 5001) permanece restringido a loopback (`127.0.0.1` / `localhost`) por defecto para máxima seguridad.
 - **Servicios**: Se instalan dos servicios de Windows:
     - `postgresql-x64-16`: Motor de base de datos
     - `AttendanceSystem.ZKTeco`: Servicio de comunicación con dispositivos
