@@ -73,6 +73,8 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
         services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
         services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();
+        services.AddScoped<IAttendanceAdjustmentRepository, AttendanceAdjustmentRepository>();
+        services.AddScoped<IAttendanceConsolidationRepository, AttendanceConsolidationRepository>();
 
         // 3. Consultas CQRS (Dapper / SQL optimizado)
         services.AddScoped<IDeviceQueries, DeviceQueries>();
@@ -92,6 +94,7 @@ public static class InfrastructureServiceExtensions
 
         // 5. Servicios del Sistema y Coordinación de Mantenimiento (H05)
         services.AddSingleton<IDeviceLockService, DeviceLockService>();
+        services.AddSingleton<IAttendanceCalculationLockService, AttendanceCalculationLockService>();
         services.AddSingleton<IRestoreStateService, RestoreStateService>();
         services.AddScoped<IBackupService, BackupService>();
         services.AddScoped<ILogTransferService, LogTransferService>();

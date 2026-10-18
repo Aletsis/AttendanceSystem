@@ -25,6 +25,9 @@ public class ProcessDailyAttendanceReprocessingCleanupTests
     private readonly Mock<IShiftRepository> _shiftRepoMock = new();
     private readonly Mock<IShiftRosterRepository> _rosterRepoMock = new();
     private readonly Mock<ISystemConfigurationRepository> _systemConfigRepoMock = new();
+    private readonly Mock<IAttendanceAdjustmentRepository> _adjustmentRepoMock = new();
+    private readonly Mock<IAttendanceConsolidationRepository> _consolidationRepoMock = new();
+    private readonly Mock<IAttendanceCalculationLockService> _lockServiceMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly Mock<ISender> _senderMock = new();
     private readonly Mock<ILogger<ProcessDailyAttendanceCommandHandler>> _loggerMock = new();
@@ -66,6 +69,17 @@ public class ProcessDailyAttendanceReprocessingCleanupTests
 
         _rosterRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ShiftRoster>());
+
+        _lockServiceMock
+            .Setup(l => l.ExecuteWithLockAsync(
+                It.IsAny<IEnumerable<EmployeeId>>(),
+                It.IsAny<Func<Task<int>>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<IEnumerable<EmployeeId>, Func<Task<int>>, CancellationToken>((_, func, _) => func());
+
+        _unitOfWorkMock
+            .Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IAsyncDisposable>());
     }
 
     [Fact]
@@ -109,6 +123,9 @@ public class ProcessDailyAttendanceReprocessingCleanupTests
             _shiftRepoMock.Object,
             _rosterRepoMock.Object,
             _systemConfigRepoMock.Object,
+            _adjustmentRepoMock.Object,
+            _consolidationRepoMock.Object,
+            _lockServiceMock.Object,
             _unitOfWorkMock.Object,
             _senderMock.Object,
             _loggerMock.Object);

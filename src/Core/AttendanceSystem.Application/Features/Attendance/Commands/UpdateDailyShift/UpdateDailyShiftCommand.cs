@@ -1,10 +1,13 @@
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
+using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
 using MediatR;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Domain.Enumerations;
+
+using AttendanceSystem.Domain.Services;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift;
 
@@ -20,19 +23,25 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IEmployeeRepository _employeeRepo;
+    private readonly IAttendanceAdjustmentRepository _adjustmentRepo;
+    private readonly IShiftRosterRepository _rosterRepo;
 
     public UpdateDailyShiftCommandHandler(
         IDailyAttendanceRepository dailyRepo,
         IShiftRepository shiftRepo,
         IUnitOfWork unitOfWork,
         IAttendanceRepository attendanceRepo,
-        IEmployeeRepository employeeRepo)
+        IEmployeeRepository employeeRepo,
+        IAttendanceAdjustmentRepository adjustmentRepo,
+        IShiftRosterRepository rosterRepo)
     {
         _dailyRepo = dailyRepo;
         _shiftRepo = shiftRepo;
         _unitOfWork = unitOfWork;
         _attendanceRepo = attendanceRepo;
         _employeeRepo = employeeRepo;
+        _adjustmentRepo = adjustmentRepo;
+        _rosterRepo = rosterRepo;
     }
 
     public async Task<Result> Handle(UpdateDailyShiftCommand request, CancellationToken cancellationToken)
@@ -218,12 +227,34 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             await _attendanceRepo.UpdateAsync(checkOutRecord, cancellationToken);
         }
 
-        var isRestDay = false;
-        if (employee.RestDay.HasValue)
+        // Cargar o crear el ajuste manual persistente
+        var adjustment = await _adjustmentRepo.GetByEmployeeAndDateAsync(employeeId, date, cancellationToken);
+        if (adjustment == null)
         {
-            var dayOfWeek = (WeekDay)(int)date.DayOfWeek;
-            if (employee.RestDay == dayOfWeek) isRestDay = true;
+            adjustment = AttendanceAdjustment.Create(employeeId, date, "Usuario RH");
+            adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
+            await _adjustmentRepo.AddAsync(adjustment, cancellationToken);
         }
+        else
+        {
+            adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
+            _adjustmentRepo.Update(adjustment);
+        }
+
+        // Consultar roster para evaluar descanso planificado si no hay override explícito
+        var rosters = await _rosterRepo.GetByDateRangeAsync(date, date, null, employeeId, cancellationToken);
+        var rosterEntry = rosters.FirstOrDefault();
+
+        // Determinar descanso usando precedencia centralizada (Ajuste > Roster > Empleado con múltiples RestDays)
+        var resolution = AttendanceShiftResolutionService.Resolve(
+            employee,
+            date,
+            rosterEntry,
+            adjustment,
+            new Dictionary<ShiftId, Shift> { [shiftId] = shift },
+            records.Select(r => r.CheckTime));
+
+        var isRestDay = resolution.IsRestDay;
 
         if (daily == null)
         {
@@ -239,12 +270,19 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
                 employee.CalculateOvertimeBeforeEntry,
                 employee.OvertimeAuthorized
             );
+            if (resolution.IsRestDayOverridden)
+            {
+                daily.SetRestDayOverride(resolution.IsRestDay);
+            }
             _dailyRepo.Add(daily);
         }
         else
         {
             daily.UpdateShift(shift);
-            daily.SetRestDayOverride(isRestDay);
+            if (resolution.IsRestDayOverridden)
+            {
+                daily.SetRestDayOverride(resolution.IsRestDay);
+            }
             daily.UpdateOvertimeConfiguration(employee.OvertimeAuthorized, employee.CalculateOvertimeBeforeEntry);
             if (checkInRecord != null && checkIn.HasValue) daily.SetCheckIn(checkIn.Value, checkInRecord.Id); else daily.RemoveCheckIn();
             if (checkOutRecord != null && checkOut.HasValue) daily.SetCheckOut(checkOut.Value, checkOutRecord.Id); else daily.RemoveCheckOut();

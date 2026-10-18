@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using MediatR;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
+using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 using AttendanceSystem.Domain.Primitives;
@@ -37,6 +38,8 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     public DbSet<AdmsCommand> AdmsCommands => Set<AdmsCommand>();
     public DbSet<AdmsIngestionIncident> AdmsIngestionIncidents => Set<AdmsIngestionIncident>();
+    public DbSet<AttendanceAdjustment> AttendanceAdjustments => Set<AttendanceAdjustment>();
+    public DbSet<AttendanceConsolidationRequest> AttendanceConsolidationRequests => Set<AttendanceConsolidationRequest>();
 
     private readonly ICurrentUserService? _currentUserService;
 

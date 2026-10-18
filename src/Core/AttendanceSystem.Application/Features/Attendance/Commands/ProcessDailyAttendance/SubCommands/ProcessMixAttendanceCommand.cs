@@ -5,6 +5,8 @@ using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using Microsoft.Extensions.Logging;
 
+using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
+
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
 
 public record ProcessMixAttendanceCommand(
@@ -12,7 +14,8 @@ public record ProcessMixAttendanceCommand(
     DateTime Date,
     Shift Shift,
     List<AttendanceRecord> Records,
-    bool IsRestDay) : IRequest;
+    bool IsRestDay,
+    AttendanceAdjustment? Adjustment = null) : IRequest;
 
 public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAttendanceCommand>
 {
@@ -61,7 +64,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Date,
                     request.Shift,
                     request.Records,
-                    request.IsRestDay), cancellationToken);
+                    request.IsRestDay,
+                    Adjustment: request.Adjustment), cancellationToken);
                 break;
 
             case ShiftType.Nocturno:
@@ -72,7 +76,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Records,
                     request.IsRestDay,
                     dayConfig.StartTime,
-                    dayConfig.EndTime), cancellationToken);
+                    dayConfig.EndTime,
+                    Adjustment: request.Adjustment), cancellationToken);
                 break;
 
             case ShiftType.Continuo:
@@ -81,7 +86,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Date,
                     request.Shift,
                     request.Records,
-                    request.IsRestDay), cancellationToken);
+                    request.IsRestDay,
+                    Adjustment: request.Adjustment), cancellationToken);
                 break;
 
             case ShiftType.Flexible:
@@ -90,7 +96,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Date,
                     request.Shift,
                     request.Records,
-                    request.IsRestDay), cancellationToken);
+                    request.IsRestDay,
+                    Adjustment: request.Adjustment), cancellationToken);
                 break;
 
             default:
@@ -101,7 +108,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Date,
                     request.Shift,
                     request.Records,
-                    request.IsRestDay), cancellationToken);
+                    request.IsRestDay,
+                    Adjustment: request.Adjustment), cancellationToken);
                 break;
         }
     }

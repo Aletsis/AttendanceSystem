@@ -17,7 +17,8 @@ public record ProcessNightlyAttendanceCommand(
     bool IsRestDay,
     TimeSpan DayStartTime,
     TimeSpan DayEndTime,
-    bool IsAutoDetectedShift = false) : IRequest;
+    bool IsAutoDetectedShift = false,
+    AttendanceAdjustment? Adjustment = null) : IRequest;
 
 public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNightlyAttendanceCommand>
 {
@@ -147,6 +148,11 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
             request.Employee.CalculateOvertimeBeforeEntry,
             request.Employee.OvertimeAuthorized,
             request.IsAutoDetectedShift);
+
+        if (request.Adjustment != null)
+        {
+            dailyAttendance.ApplyAdjustment(request.Adjustment);
+        }
 
         _dailyRepo.Add(dailyAttendance);
     }

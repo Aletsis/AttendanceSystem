@@ -15,7 +15,8 @@ public record ProcessContinuousAttendanceCommand(
     Shift Shift,
     List<AttendanceRecord> Records,
     bool IsRestDay,
-    bool IsAutoDetectedShift = false) : IRequest;
+    bool IsAutoDetectedShift = false,
+    AttendanceAdjustment? Adjustment = null) : IRequest;
 
 public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<ProcessContinuousAttendanceCommand>
 {
@@ -34,6 +35,7 @@ public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<Process
             request.Shift,
             request.Records,
             request.IsRestDay,
-            request.IsAutoDetectedShift), cancellationToken);
+            request.IsAutoDetectedShift,
+            Adjustment: request.Adjustment), cancellationToken);
     }
 }

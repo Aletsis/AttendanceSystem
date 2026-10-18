@@ -16,6 +16,7 @@ public class ManuallyAssignAttendanceCommandHandlerTests
 {
     private readonly Mock<IDailyAttendanceRepository> _dailyRepoMock;
     private readonly Mock<IAttendanceRepository> _attendanceRepoMock;
+    private readonly Mock<IAttendanceAdjustmentRepository> _adjustmentRepoMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly ManuallyAssignAttendanceCommandHandler _handler;
 
@@ -27,11 +28,13 @@ public class ManuallyAssignAttendanceCommandHandlerTests
     {
         _dailyRepoMock = new Mock<IDailyAttendanceRepository>();
         _attendanceRepoMock = new Mock<IAttendanceRepository>();
+        _adjustmentRepoMock = new Mock<IAttendanceAdjustmentRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
 
         _handler = new ManuallyAssignAttendanceCommandHandler(
             _dailyRepoMock.Object,
             _attendanceRepoMock.Object,
+            _adjustmentRepoMock.Object,
             _unitOfWorkMock.Object);
 
         _splitShift = Shift.Create(

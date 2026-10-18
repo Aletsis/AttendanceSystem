@@ -12,7 +12,8 @@ public record ProcessNoShiftAttendanceCommand(
     Employee Employee,
     DateTime Date,
     List<AttendanceRecord> Records,
-    bool IsRestDay) : IRequest;
+    bool IsRestDay,
+    AttendanceAdjustment? Adjustment = null) : IRequest;
 
 public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoShiftAttendanceCommand>
 {
@@ -78,6 +79,11 @@ public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoS
             checkOutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
             request.Employee.OvertimeAuthorized);
+
+        if (request.Adjustment != null)
+        {
+            dailyAttendance.ApplyAdjustment(request.Adjustment);
+        }
 
         _dailyRepo.Add(dailyAttendance);
     }

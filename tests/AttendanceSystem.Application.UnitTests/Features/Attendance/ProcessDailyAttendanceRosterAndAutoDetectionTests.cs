@@ -25,6 +25,9 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
     private readonly Mock<IShiftRepository> _shiftRepoMock = new();
     private readonly Mock<IShiftRosterRepository> _rosterRepoMock = new();
     private readonly Mock<ISystemConfigurationRepository> _systemConfigRepoMock = new();
+    private readonly Mock<IAttendanceAdjustmentRepository> _adjustmentRepoMock = new();
+    private readonly Mock<IAttendanceConsolidationRepository> _consolidationRepoMock = new();
+    private readonly Mock<IAttendanceCalculationLockService> _lockServiceMock = new();
     private readonly Mock<IUnitOfWork> _unitOfWorkMock = new();
     private readonly Mock<ISender> _senderMock = new();
     private readonly Mock<ILogger<ProcessDailyAttendanceCommandHandler>> _loggerMock = new();
@@ -45,7 +48,33 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
 
         _dailyRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<DailyAttendance>());
+
+        _lockServiceMock
+            .Setup(l => l.ExecuteWithLockAsync(
+                It.IsAny<IEnumerable<EmployeeId>>(),
+                It.IsAny<Func<Task<int>>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<IEnumerable<EmployeeId>, Func<Task<int>>, CancellationToken>((_, func, _) => func());
+
+        _unitOfWorkMock
+            .Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IAsyncDisposable>());
     }
+
+    private ProcessDailyAttendanceCommandHandler CreateHandler() =>
+        new(
+            _dailyRepoMock.Object,
+            _attendanceRepoMock.Object,
+            _employeeRepoMock.Object,
+            _shiftRepoMock.Object,
+            _rosterRepoMock.Object,
+            _systemConfigRepoMock.Object,
+            _adjustmentRepoMock.Object,
+            _consolidationRepoMock.Object,
+            _lockServiceMock.Object,
+            _unitOfWorkMock.Object,
+            _senderMock.Object,
+            _loggerMock.Object);
 
     [Fact]
     public async Task Handle_WhenRosterExistsForEmployee_ShouldUseRosterShiftInsteadOfDefaultSchedule()
@@ -76,16 +105,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
         _attendanceRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<AttendanceRecord>());
 
-        var handler = new ProcessDailyAttendanceCommandHandler(
-            _dailyRepoMock.Object,
-            _attendanceRepoMock.Object,
-            _employeeRepoMock.Object,
-            _shiftRepoMock.Object,
-            _rosterRepoMock.Object,
-            _systemConfigRepoMock.Object,
-            _unitOfWorkMock.Object,
-            _senderMock.Object,
-            _loggerMock.Object);
+        var handler = CreateHandler();
 
         var command = new ProcessDailyAttendanceCommand(_date, _date, EmployeeId: emp.Id);
 
@@ -127,16 +147,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
         _attendanceRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<AttendanceRecord> { punch });
 
-        var handler = new ProcessDailyAttendanceCommandHandler(
-            _dailyRepoMock.Object,
-            _attendanceRepoMock.Object,
-            _employeeRepoMock.Object,
-            _shiftRepoMock.Object,
-            _rosterRepoMock.Object,
-            _systemConfigRepoMock.Object,
-            _unitOfWorkMock.Object,
-            _senderMock.Object,
-            _loggerMock.Object);
+        var handler = CreateHandler();
 
         var command = new ProcessDailyAttendanceCommand(_date, _date, EmployeeId: emp.Id);
 
@@ -180,16 +191,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
         _attendanceRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<AttendanceRecord>());
 
-        var handler = new ProcessDailyAttendanceCommandHandler(
-            _dailyRepoMock.Object,
-            _attendanceRepoMock.Object,
-            _employeeRepoMock.Object,
-            _shiftRepoMock.Object,
-            _rosterRepoMock.Object,
-            _systemConfigRepoMock.Object,
-            _unitOfWorkMock.Object,
-            _senderMock.Object,
-            _loggerMock.Object);
+        var handler = CreateHandler();
 
         // Act: Process for both Saturday and Sunday
         var command = new ProcessDailyAttendanceCommand(saturday, sunday, EmployeeId: emp.Id);

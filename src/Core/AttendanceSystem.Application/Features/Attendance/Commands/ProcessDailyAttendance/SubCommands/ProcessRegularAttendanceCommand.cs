@@ -15,7 +15,8 @@ public record ProcessRegularAttendanceCommand(
     Shift Shift,
     List<AttendanceRecord> Records,
     bool IsRestDay,
-    bool IsAutoDetectedShift = false) : IRequest;
+    bool IsAutoDetectedShift = false,
+    AttendanceAdjustment? Adjustment = null) : IRequest;
 
 public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessRegularAttendanceCommand>
 {
@@ -176,6 +177,11 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
                 intermediateAnalysis.Value.Lunch,
                 intermediateAnalysis.Value.HasTempExits,
                 intermediateAnalysis.Value.TempMinutes);
+        }
+
+        if (request.Adjustment != null)
+        {
+            dailyAttendance.ApplyAdjustment(request.Adjustment);
         }
 
         _dailyRepo.Add(dailyAttendance);

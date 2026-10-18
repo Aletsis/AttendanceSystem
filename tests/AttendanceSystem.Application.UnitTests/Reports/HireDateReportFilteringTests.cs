@@ -87,6 +87,20 @@ public class HireDateReportFilteringTests
             .ReturnsAsync(new List<AttendanceRecord>());
 
         var systemConfigRepoMock = new Mock<ISystemConfigurationRepository>();
+        var adjustmentRepoMock = new Mock<IAttendanceAdjustmentRepository>();
+        var consolidationRepoMock = new Mock<IAttendanceConsolidationRepository>();
+        var lockServiceMock = new Mock<IAttendanceCalculationLockService>();
+
+        lockServiceMock
+            .Setup(l => l.ExecuteWithLockAsync(
+                It.IsAny<IEnumerable<EmployeeId>>(),
+                It.IsAny<Func<Task<int>>>(),
+                It.IsAny<CancellationToken>()))
+            .Returns<IEnumerable<EmployeeId>, Func<Task<int>>, CancellationToken>((_, func, _) => func());
+
+        unitOfWorkMock
+            .Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Mock.Of<IAsyncDisposable>());
 
         var handler = new ProcessDailyAttendanceCommandHandler(
             dailyRepoMock.Object,
@@ -95,6 +109,9 @@ public class HireDateReportFilteringTests
             shiftRepoMock.Object,
             rosterRepoMock.Object,
             systemConfigRepoMock.Object,
+            adjustmentRepoMock.Object,
+            consolidationRepoMock.Object,
+            lockServiceMock.Object,
             unitOfWorkMock.Object,
             senderMock.Object,
             loggerMock.Object);

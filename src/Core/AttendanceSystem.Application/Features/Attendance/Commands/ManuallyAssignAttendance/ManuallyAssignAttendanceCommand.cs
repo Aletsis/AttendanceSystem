@@ -18,15 +18,18 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
 {
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IAttendanceRepository _attendanceRepo;
+    private readonly IAttendanceAdjustmentRepository _adjustmentRepo;
     private readonly IUnitOfWork _unitOfWork;
 
     public ManuallyAssignAttendanceCommandHandler(
         IDailyAttendanceRepository dailyRepo,
         IAttendanceRepository attendanceRepo,
+        IAttendanceAdjustmentRepository adjustmentRepo,
         IUnitOfWork unitOfWork)
     {
         _dailyRepo = dailyRepo;
         _attendanceRepo = attendanceRepo;
+        _adjustmentRepo = adjustmentRepo;
         _unitOfWork = unitOfWork;
     }
 
@@ -94,7 +97,18 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
             return Result.Failure("Registro de asistencia no encontrado.");
         }
 
-        // 3. Update Logic
+        // 3. Update Logic y persistencia de ajuste manual
+        var adjustment = await _adjustmentRepo.GetByEmployeeAndDateAsync(employeeId, daily.Date, cancellationToken);
+        if (adjustment == null)
+        {
+            adjustment = AttendanceAdjustment.Create(employeeId, daily.Date, "Usuario RH");
+            await _adjustmentRepo.AddAsync(adjustment, cancellationToken);
+        }
+        else
+        {
+            _adjustmentRepo.Update(adjustment);
+        }
+
         // 3. Actualizar el DailyAttendance según el tipo de asignación
         if (request.AssignmentType == "Entrada" || request.AssignmentType == "Entrada B1") // CheckIn
         {
@@ -103,6 +117,7 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
             if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
 
             daily.SetCheckIn(record.CheckTime, record.Id);
+            adjustment.SetCheckIn(record.Id, record.CheckTime, "Usuario RH", "Asignación manual de entrada");
 
             if (record.Status != AttendanceStatus.Processed)
             {
@@ -117,6 +132,7 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
             if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
 
             daily.SetBlock1CheckOut(record.CheckTime, record.Id);
+            adjustment.SetBlock1CheckOut(record.Id, record.CheckTime, "Usuario RH", "Asignación manual de salida B1");
 
             if (record.Status != AttendanceStatus.Processed)
             {
@@ -131,6 +147,7 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
             if (daily.Block1CheckOutRecordId == recordId) daily.RemoveBlock1CheckOut();
 
             daily.SetBlock2CheckIn(record.CheckTime, record.Id);
+            adjustment.SetBlock2CheckIn(record.Id, record.CheckTime, "Usuario RH", "Asignación manual de entrada B2");
 
             if (record.Status != AttendanceStatus.Processed)
             {
@@ -145,6 +162,7 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
             if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
 
             daily.SetCheckOut(record.CheckTime, record.Id);
+            adjustment.SetCheckOut(record.Id, record.CheckTime, "Usuario RH", "Asignación manual de salida");
 
             if (record.Status != AttendanceStatus.Processed)
             {
@@ -154,10 +172,10 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         }
         else if (request.AssignmentType == "None") // Unassign
         {
-            if (daily.CheckInRecordId == recordId) daily.RemoveCheckIn();
-            if (daily.CheckOutRecordId == recordId) daily.RemoveCheckOut();
-            if (daily.Block1CheckOutRecordId == recordId) daily.RemoveBlock1CheckOut();
-            if (daily.Block2CheckInRecordId == recordId) daily.RemoveBlock2CheckIn();
+            if (daily.CheckInRecordId == recordId) { daily.RemoveCheckIn(); adjustment.RemoveCheckIn("Usuario RH"); }
+            if (daily.CheckOutRecordId == recordId) { daily.RemoveCheckOut(); adjustment.RemoveCheckOut("Usuario RH"); }
+            if (daily.Block1CheckOutRecordId == recordId) { daily.RemoveBlock1CheckOut(); adjustment.RemoveBlock1CheckOut("Usuario RH"); }
+            if (daily.Block2CheckInRecordId == recordId) { daily.RemoveBlock2CheckIn(); adjustment.RemoveBlock2CheckIn("Usuario RH"); }
 
             record.ResetStatus();
             await _attendanceRepo.UpdateAsync(record, cancellationToken);
@@ -166,11 +184,6 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         {
             return Result.Failure("Tipo de asignación inválido. Use 'Entrada', 'Salida B1', 'Entrada B2' o 'Salida'.");
         }
-
-        // 4. Actualizamos el DailyAttendance en el repositorio
-        // Necesitamos un método Update en IDailyAttendanceRepository? O solo confiamos en EF Core Change Tracking?
-        // La implementación que vimos antes usa Remove + Add o solo EF Change Tracking si se cargó.
-        // Asumiendo que el seguimiento de EF Core está activo ya que cargamos 'daily'.
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 

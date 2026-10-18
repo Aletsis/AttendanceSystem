@@ -3,15 +3,16 @@ using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
+using AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Services;
 using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
 using AttendanceSystem.Application.Common;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
-
 
 public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDailyAttendanceCommand, int>
 {
@@ -21,6 +22,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IShiftRepository _shiftRepo;
     private readonly IShiftRosterRepository _rosterRepo;
     private readonly ISystemConfigurationRepository _systemConfigRepo;
+    private readonly IAttendanceAdjustmentRepository _adjustmentRepo;
+    private readonly IAttendanceConsolidationRepository _consolidationRepo;
+    private readonly IAttendanceCalculationLockService _lockService;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISender _sender;
     private readonly ILogger<ProcessDailyAttendanceCommandHandler> _logger;
@@ -32,6 +36,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IShiftRepository shiftRepo,
         IShiftRosterRepository rosterRepo,
         ISystemConfigurationRepository systemConfigRepo,
+        IAttendanceAdjustmentRepository adjustmentRepo,
+        IAttendanceConsolidationRepository consolidationRepo,
+        IAttendanceCalculationLockService lockService,
         IUnitOfWork unitOfWork,
         ISender sender,
         ILogger<ProcessDailyAttendanceCommandHandler> logger)
@@ -42,385 +49,380 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         _shiftRepo = shiftRepo;
         _rosterRepo = rosterRepo;
         _systemConfigRepo = systemConfigRepo;
+        _adjustmentRepo = adjustmentRepo;
+        _consolidationRepo = consolidationRepo;
+        _lockService = lockService;
         _unitOfWork = unitOfWork;
         _sender = sender;
         _logger = logger;
     }
 
-
     public async Task<int> Handle(ProcessDailyAttendanceCommand request, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "Iniciando procesamiento de asistencia diaria. Rango: {StartDate} - {EndDate}, BranchId: {BranchId}, EmployeeId: {EmployeeId}",
+            "Iniciando procesamiento de asistencia diaria. Rango: {StartDate:yyyy-MM-dd} - {EndDate:yyyy-MM-dd}, BranchId: {BranchId}, EmployeeId: {EmployeeId}",
             request.StartDate,
             request.EndDate,
             request.BranchId?.Value,
             request.EmployeeId?.Value);
 
-        int processedCount = 0;
+        // 1. Obtenemos todos los empleados base
+        var allEmployees = (await _employeeRepo.GetAllAsync(cancellationToken)).ToList();
 
-        // 1. Obtenemos todos los empleados
-        var employees = (await _employeeRepo.GetAllAsync(cancellationToken)).ToList();
-        _logger.LogDebug("Obtenidos {EmployeeCount} empleados de la base de datos", employees.Count);
-
-        // Filtrar por sucursal si se especifica
         if (request.BranchId != null)
         {
-            employees = employees.Where(e => e.BranchId == request.BranchId).ToList();
-            _logger.LogDebug("Filtrado por sucursal {BranchId}: {EmployeeCount} empleados", request.BranchId.Value, employees.Count);
+            allEmployees = allEmployees.Where(e => e.BranchId == request.BranchId).ToList();
         }
 
-        // Filtrar por empleado si se especifica
         if (request.EmployeeId != null)
         {
-            employees = employees.Where(e => e.Id == request.EmployeeId).ToList();
-            _logger.LogDebug("Filtrado por empleado {EmployeeId}: {EmployeeCount} empleados", request.EmployeeId.Value, employees.Count);
+            allEmployees = allEmployees.Where(e => e.Id == request.EmployeeId).ToList();
         }
 
-        var totalDays = (request.EndDate.Date - request.StartDate.Date).Days + 1;
-        _logger.LogInformation(
-            "Procesando asistencia para {EmployeeCount} empleados durante {DayCount} días",
-            employees.Count,
-            totalDays);
+        // F05-P02 / H08: Identificar empleados con vigencia histórica en el rango solicitado
+        // (empleados que estuvieron activos en cualquier fecha del rango, o cuya fecha de ingreso/baja solapa el periodo)
+        var targetEmployees = allEmployees.Where(e =>
+            e.IsActiveOn(request.StartDate) ||
+            e.IsActiveOn(request.EndDate) ||
+            (e.HireDate.Date <= request.EndDate.Date && (!e.TerminationDate.HasValue || e.TerminationDate.Value.Date >= request.StartDate.Date))
+        ).ToList();
 
-        // 1.1 Carga masiva de todos los turnos
-        var shifts = (await _shiftRepo.GetAllAsync(cancellationToken))
-            .ToDictionary(s => s.Id);
-        _logger.LogDebug("Obtenidos {ShiftCount} turnos para mapeo en memoria", shifts.Count);
+        var targetEmployeeIds = targetEmployees.Select(e => e.Id).ToList();
 
-        // 1.2 Carga masiva de todos los registros de asistencia diaria existentes para el rango de fechas
-        var existingDailyAttendances = await _dailyRepo.GetByDateRangeAsync(
-            request.StartDate,
-            request.EndDate,
-            request.BranchId,
-            request.EmployeeId,
-            cancellationToken);
-
-        _logger.LogDebug("Obtenidos {DaCount} registros de asistencia diaria existentes para reprogramación", existingDailyAttendances.Count);
-
-        // 1.25 Carga masiva de asignaciones de Roster de turnos para el rango de fechas
-        var rosters = await _rosterRepo.GetByDateRangeAsync(
-            request.StartDate,
-            request.EndDate,
-            request.BranchId,
-            request.EmployeeId,
-            cancellationToken);
-
-        var rosterLookup = rosters
-            .GroupBy(r => (r.EmployeeId.Value, r.Date.Date))
-            .ToDictionary(g => g.Key, g => g.First());
-        _logger.LogDebug("Obtenidos {RosterCount} registros de asignación en Roster", rosters.Count);
-
-        // 1.3 Carga masiva de todos los registros de asistencia para el rango de fechas (incluyendo un día de buffer antes y después para turnos que cruzan el día)
-        var startQueryDate = DateOnly.FromDateTime(request.StartDate.Date.AddDays(-1));
-        var endQueryDate = DateOnly.FromDateTime(request.EndDate.Date.AddDays(2));
-
-        // F01-P02 / H08: Solo procesar y limpiar empleados activos para no destruir históricos de empleados dados de baja
-        var activeEmployees = employees.Where(e => e.Status == EmployeeStatus.Alta).ToList();
-        var processedEmployeeIds = activeEmployees.Select(e => e.Id).ToHashSet();
-
-        IReadOnlyList<AttendanceRecord> allRecords;
-        if (request.EmployeeId != null)
+        if (!targetEmployees.Any())
         {
-            allRecords = await _attendanceRepo.GetByDateRangeAsync(
-                startQueryDate,
-                endQueryDate,
-                request.EmployeeId,
-                cancellationToken);
-        }
-        else
-        {
-            allRecords = await _attendanceRepo.GetByDateRangeAsync(
-                startQueryDate,
-                endQueryDate,
-                null,
-                cancellationToken);
+            _logger.LogInformation("No se encontraron empleados activos o con vigencia laboral en el periodo solicitado.");
+            return 0;
         }
 
-        var filteredRecords = allRecords
-            .Where(r => processedEmployeeIds.Contains(r.EmployeeId))
-            .ToList();
-
-        var recordsByEmployee = filteredRecords
-            .GroupBy(r => r.EmployeeId.Value)
-            .ToDictionary(g => g.Key, g => g.ToList());
-
-        var recordsById = filteredRecords
-            .ToDictionary(r => r.Id.Value);
-
-        _logger.LogDebug("Obtenidos {RecordCount} registros biométricos filtrados", filteredRecords.Count);
-
-        // 1.4 Limpieza previa del rango para los empleados a procesar (solo empleados activos)
-        // Eliminar registros de asistencia diaria existentes en el rango para los empleados a procesar
-        foreach (var existingDA in existingDailyAttendances)
+        // F05-P04 / H06: Exclusión distribuida ordenada por EmployeeId para garantizar ausencia de deadlocks
+        return await _lockService.ExecuteWithLockAsync(targetEmployeeIds, async () =>
         {
-            if (processedEmployeeIds.Contains(existingDA.EmployeeId))
+            // F05-P04 / H06: Transacción atómica envolvente para todo el recálculo
+            await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+            try
             {
-                _dailyRepo.Remove(existingDA);
-            }
-        }
+                int processedCount = 0;
 
-        // Poner en estado Pending marcajes biométricos en el rango de fechas de los empleados a procesar
-        var rangeStartLimit = request.StartDate.Date;
-        var rangeEndLimit = request.EndDate.Date.AddDays(2);
+                // 1.1 Carga masiva de todos los turnos
+                var shifts = ((await _shiftRepo.GetAllAsync(cancellationToken)) ?? new List<Shift>())
+                    .ToDictionary(s => s.Id);
 
-        foreach (var record in filteredRecords)
-        {
-            if (record.CheckTime >= rangeStartLimit && record.CheckTime < rangeEndLimit)
-            {
-                if (record.Status != AttendanceStatus.Pending)
+                // 1.2 Carga masiva de asistencias diarias existentes en el rango
+                var existingDailyAttendances = (await _dailyRepo.GetByDateRangeAsync(
+                    request.StartDate,
+                    request.EndDate,
+                    request.BranchId,
+                    request.EmployeeId,
+                    cancellationToken)) ?? new List<DailyAttendance>();
+
+                // 1.25 Carga masiva de asignaciones de Roster de turnos
+                var rawRosters = await _rosterRepo.GetByDateRangeAsync(
+                    request.StartDate,
+                    request.EndDate,
+                    request.BranchId,
+                    request.EmployeeId,
+                    cancellationToken);
+
+                var rosters = rawRosters ?? Enumerable.Empty<ShiftRoster>();
+
+                var rosterLookup = rosters
+                    .GroupBy(r => (r.EmployeeId.Value, r.Date.Date))
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                // 1.26 Carga masiva de ajustes manuales de RH (F05-P02 / H07)
+                var rawAdjustments = await _adjustmentRepo.GetByDateRangeAsync(
+                    request.StartDate,
+                    request.EndDate,
+                    request.BranchId,
+                    request.EmployeeId,
+                    cancellationToken);
+
+                var adjustments = rawAdjustments ?? Enumerable.Empty<AttendanceAdjustment>();
+
+                var adjustmentsLookup = adjustments
+                    .GroupBy(a => (a.EmployeeId.Value, a.Date.Date))
+                    .ToDictionary(g => g.Key, g => g.First());
+
+                // Migración/recuperación en caliente de ajustes desde DailyAttendance existentes (F05-P02)
+                foreach (var existingDA in existingDailyAttendances)
                 {
-                    record.ResetStatus();
-                    await _attendanceRepo.UpdateAsync(record, cancellationToken);
-                }
-            }
-        }
-
-        // 2. Iterar sobre cada día en el rango
-        for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
-        {
-            foreach (var employee in employees)
-            {
-                // Omitir si no está activo
-                if (employee.Status != EmployeeStatus.Alta) continue;
-
-                // Omitir si la fecha es anterior a su fecha de ingreso/alta
-                if (date < employee.HireDate.Date) continue;
-
-                // 3. Determinamos el turno y el alcance de búsqueda
-                Shift? shift = null;
-                bool isRestDay = false;
-                bool isAutoDetected = false;
-                var searchStartDate = DateOnly.FromDateTime(date);
-                var searchEndDate = searchStartDate;
-
-                // 3.1 Prioridad 1: Asignación en Roster / Calendario de turnos
-                var rosterKey = (employee.Id.Value, date.Date);
-                if (rosterLookup.TryGetValue(rosterKey, out var rosterEntry))
-                {
-                    isRestDay = rosterEntry.IsRestDay;
-                    if (rosterEntry.ShiftId != null && shifts.TryGetValue(rosterEntry.ShiftId, out var rShift))
+                    var key = (existingDA.EmployeeId.Value, existingDA.Date.Date);
+                    if (!adjustmentsLookup.ContainsKey(key))
                     {
-                        shift = rShift;
+                        if (existingDA.IsRestDayOverridden || (existingDA.HasTemporaryExits && existingDA.TemporaryExitStatus != TemporaryExitStatus.Pending))
+                        {
+                            var migrated = AttendanceAdjustment.Create(existingDA.EmployeeId, existingDA.Date, "Migración F05");
+                            if (existingDA.IsRestDayOverridden)
+                            {
+                                migrated.SetRestDayOverride(existingDA.IsRestDay, "Migración F05", "Preservado de DailyAttendance");
+                            }
+                            if (existingDA.HasTemporaryExits && existingDA.TemporaryExitStatus != TemporaryExitStatus.Pending)
+                            {
+                                migrated.SetTemporaryExitClassification(existingDA.TemporaryExitStatus, existingDA.TemporaryExitNote ?? "Preservado", "Migración F05");
+                            }
+                            adjustmentsLookup[key] = migrated;
+                            await _adjustmentRepo.AddAsync(migrated, cancellationToken);
+                        }
                     }
+                }
+
+                // 1.3 Carga de marcajes biométricos (con buffer de 1 día antes y 1 día después para turnos nocturnos)
+                var startQueryDate = DateOnly.FromDateTime(request.StartDate.Date.AddDays(-1));
+                var endQueryDate = DateOnly.FromDateTime(request.EndDate.Date.AddDays(1));
+
+                var processedEmployeeIds = targetEmployeeIds.ToHashSet();
+                var targetEmployeesById = targetEmployees.ToDictionary(e => e.Id);
+
+                IReadOnlyList<AttendanceRecord> allRecords;
+                if (request.EmployeeId != null)
+                {
+                    allRecords = await _attendanceRepo.GetByDateRangeAsync(
+                        startQueryDate,
+                        endQueryDate,
+                        request.EmployeeId,
+                        cancellationToken);
                 }
                 else
                 {
-                    // Determinar día(s) de descanso predeterminado(s) del empleado
-                    if (employee.IsRestDay(date.DayOfWeek))
+                    allRecords = await _attendanceRepo.GetByDateRangeAsync(
+                        startQueryDate,
+                        endQueryDate,
+                        null,
+                        cancellationToken);
+                }
+
+                var filteredRecords = allRecords
+                    .Where(r => processedEmployeeIds.Contains(r.EmployeeId))
+                    .ToList();
+
+                var recordsByEmployee = filteredRecords
+                    .GroupBy(r => r.EmployeeId.Value)
+                    .ToDictionary(g => g.Key, g => g.ToList());
+
+                // 1.4 Limpieza segura del rango para empleados a procesar (solo donde el empleado estuvo activo)
+                // H08: Si el empleado estaba dado de baja en esa fecha, NO eliminar su histórico
+                foreach (var existingDA in existingDailyAttendances)
+                {
+                    if (processedEmployeeIds.Contains(existingDA.EmployeeId) &&
+                        targetEmployeesById.TryGetValue(existingDA.EmployeeId, out var emp) &&
+                        emp.IsActiveOn(existingDA.Date))
                     {
-                        isRestDay = true;
-                    }
-
-                    // 3.2 Prioridad 2: Empleado con turno rotativo o sin horario fijo -> Detección automática por proximidad
-                    if (employee.ShiftType == ShiftType.Rotativo || employee.ScheduleId == null)
-                    {
-                        var empAllRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var recs) ? recs : null;
-                        var firstPunchOfDay = empAllRecords?
-                            .Where(r => r.CheckTime.Date == date.Date)
-                            .OrderBy(r => r.CheckTime)
-                            .FirstOrDefault();
-
-                        if (firstPunchOfDay != null)
-                        {
-                            var autoShift = AttendanceSystem.Domain.Services.ShiftDetectionService.FindClosestShift(
-                                firstPunchOfDay.CheckTime,
-                                shifts.Values);
-
-                            if (autoShift != null)
-                            {
-                                shift = autoShift;
-                                isAutoDetected = true;
-                                _logger.LogInformation(
-                                    "Turno '{ShiftName}' autodetectado por proximidad para {EmpId} en {Date} (Marcaje: {Time:HH:mm})",
-                                    autoShift.Name, employee.Id.Value, date.ToString("yyyy-MM-dd"), firstPunchOfDay.CheckTime);
-                            }
-                        }
-                    }
-
-                    // 3.3 Prioridad 3: Turno fijo del empleado (ScheduleId)
-                    if (shift == null && employee.ScheduleId != null && shifts.TryGetValue(employee.ScheduleId, out var matchedShift))
-                    {
-                        shift = matchedShift;
+                        _dailyRepo.Remove(existingDA);
                     }
                 }
 
-                // Si es un turno nocturno o continuo, extendemos la búsqueda al día siguiente para capturar la salida
-                bool isCrossDay = false;
-                TimeSpan dayStartTime = TimeSpan.Zero;
-                TimeSpan dayEndTime = TimeSpan.Zero;
+                // H06: Poner en estado Pending únicamente los marcajes dentro de la ventana estrictamente reconstruida
+                var rangeStartLimit = request.StartDate.Date;
+                var rangeEndLimit = request.EndDate.Date.AddDays(1).AddTicks(-1);
 
-                if (shift != null)
+                foreach (var record in filteredRecords)
                 {
-                    dayStartTime = shift.StartTime;
-                    dayEndTime = shift.EndTime;
-
-                    if (shift.ShiftType == ShiftType.Mixto)
+                    if (record.CheckTime >= rangeStartLimit && record.CheckTime <= rangeEndLimit)
                     {
-                        var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
-                        if (dayConfig != null)
+                        if (record.Status != AttendanceStatus.Pending)
                         {
-                            dayStartTime = dayConfig.StartTime;
-                            dayEndTime = dayConfig.EndTime;
+                            record.ResetStatus();
+                            await _attendanceRepo.UpdateAsync(record, cancellationToken);
+                        }
+                    }
+                }
 
-                            // Si dayConfig es Nocturno, Continuo o Flexible, o si endTime <= startTime, cruza el día
-                            if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno || dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible || dayConfig.ShiftType == ShiftType.Partido || dayConfig.ShiftType == ShiftType.Rotativo)
+                // 2. Iterar sobre cada día en el rango
+                for (var date = request.StartDate.Date; date <= request.EndDate.Date; date = date.AddDays(1))
+                {
+                    foreach (var employee in targetEmployees)
+                    {
+                        // H08: Omitir fechas donde el empleado no tenía vigencia laboral activa
+                        if (!employee.IsActiveOn(date)) continue;
+
+                        var rosterKey = (employee.Id.Value, date.Date);
+                        rosterLookup.TryGetValue(rosterKey, out var rosterEntry);
+                        adjustmentsLookup.TryGetValue((employee.Id.Value, date.Date), out var adjustment);
+
+                        var empAllRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var recs) ? recs : null;
+                        var punchesOnDate = empAllRecords?.Where(r => r.CheckTime.Date == date.Date).Select(r => r.CheckTime);
+
+                        // F05-P03 / H28: Centralizar resolución de turno y descanso con precedencia estricta
+                        var resolution = AttendanceShiftResolutionService.Resolve(
+                            employee,
+                            date,
+                            rosterEntry,
+                            adjustment,
+                            shifts,
+                            punchesOnDate);
+
+                        Shift? shift = resolution.Shift;
+                        bool isRestDay = resolution.IsRestDay;
+                        bool isAutoDetected = resolution.IsAutoDetected;
+
+                        // Determinar si cruza el día
+                        bool isCrossDay = false;
+                        TimeSpan dayStartTime = TimeSpan.Zero;
+                        TimeSpan dayEndTime = TimeSpan.Zero;
+                        var searchStartDate = DateOnly.FromDateTime(date);
+                        var searchEndDate = searchStartDate;
+
+                        if (shift != null)
+                        {
+                            dayStartTime = shift.StartTime;
+                            dayEndTime = shift.EndTime;
+
+                            if (shift.ShiftType == ShiftType.Mixto)
+                            {
+                                var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
+                                if (dayConfig != null)
+                                {
+                                    dayStartTime = dayConfig.StartTime;
+                                    dayEndTime = dayConfig.EndTime;
+
+                                    if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno ||
+                                        dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible ||
+                                        dayConfig.ShiftType == ShiftType.Partido || dayConfig.ShiftType == ShiftType.Rotativo)
+                                    {
+                                        isCrossDay = true;
+                                    }
+                                }
+                            }
+                            else if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) ||
+                                     shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo ||
+                                     shift.ShiftType == ShiftType.Flexible || shift.ShiftType == ShiftType.Partido)
                             {
                                 isCrossDay = true;
                             }
+
+                            if (isCrossDay)
+                            {
+                                searchEndDate = searchStartDate.AddDays(1);
+                            }
                         }
-                    }
-                    else if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) || shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible ||
-                             shift.ShiftType == ShiftType.Partido)
-                    {
-                        isCrossDay = true;
-                    }
 
-                    if (isCrossDay)
-                    {
-                        searchEndDate = searchStartDate.AddDays(1);
-                    }
-                }
+                        // Recuperar registros biométricos del día
+                        var employeeRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var empRecsList)
+                            ? empRecsList
+                            : new List<AttendanceRecord>();
 
-                // 4. Recuperar registros en memoria
-                var employeeRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var empRecs)
-                    ? empRecs
-                    : new List<AttendanceRecord>();
+                        var startDateTime = searchStartDate.ToDateTime(TimeOnly.MinValue);
+                        var endDateTime = searchEndDate.ToDateTime(TimeOnly.MaxValue);
 
-                var startDateTime = searchStartDate.ToDateTime(TimeOnly.MinValue);
-                var endDateTime = searchEndDate.ToDateTime(TimeOnly.MaxValue);
+                        var records = employeeRecords
+                            .Where(r => r.CheckTime >= startDateTime && r.CheckTime <= endDateTime)
+                            .OrderBy(r => r.CheckTime)
+                            .ToList();
 
-                var records = employeeRecords
-                    .Where(r => r.CheckTime >= startDateTime && r.CheckTime <= endDateTime)
-                    .OrderBy(r => r.CheckTime)
-                    .ToList();
-
-                // 5. Delegar el cálculo a un sub-comando específico
-                if (shift == null)
-                {
-                    await _sender.Send(new ProcessNoShiftAttendanceCommand(
-                        employee,
-                        date,
-                        records,
-                        isRestDay), cancellationToken);
-                }
-                else if (shift.ShiftType == ShiftType.Mixto)
-                {
-                    await _sender.Send(new ProcessMixAttendanceCommand(
-                        employee,
-                        date,
-                        shift,
-                        records,
-                        isRestDay), cancellationToken);
-                }
-                else if (shift.ShiftType == ShiftType.Continuo)
-                {
-                    await _sender.Send(new ProcessContinuousAttendanceCommand(
-                        employee,
-                        date,
-                        shift,
-                        records,
-                        isRestDay,
-                        isAutoDetected), cancellationToken);
-                }
-                else if (shift.ShiftType == ShiftType.Flexible)
-                {
-                    await _sender.Send(new ProcessFlexibleAttendanceCommand(
-                        employee,
-                        date,
-                        shift,
-                        records,
-                        isRestDay,
-                        isAutoDetected), cancellationToken);
-                }
-                else if (shift.ShiftType == ShiftType.Partido)
-                {
-                    await _sender.Send(new ProcessSplitAttendanceCommand(
-                        employee,
-                        date,
-                        shift,
-                        records,
-                        isRestDay,
-                        isAutoDetected), cancellationToken);
-                }
-                else if (shift.ShiftType == ShiftType.Nocturno || (dayEndTime <= dayStartTime && shift.ShiftType != ShiftType.Continuo && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
-                {
-                    await _sender.Send(new ProcessNightlyAttendanceCommand(
-                        employee,
-                        date,
-                        shift,
-                        records,
-                        isRestDay,
-                        dayStartTime,
-                        dayEndTime,
-                        isAutoDetected), cancellationToken);
-                }
-                else
-                {
-                    // Matutino, Vespertino o Rotativo
-                    await _sender.Send(new ProcessRegularAttendanceCommand(
-                        employee,
-                        date,
-                        shift,
-                        records,
-                        isRestDay,
-                        isAutoDetected), cancellationToken);
-                }
-
-                processedCount++;
-            }
-        }
-
-        // 1. Persistir los registros diarios generados
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-        // 2. Recalcular y persistir horas extras semanales para empleados con turnos de bolsa semanal
-        var systemConfig = await _systemConfigRepo.GetConfigurationAsync(cancellationToken);
-        var weeklyStartDay = systemConfig?.WeeklyStartDay ?? DayOfWeek.Monday;
-        var earliestWeekStart = WeeklyHoursCalculationHelper.GetWeekStart(request.StartDate, weeklyStartDay);
-
-        bool hasAnyWeeklyUpdates = false;
-        foreach (var employee in employees)
-        {
-            if (employee.Status != EmployeeStatus.Alta) continue;
-
-            var empAttendances = (await _dailyRepo.GetByEmployeeAndDateRangeAsync(
-                employee.Id,
-                earliestWeekStart,
-                request.EndDate,
-                cancellationToken)) ?? new List<DailyAttendance>();
-
-            if (empAttendances.Any(a => a.WeeklyWorkHours.HasValue && a.WeeklyWorkHours.Value > TimeSpan.Zero))
-            {
-                var overtimeMap = WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
-                    empAttendances,
-                    employee,
-                    weeklyStartDay);
-
-                foreach (var att in empAttendances)
-                {
-                    if (overtimeMap.TryGetValue(att.Id, out var effectiveOt))
-                    {
-                        if (att.OvertimeMinutes != effectiveOt)
+                        // Delegar a subcomandos pasando Adjustment (H07)
+                        if (shift == null)
                         {
-                            att.SetCalculatedOvertime(effectiveOt);
-                            _dailyRepo.Update(att);
-                            hasAnyWeeklyUpdates = true;
+                            await _sender.Send(new ProcessNoShiftAttendanceCommand(
+                                employee, date, records, isRestDay, Adjustment: adjustment), cancellationToken);
+                        }
+                        else if (shift.ShiftType == ShiftType.Mixto)
+                        {
+                            await _sender.Send(new ProcessMixAttendanceCommand(
+                                employee, date, shift, records, isRestDay, Adjustment: adjustment), cancellationToken);
+                        }
+                        else if (shift.ShiftType == ShiftType.Continuo)
+                        {
+                            await _sender.Send(new ProcessContinuousAttendanceCommand(
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                        }
+                        else if (shift.ShiftType == ShiftType.Flexible)
+                        {
+                            await _sender.Send(new ProcessFlexibleAttendanceCommand(
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                        }
+                        else if (shift.ShiftType == ShiftType.Partido)
+                        {
+                            await _sender.Send(new ProcessSplitAttendanceCommand(
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                        }
+                        else if (shift.ShiftType == ShiftType.Nocturno || (dayEndTime <= dayStartTime && shift.ShiftType != ShiftType.Continuo && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
+                        {
+                            await _sender.Send(new ProcessNightlyAttendanceCommand(
+                                employee, date, shift, records, isRestDay, dayStartTime, dayEndTime, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                        }
+                        else
+                        {
+                            await _sender.Send(new ProcessRegularAttendanceCommand(
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                        }
+
+                        processedCount++;
+                    }
+                }
+
+                // Persistir los registros diarios generados dentro de la transacción
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                // F05-P05 / H18: Recalcular horas extras semanales expandiendo hasta el fin de semana de EndDate
+                var systemConfig = await _systemConfigRepo.GetConfigurationAsync(cancellationToken);
+                var weeklyStartDay = systemConfig?.WeeklyStartDay ?? DayOfWeek.Monday;
+                var earliestWeekStart = WeeklyHoursCalculationHelper.GetWeekStart(request.StartDate, weeklyStartDay);
+                var latestWeekEnd = WeeklyHoursCalculationHelper.GetWeekEnd(request.EndDate, weeklyStartDay);
+
+                bool hasSubsequentUpdates = false;
+                foreach (var employee in targetEmployees)
+                {
+                    var empAttendances = (await _dailyRepo.GetByEmployeeAndDateRangeAsync(
+                        employee.Id,
+                        earliestWeekStart,
+                        latestWeekEnd,
+                        cancellationToken)) ?? new List<DailyAttendance>();
+
+                    if (empAttendances.Any(a => a.WeeklyWorkHours.HasValue && a.WeeklyWorkHours.Value > TimeSpan.Zero))
+                    {
+                        var overtimeMap = WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
+                            empAttendances,
+                            employee,
+                            weeklyStartDay);
+
+                        foreach (var att in empAttendances)
+                        {
+                            if (overtimeMap.TryGetValue(att.Id, out var effectiveOt))
+                            {
+                                if (att.OvertimeMinutes != effectiveOt)
+                                {
+                                    att.SetCalculatedOvertime(effectiveOt);
+                                    _dailyRepo.Update(att);
+                                    hasSubsequentUpdates = true;
+                                }
+                            }
                         }
                     }
                 }
+
+                // F05-P06 / H27: Completar solicitudes de consolidación pendientes para los empleados procesados
+                foreach (var employee in targetEmployees)
+                {
+                    var pendingReq = await _consolidationRepo.GetPendingByEmployeeAsync(employee.Id, cancellationToken);
+                    if (pendingReq != null && pendingReq.StartDate >= request.StartDate.Date && pendingReq.EndDate <= request.EndDate.Date)
+                    {
+                        pendingReq.MarkAsCompleted();
+                        _consolidationRepo.Update(pendingReq);
+                        hasSubsequentUpdates = true;
+                    }
+                }
+
+                if (hasSubsequentUpdates)
+                {
+                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                }
+
+                // Commit atómico final
+                await _unitOfWork.CommitTransactionAsync(cancellationToken);
+
+                _logger.LogInformation(
+                    "Procesamiento atómico de asistencia diaria completado. Registros procesados: {ProcessedCount}",
+                    processedCount);
+
+                return processedCount;
             }
-        }
-
-        if (hasAnyWeeklyUpdates)
-        {
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-
-        _logger.LogInformation(
-            "Procesamiento de asistencia diaria completado. Registros procesados: {ProcessedCount}",
-            processedCount);
-
-        return processedCount;
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error durante el recálculo de asistencia diaria. Ejecutando rollback atómico.");
+                await _unitOfWork.RollbackTransactionAsync(cancellationToken);
+                throw;
+            }
+        }, cancellationToken);
     }
 }

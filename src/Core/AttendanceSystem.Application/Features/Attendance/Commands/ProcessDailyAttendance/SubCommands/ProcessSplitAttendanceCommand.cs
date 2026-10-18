@@ -15,7 +15,8 @@ public record ProcessSplitAttendanceCommand(
     Shift Shift,
     List<AttendanceRecord> Records,
     bool IsRestDay,
-    bool IsAutoDetectedShift = false) : IRequest;
+    bool IsAutoDetectedShift = false,
+    AttendanceAdjustment? Adjustment = null) : IRequest;
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
@@ -188,6 +189,11 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
         if (b2InRecord != null)
         {
             dailyAttendance.SetBlock2CheckIn(b2InRecord.CheckTime, b2InRecord.Id);
+        }
+
+        if (request.Adjustment != null)
+        {
+            dailyAttendance.ApplyAdjustment(request.Adjustment);
         }
 
         _dailyRepo.Add(dailyAttendance);

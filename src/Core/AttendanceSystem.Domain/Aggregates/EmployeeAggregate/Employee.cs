@@ -9,6 +9,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     public string? Email { get; private set; }
     public string? PhoneNumber { get; private set; }
     public DateTime HireDate { get; private set; }
+    public DateTime? TerminationDate { get; private set; }
     public EmployeeStatus Status { get; private set; }
     public Gender Gender { get; private set; } // Nuevo campo
 
@@ -248,14 +249,34 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         DevicePrivilege = devicePrivilege;
     }
 
-    public void Deactivate()
+    public void Deactivate(DateTime? terminationDate = null)
     {
         Status = EmployeeStatus.Baja;
+        TerminationDate = terminationDate?.Date ?? (TerminationDate ?? DateTime.UtcNow.Date);
     }
 
     public void Activate()
     {
         Status = EmployeeStatus.Alta;
+        TerminationDate = null;
+    }
+
+    public void Terminate(DateTime terminationDate)
+    {
+        TerminationDate = terminationDate.Date;
+        Status = EmployeeStatus.Baja;
+    }
+
+    public bool IsActiveOn(DateTime date)
+    {
+        var targetDate = date.Date;
+        if (targetDate < HireDate.Date)
+            return false;
+
+        if (TerminationDate.HasValue && targetDate > TerminationDate.Value.Date)
+            return false;
+
+        return true;
     }
 
     public void SetStatus(EmployeeStatus status)

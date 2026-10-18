@@ -14,16 +14,19 @@ namespace AttendanceSystem.Application.UnitTests.Features.Attendance;
 public class SetDailyRestDayOverrideCommandHandlerTests
 {
     private readonly Mock<IDailyAttendanceRepository> _repositoryMock;
+    private readonly Mock<IAttendanceAdjustmentRepository> _adjustmentRepoMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly SetDailyRestDayOverrideCommandHandler _handler;
 
     public SetDailyRestDayOverrideCommandHandlerTests()
     {
         _repositoryMock = new Mock<IDailyAttendanceRepository>();
+        _adjustmentRepoMock = new Mock<IAttendanceAdjustmentRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
 
         _handler = new SetDailyRestDayOverrideCommandHandler(
             _repositoryMock.Object,
+            _adjustmentRepoMock.Object,
             _unitOfWorkMock.Object);
     }
 

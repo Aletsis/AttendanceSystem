@@ -57,6 +57,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public int LateMinutes { get; private set; }
     public int EarlyDepartureMinutes { get; private set; }
     public int OvertimeMinutes { get; private set; } // Based on shift end or simple work hours?
+    public int RawOvertimeMinutes { get; private set; }
     public int TotalWorkedMinutes { get; private set; }
     public string? IntervalsData { get; private set; }
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; private set; } = OvertimeCalculationMethod.NoRounding;
@@ -67,6 +68,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public bool MissingBlock2CheckIn { get; private set; }
     public bool MissingCheckOut { get; private set; }
     public bool IsRestDay { get; private set; }
+    public bool IsRestDayOverridden { get; private set; }
+    public bool HasManualAdjustments { get; private set; }
     public bool WorkedOnRestDay { get; private set; }
     public bool CalculateOvertimeBeforeEntry { get; private set; }
     public bool OvertimeAuthorized { get; private set; }
@@ -248,6 +251,10 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
     public void SetCalculatedOvertime(int overtimeMinutes)
     {
+        if (RawOvertimeMinutes <= 0)
+        {
+            RawOvertimeMinutes = Math.Max(OvertimeMinutes, Math.Max(0, overtimeMinutes));
+        }
         OvertimeMinutes = Math.Max(0, overtimeMinutes);
     }
 
@@ -286,7 +293,10 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         SecondBlockToleranceMinutes = shift.SecondBlockToleranceMinutes;
 
         // If updating shift, it's likely not a Rest Day anymore unless strict override, but usually shift implies work day.
-        IsRestDay = false;
+        if (!IsRestDayOverridden)
+        {
+            IsRestDay = false;
+        }
 
         CalculateStatus();
     }
@@ -294,6 +304,70 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public void SetRestDayOverride(bool isRestDay)
     {
         IsRestDay = isRestDay;
+        IsRestDayOverridden = true;
+        HasManualAdjustments = true;
+        CalculateStatus();
+    }
+
+    public void ApplyAdjustment(AttendanceAdjustment adjustment, Shift? shiftOverride = null)
+    {
+        if (adjustment == null) return;
+
+        if (adjustment.IsRestDayOverride.HasValue)
+        {
+            IsRestDay = adjustment.IsRestDayOverride.Value;
+            IsRestDayOverridden = true;
+        }
+
+        if (shiftOverride != null)
+        {
+            UpdateShift(shiftOverride, isAutoDetectedShift: false);
+        }
+
+        if (adjustment.CheckInRecordId != null && adjustment.CheckInTimeOverride.HasValue)
+        {
+            ActualCheckIn = adjustment.CheckInTimeOverride.Value;
+            CheckInRecordId = adjustment.CheckInRecordId;
+        }
+
+        if (adjustment.CheckOutRecordId != null && adjustment.CheckOutTimeOverride.HasValue)
+        {
+            ActualCheckOut = adjustment.CheckOutTimeOverride.Value;
+            CheckOutRecordId = adjustment.CheckOutRecordId;
+        }
+
+        if (adjustment.Block1CheckOutRecordId != null && adjustment.Block1CheckOutTimeOverride.HasValue)
+        {
+            ActualBlock1CheckOut = adjustment.Block1CheckOutTimeOverride.Value;
+            Block1CheckOutRecordId = adjustment.Block1CheckOutRecordId;
+        }
+
+        if (adjustment.Block2CheckInRecordId != null && adjustment.Block2CheckInTimeOverride.HasValue)
+        {
+            ActualBlock2CheckIn = adjustment.Block2CheckInTimeOverride.Value;
+            Block2CheckInRecordId = adjustment.Block2CheckInRecordId;
+        }
+
+        if (adjustment.TemporaryExitStatus.HasValue)
+        {
+            TemporaryExitStatus = adjustment.TemporaryExitStatus.Value;
+            if (!string.IsNullOrWhiteSpace(adjustment.TemporaryExitNote))
+            {
+                TemporaryExitNote = adjustment.TemporaryExitNote;
+            }
+        }
+
+        if (adjustment.OvertimeAuthorizedOverride.HasValue)
+        {
+            OvertimeAuthorized = adjustment.OvertimeAuthorizedOverride.Value;
+        }
+
+        if (adjustment.CalculateOvertimeBeforeEntryOverride.HasValue)
+        {
+            CalculateOvertimeBeforeEntry = adjustment.CalculateOvertimeBeforeEntryOverride.Value;
+        }
+
+        HasManualAdjustments = true;
         CalculateStatus();
     }
 
@@ -343,6 +417,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         LateMinutes = 0;
         EarlyDepartureMinutes = 0;
         OvertimeMinutes = 0;
+        RawOvertimeMinutes = 0;
         MissingCheckIn = false;
         MissingBlock1CheckOut = false;
         MissingBlock2CheckIn = false;
@@ -510,10 +585,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             if (OvertimeAuthorized)
             {
                 double totalOvertime = otB1 + otB2;
+                RawOvertimeMinutes = (int)Math.Max(0, totalOvertime);
                 OvertimeMinutes = (int)ApplyOvertimeRounding(totalOvertime, OvertimeCalculationMethod);
             }
             else
             {
+                RawOvertimeMinutes = 0;
                 OvertimeMinutes = 0;
             }
 
@@ -533,6 +610,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
                 if (totalMinutes > goal && OvertimeAuthorized)
                 {
+                    RawOvertimeMinutes = (int)(totalMinutes - goal);
                     OvertimeMinutes = (int)(totalMinutes - goal);
                 }
             }
@@ -689,10 +767,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
                         if (surplus > 0 && OvertimeAuthorized)
                         {
+                            RawOvertimeMinutes = (int)surplus;
                             OvertimeMinutes = (int)ApplyOvertimeRounding(surplus, OvertimeCalculationMethod);
                         }
                         else
                         {
+                            RawOvertimeMinutes = 0;
                             OvertimeMinutes = 0;
                         }
                     }
@@ -728,7 +808,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     double overtime = totalWorkedMinutes - scheduledMinutes;
                     if (overtime > 0 && OvertimeAuthorized)
                     {
+                        RawOvertimeMinutes = (int)overtime;
                         OvertimeMinutes = (int)ApplyOvertimeRounding(overtime, OvertimeCalculationMethod);
+                    }
+                    else
+                    {
+                        RawOvertimeMinutes = 0;
+                        OvertimeMinutes = 0;
                     }
                 }
             }

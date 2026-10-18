@@ -44,6 +44,9 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         builder.Property(e => e.HireDate)
             .IsRequired();
 
+        builder.Property(e => e.TerminationDate)
+            .IsRequired(false);
+
         builder.Property(e => e.Gender)
             .IsRequired()
             .HasConversion<int>();

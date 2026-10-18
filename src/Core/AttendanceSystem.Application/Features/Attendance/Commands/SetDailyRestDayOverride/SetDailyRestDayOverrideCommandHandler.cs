@@ -8,11 +8,16 @@ namespace AttendanceSystem.Application.Features.Attendance.Commands.SetDailyRest
 public class SetDailyRestDayOverrideCommandHandler : IRequestHandler<SetDailyRestDayOverrideCommand, bool>
 {
     private readonly IDailyAttendanceRepository _repository;
+    private readonly IAttendanceAdjustmentRepository _adjustmentRepo;
     private readonly IUnitOfWork _unitOfWork;
 
-    public SetDailyRestDayOverrideCommandHandler(IDailyAttendanceRepository repository, IUnitOfWork unitOfWork)
+    public SetDailyRestDayOverrideCommandHandler(
+        IDailyAttendanceRepository repository,
+        IAttendanceAdjustmentRepository adjustmentRepo,
+        IUnitOfWork unitOfWork)
     {
         _repository = repository;
+        _adjustmentRepo = adjustmentRepo;
         _unitOfWork = unitOfWork;
     }
 
@@ -24,6 +29,19 @@ public class SetDailyRestDayOverrideCommandHandler : IRequestHandler<SetDailyRes
         if (attendance == null) return false;
 
         attendance.SetRestDayOverride(request.IsRestDay);
+
+        var adjustment = await _adjustmentRepo.GetByEmployeeAndDateAsync(attendance.EmployeeId, attendance.Date, cancellationToken);
+        if (adjustment == null)
+        {
+            adjustment = AttendanceAdjustment.Create(attendance.EmployeeId, attendance.Date, "Usuario RH");
+            adjustment.SetRestDayOverride(request.IsRestDay, "Usuario RH", "Ajuste manual de descanso");
+            await _adjustmentRepo.AddAsync(adjustment, cancellationToken);
+        }
+        else
+        {
+            adjustment.SetRestDayOverride(request.IsRestDay, "Usuario RH", "Ajuste manual de descanso");
+            _adjustmentRepo.Update(adjustment);
+        }
 
         _repository.Update(attendance);
         await _unitOfWork.SaveChangesAsync(cancellationToken);

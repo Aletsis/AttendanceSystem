@@ -120,6 +120,15 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
             .HasDefaultValue(false);
         builder.Property(x => x.MissingCheckOut);
         builder.Property(x => x.IsRestDay);
+        builder.Property(x => x.IsRestDayOverridden)
+            .IsRequired()
+            .HasDefaultValue(false);
+        builder.Property(x => x.HasManualAdjustments)
+            .IsRequired()
+            .HasDefaultValue(false);
+        builder.Property(x => x.RawOvertimeMinutes)
+            .IsRequired()
+            .HasDefaultValue(0);
         builder.Property(x => x.WorkedOnRestDay);
         builder.Property(x => x.CalculateOvertimeBeforeEntry);
         builder.Property(x => x.OvertimeAuthorized);

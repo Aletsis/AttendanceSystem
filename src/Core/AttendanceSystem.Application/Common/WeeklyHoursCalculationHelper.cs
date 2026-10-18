@@ -21,6 +21,14 @@ public static class WeeklyHoursCalculationHelper
     }
 
     /// <summary>
+    /// Obtiene la fecha de fin de la semana laboral (6 días después del inicio).
+    /// </summary>
+    public static DateTime GetWeekEnd(DateTime date, DayOfWeek weeklyStartDay)
+    {
+        return GetWeekStart(date, weeklyStartDay).AddDays(6);
+    }
+
+    /// <summary>
     /// Calcula el tiempo extra efectivo para cada día de un empleado,
     /// soportando tanto turnos con bolsa diaria como turnos con bolsa semanal.
     /// Para bolsa semanal, acumula las horas laboradas en la semana (desde weeklyStartDay);
@@ -109,19 +117,28 @@ public static class WeeklyHoursCalculationHelper
                 }
                 else
                 {
-                    // Turno diario / estándar / partido: usa el tiempo extra diario calculado
-                    double dailyOt = att.OvertimeMinutes;
+                    // Turno diario / estándar / partido: usa el tiempo extra bruto calculado como base
+                    double dailyOt = att.RawOvertimeMinutes > 0 ? att.RawOvertimeMinutes : att.OvertimeMinutes;
 
-                    if (employee.OvertimeCapType == OvertimeCapType.Daily && employee.OvertimeCapMinutes.HasValue)
+                    if (employee.OvertimeAuthorized && dailyOt > 0)
                     {
-                        dailyOt = Math.Min(dailyOt, employee.OvertimeCapMinutes.Value);
+                        dailyOt = DailyAttendance.ApplyOvertimeRounding(dailyOt, employee.OvertimeCalculationMethod);
+
+                        if (employee.OvertimeCapType == OvertimeCapType.Daily && employee.OvertimeCapMinutes.HasValue)
+                        {
+                            dailyOt = Math.Min(dailyOt, employee.OvertimeCapMinutes.Value);
+                        }
+
+                        if (employee.OvertimeCapType == OvertimeCapType.Period && employee.OvertimeCapMinutes.HasValue)
+                        {
+                            double remaining = Math.Max(0, employee.OvertimeCapMinutes.Value - accumulatedPeriodOvertime);
+                            dailyOt = Math.Min(dailyOt, remaining);
+                            accumulatedPeriodOvertime += dailyOt;
+                        }
                     }
-
-                    if (employee.OvertimeCapType == OvertimeCapType.Period && employee.OvertimeCapMinutes.HasValue)
+                    else if (!employee.OvertimeAuthorized)
                     {
-                        double remaining = Math.Max(0, employee.OvertimeCapMinutes.Value - accumulatedPeriodOvertime);
-                        dailyOt = Math.Min(dailyOt, remaining);
-                        accumulatedPeriodOvertime += dailyOt;
+                        dailyOt = 0;
                     }
 
                     result[att.Id] = (int)dailyOt;
