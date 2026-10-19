@@ -129,5 +129,6 @@ Output/
 scratch/*.*
 
 # Own Docs
+/Docs/PlanCorreccionAsistencia/
 /Docs/PlanRemediacion/
 .initial_admin_credentials.txt
