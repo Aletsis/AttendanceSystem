@@ -18,7 +18,8 @@ public record ProcessNightlyAttendanceCommand(
     TimeSpan DayStartTime,
     TimeSpan DayEndTime,
     bool IsAutoDetectedShift = false,
-    AttendanceAdjustment? Adjustment = null) : IRequest;
+    AttendanceAdjustment? Adjustment = null,
+    string? TimeZoneId = null) : IRequest;
 
 public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNightlyAttendanceCommand>
 {
@@ -55,19 +56,19 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         var entryWindowEnd = scheduledIn.AddHours(4);
 
         var entryRecords = request.Records.Where(r =>
-            r.CheckTime >= entryWindowStart &&
-            r.CheckTime <= entryWindowEnd &&
+            r.GetCivilTime(request.TimeZoneId) >= entryWindowStart &&
+            r.GetCivilTime(request.TimeZoneId) <= entryWindowEnd &&
             r.Status == AttendanceStatus.Pending);
 
         var exitWindowStart = scheduledOut.AddHours(-7);
         var exitWindowEnd = scheduledOut.AddHours(7);
 
         var exitRecords = request.Records.Where(r =>
-            r.CheckTime >= exitWindowStart &&
-            r.CheckTime <= exitWindowEnd);
+            r.GetCivilTime(request.TimeZoneId) >= exitWindowStart &&
+            r.GetCivilTime(request.TimeZoneId) <= exitWindowEnd);
 
         var matchIn = entryRecords
-            .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+            .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime(request.TimeZoneId) - scheduledIn).TotalMinutes) })
             .Where(x => x.Diff <= maxInDistanceMinutes)
             .OrderBy(x => x.Diff)
             .FirstOrDefault();
@@ -79,7 +80,7 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         }
 
         var matchOut = exitRecords
-            .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+            .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime(request.TimeZoneId) - scheduledOut).TotalMinutes) })
             .Where(x => x.Diff <= maxOutDistanceMinutes)
             .OrderBy(x => x.Diff)
             .FirstOrDefault();
@@ -108,8 +109,10 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         {
             var scheduledIn2 = request.Date.Add(request.DayStartTime);
             var scheduledOut2 = request.Date.Add(request.DayEndTime).AddDays(1);
-            double diffIn = Math.Abs((checkIn.Value - scheduledIn2).TotalMinutes);
-            double diffOut = Math.Abs((checkOut.Value - scheduledOut2).TotalMinutes);
+            var civilIn = checkInRecord?.GetCivilTime(request.TimeZoneId) ?? checkIn.Value;
+            var civilOut = checkOutRecord?.GetCivilTime(request.TimeZoneId) ?? checkOut.Value;
+            double diffIn = Math.Abs((civilIn - scheduledIn2).TotalMinutes);
+            double diffOut = Math.Abs((civilOut - scheduledOut2).TotalMinutes);
             if (diffIn <= diffOut)
             {
                 checkOut = null;
@@ -147,7 +150,8 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
             checkOutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
             request.Employee.OvertimeAuthorized,
-            request.IsAutoDetectedShift);
+            request.IsAutoDetectedShift,
+            timeZoneId: request.TimeZoneId);
 
         if (request.Adjustment != null)
         {

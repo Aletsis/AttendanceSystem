@@ -22,24 +22,31 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITimeNormalizer _timeNormalizer;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
 
     public RegisterManualAttendanceCommandHandler(
         IAttendanceRepository attendanceRepo,
         IDailyAttendanceRepository dailyRepo,
         IUnitOfWork unitOfWork,
-        ITimeNormalizer timeNormalizer)
+        ITimeNormalizer timeNormalizer,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
     {
         _attendanceRepo = attendanceRepo;
         _dailyRepo = dailyRepo;
         _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
     }
 
     public async Task<Result> Handle(RegisterManualAttendanceCommand request, CancellationToken cancellationToken)
     {
         var employeeId = EmployeeId.From(request.EmployeeId);
-        var utcCheckTime = _timeNormalizer.ToUtc(request.CheckTime, request.TimeZoneId);
-        var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, request.TimeZoneId);
+        var authoritativeTimeZone = !string.IsNullOrWhiteSpace(request.TimeZoneId)
+            ? request.TimeZoneId
+            : await _timeZoneResolver.ResolveForEmployeeAsync(employeeId, cancellationToken);
+
+        var utcCheckTime = _timeNormalizer.ToUtc(request.CheckTime, authoritativeTimeZone);
+        var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, authoritativeTimeZone);
         var date = workDate.ToDateTime(TimeOnly.MinValue);
 
         // 1. Obtener Asistencia Diaria existente si ya fue procesada/creada
@@ -85,7 +92,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
             checkType,
             workDate: workDate,
             originalCheckTime: request.CheckTime,
-            timeZoneId: request.TimeZoneId,
+            timeZoneId: authoritativeTimeZone,
             source: "Manual");
 
         // 3. Guardar Registro
@@ -94,6 +101,11 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         // 4. Actualizar Asistencia Diaria si existe (SetCheckIn/SetCheckOut recalculan automáticamente el estado)
         if (daily != null)
         {
+            if (!string.IsNullOrWhiteSpace(request.TimeZoneId) && string.IsNullOrWhiteSpace(daily.TimeZoneId))
+            {
+                daily.SetTimeZone(request.TimeZoneId);
+            }
+
             if (request.Type == "Entrada")
             {
                 daily.SetCheckIn(record.CheckTime, record.Id);

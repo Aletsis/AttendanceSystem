@@ -38,5 +38,9 @@ public class BranchConfiguration : IEntityTypeConfiguration<Branch>
         builder.Property(b => b.ExternalHost)
             .IsRequired(false)
             .HasMaxLength(255);
+
+        builder.Property(b => b.TimeZoneId)
+            .HasMaxLength(100)
+            .IsRequired(false);
     }
 }

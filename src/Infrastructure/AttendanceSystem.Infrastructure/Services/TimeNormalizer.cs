@@ -6,6 +6,7 @@ namespace AttendanceSystem.Infrastructure.Services;
 
 public class TimeNormalizer : ITimeNormalizer
 {
+    public const string DefaultAuthoritativeTimeZoneId = "America/Mexico_City";
     private readonly ILogger<TimeNormalizer> _logger;
     private static readonly ConcurrentDictionary<string, TimeZoneInfo> TimeZoneCache = new(StringComparer.OrdinalIgnoreCase);
 
@@ -16,12 +17,11 @@ public class TimeNormalizer : ITimeNormalizer
 
     public TimeZoneInfo ResolveTimeZone(string? timeZoneId = null)
     {
-        if (string.IsNullOrWhiteSpace(timeZoneId))
-        {
-            return TimeZoneInfo.Local;
-        }
+        var effectiveId = string.IsNullOrWhiteSpace(timeZoneId)
+            ? DefaultAuthoritativeTimeZoneId
+            : timeZoneId.Trim();
 
-        return TimeZoneCache.GetOrAdd(timeZoneId, id =>
+        return TimeZoneCache.GetOrAdd(effectiveId, id =>
         {
             try
             {
@@ -39,15 +39,31 @@ public class TimeNormalizer : ITimeNormalizer
                     try { return TimeZoneInfo.FindSystemTimeZoneById(ianaId); } catch { }
                 }
 
-                _logger.LogWarning("Zona horaria '{TimeZoneId}' no encontrada en el sistema. Usando zona local por defecto.", id);
-                return TimeZoneInfo.Local;
+                _logger.LogWarning("Zona horaria '{TimeZoneId}' no encontrada en el sistema. Usando zona autoritativa por defecto '{DefaultTz}'.", id, DefaultAuthoritativeTimeZoneId);
+                return GetDefaultFallbackTimeZone();
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "Error al resolver zona horaria '{TimeZoneId}'. Usando zona local por defecto.", id);
-                return TimeZoneInfo.Local;
+                _logger.LogWarning(ex, "Error al resolver zona horaria '{TimeZoneId}'. Usando zona autoritativa por defecto '{DefaultTz}'.", id, DefaultAuthoritativeTimeZoneId);
+                return GetDefaultFallbackTimeZone();
             }
         });
+    }
+
+    private static TimeZoneInfo GetDefaultFallbackTimeZone()
+    {
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(DefaultAuthoritativeTimeZoneId);
+        }
+        catch
+        {
+            if (TimeZoneInfo.TryConvertIanaIdToWindowsId(DefaultAuthoritativeTimeZoneId, out var winId))
+            {
+                try { return TimeZoneInfo.FindSystemTimeZoneById(winId); } catch { }
+            }
+            return TimeZoneInfo.Utc;
+        }
     }
 
     public DateTime ToUtc(DateTime localOrUnspecifiedTime, string? timeZoneId = null)
@@ -63,12 +79,16 @@ public class TimeNormalizer : ITimeNormalizer
         // Manejo de brecha inexistente en cambio de horario (Spring Forward)
         if (tz.IsInvalidTime(unspecified))
         {
-            _logger.LogInformation("Hora inválida/brecha de horario detectada: {Time} en zona {Zone}. Ajustando 1 hora hacia adelante.",
+            _logger.LogWarning("Hora inválida/brecha de horario detectada: {Time} en zona {Zone}. Ajustando 1 hora hacia adelante con trazabilidad.",
                 unspecified, tz.Id);
             unspecified = unspecified.AddHours(1);
         }
+        else if (tz.IsAmbiguousTime(unspecified))
+        {
+            _logger.LogInformation("Hora ambigua detectada por cambio de horario: {Time} en zona {Zone}. Resolviendo deterministamente con horario estándar.",
+                unspecified, tz.Id);
+        }
 
-        // Manejo de hora ambigua en cambio de horario (Fall Back): ConvertTimeToUtc usa horario estándar
         return TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
     }
 
@@ -86,5 +106,16 @@ public class TimeNormalizer : ITimeNormalizer
 
         var tz = ResolveTimeZone(timeZoneId);
         return TimeZoneInfo.ConvertTimeFromUtc(utc, tz);
+    }
+
+    public (DateTime StartUtc, DateTime EndUtc) GetCivilWindowInUtc(DateOnly startDate, DateOnly endDate, string? timeZoneId = null)
+    {
+        var localStart = startDate.ToDateTime(TimeOnly.MinValue);
+        var localEndExclusive = endDate.AddDays(1).ToDateTime(TimeOnly.MinValue);
+
+        var startUtc = ToUtc(localStart, timeZoneId);
+        var endUtc = ToUtc(localEndExclusive, timeZoneId);
+
+        return (startUtc, endUtc);
     }
 }

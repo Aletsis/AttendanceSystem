@@ -24,18 +24,30 @@ public sealed class RecordAttendanceCommandHandler
     private readonly IAttendanceRepository _attendanceRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITimeNormalizer _timeNormalizer;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ILogger<RecordAttendanceCommandHandler> _logger;
 
     public RecordAttendanceCommandHandler(
         IAttendanceRepository attendanceRepository,
         IUnitOfWork unitOfWork,
         ITimeNormalizer timeNormalizer,
-        ILogger<RecordAttendanceCommandHandler> logger)
+        ILogger<RecordAttendanceCommandHandler>? logger)
+        : this(attendanceRepository, unitOfWork, timeNormalizer, DefaultAuthoritativeTimeZoneResolver.Instance, logger)
+    {
+    }
+
+    public RecordAttendanceCommandHandler(
+        IAttendanceRepository attendanceRepository,
+        IUnitOfWork unitOfWork,
+        ITimeNormalizer timeNormalizer,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver,
+        ILogger<RecordAttendanceCommandHandler>? logger = null)
     {
         _attendanceRepository = attendanceRepository;
         _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
-        _logger = logger;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<RecordAttendanceCommandHandler>.Instance;
     }
 
     public async Task<Result<Guid>> Handle(
@@ -50,8 +62,15 @@ public sealed class RecordAttendanceCommandHandler
             var verifyMethod = VerifyMethod.FromValue(command.VerifyMethodCode);
             var checkType = CheckType.FromValue(command.CheckTypeCode);
 
-            var utcCheckTime = _timeNormalizer.ToUtc(command.CheckTime, command.TimeZoneId);
-            var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, command.TimeZoneId);
+            var tz = !string.IsNullOrWhiteSpace(command.TimeZoneId)
+                ? command.TimeZoneId
+                : await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
+
+            var utcCheckTime = _timeNormalizer.ToUtc(command.CheckTime, tz);
+            var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, tz);
+            var originalCheckTime = command.CheckTime.Kind == DateTimeKind.Utc
+                ? _timeNormalizer.ToCivilTime(command.CheckTime, tz)
+                : command.CheckTime;
 
             // 2. Comprobar si ya existe el registro (Idempotencia preventiva)
             var existingRecord = await _attendanceRepository.GetByEmployeeAndCheckTimeAsync(
@@ -74,8 +93,8 @@ public sealed class RecordAttendanceCommandHandler
                 verifyMethod,
                 checkType,
                 workDate: workDate,
-                originalCheckTime: command.CheckTime,
-                timeZoneId: command.TimeZoneId,
+                originalCheckTime: originalCheckTime,
+                timeZoneId: tz,
                 source: command.Source ?? "API");
 
             // 4. Persistir con manejo de conflicto esperado de concurrencia

@@ -159,6 +159,10 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
             .IsRequired()
             .HasDefaultValue(0);
 
+        builder.Property(x => x.TimeZoneId)
+            .HasMaxLength(100)
+            .IsRequired(false);
+
         // AttendanceNote es una propiedad calculada en memoria — no persistir
         builder.Ignore(x => x.AttendanceNote);
 

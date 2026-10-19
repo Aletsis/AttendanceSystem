@@ -16,7 +16,8 @@ public record ProcessContinuousAttendanceCommand(
     List<AttendanceRecord> Records,
     bool IsRestDay,
     bool IsAutoDetectedShift = false,
-    AttendanceAdjustment? Adjustment = null) : IRequest;
+    AttendanceAdjustment? Adjustment = null,
+    string? TimeZoneId = null) : IRequest;
 
 public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<ProcessContinuousAttendanceCommand>
 {
@@ -36,6 +37,7 @@ public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<Process
             request.Records,
             request.IsRestDay,
             request.IsAutoDetectedShift,
-            Adjustment: request.Adjustment), cancellationToken);
+            Adjustment: request.Adjustment,
+            TimeZoneId: request.TimeZoneId), cancellationToken);
     }
 }

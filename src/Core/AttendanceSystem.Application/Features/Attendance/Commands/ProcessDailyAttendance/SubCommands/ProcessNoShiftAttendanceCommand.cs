@@ -13,7 +13,8 @@ public record ProcessNoShiftAttendanceCommand(
     DateTime Date,
     List<AttendanceRecord> Records,
     bool IsRestDay,
-    AttendanceAdjustment? Adjustment = null) : IRequest;
+    AttendanceAdjustment? Adjustment = null,
+    string? TimeZoneId = null) : IRequest;
 
 public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoShiftAttendanceCommand>
 {
@@ -38,7 +39,11 @@ public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoS
         AttendanceRecord? checkInRecord = null;
         AttendanceRecord? checkOutRecord = null;
 
-        var dayRecords = request.Records.Where(r => r.CheckTime.Date == request.Date.Date).ToList();
+        var targetDateOnly = DateOnly.FromDateTime(request.Date);
+        var dayRecords = request.Records
+            .Where(r => r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
+            .OrderBy(r => r.CheckTime)
+            .ToList();
 
         if (dayRecords.Any())
         {
@@ -78,7 +83,8 @@ public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoS
             checkInRecord?.Id,
             checkOutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
-            request.Employee.OvertimeAuthorized);
+            request.Employee.OvertimeAuthorized,
+            timeZoneId: request.TimeZoneId);
 
         if (request.Adjustment != null)
         {

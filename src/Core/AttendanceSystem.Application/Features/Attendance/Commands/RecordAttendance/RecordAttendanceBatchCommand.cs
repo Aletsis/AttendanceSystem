@@ -34,18 +34,30 @@ public sealed class RecordAttendanceBatchCommandHandler
     private readonly IAttendanceRepository _attendanceRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITimeNormalizer _timeNormalizer;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ILogger<RecordAttendanceBatchCommandHandler> _logger;
 
     public RecordAttendanceBatchCommandHandler(
         IAttendanceRepository attendanceRepository,
         IUnitOfWork unitOfWork,
         ITimeNormalizer timeNormalizer,
-        ILogger<RecordAttendanceBatchCommandHandler> logger)
+        ILogger<RecordAttendanceBatchCommandHandler>? logger)
+        : this(attendanceRepository, unitOfWork, timeNormalizer, DefaultAuthoritativeTimeZoneResolver.Instance, logger)
+    {
+    }
+
+    public RecordAttendanceBatchCommandHandler(
+        IAttendanceRepository attendanceRepository,
+        IUnitOfWork unitOfWork,
+        ITimeNormalizer timeNormalizer,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver,
+        ILogger<RecordAttendanceBatchCommandHandler>? logger = null)
     {
         _attendanceRepository = attendanceRepository;
         _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
-        _logger = logger;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
+        _logger = logger ?? Microsoft.Extensions.Logging.Abstractions.NullLogger<RecordAttendanceBatchCommandHandler>.Instance;
     }
 
     public async Task<Result<int>> Handle(
@@ -60,15 +72,18 @@ public sealed class RecordAttendanceBatchCommandHandler
         try
         {
             var deviceId = DeviceId.From(command.DeviceId);
+            var defaultBatchTz = !string.IsNullOrWhiteSpace(command.TimeZoneId)
+                ? command.TimeZoneId
+                : await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
 
             // 1. Normalizar todos los registros a UTC y deduplicar el lote internamente
-            var normalizedLogs = new List<(AttendanceLogDto Original, DateTime UtcTime, DateOnly WorkDate)>();
+            var normalizedLogs = new List<(AttendanceLogDto Original, DateTime UtcTime, DateOnly WorkDate, string ResolvedTz)>();
             var inBatchKeys = new HashSet<(string EmployeeId, DateTime UtcTime)>();
             int inBatchDuplicates = 0;
 
             foreach (var log in command.Logs)
             {
-                var tz = log.TimeZoneId ?? command.TimeZoneId;
+                var tz = log.TimeZoneId ?? defaultBatchTz;
                 var utcTime = _timeNormalizer.ToUtc(log.CheckTime, tz);
                 var workDate = log.WorkDate ?? _timeNormalizer.ToWorkDate(utcTime, tz);
 
@@ -78,7 +93,7 @@ public sealed class RecordAttendanceBatchCommandHandler
                     continue;
                 }
 
-                normalizedLogs.Add((log, utcTime, workDate));
+                normalizedLogs.Add((log, utcTime, workDate, tz));
             }
 
             if (normalizedLogs.Count == 0)
@@ -103,7 +118,7 @@ public sealed class RecordAttendanceBatchCommandHandler
             var newRecords = new List<AttendanceRecord>();
             int skippedDuplicates = inBatchDuplicates;
 
-            foreach (var (log, utcTime, workDate) in normalizedLogs)
+            foreach (var (log, utcTime, workDate, recordTz) in normalizedLogs)
             {
                 if (existingKeys.Contains((log.EmployeeId, utcTime)))
                 {
@@ -115,6 +130,8 @@ public sealed class RecordAttendanceBatchCommandHandler
                 var verifyMethod = VerifyMethod.FromValue(log.VerifyMethodCode);
                 var checkType = CheckType.FromValue(log.CheckTypeCode);
 
+                var origCheckTime = log.OriginalCheckTime ?? (log.CheckTime.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(log.CheckTime, recordTz) : log.CheckTime);
+
                 var record = AttendanceRecord.Create(
                     employeeId,
                     deviceId,
@@ -122,8 +139,8 @@ public sealed class RecordAttendanceBatchCommandHandler
                     verifyMethod,
                     checkType,
                     workDate: workDate,
-                    originalCheckTime: log.OriginalCheckTime ?? log.CheckTime,
-                    timeZoneId: log.TimeZoneId ?? command.TimeZoneId,
+                    originalCheckTime: origCheckTime,
+                    timeZoneId: recordTz,
                     source: log.Source ?? command.Source ?? "ADMS");
 
                 newRecords.Add(record);

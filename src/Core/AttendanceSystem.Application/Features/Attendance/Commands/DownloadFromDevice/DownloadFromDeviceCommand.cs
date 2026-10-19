@@ -42,6 +42,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
     private readonly ITimeNormalizer _timeNormalizer;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -59,7 +60,8 @@ public sealed class DownloadFromDeviceCommandHandler
         IAttendanceJobScheduler jobScheduler,
         IEmployeeRepository employeeRepository,
         IExternalAttendanceLogRepository externalLogRepository,
-        ITimeNormalizer timeNormalizer)
+        ITimeNormalizer timeNormalizer,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
     {
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -77,6 +79,7 @@ public sealed class DownloadFromDeviceCommandHandler
         _employeeRepository = employeeRepository;
         _externalLogRepository = externalLogRepository;
         _timeNormalizer = timeNormalizer;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
@@ -303,6 +306,7 @@ public sealed class DownloadFromDeviceCommandHandler
             // 5. Convertir a entidades de dominio
             // Nota: Usamos deviceId (ValueObject) que creamos al principio
             var domainRecords = new List<AttendanceRecord>();
+            var authoritativeTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
 
             // Obtener todas las sucursales externas para filtrar rápido
             var allBranches = await _branchRepository.GetAllAsync(cancellationToken);
@@ -363,8 +367,8 @@ public sealed class DownloadFromDeviceCommandHandler
 
                 if (!isExternal)
                 {
-                    var utcCheckTime = _timeNormalizer.ToUtc(raw.CheckTime);
-                    var workDate = _timeNormalizer.ToWorkDate(utcCheckTime);
+                    var utcCheckTime = _timeNormalizer.ToUtc(raw.CheckTime, authoritativeTimeZone);
+                    var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, authoritativeTimeZone);
 
                     domainRecords.Add(AttendanceRecord.Create(
                         EmployeeId.From(raw.UserId),
@@ -374,6 +378,7 @@ public sealed class DownloadFromDeviceCommandHandler
                         CheckType.FromValue(raw.InOutMode),
                         workDate: workDate,
                         originalCheckTime: raw.CheckTime,
+                        timeZoneId: authoritativeTimeZone,
                         source: deviceBrand.ToString()
                     ));
                 }

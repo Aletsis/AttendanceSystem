@@ -28,6 +28,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IUnitOfWork _unitOfWork;
     private readonly ISender _sender;
     private readonly ILogger<ProcessDailyAttendanceCommandHandler> _logger;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
 
     public ProcessDailyAttendanceCommandHandler(
         IDailyAttendanceRepository dailyRepo,
@@ -41,7 +42,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IAttendanceCalculationLockService lockService,
         IUnitOfWork unitOfWork,
         ISender sender,
-        ILogger<ProcessDailyAttendanceCommandHandler> logger)
+        ILogger<ProcessDailyAttendanceCommandHandler> logger,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
     {
         _dailyRepo = dailyRepo;
         _attendanceRepo = attendanceRepo;
@@ -55,6 +57,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         _unitOfWork = unitOfWork;
         _sender = sender;
         _logger = logger;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
     }
 
     public async Task<int> Handle(ProcessDailyAttendanceCommand request, CancellationToken cancellationToken)
@@ -200,6 +203,14 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     .GroupBy(r => r.EmployeeId.Value)
                     .ToDictionary(g => g.Key, g => g.ToList());
 
+                // Pre-resolver zonas horarias autoritativas para los empleados a procesar
+                var employeeTimeZones = new Dictionary<string, string>();
+                foreach (var emp in targetEmployees)
+                {
+                    var tz = await _timeZoneResolver.ResolveForEmployeeAsync(emp.Id, cancellationToken);
+                    employeeTimeZones[emp.Id.Value] = tz;
+                }
+
                 // 1.4 Limpieza segura del rango para empleados a procesar (solo donde el empleado estuvo activo)
                 // H08: Si el empleado estaba dado de baja en esa fecha, NO eliminar su histórico
                 foreach (var existingDA in existingDailyAttendances)
@@ -213,12 +224,14 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 }
 
                 // H06: Poner en estado Pending únicamente los marcajes dentro de la ventana estrictamente reconstruida
-                var rangeStartLimit = request.StartDate.Date;
-                var rangeEndLimit = request.EndDate.Date.AddDays(1).AddTicks(-1);
+                var reqStartWorkDate = DateOnly.FromDateTime(request.StartDate);
+                var reqEndWorkDate = DateOnly.FromDateTime(request.EndDate);
 
                 foreach (var record in filteredRecords)
                 {
-                    if (record.CheckTime >= rangeStartLimit && record.CheckTime <= rangeEndLimit)
+                    employeeTimeZones.TryGetValue(record.EmployeeId.Value, out var empTz);
+                    var recordWorkDate = record.GetWorkDate(empTz);
+                    if (recordWorkDate >= reqStartWorkDate && recordWorkDate <= reqEndWorkDate)
                     {
                         if (record.Status != AttendanceStatus.Pending)
                         {
@@ -236,12 +249,17 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                         // H08: Omitir fechas donde el empleado no tenía vigencia laboral activa
                         if (!employee.IsActiveOn(date)) continue;
 
+                        employeeTimeZones.TryGetValue(employee.Id.Value, out var empTimeZone);
+
                         var rosterKey = (employee.Id.Value, date.Date);
                         rosterLookup.TryGetValue(rosterKey, out var rosterEntry);
                         adjustmentsLookup.TryGetValue((employee.Id.Value, date.Date), out var adjustment);
 
                         var empAllRecords = recordsByEmployee.TryGetValue(employee.Id.Value, out var recs) ? recs : null;
-                        var punchesOnDate = empAllRecords?.Where(r => r.CheckTime.Date == date.Date).Select(r => r.CheckTime);
+                        var targetDateOnly = DateOnly.FromDateTime(date);
+                        var punchesOnDate = empAllRecords?
+                            .Where(r => r.GetWorkDate(empTimeZone) == targetDateOnly)
+                            .Select(r => r.GetCivilTime(empTimeZone));
 
                         // F05-P03 / H28: Centralizar resolución de turno y descanso con precedencia estricta
                         var resolution = AttendanceShiftResolutionService.Resolve(
@@ -302,49 +320,49 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                             ? empRecsList
                             : new List<AttendanceRecord>();
 
-                        var startDateTime = searchStartDate.ToDateTime(TimeOnly.MinValue);
-                        var endDateTime = searchEndDate.ToDateTime(TimeOnly.MaxValue);
-
                         var records = employeeRecords
-                            .Where(r => r.CheckTime >= startDateTime && r.CheckTime <= endDateTime)
+                            .Where(r => {
+                                var wd = r.GetWorkDate(empTimeZone);
+                                return wd >= searchStartDate && wd <= searchEndDate;
+                            })
                             .OrderBy(r => r.CheckTime)
                             .ToList();
 
-                        // Delegar a subcomandos pasando Adjustment (H07)
+                        // Delegar a subcomandos pasando Adjustment (H07) y TimeZoneId
                         if (shift == null)
                         {
                             await _sender.Send(new ProcessNoShiftAttendanceCommand(
-                                employee, date, records, isRestDay, Adjustment: adjustment), cancellationToken);
+                                employee, date, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone), cancellationToken);
                         }
                         else if (shift.ShiftType == ShiftType.Mixto)
                         {
                             await _sender.Send(new ProcessMixAttendanceCommand(
-                                employee, date, shift, records, isRestDay, Adjustment: adjustment), cancellationToken);
+                                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone), cancellationToken);
                         }
                         else if (shift.ShiftType == ShiftType.Continuo)
                         {
                             await _sender.Send(new ProcessContinuousAttendanceCommand(
-                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone), cancellationToken);
                         }
                         else if (shift.ShiftType == ShiftType.Flexible)
                         {
                             await _sender.Send(new ProcessFlexibleAttendanceCommand(
-                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone), cancellationToken);
                         }
                         else if (shift.ShiftType == ShiftType.Partido)
                         {
                             await _sender.Send(new ProcessSplitAttendanceCommand(
-                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone), cancellationToken);
                         }
                         else if (shift.ShiftType == ShiftType.Nocturno || (dayEndTime <= dayStartTime && shift.ShiftType != ShiftType.Continuo && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
                         {
                             await _sender.Send(new ProcessNightlyAttendanceCommand(
-                                employee, date, shift, records, isRestDay, dayStartTime, dayEndTime, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                                employee, date, shift, records, isRestDay, dayStartTime, dayEndTime, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone), cancellationToken);
                         }
                         else
                         {
                             await _sender.Send(new ProcessRegularAttendanceCommand(
-                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment), cancellationToken);
+                                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone), cancellationToken);
                         }
 
                         processedCount++;

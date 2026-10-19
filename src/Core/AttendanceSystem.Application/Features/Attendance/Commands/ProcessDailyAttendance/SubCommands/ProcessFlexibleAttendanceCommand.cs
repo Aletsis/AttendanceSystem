@@ -16,7 +16,8 @@ public record ProcessFlexibleAttendanceCommand(
     List<AttendanceRecord> Records,
     bool IsRestDay,
     bool IsAutoDetectedShift = false,
-    AttendanceAdjustment? Adjustment = null) : IRequest;
+    AttendanceAdjustment? Adjustment = null,
+    string? TimeZoneId = null) : IRequest;
 
 public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFlexibleAttendanceCommand>
 {
@@ -36,10 +37,12 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
     public async Task Handle(ProcessFlexibleAttendanceCommand request, CancellationToken cancellationToken)
     {
+        var targetDateOnly = DateOnly.FromDateTime(request.Date);
+
         if (request.Shift.PunchTrackingMode == PunchTrackingMode.MultiInterval)
         {
             var pendingRecords = request.Records
-                .Where(r => r.Status == AttendanceStatus.Pending && r.CheckTime.Date == request.Date.Date)
+                .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
                 .OrderBy(r => r.CheckTime)
                 .ToList();
 
@@ -105,7 +108,8 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
                 hasEntryWindow: request.Shift.HasEntryWindow,
                 overtimeCalculationMethod: request.Employee.OvertimeCalculationMethod,
                 totalWorkedMinutes: totalWorked,
-                intervalsData: intervalsJson);
+                intervalsData: intervalsJson,
+                timeZoneId: request.TimeZoneId);
 
             _dailyRepo.Add(multiDailyAttendance);
             return;
@@ -119,7 +123,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
         // Marcajes del día
         var pendingDayRecords = request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending && r.CheckTime.Date == request.Date.Date)
+            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
             .OrderBy(r => r.CheckTime)
             .ToList();
 
@@ -131,7 +135,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
             // 2. Buscar salida: si hay registros en el mismo día posteriores a la entrada, la salida es el último de ellos.
             var sameDayExits = request.Records
-                .Where(r => r.CheckTime.Date == request.Date.Date && r.CheckTime > checkIn.Value)
+                .Where(r => r.GetWorkDate(request.TimeZoneId) == targetDateOnly && r.CheckTime > checkIn.Value)
                 .OrderBy(r => r.CheckTime)
                 .ToList();
 
@@ -265,7 +269,8 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             request.IsAutoDetectedShift,
             punchTrackingMode: request.Shift.PunchTrackingMode,
             hasEntryWindow: request.Shift.HasEntryWindow,
-            overtimeCalculationMethod: request.Employee.OvertimeCalculationMethod);
+            overtimeCalculationMethod: request.Employee.OvertimeCalculationMethod,
+            timeZoneId: request.TimeZoneId);
 
         if (intermediateAnalysis.HasValue)
         {

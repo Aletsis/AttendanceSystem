@@ -51,6 +51,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public AttendanceRecordId? Block2CheckInRecordId { get; private set; }
     public DateTime? ActualCheckOut { get; private set; }
     public AttendanceRecordId? CheckOutRecordId { get; private set; }
+    public string? TimeZoneId { get; private set; }
+
+    public DateTime? CivilCheckIn => ActualCheckIn.HasValue ? ToCivil(ActualCheckIn.Value) : null;
+    public DateTime? CivilCheckOut => ActualCheckOut.HasValue ? ToCivil(ActualCheckOut.Value) : null;
+    public DateTime? CivilBlock1CheckOut => ActualBlock1CheckOut.HasValue ? ToCivil(ActualBlock1CheckOut.Value) : null;
+    public DateTime? CivilBlock2CheckIn => ActualBlock2CheckIn.HasValue ? ToCivil(ActualBlock2CheckIn.Value) : null;
 
     // Calculated Status
     public bool IsAbsent { get; private set; }
@@ -121,7 +127,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         bool hasEntryWindow = false,
         OvertimeCalculationMethod overtimeCalculationMethod = OvertimeCalculationMethod.NoRounding,
         int totalWorkedMinutes = 0,
-        string? intervalsData = null)
+        string? intervalsData = null,
+        string? timeZoneId = null)
     {
         var attendance = new DailyAttendance
         {
@@ -136,7 +143,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             TotalWorkedMinutes = totalWorkedMinutes,
             IntervalsData = intervalsData,
             PunchTrackingMode = punchTrackingMode,
-            HasEntryWindow = hasEntryWindow
+            HasEntryWindow = hasEntryWindow,
+            TimeZoneId = timeZoneId
         };
 
         // 1. Configure Shift Snapshot
@@ -184,6 +192,55 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         attendance.CalculateStatus();
 
         return attendance;
+    }
+
+    public void SetTimeZone(string? timeZoneId)
+    {
+        TimeZoneId = timeZoneId;
+        CalculateStatus();
+    }
+
+    public DateTime ToCivil(DateTime dt)
+    {
+        if (dt.Kind != DateTimeKind.Utc || string.IsNullOrWhiteSpace(TimeZoneId))
+            return dt;
+
+        var tz = ResolveZone(TimeZoneId);
+        return TimeZoneInfo.ConvertTimeFromUtc(dt, tz);
+    }
+
+    private static TimeZoneInfo ResolveZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+            timeZoneId = "America/Mexico_City";
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch
+        {
+            if (TimeZoneInfo.TryConvertIanaIdToWindowsId(timeZoneId, out var winId))
+            {
+                try { return TimeZoneInfo.FindSystemTimeZoneById(winId); } catch { }
+            }
+            if (TimeZoneInfo.TryConvertWindowsIdToIanaId(timeZoneId, out var ianaId))
+            {
+                try { return TimeZoneInfo.FindSystemTimeZoneById(ianaId); } catch { }
+            }
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City");
+            }
+            catch
+            {
+                if (TimeZoneInfo.TryConvertIanaIdToWindowsId("America/Mexico_City", out var defaultWin))
+                {
+                    try { return TimeZoneInfo.FindSystemTimeZoneById(defaultWin); } catch { }
+                }
+                return TimeZoneInfo.Utc;
+            }
+        }
     }
 
     public void SetIntervalsData(int totalWorkedMinutes, string? intervalsData)
@@ -470,10 +527,15 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             int totalLate = 0;
             int totalEarly = 0;
 
+            var b1InCivil = ActualCheckIn.HasValue ? ToCivil(ActualCheckIn.Value) : (DateTime?)null;
+            var block1OutCivil = ActualBlock1CheckOut.HasValue ? ToCivil(ActualBlock1CheckOut.Value) : (DateTime?)null;
+            var block2InCivil = ActualBlock2CheckIn.HasValue ? ToCivil(ActualBlock2CheckIn.Value) : (DateTime?)null;
+            var b2OutCivil = ActualCheckOut.HasValue ? ToCivil(ActualCheckOut.Value) : (DateTime?)null;
+
             // Retardo Bloque 1 (Tolerancia independiente: ToleranceMinutes)
-            if (ActualCheckIn.HasValue)
+            if (b1InCivil.HasValue)
             {
-                var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+                var checkInNoSeconds = TruncateSeconds(b1InCivil.Value);
                 if (checkInNoSeconds > schedB1In)
                 {
                     int delay = (int)(checkInNoSeconds - schedB1In).TotalMinutes;
@@ -485,9 +547,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
 
             // Retardo Bloque 2 (Tolerancia independiente: SecondBlockToleranceMinutes)
-            if (ActualBlock2CheckIn.HasValue)
+            if (block2InCivil.HasValue)
             {
-                var block2InNoSeconds = TruncateSeconds(ActualBlock2CheckIn.Value);
+                var block2InNoSeconds = TruncateSeconds(block2InCivil.Value);
                 if (block2InNoSeconds > schedB2In)
                 {
                     int delay = (int)(block2InNoSeconds - schedB2In).TotalMinutes;
@@ -501,20 +563,20 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             LateMinutes = totalLate;
 
             // Salida anticipada Bloque 1
-            if (ActualBlock1CheckOut.HasValue)
+            if (block1OutCivil.HasValue)
             {
-                if (ActualBlock1CheckOut.Value < schedB1Out)
+                if (block1OutCivil.Value < schedB1Out)
                 {
-                    totalEarly += (int)(schedB1Out - ActualBlock1CheckOut.Value).TotalMinutes;
+                    totalEarly += (int)(schedB1Out - block1OutCivil.Value).TotalMinutes;
                 }
             }
 
             // Salida anticipada Bloque 2
-            if (ActualCheckOut.HasValue)
+            if (b2OutCivil.HasValue)
             {
-                if (ActualCheckOut.Value < schedB2Out)
+                if (b2OutCivil.Value < schedB2Out)
                 {
-                    totalEarly += (int)(schedB2Out - ActualCheckOut.Value).TotalMinutes;
+                    totalEarly += (int)(schedB2Out - b2OutCivil.Value).TotalMinutes;
                 }
             }
             EarlyDepartureMinutes = totalEarly;
@@ -523,23 +585,23 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             double workedMinutesBlock1 = 0;
             double otB1 = 0;
             var schedB1Duration = (schedB1Out - schedB1In).TotalMinutes;
-            if (ActualCheckIn.HasValue && ActualBlock1CheckOut.HasValue && ActualBlock1CheckOut.Value > ActualCheckIn.Value)
+            if (b1InCivil.HasValue && block1OutCivil.HasValue && block1OutCivil.Value > b1InCivil.Value)
             {
-                var checkInB1NoSeconds = TruncateSeconds(ActualCheckIn.Value);
+                var checkInB1NoSeconds = TruncateSeconds(b1InCivil.Value);
                 var delayB1 = (checkInB1NoSeconds - schedB1In).TotalMinutes;
                 DateTime refInB1;
                 if (delayB1 <= ToleranceMinutes)
                 {
-                    refInB1 = (CalculateOvertimeBeforeEntry && ActualCheckIn.Value < schedB1In)
-                        ? ActualCheckIn.Value
+                    refInB1 = (CalculateOvertimeBeforeEntry && b1InCivil.Value < schedB1In)
+                        ? b1InCivil.Value
                         : schedB1In;
                 }
                 else
                 {
-                    refInB1 = ActualCheckIn.Value;
+                    refInB1 = b1InCivil.Value;
                 }
 
-                workedMinutesBlock1 = Math.Max(0, (ActualBlock1CheckOut.Value - refInB1).TotalMinutes);
+                workedMinutesBlock1 = Math.Max(0, (block1OutCivil.Value - refInB1).TotalMinutes);
                 if (workedMinutesBlock1 > schedB1Duration)
                 {
                     otB1 = workedMinutesBlock1 - schedB1Duration;
@@ -549,24 +611,24 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             double workedMinutesBlock2 = 0;
             double otB2 = 0;
             var schedB2Duration = (schedB2Out - schedB2In).TotalMinutes;
-            if (ActualBlock2CheckIn.HasValue && ActualCheckOut.HasValue && ActualCheckOut.Value > ActualBlock2CheckIn.Value)
+            if (block2InCivil.HasValue && b2OutCivil.HasValue && b2OutCivil.Value > block2InCivil.Value)
             {
-                var checkInB2NoSeconds = TruncateSeconds(ActualBlock2CheckIn.Value);
+                var checkInB2NoSeconds = TruncateSeconds(block2InCivil.Value);
                 var delayB2 = (checkInB2NoSeconds - schedB2In).TotalMinutes;
                 int tol2 = SecondBlockToleranceMinutes ?? ToleranceMinutes;
                 DateTime refInB2;
                 if (delayB2 <= tol2)
                 {
-                    refInB2 = (CalculateOvertimeBeforeEntry && ActualBlock2CheckIn.Value < schedB2In)
-                        ? ActualBlock2CheckIn.Value
+                    refInB2 = (CalculateOvertimeBeforeEntry && block2InCivil.Value < schedB2In)
+                        ? block2InCivil.Value
                         : schedB2In;
                 }
                 else
                 {
-                    refInB2 = ActualBlock2CheckIn.Value;
+                    refInB2 = block2InCivil.Value;
                 }
 
-                workedMinutesBlock2 = Math.Max(0, (ActualCheckOut.Value - refInB2).TotalMinutes);
+                workedMinutesBlock2 = Math.Max(0, (b2OutCivil.Value - refInB2).TotalMinutes);
                 if (workedMinutesBlock2 > schedB2Duration)
                 {
                     otB2 = workedMinutesBlock2 - schedB2Duration;
@@ -634,11 +696,14 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             MissingCheckIn = true;
         }
 
+        var checkInCivil = ActualCheckIn.HasValue ? ToCivil(ActualCheckIn.Value) : (DateTime?)null;
+        var checkOutCivil = ActualCheckOut.HasValue ? ToCivil(ActualCheckOut.Value) : (DateTime?)null;
+
         var scheduledInDateTime = Date.Add(ScheduledCheckIn.Value);
 
         // LATE Check (Retardo)
         // Rule: Only late after tolerance. Truncate seconds so that clocking in during the tolerance minute is within tolerance.
-        if (ActualCheckIn.HasValue)
+        if (checkInCivil.HasValue)
         {
             if (ShiftType == Enumerations.ShiftType.Continuo || ScheduledCheckIn == null)
             {
@@ -657,7 +722,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     // Ventana de llegada: No genera retardo si llega dentro de la ventana (StartTime .. FlexWindowEndTime)
                     var windowEnd = FlexWindowEndTime ?? ScheduledCheckIn.Value;
                     var windowEndDateTime = Date.Add(windowEnd);
-                    var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+                    var checkInNoSeconds = TruncateSeconds(checkInCivil.Value);
 
                     if (checkInNoSeconds > windowEndDateTime)
                     {
@@ -681,7 +746,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
             else
             {
-                var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+                var checkInNoSeconds = TruncateSeconds(checkInCivil.Value);
                 var diff = (checkInNoSeconds - scheduledInDateTime).TotalMinutes;
                 int delayMinutes = (int)diff;
 
@@ -786,16 +851,16 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
                 }
 
-                if (ActualCheckOut.HasValue && ActualCheckOut.Value < scheduledOutDateTime)
+                if (checkOutCivil.HasValue && checkOutCivil.Value < scheduledOutDateTime)
                 {
-                    EarlyDepartureMinutes = (int)(scheduledOutDateTime - ActualCheckOut.Value).TotalMinutes;
+                    EarlyDepartureMinutes = (int)(scheduledOutDateTime - checkOutCivil.Value).TotalMinutes;
                 }
 
-                if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
+                if (checkInCivil.HasValue && checkOutCivil.HasValue)
                 {
                     double scheduledMinutes = (scheduledOutDateTime - scheduledInDateTime).TotalMinutes;
-                    DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
-                    DateTime referenceExit = GetReferenceExit() ?? ActualCheckOut.Value;
+                    DateTime referenceEntry = GetReferenceEntry() ?? checkInCivil.Value;
+                    DateTime referenceExit = GetReferenceExit() ?? checkOutCivil.Value;
 
                     var totalWorkedMinutes = (referenceExit - referenceEntry).TotalMinutes;
                     totalWorkedMinutes -= LunchBreakMinutesApplied;
@@ -864,19 +929,20 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public DateTime? GetReferenceEntry()
     {
         if (!ActualCheckIn.HasValue) return null;
+        var checkInCivil = ToCivil(ActualCheckIn.Value);
         if (ShiftType == Enumerations.ShiftType.Continuo || ShiftType == Enumerations.ShiftType.Flexible)
         {
             if (RoundingsEnabled && RoundingInterval > 0)
             {
-                return RoundEntry(ActualCheckIn.Value, RoundingInterval, ToleranceMinutes);
+                return RoundEntry(checkInCivil, RoundingInterval, ToleranceMinutes);
             }
-            return ActualCheckIn.Value;
+            return checkInCivil;
         }
 
         if (ScheduledCheckIn.HasValue)
         {
             var scheduledInDateTime = Date.Add(ScheduledCheckIn.Value);
-            var checkInNoSeconds = TruncateSeconds(ActualCheckIn.Value);
+            var checkInNoSeconds = TruncateSeconds(checkInCivil);
             var delayMinutes = (checkInNoSeconds - scheduledInDateTime).TotalMinutes;
             if (delayMinutes > ToleranceMinutes)
             {
@@ -887,20 +953,21 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
             else
             {
-                return CalculateOvertimeBeforeEntry ? ActualCheckIn.Value : scheduledInDateTime;
+                return CalculateOvertimeBeforeEntry ? checkInCivil : scheduledInDateTime;
             }
         }
-        return ActualCheckIn.Value;
+        return checkInCivil;
     }
 
     public DateTime? GetReferenceExit()
     {
         if (!ActualCheckOut.HasValue) return null;
+        var checkOutCivil = ToCivil(ActualCheckOut.Value);
         if (ShiftType == Enumerations.ShiftType.Continuo || ShiftType == Enumerations.ShiftType.Flexible)
         {
             // Salida real para cómputo de horas laboradas y sobrante
-            return ActualCheckOut.Value;
+            return checkOutCivil;
         }
-        return ActualCheckOut.Value;
+        return checkOutCivil;
     }
 }

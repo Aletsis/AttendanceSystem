@@ -7,10 +7,16 @@ public sealed class Branch : AggregateRoot<BranchId>
     public string? Address { get; private set; }
     public bool IsExternal { get; private set; }
     public string? ExternalHost { get; private set; }
+    public string? TimeZoneId { get; private set; }
+
+    public void SetTimeZone(string? timeZoneId)
+    {
+        TimeZoneId = timeZoneId;
+    }
 
     private Branch() { }
 
-    public static Branch Create(string code, string name, string? address, bool isExternal = false, string? externalHost = null)
+    public static Branch Create(string code, string name, string? address, bool isExternal = false, string? externalHost = null, string? timeZoneId = null)
     {
         ValidateCode(code);
         if (string.IsNullOrWhiteSpace(name))
@@ -26,11 +32,12 @@ public sealed class Branch : AggregateRoot<BranchId>
             Name = name,
             Address = address,
             IsExternal = isExternal,
-            ExternalHost = externalHost
+            ExternalHost = externalHost,
+            TimeZoneId = timeZoneId
         };
     }
 
-    public void Update(string code, string name, string? address, bool isExternal = false, string? externalHost = null)
+    public void Update(string code, string name, string? address, bool isExternal = false, string? externalHost = null, string? timeZoneId = null)
     {
         ValidateCode(code);
         if (string.IsNullOrWhiteSpace(name))
@@ -44,6 +51,10 @@ public sealed class Branch : AggregateRoot<BranchId>
         Address = address;
         IsExternal = isExternal;
         ExternalHost = externalHost;
+        if (timeZoneId != null)
+        {
+            TimeZoneId = timeZoneId;
+        }
     }
 
     private static void ValidateCode(string code)

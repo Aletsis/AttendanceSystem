@@ -20,12 +20,17 @@ public class Device : AggregateRoot<DeviceId>
     public string? DeviceType { get; private set; }
     public string? Username { get; private set; }
     public string? Password { get; private set; }
+    public string? TimeZoneId { get; private set; }
 
     public void SetDeviceType(string deviceType)
     {
         DeviceType = deviceType;
     }
 
+    public void SetTimeZone(string? timeZoneId)
+    {
+        TimeZoneId = timeZoneId;
+    }
 
     private Device() { } // Para EF Core
 
@@ -40,7 +45,8 @@ public class Device : AggregateRoot<DeviceId>
         DeviceDownloadMethod downloadMethod = DeviceDownloadMethod.Sdk,
         string? serialNumber = null,
         string? username = null,
-        string? password = null)
+        string? password = null,
+        string? timeZoneId = null)
     {
         // Validaciones
         if (string.IsNullOrWhiteSpace(name))
@@ -81,7 +87,8 @@ public class Device : AggregateRoot<DeviceId>
             TotalDownloadCount = 0,
             HardwareInfo = DeviceHardwareInfo.Empty,
             Username = username,
-            Password = password
+            Password = password,
+            TimeZoneId = timeZoneId
         };
 
         if (!string.IsNullOrWhiteSpace(serialNumber))
@@ -107,7 +114,8 @@ public class Device : AggregateRoot<DeviceId>
         DeviceDownloadMethod downloadMethod,
         string? serialNumber = null,
         string? username = null,
-        string? password = null)
+        string? password = null,
+        string? timeZoneId = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del dispositivo es requerido");
@@ -127,6 +135,10 @@ public class Device : AggregateRoot<DeviceId>
         DownloadMethod = downloadMethod;
         Username = username;
         Password = password;
+        if (timeZoneId != null)
+        {
+            TimeZoneId = timeZoneId;
+        }
 
         if (!string.IsNullOrWhiteSpace(serialNumber))
         {

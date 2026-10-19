@@ -60,6 +60,10 @@ public class DeviceConfiguration : IEntityTypeConfiguration<Device>
             .HasColumnType("int")
             .IsRequired();
 
+        builder.Property(x => x.TimeZoneId)
+            .HasMaxLength(100)
+            .IsRequired(false);
+
         builder.OwnsOne(x => x.HardwareInfo, hardware =>
         {
             hardware.Property(p => p.SerialNumber).HasColumnName("SerialNumber").HasMaxLength(100);

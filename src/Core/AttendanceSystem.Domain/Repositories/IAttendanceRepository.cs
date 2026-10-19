@@ -44,4 +44,7 @@ public interface IAttendanceRepository
         EmployeeId employeeId,
         DateTime date,
         CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AttendanceRecord>> GetAllAsync(
+        CancellationToken cancellationToken = default);
 }

@@ -22,6 +22,7 @@ public static class ApplicationServiceExtensions
         // Servicios de Dominio y Validación
         services.AddScoped<AttendanceDeduplicationService>();
         services.AddScoped<AttendanceValidationService>();
+        services.AddScoped<AttendanceSystem.Application.Abstractions.IHistoricalAttendanceDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.HistoricalAttendanceTimeDiagnosticService>();
 
         return services;
     }

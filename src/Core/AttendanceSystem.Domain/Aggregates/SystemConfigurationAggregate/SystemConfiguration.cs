@@ -58,6 +58,9 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public bool IsCloudSyncEnabled { get; private set; }
     public string? CloudDbConnectionString { get; private set; }
 
+    // Authoritative TimeZone
+    public string DefaultTimeZoneId { get; private set; } = "America/Mexico_City";
+
     private SystemConfiguration() { } // For EF
 
     public static SystemConfiguration CreateDefault()
@@ -94,7 +97,8 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
             SmtpPort = 587,
             SmtpEnableSsl = true,
             IsCloudSyncEnabled = false,
-            CloudDbConnectionString = null
+            CloudDbConnectionString = null,
+            DefaultTimeZoneId = "America/Mexico_City"
         };
     }
 
@@ -179,5 +183,12 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     {
         IsCloudSyncEnabled = isCloudSyncEnabled;
         CloudDbConnectionString = cloudDbConnectionString;
+    }
+
+    public void UpdateDefaultTimeZone(string timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+            throw new DomainException("La zona horaria predeterminada no puede estar vacía.");
+        DefaultTimeZoneId = timeZoneId;
     }
 }

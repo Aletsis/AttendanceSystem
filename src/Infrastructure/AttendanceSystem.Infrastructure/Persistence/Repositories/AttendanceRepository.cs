@@ -42,12 +42,12 @@ public class AttendanceRepository : IAttendanceRepository
         EmployeeId? employeeId = null,
         CancellationToken cancellationToken = default)
     {
-        var startDateTime = startDate.ToDateTime(TimeOnly.MinValue);
-        var endDateTime = endDate.ToDateTime(TimeOnly.MaxValue);
+        var expandedStartUtc = startDate.AddDays(-1).ToDateTime(TimeOnly.MinValue);
+        var expandedEndUtc = endDate.AddDays(1).ToDateTime(TimeOnly.MaxValue);
 
         var query = _context.AttendanceRecords
-            .Where(x => x.CheckTime >= startDateTime
-                     && x.CheckTime <= endDateTime);
+            .Where(x => (x.WorkDate.HasValue && x.WorkDate.Value >= startDate && x.WorkDate.Value <= endDate)
+                     || (!x.WorkDate.HasValue && x.CheckTime >= expandedStartUtc && x.CheckTime <= expandedEndUtc));
 
         if (employeeId != null)
         {
@@ -109,14 +109,21 @@ public class AttendanceRepository : IAttendanceRepository
         DateTime date,
         CancellationToken cancellationToken = default)
     {
-        var dayStart = date.Date;
-        var dayEnd = dayStart.AddDays(1);
+        var targetDate = DateOnly.FromDateTime(date);
+        var expandedStartUtc = targetDate.AddDays(-1).ToDateTime(TimeOnly.MinValue);
+        var expandedEndUtc = targetDate.AddDays(1).ToDateTime(TimeOnly.MaxValue);
 
         return await _context.AttendanceRecords
             .AnyAsync(r => r.EmployeeId == employeeId &&
-                           r.CheckTime >= dayStart &&
-                           r.CheckTime < dayEnd &&
-                           r.CheckType == AttendanceSystem.Domain.Enumerations.CheckType.CheckIn,
+                           r.CheckType == AttendanceSystem.Domain.Enumerations.CheckType.CheckIn &&
+                           ((r.WorkDate.HasValue && r.WorkDate.Value == targetDate) ||
+                            (!r.WorkDate.HasValue && r.CheckTime >= expandedStartUtc && r.CheckTime <= expandedEndUtc)),
                       cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AttendanceRecord>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.AttendanceRecords.ToListAsync(cancellationToken);
     }
 }

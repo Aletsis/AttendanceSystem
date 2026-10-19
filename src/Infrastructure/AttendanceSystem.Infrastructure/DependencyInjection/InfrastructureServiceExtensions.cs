@@ -106,6 +106,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddSingleton<ITimeNormalizer, TimeNormalizer>();
+        services.AddScoped<IAuthoritativeTimeZoneResolver, AuthoritativeTimeZoneResolver>();
         services.AddSingleton<OutboxBackgroundProcessor>();
         services.AddHostedService(sp => sp.GetRequiredService<OutboxBackgroundProcessor>());
 

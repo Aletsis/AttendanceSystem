@@ -81,5 +81,11 @@ public class SystemConfigurationConfiguration : IEntityTypeConfiguration<SystemC
             .HasDefaultValue(true);
         builder.Property(c => c.CloudDbConnectionString)
             .IsRequired(false);
+
+        // Timezone Configuration
+        builder.Property(c => c.DefaultTimeZoneId)
+            .IsRequired()
+            .HasMaxLength(100)
+            .HasDefaultValue("America/Mexico_City");
     }
 }

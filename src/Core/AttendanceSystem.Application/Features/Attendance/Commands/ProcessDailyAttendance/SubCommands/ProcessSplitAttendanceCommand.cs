@@ -16,7 +16,8 @@ public record ProcessSplitAttendanceCommand(
     List<AttendanceRecord> Records,
     bool IsRestDay,
     bool IsAutoDetectedShift = false,
-    AttendanceAdjustment? Adjustment = null) : IRequest;
+    AttendanceAdjustment? Adjustment = null,
+    string? TimeZoneId = null) : IRequest;
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
@@ -59,7 +60,7 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             .ToList();
 
         var b1Records = pendingRecords
-            .Where(r => r.CheckTime < midpoint)
+            .Where(r => r.GetCivilTime(request.TimeZoneId) < midpoint)
             .ToList();
 
         // Límite superior para el Bloque 2: permite salidas con horas extra en la madrugada del día siguiente
@@ -72,7 +73,7 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             : maxB2EndBySched;
 
         var b2Records = pendingRecords
-            .Where(r => r.CheckTime >= midpoint && r.CheckTime <= b2Cutoff)
+            .Where(r => r.GetCivilTime(request.TimeZoneId) >= midpoint && r.GetCivilTime(request.TimeZoneId) <= b2Cutoff)
             .ToList();
 
         AttendanceRecord? b1InRecord = null;
@@ -96,8 +97,9 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
         else if (b1Records.Count == 1)
         {
             var single = b1Records[0];
-            var diffIn = Math.Abs((single.CheckTime - schedB1In).TotalMinutes);
-            var diffOut = Math.Abs((single.CheckTime - schedB1Out).TotalMinutes);
+            var civilTime = single.GetCivilTime(request.TimeZoneId);
+            var diffIn = Math.Abs((civilTime - schedB1In).TotalMinutes);
+            var diffOut = Math.Abs((civilTime - schedB1Out).TotalMinutes);
 
             if (diffIn <= diffOut)
             {
@@ -125,8 +127,9 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
         else if (b2Records.Count == 1)
         {
             var single = b2Records[0];
-            var diffIn = Math.Abs((single.CheckTime - schedB2In).TotalMinutes);
-            var diffOut = Math.Abs((single.CheckTime - schedB2Out).TotalMinutes);
+            var civilTime = single.GetCivilTime(request.TimeZoneId);
+            var diffIn = Math.Abs((civilTime - schedB2In).TotalMinutes);
+            var diffOut = Math.Abs((civilTime - schedB2Out).TotalMinutes);
 
             if (diffIn <= diffOut)
             {
@@ -179,7 +182,8 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             b2OutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
             request.Employee.OvertimeAuthorized,
-            request.IsAutoDetectedShift);
+            request.IsAutoDetectedShift,
+            timeZoneId: request.TimeZoneId);
 
         if (b1OutRecord != null)
         {

@@ -23,6 +23,8 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
     private readonly IAttendanceRepository _attendanceRepository;
     private readonly IShiftRepository _shiftRepository;
     private readonly ISystemAlertRepository _alertRepository;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
+    private readonly ITimeNormalizer _timeNormalizer;
 
     public CheckCriticalAbsencesCommandHandler(
         IUnitOfWork unitOfWork,
@@ -31,7 +33,9 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
         IEmployeeRepository employeeRepository,
         IAttendanceRepository attendanceRepository,
         IShiftRepository shiftRepository,
-        ISystemAlertRepository alertRepository)
+        ISystemAlertRepository alertRepository,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
+        ITimeNormalizer? timeNormalizer = null)
     {
         _unitOfWork = unitOfWork;
         _emailService = emailService;
@@ -40,6 +44,8 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
         _attendanceRepository = attendanceRepository;
         _shiftRepository = shiftRepository;
         _alertRepository = alertRepository;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
+        _timeNormalizer = timeNormalizer ?? DefaultTimeNormalizer.Instance;
     }
 
     public async Task<Result<int>> Handle(CheckCriticalAbsencesCommand request, CancellationToken cancellationToken)
@@ -47,8 +53,8 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
         try
         {
             var now = DateTime.UtcNow;
-            var timeZone = TimeZoneInfo.FindSystemTimeZoneById("Central Standard Time");
-            var localNow = TimeZoneInfo.ConvertTimeFromUtc(now, timeZone);
+            var systemTimeZone = await _timeZoneResolver.ResolveForBranchAsync(null, cancellationToken);
+            var localNow = _timeNormalizer.ToCivilTime(now, systemTimeZone);
             var today = localNow.Date;
             var currentTime = localNow.TimeOfDay;
 

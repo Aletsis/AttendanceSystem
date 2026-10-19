@@ -30,9 +30,21 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
         string? timeZoneId = null,
         string? source = null)
     {
-        var utcCheckTime = checkTime.Kind == DateTimeKind.Utc
-            ? checkTime
-            : (checkTime.Kind == DateTimeKind.Local ? checkTime.ToUniversalTime() : DateTime.SpecifyKind(checkTime, DateTimeKind.Utc));
+        DateTime utcCheckTime;
+        DateTime civilOriginal;
+
+        if (checkTime.Kind == DateTimeKind.Utc)
+        {
+            utcCheckTime = checkTime;
+            civilOriginal = originalCheckTime ?? checkTime;
+        }
+        else
+        {
+            civilOriginal = originalCheckTime ?? DateTime.SpecifyKind(checkTime, DateTimeKind.Unspecified);
+            utcCheckTime = checkTime.Kind == DateTimeKind.Local
+                ? checkTime.ToUniversalTime()
+                : DateTime.SpecifyKind(checkTime, DateTimeKind.Utc);
+        }
 
         var record = new AttendanceRecord
         {
@@ -44,8 +56,8 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
             CheckType = checkType,
             Status = AttendanceStatus.Pending,
             OriginalCheckType = checkType,
-            OriginalCheckTime = originalCheckTime ?? checkTime,
-            WorkDate = workDate ?? DateOnly.FromDateTime(originalCheckTime ?? checkTime),
+            OriginalCheckTime = civilOriginal,
+            WorkDate = workDate ?? DateOnly.FromDateTime(civilOriginal),
             TimeZoneId = timeZoneId,
             Source = source
         };
@@ -96,13 +108,80 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
             Id, EmployeeId, CheckTime, reason));
     }
 
+    public void SetTimeZone(string timeZoneId)
+    {
+        TimeZoneId = timeZoneId;
+    }
+
+    public void UpdateTimeMetadata(DateTime originalCheckTime, DateOnly workDate, string? timeZoneId)
+    {
+        OriginalCheckTime = originalCheckTime;
+        WorkDate = workDate;
+        if (!string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            TimeZoneId = timeZoneId;
+        }
+    }
+
+    public DateTime GetCivilTime(string? fallbackTimeZoneId = null)
+    {
+        if (OriginalCheckTime.HasValue)
+            return OriginalCheckTime.Value;
+
+        var tz = ResolveZone(TimeZoneId ?? fallbackTimeZoneId);
+        var utc = CheckTime.Kind == DateTimeKind.Utc ? CheckTime : DateTime.SpecifyKind(CheckTime, DateTimeKind.Utc);
+        return TimeZoneInfo.ConvertTimeFromUtc(utc, tz);
+    }
+
+    public DateOnly GetWorkDate(string? fallbackTimeZoneId = null)
+    {
+        if (WorkDate.HasValue)
+            return WorkDate.Value;
+
+        return DateOnly.FromDateTime(GetCivilTime(fallbackTimeZoneId));
+    }
+
+    private static TimeZoneInfo ResolveZone(string? timeZoneId)
+    {
+        if (string.IsNullOrWhiteSpace(timeZoneId))
+            timeZoneId = "America/Mexico_City";
+
+        try
+        {
+            return TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
+        }
+        catch
+        {
+            if (TimeZoneInfo.TryConvertIanaIdToWindowsId(timeZoneId, out var winId))
+            {
+                try { return TimeZoneInfo.FindSystemTimeZoneById(winId); } catch { }
+            }
+            if (TimeZoneInfo.TryConvertWindowsIdToIanaId(timeZoneId, out var ianaId))
+            {
+                try { return TimeZoneInfo.FindSystemTimeZoneById(ianaId); } catch { }
+            }
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City");
+            }
+            catch
+            {
+                if (TimeZoneInfo.TryConvertIanaIdToWindowsId("America/Mexico_City", out var defaultWin))
+                {
+                    try { return TimeZoneInfo.FindSystemTimeZoneById(defaultWin); } catch { }
+                }
+                return TimeZoneInfo.Utc;
+            }
+        }
+    }
+
     // Invariantes (reglas de negocio del dominio)
     private void ValidateBusinessHours()
     {
-        var hour = CheckTime.Hour;
+        var civilHour = (OriginalCheckTime ?? CheckTime).Hour;
 
-        // Ejemplo: alertar si registro fuera de horario laboral
-        if (hour < 6 || hour > 22)
+        // Ejemplo: alertar si registro fuera de horario laboral en tiempo civil
+        if (civilHour < 6 || civilHour > 22)
         {
             AddDomainEvent(new OutOfHoursCheckDetectedEvent(
                 Id, EmployeeId, CheckTime));

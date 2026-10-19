@@ -15,7 +15,8 @@ public record ProcessMixAttendanceCommand(
     Shift Shift,
     List<AttendanceRecord> Records,
     bool IsRestDay,
-    AttendanceAdjustment? Adjustment = null) : IRequest;
+    AttendanceAdjustment? Adjustment = null,
+    string? TimeZoneId = null) : IRequest;
 
 public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAttendanceCommand>
 {
@@ -45,7 +46,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                 request.Employee,
                 request.Date,
                 request.Records,
-                IsRestDay: true), cancellationToken);
+                IsRestDay: true,
+                TimeZoneId: request.TimeZoneId), cancellationToken);
 
             return;
         }
@@ -65,7 +67,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Shift,
                     request.Records,
                     request.IsRestDay,
-                    Adjustment: request.Adjustment), cancellationToken);
+                    Adjustment: request.Adjustment,
+                    TimeZoneId: request.TimeZoneId), cancellationToken);
                 break;
 
             case ShiftType.Nocturno:
@@ -77,7 +80,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.IsRestDay,
                     dayConfig.StartTime,
                     dayConfig.EndTime,
-                    Adjustment: request.Adjustment), cancellationToken);
+                    Adjustment: request.Adjustment,
+                    TimeZoneId: request.TimeZoneId), cancellationToken);
                 break;
 
             case ShiftType.Continuo:
@@ -87,7 +91,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Shift,
                     request.Records,
                     request.IsRestDay,
-                    Adjustment: request.Adjustment), cancellationToken);
+                    Adjustment: request.Adjustment,
+                    TimeZoneId: request.TimeZoneId), cancellationToken);
                 break;
 
             case ShiftType.Flexible:
@@ -97,7 +102,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Shift,
                     request.Records,
                     request.IsRestDay,
-                    Adjustment: request.Adjustment), cancellationToken);
+                    Adjustment: request.Adjustment,
+                    TimeZoneId: request.TimeZoneId), cancellationToken);
                 break;
 
             default:
@@ -109,7 +115,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                     request.Shift,
                     request.Records,
                     request.IsRestDay,
-                    Adjustment: request.Adjustment), cancellationToken);
+                    Adjustment: request.Adjustment,
+                    TimeZoneId: request.TimeZoneId), cancellationToken);
                 break;
         }
     }

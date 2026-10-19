@@ -129,8 +129,9 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             {
                 if (shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible)
                 {
+                    var targetDateOnly = DateOnly.FromDateTime(date);
                     var potentialIn = records
-                        .Where(r => r.CheckTime.Date == date.Date && (r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)))
+                        .Where(r => r.GetWorkDate() == targetDateOnly && (r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)))
                         .OrderBy(r => r.CheckTime)
                         .FirstOrDefault();
 
@@ -151,21 +152,21 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
                 {
                     var entryWindowStart = scheduledIn.AddHours(-6);
                     var entryWindowEnd = scheduledIn.AddHours(6);
-                    entryRecords = records.Where(r => r.CheckTime >= entryWindowStart && r.CheckTime <= entryWindowEnd && (r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)));
+                    entryRecords = records.Where(r => r.GetCivilTime() >= entryWindowStart && r.GetCivilTime() <= entryWindowEnd && (r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)));
 
                     var exitWindowStart = scheduledOut.AddHours(-10);
                     var exitWindowEnd = scheduledOut.AddHours(10);
-                    exitRecords = records.Where(r => r.CheckTime >= exitWindowStart && r.CheckTime <= exitWindowEnd);
+                    exitRecords = records.Where(r => r.GetCivilTime() >= exitWindowStart && r.GetCivilTime() <= exitWindowEnd);
 
                     var matchIn = entryRecords
-                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+                        .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledIn).TotalMinutes) })
                         .Where(x => x.Diff <= maxInDistance)
                         .OrderBy(x => x.Diff).FirstOrDefault();
 
                     if (matchIn != null) { checkInRecord = matchIn.Record; checkIn = checkInRecord.CheckTime; }
 
                     var matchOut = exitRecords
-                        .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+                        .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledOut).TotalMinutes) })
                         .Where(x => x.Diff <= maxOutDistance)
                         .OrderBy(x => x.Diff).FirstOrDefault();
 
@@ -185,14 +186,14 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
                 exitRecords = records.Where(r => r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckOutRecordId));
 
                 var matchIn = entryRecords
-                    .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledIn).TotalMinutes) })
+                    .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledIn).TotalMinutes) })
                     .Where(x => x.Diff <= maxInDistance)
                     .OrderBy(x => x.Diff).FirstOrDefault();
 
                 if (matchIn != null) { checkInRecord = matchIn.Record; checkIn = checkInRecord.CheckTime; }
 
                 var matchOut = exitRecords
-                    .Select(r => new { Record = r, Diff = Math.Abs((r.CheckTime - scheduledOut).TotalMinutes) })
+                    .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledOut).TotalMinutes) })
                     .Where(x => x.Diff <= maxOutDistance)
                     .OrderBy(x => x.Diff).FirstOrDefault();
 
@@ -208,7 +209,9 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
 
             if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
             {
-                if (Math.Abs((checkIn.Value - scheduledIn).TotalMinutes) <= Math.Abs((checkOut.Value - scheduledOut).TotalMinutes)) { checkOut = null; checkOutRecord = null; }
+                var civilIn = checkInRecord?.GetCivilTime() ?? checkIn.Value;
+                var civilOut = checkOutRecord?.GetCivilTime() ?? checkOut.Value;
+                if (Math.Abs((civilIn - scheduledIn).TotalMinutes) <= Math.Abs((civilOut - scheduledOut).TotalMinutes)) { checkOut = null; checkOutRecord = null; }
                 else { checkIn = null; checkInRecord = null; }
             }
         }

@@ -16,7 +16,8 @@ public record ProcessRegularAttendanceCommand(
     List<AttendanceRecord> Records,
     bool IsRestDay,
     bool IsAutoDetectedShift = false,
-    AttendanceAdjustment? Adjustment = null) : IRequest;
+    AttendanceAdjustment? Adjustment = null,
+    string? TimeZoneId = null) : IRequest;
 
 public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessRegularAttendanceCommand>
 {
@@ -42,8 +43,9 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
         AttendanceRecord? checkOutRecord = null;
         (int Lunch, bool HasTempExits, int TempMinutes)? intermediateAnalysis = null;
 
+        var targetDateOnly = DateOnly.FromDateTime(request.Date);
         var pendingDayRecords = request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending && r.CheckTime.Date == request.Date.Date)
+            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
             .OrderBy(r => r.CheckTime)
             .ToList();
 
@@ -169,7 +171,8 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
             checkOutRecord?.Id,
             request.Employee.CalculateOvertimeBeforeEntry,
             request.Employee.OvertimeAuthorized,
-            request.IsAutoDetectedShift);
+            request.IsAutoDetectedShift,
+            timeZoneId: request.TimeZoneId);
 
         if (intermediateAnalysis.HasValue)
         {
