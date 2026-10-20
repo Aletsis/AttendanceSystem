@@ -18,7 +18,8 @@ public record ProcessContinuousAttendanceCommand(
     bool IsAutoDetectedShift = false,
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
-    PunchAssignmentDraft? Draft = null) : IRequest;
+    PunchAssignmentDraft? Draft = null,
+    DateTime? NextJornadaEntryStart = null) : IRequest;
 
 public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<ProcessContinuousAttendanceCommand>
 {
@@ -40,6 +41,8 @@ public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<Process
             request.IsAutoDetectedShift,
             Adjustment: request.Adjustment,
             TimeZoneId: request.TimeZoneId,
-            Draft: request.Draft), cancellationToken);
+            Draft: request.Draft,
+            NextJornadaEntryStart: request.NextJornadaEntryStart,
+            Continuous: true), cancellationToken);
     }
 }

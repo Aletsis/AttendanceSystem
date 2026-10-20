@@ -9,6 +9,7 @@ using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Services;
 using AttendanceSystem.Domain.ValueObjects;
+using AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate;
 using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
 using AttendanceSystem.Application.Common;
 using Microsoft.Extensions.Logging;
@@ -92,11 +93,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         // F05-P02 / H08: Identificar empleados con vigencia histórica en el rango solicitado
         // (empleados que estuvieron activos en cualquier fecha del rango, o cuya fecha de ingreso/baja solapa el periodo)
         // F02-05: orden estable por identificador para que el resultado no dependa del orden de lectura.
-        var targetEmployees = allEmployees.Where(e =>
-            e.IsActiveOn(request.StartDate) ||
-            e.IsActiveOn(request.EndDate) ||
-            (e.HireDate.Date <= request.EndDate.Date && (!e.TerminationDate.HasValue || e.TerminationDate.Value.Date >= request.StartDate.Date))
-        ).OrderBy(e => e.Id.Value, StringComparer.Ordinal).ToList();
+        // F06-08: con períodos de empleo (reingresos), sólo se procesan los días cubiertos por alguno.
+        var targetEmployees = allEmployees.Where(e => e.IsActiveDuring(request.StartDate, request.EndDate))
+            .OrderBy(e => e.Id.Value, StringComparer.Ordinal).ToList();
 
 
         if (!targetEmployees.Any())
@@ -130,7 +129,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     _unitOfWork,
                     _lockService,
                     new[] { employee.Id },
-                    () => RecalculateUnitAsync(employee, requestStart, requestEnd, shifts, weeklyStartDay, assignedAt, cancellationToken),
+                    () => RecalculateUnitAsync(employee, requestStart, requestEnd, shifts, weeklyStartDay, systemConfig, assignedAt, cancellationToken),
                     _ => true,
                     cancellationToken);
                 successfulUnits++;
@@ -180,6 +179,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         DateTime requestEnd,
         IReadOnlyDictionary<ShiftId, Shift> shifts,
         DayOfWeek weeklyStartDay,
+        SystemConfiguration? systemConfig,
         DateTime assignedAt,
         CancellationToken cancellationToken)
     {
@@ -194,34 +194,39 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        // F05-P05 / H18: Recalcular horas extras semanales expandiendo hasta el fin de semana de la unidad
+        // F06-06 / F06-07: extras efectivas de todas las jornadas que dependen de la unidad: las semanas que
+        // la contienen (bolsa semanal) y, con tope de período, el período contable completo. Se recalculan
+        // siempre (no sólo con bolsa semanal) para que autorización diaria, redondeo y topes sean uniformes.
         bool hasSubsequentUpdates = false;
         var unitStart = ws.UnitDates.Count > 0 ? ws.UnitDates.Min : requestStart;
         var unitEnd = ws.UnitDates.Count > 0 ? ws.UnitDates.Max : requestEnd;
-        var earliestWeekStart = WeeklyHoursCalculationHelper.GetWeekStart(unitStart < requestStart ? unitStart : requestStart, weeklyStartDay);
-        var latestWeekEnd = WeeklyHoursCalculationHelper.GetWeekEnd(unitEnd > requestEnd ? unitEnd : requestEnd, weeklyStartDay);
+        var first = unitStart < requestStart ? unitStart : requestStart;
+        var last = unitEnd > requestEnd ? unitEnd : requestEnd;
+        var earliest = WeeklyHoursCalculationHelper.GetWeekStart(first, weeklyStartDay);
+        var latest = WeeklyHoursCalculationHelper.GetWeekEnd(last, weeklyStartDay);
+        Func<DateTime, DateTime> periodStartOf = date => WorkPeriodCalculator.Containing(date, systemConfig).Start;
+        if (employee.OvertimeCapType == OvertimeCapType.Period)
+        {
+            var firstPeriod = WorkPeriodCalculator.Containing(first, systemConfig);
+            var lastPeriod = WorkPeriodCalculator.Containing(last, systemConfig);
+            if (firstPeriod.Start < earliest) earliest = firstPeriod.Start;
+            if (lastPeriod.End > latest) latest = lastPeriod.End;
+        }
 
         var empAttendances = (await _dailyRepo.GetByEmployeeAndDateRangeAsync(
             employee.Id,
-            earliestWeekStart,
-            latestWeekEnd,
+            earliest,
+            latest,
             cancellationToken)) ?? new List<DailyAttendance>();
 
-        if (empAttendances.Any(a => a.WeeklyWorkHours.HasValue && a.WeeklyWorkHours.Value > TimeSpan.Zero))
+        var overtime = WeeklyHoursCalculationHelper.Calculate(empAttendances, employee, weeklyStartDay, periodStartOf);
+        foreach (var att in empAttendances)
         {
-            var overtimeMap = WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
-                empAttendances,
-                employee,
-                weeklyStartDay);
-
-            foreach (var att in empAttendances)
+            if (overtime.TryGetValue(att.Id, out var ot) && (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw))
             {
-                if (overtimeMap.TryGetValue(att.Id, out var effectiveOt) && att.OvertimeMinutes != effectiveOt)
-                {
-                    att.SetCalculatedOvertime(effectiveOt);
-                    _dailyRepo.Update(att);
-                    hasSubsequentUpdates = true;
-                }
+                att.SetCalculatedOvertime(ot.Raw, ot.Effective);
+                _dailyRepo.Update(att);
+                hasSubsequentUpdates = true;
             }
         }
 
@@ -504,18 +509,33 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         {
             if (shift.PunchTrackingMode == PunchTrackingMode.MultiInterval) return null;
 
-            // El procesador flexible sólo busca salida en el día siguiente cuando la entrada es el único
-            // marcaje libre de su día, y como máximo 18 h después de ella.
+            // F06-01: continuo toma el último marcaje de su ventana; flexible sólo busca en el día siguiente
+            // cuando la entrada es el único marcaje libre de su día. Ambos con el tope de la política de ventanas.
             var unavailable = ws.Unavailable(DateOnly.FromDateTime(date), includeOwnManual: true);
-            var ownDay = ws.Records.Values
-                .Where(r => ws.WorkDateOf(r) == plan.SearchStartDate && !unavailable.ContainsKey(r.Id))
+            var ownDay = PunchAssignmentPolicy.Chronological(ws.Records.Values
+                .Where(r => ws.WorkDateOf(r) == plan.SearchStartDate && !unavailable.ContainsKey(r.Id)))
                 .ToList();
-            if (ownDay.Count != 1) return null;
-            return ownDay[0].GetCivilTime(ws.TimeZoneId).AddHours(18);
+            if (ownDay.Count == 0) return null;
+            if (effectiveType == ShiftType.Flexible && ownDay.Count != 1) return null;
+            return JornadaWindowPolicy.ExitWindowEnd(ownDay[0].GetCivilTime(ws.TimeZoneId), shift.WorkHours, null);
         }
 
         // Regular y sin turno sólo consumen marcajes de su propia fecha laboral.
         return null;
+    }
+
+    /// <summary>
+    /// F06-01: inicio civil de la ventana de entrada de la jornada siguiente si es laborable (con turno y sin
+    /// descanso); una salida faltante de hoy no puede consumir esa entrada.
+    /// </summary>
+    private DateTime? NextJornadaEntryStart(EmployeeRecalculationWorkset ws, DateTime date, IReadOnlyDictionary<ShiftId, Shift> shifts)
+    {
+        var next = date.AddDays(1);
+        if (!ws.Employee.IsActiveOn(next) || next > ws.LoadedThrough) return null;
+
+        var plan = ResolvePlan(ws, next, shifts);
+        if (plan.Resolution.Shift == null || plan.Resolution.IsRestDay) return null;
+        return JornadaWindowPolicy.EntryWindowStart(next.Date.Add(plan.DayStartTime));
     }
 
     /// <summary>
@@ -561,6 +581,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         }
 
         var draft = new PunchAssignmentDraft();
+        var nextEntryStart = plan.SearchEndDate > plan.SearchStartDate ? NextJornadaEntryStart(ws, date, shifts) : null;
 
         // Delegar a subcomandos pasando Adjustment (H07), TimeZoneId y el borrador de asignaciones (F02-06)
         if (shift == null)
@@ -571,17 +592,17 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         else if (shift.ShiftType == ShiftType.Mixto)
         {
             await _sender.Send(new ProcessMixAttendanceCommand(
-                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
+                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Continuo)
         {
             await _sender.Send(new ProcessContinuousAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
+                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Flexible)
         {
             await _sender.Send(new ProcessFlexibleAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
+                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Partido)
         {

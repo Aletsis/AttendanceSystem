@@ -84,12 +84,16 @@ public static class AttendanceShiftResolutionService
             }
         }
 
-        // 3. Precedencia 3: Detección automática para turno rotativo o sin horario fijo
+        // 3. Precedencia 3: Detección automática para turno rotativo o sin horario fijo, con la asignación
+        //    vigente en la fecha calculada (F06-08), no la configuración actual del empleado.
+        var assignment = employee.AssignmentOn(date);
         if (shift == null)
         {
-            if (employee.ShiftType == ShiftType.Rotativo || employee.ScheduleId == null)
+            if (assignment.ShiftType == ShiftType.Rotativo || assignment.ScheduleId == null)
             {
-                var firstPunch = dayPunches?.OrderBy(p => p).FirstOrDefault();
+                // F06-03 / H10: sólo hay candidato si existe un marcaje real (los del día ya excluyen los que
+                // pertenecen a jornadas previas). FirstOrDefault sobre DateTime devolvía MinValue y autodetectaba.
+                DateTime? firstPunch = dayPunches?.OrderBy(p => p).Select(p => (DateTime?)p).FirstOrDefault();
                 if (firstPunch.HasValue)
                 {
                     var autoShift = ShiftDetectionService.FindClosestShift(firstPunch.Value, availableShifts.Values);
@@ -102,8 +106,8 @@ public static class AttendanceShiftResolutionService
             }
 
             // 4. Precedencia 4: Turno fijo del empleado (ScheduleId)
-            if (shift == null && employee.ScheduleId != null &&
-                availableShifts.TryGetValue(employee.ScheduleId, out var empShift))
+            if (shift == null && assignment.ScheduleId != null &&
+                availableShifts.TryGetValue(assignment.ScheduleId, out var empShift))
             {
                 shift = empShift;
             }

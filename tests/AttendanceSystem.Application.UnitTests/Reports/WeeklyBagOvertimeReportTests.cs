@@ -180,6 +180,13 @@ public class WeeklyBagOvertimeReportTests
         var record4 = DailyAttendance.Create(employee.Id, monday.AddDays(3), weeklyShift, monday.AddDays(3).AddHours(8), monday.AddDays(3).AddHours(18), false, overtimeAuthorized: true, totalWorkedMinutes: 600);
         var record5 = DailyAttendance.Create(employee.Id, monday.AddDays(4), weeklyShift, monday.AddDays(4).AddHours(8), monday.AddDays(4).AddHours(13), false, overtimeAuthorized: true, totalWorkedMinutes: 300);
 
+        // F06-09: el motor calcula y guarda las extras efectivas una sola vez (aquí con el mismo cálculo que usa).
+        var records = new[] { record1, record2, record3, record4, record5 };
+        foreach (var (id, ot) in WeeklyHoursCalculationHelper.Calculate(records, employee, DayOfWeek.Monday))
+        {
+            records.Single(r => r.Id == id).SetCalculatedOvertime(ot.Raw, ot.Effective);
+        }
+
         var dailyRepoMock = new Mock<IDailyAttendanceRepository>();
         var employeeRepoMock = new Mock<IEmployeeRepository>();
         var branchRepoMock = new Mock<IBranchRepository>();
@@ -215,5 +222,12 @@ public class WeeklyBagOvertimeReportTests
         report[2].OvertimeMinutes.Should().Be(0);
         report[3].OvertimeMinutes.Should().Be(0);
         report[4].OvertimeMinutes.Should().Be(300, "Viernes debe reflejar las 5 horas extras semanales");
+
+        // El reporte no reinterpreta el resultado con la configuración actual del empleado.
+        employee.Update(employee.FirstName, employee.LastName, null, null, employee.HireDate, employee.Gender, employee.Status,
+            employee.BranchId, employee.DepartmentId, employee.PositionId, employee.ShiftType, employee.ScheduleId,
+            overtimeAuthorized: false);
+        var after = (await handler.Handle(query, CancellationToken.None)).ToList();
+        after[4].OvertimeMinutes.Should().Be(300, "las extras históricas se conservan aunque hoy no estén autorizadas");
     }
 }

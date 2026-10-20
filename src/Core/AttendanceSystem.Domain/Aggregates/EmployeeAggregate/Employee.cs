@@ -45,6 +45,14 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     public string? FaceTemplate { get; private set; }
     public string? Photo { get; private set; }
 
+    // F06-08: vigencias. Sin historia registrada (datos anteriores) se usan HireDate/TerminationDate y la
+    // asignación actual; no se inventan períodos.
+    private readonly List<EmploymentPeriod> _employmentPeriods = new();
+    public IReadOnlyCollection<EmploymentPeriod> EmploymentPeriods => _employmentPeriods.AsReadOnly();
+
+    private readonly List<ScheduleAssignment> _scheduleAssignments = new();
+    public IReadOnlyCollection<ScheduleAssignment> ScheduleAssignments => _scheduleAssignments.AsReadOnly();
+
     private Employee() { } // Para EF Core
 
     public static Employee Create(
@@ -85,7 +93,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         }
         var primaryRestDay = configuredRestDays.Count > 0 ? (WeekDay?)configuredRestDays[0] : restDay;
 
-        return new Employee
+        var employee = new Employee
         {
             Id = id,
             FirstName = firstName,
@@ -114,6 +122,10 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             CreatedAt = createdAt ?? DateTime.UtcNow,
             CreatedBy = createdBy
         };
+
+        employee._employmentPeriods.Add(new EmploymentPeriod(hireDate));
+        employee._scheduleAssignments.Add(new ScheduleAssignment(hireDate, scheduleId, shiftType, branchId));
+        return employee;
     }
 
     public void UpdateBiometrics(
@@ -193,6 +205,15 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             RestDay = null;
         }
 
+        // F06-08: los cambios de horario, tipo o sucursal y de alta/baja quedan como vigencias desde hoy.
+        RecordAssignment(DateTime.Today, scheduleId, shiftType, branchId);
+        if (HireDate.Date != hireDate.Date) MoveHireDate(hireDate);
+        if (Status != status)
+        {
+            if (status == EmployeeStatus.Baja) Terminate(DateTime.Today);
+            else if (Status == EmployeeStatus.Baja) Rehire(DateTime.Today);
+        }
+
         FirstName = firstName;
         LastName = lastName;
         Email = string.IsNullOrWhiteSpace(email) ? null : email;
@@ -251,24 +272,45 @@ public sealed class Employee : AggregateRoot<EmployeeId>
 
     public void Deactivate(DateTime? terminationDate = null)
     {
-        Status = EmployeeStatus.Baja;
-        TerminationDate = terminationDate?.Date ?? (TerminationDate ?? DateTime.UtcNow.Date);
+        Terminate(terminationDate?.Date ?? (TerminationDate ?? DateTime.UtcNow.Date));
     }
 
-    public void Activate()
-    {
-        Status = EmployeeStatus.Alta;
-        TerminationDate = null;
-    }
+    /// <summary>Reactiva al empleado; si estaba de baja es un reingreso desde hoy.</summary>
+    public void Activate() => Rehire(DateTime.Today);
 
     public void Terminate(DateTime terminationDate)
     {
+        var open = _employmentPeriods.LastOrDefault(p => !p.EndDate.HasValue);
+        open?.Close(terminationDate);
         TerminationDate = terminationDate.Date;
         Status = EmployeeStatus.Baja;
     }
 
+    /// <summary>F06-08: reingreso. Abre un período nuevo; la interrupción entre períodos no es laborable.</summary>
+    public void Rehire(DateTime rehireDate)
+    {
+        if (_employmentPeriods.Count == 0)
+        {
+            // Datos anteriores sin períodos: se conserva el primero conocido antes de abrir el nuevo.
+            _employmentPeriods.Add(new EmploymentPeriod(HireDate, TerminationDate ?? rehireDate.AddDays(-1)));
+        }
+
+        if (!_employmentPeriods.Any(p => !p.EndDate.HasValue))
+        {
+            _employmentPeriods.Add(new EmploymentPeriod(rehireDate));
+        }
+
+        TerminationDate = null;
+        Status = EmployeeStatus.Alta;
+    }
+
     public bool IsActiveOn(DateTime date)
     {
+        if (_employmentPeriods.Count > 0)
+        {
+            return _employmentPeriods.Any(p => p.Contains(date));
+        }
+
         var targetDate = date.Date;
         if (targetDate < HireDate.Date)
             return false;
@@ -277,6 +319,59 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             return false;
 
         return true;
+    }
+
+    /// <summary>Hubo relación laboral en algún día de [inicio, fin].</summary>
+    public bool IsActiveDuring(DateTime start, DateTime end)
+    {
+        if (_employmentPeriods.Count > 0)
+        {
+            return _employmentPeriods.Any(p => p.Overlaps(start, end));
+        }
+        return HireDate.Date <= end.Date && (!TerminationDate.HasValue || TerminationDate.Value.Date >= start.Date);
+    }
+
+    /// <summary>F06-08: horario, tipo y sucursal vigentes en una fecha (la asignación actual si no hay historia).</summary>
+    public (ShiftId? ScheduleId, ShiftType? ShiftType, BranchId BranchId) AssignmentOn(DateTime date)
+    {
+        var effective = _scheduleAssignments
+            .Where(a => a.EffectiveFrom <= date.Date)
+            .OrderByDescending(a => a.EffectiveFrom)
+            .FirstOrDefault()
+            ?? _scheduleAssignments.OrderBy(a => a.EffectiveFrom).FirstOrDefault();
+
+        return effective == null
+            ? (ScheduleId, ShiftType, BranchId)
+            : (effective.ScheduleId, effective.ShiftType, effective.BranchId);
+    }
+
+    /// <summary>Registra una asignación vigente desde <paramref name="effectiveFrom"/> si cambia algo.</summary>
+    public void RecordAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId)
+    {
+        if (_scheduleAssignments.Count == 0)
+        {
+            // Sin historia previa: la configuración actual rige desde el ingreso (límite documentado).
+            _scheduleAssignments.Add(new ScheduleAssignment(HireDate, ScheduleId, ShiftType, BranchId));
+        }
+
+        var current = AssignmentOn(effectiveFrom);
+        if (current.ScheduleId == scheduleId && current.ShiftType == shiftType && current.BranchId == branchId) return;
+
+        var sameDay = _scheduleAssignments.FirstOrDefault(a => a.EffectiveFrom == effectiveFrom.Date);
+        if (sameDay != null) sameDay.Replace(scheduleId, shiftType, branchId);
+        else _scheduleAssignments.Add(new ScheduleAssignment(effectiveFrom, scheduleId, shiftType, branchId));
+    }
+
+    private void MoveHireDate(DateTime hireDate)
+    {
+        var first = _employmentPeriods.OrderBy(p => p.StartDate).FirstOrDefault();
+        if (first != null && _employmentPeriods.Count == 1) first.MoveStart(hireDate);
+        var firstAssignment = _scheduleAssignments.OrderBy(a => a.EffectiveFrom).FirstOrDefault();
+        if (firstAssignment != null && _scheduleAssignments.Count == 1)
+        {
+            _scheduleAssignments.Clear();
+            _scheduleAssignments.Add(new ScheduleAssignment(hireDate, firstAssignment.ScheduleId, firstAssignment.ShiftType, firstAssignment.BranchId));
+        }
     }
 
     public void SetStatus(EmployeeStatus status)

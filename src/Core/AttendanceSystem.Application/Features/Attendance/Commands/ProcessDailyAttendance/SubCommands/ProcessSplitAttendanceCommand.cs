@@ -247,6 +247,8 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             request.IsAutoDetectedShift,
             timeZoneId: request.TimeZoneId);
 
+        dailyAttendance.AddCalculationIssue("Turno partido sin segundo bloque configurado: calculado como un solo bloque.");
+
         if (request.Adjustment != null)
         {
             dailyAttendance.ApplyAdjustment(request.Adjustment);

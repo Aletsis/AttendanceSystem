@@ -109,7 +109,7 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
             // trabajo en memoria que se pierde si el proceso cae antes de ejecutarlo.
             var employees = await _employeeRepository.GetAllAsync(cancellationToken);
             var activeIds = employees
-                .Where(e => e.HireDate.Date <= globalMaxDate.Value.Date && (!e.TerminationDate.HasValue || e.TerminationDate.Value.Date >= processStartDate.Date))
+                .Where(e => e.IsActiveDuring(processStartDate, globalMaxDate.Value))
                 .Select(e => e.Id)
                 .ToList();
 

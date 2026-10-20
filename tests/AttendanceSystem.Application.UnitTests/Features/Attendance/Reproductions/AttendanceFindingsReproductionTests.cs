@@ -372,7 +372,7 @@ public class AttendanceFindingsReproductionTests
     #region H08 — Continuo delegado a flexible con límite de 18 horas
 
     [Fact]
-    public async Task H08_Continuous_24h_Shift_Misses_Exit_Due_To_18_Hour_Threshold_In_Flexible_Handler()
+    public async Task H08_Continuous_24h_Shift_Accepts_Exit_Within_The_24_Hour_Window()
     {
         // ENTRADA:
         // Turno continuo de 24 horas: 08:00 AM del Día 1 a 08:00 AM del Día 2 (24 horas).
@@ -410,19 +410,13 @@ public class AttendanceFindingsReproductionTests
             IsRestDay: false);
 
         // ACT:
-        await handler.Handle(command, CancellationToken.None);
+        await handler.Handle(command with { Continuous = true }, CancellationToken.None);
 
-        // DEMOSTRACIÓN DEL DEFECTO H08:
-        // En ProcessFlexibleAttendanceCommandHandler línea 147:
-        // (r.CheckTime - checkIn.Value).TotalHours <= 18
-        // La salida a las 24 horas es descartada y checkOut queda en null.
+        // LÍNEA BASE (F00-05): el límite rígido de 18 h descartaba la salida a las 24 h.
+        // CORREGIDO (F06-01): ventana = duración + margen con tope de 24 h (C-03).
         persistedDaily.Should().NotBeNull();
         persistedDaily!.ActualCheckIn.Should().NotBeNull();
-        persistedDaily.ActualCheckOut.Should().BeNull(
-            "en la línea base, la salida a las 24h es ignorada debido al límite rígido de 18 horas");
-
-        // RESULTADO ESPERADO:
-        // Un turno de 24h continuo debe asociar su salida en la ventana de 24 horas acordada.
+        persistedDaily.CheckOutRecordId.Should().Be(exitAt24h.Id, "la salida a las 24 h está dentro de la ventana de la guardia");
     }
 
     #endregion
@@ -430,7 +424,7 @@ public class AttendanceFindingsReproductionTests
     #region H09 — Intervalo abierto oculto en MultiInterval
 
     [Fact]
-    public async Task H09_MultiInterval_With_Odd_Punches_Hides_Last_Open_Interval()
+    public async Task H09_MultiInterval_With_Odd_Punches_Keeps_The_Open_Interval_Visible()
     {
         // ENTRADA:
         // Turno MultiInterval con 3 marcajes (número impar): 08:00, 12:00, 13:00.
@@ -465,17 +459,14 @@ public class AttendanceFindingsReproductionTests
         // ACT:
         await handler.Handle(command, CancellationToken.None);
 
-        // DEMOSTRACIÓN DEL DEFECTO H09:
-        // En ProcessFlexibleAttendanceCommandHandler líneas 61-88:
-        // El bucle de pares cleanRecords[i], cleanRecords[i+1] solo agrega intervalos cuando existe i+1.
-        // El tercer marcaje (13:00) se marca como Processed, pero IntervalsData solo contiene 1 intervalo [08:00-12:00].
+        // LÍNEA BASE (F00-05): el marcaje impar se consumía sin dejar intervalo ni advertencia.
+        // CORREGIDO (F06-02 / C-07): intervalo abierto visible, salida faltante e incidencia; sólo suman los cerrados.
         persistedDaily.Should().NotBeNull();
-        persistedDaily!.IntervalsData.Should().NotBeNull();
-        persistedDaily.IntervalsData.Should().NotContain("13:00",
-            "en la línea base, el marcaje impar no se refleja en los intervalos ni deja advertencia de intervalo abierto");
-
-        // RESULTADO ESPERADO:
-        // El intervalo abierto debe quedar registrado como abierto y con incidencia visible para RH.
+        persistedDaily!.IntervalsData.Should().Contain("\"IsOpen\":true");
+        persistedDaily.HasOpenInterval.Should().BeTrue();
+        persistedDaily.MissingCheckOut.Should().BeTrue();
+        persistedDaily.CalculationIssue.Should().Contain("13:00");
+        persistedDaily.TotalWorkedMinutes.Should().Be(240, "sólo cuenta el intervalo cerrado 08:00–12:00");
     }
 
     #endregion
@@ -483,7 +474,7 @@ public class AttendanceFindingsReproductionTests
     #region H10 — Autodetección con DateTime.MinValue en colección vacía
 
     [Fact]
-    public void H10_ShiftResolution_Autodetects_Shift_On_Empty_Punches_Due_To_ValueType_Default()
+    public void H10_ShiftResolution_Does_Not_Autodetect_Without_Punches()
     {
         // ENTRADA:
         // Empleado rotativo sin marcajes en el día (colección vacía).
@@ -510,12 +501,10 @@ public class AttendanceFindingsReproductionTests
             shifts,
             emptyPunches);
 
-        // DEMOSTRACIÓN DEL DEFECTO H10:
-        resolution.IsAutoDetected.Should().BeTrue(
-            "en la línea base, FirstOrDefault() en una lista vacía de DateTime devuelve DateTime.MinValue, evaluando HasValue = true y autodetectando un turno falso");
-
-        // RESULTADO ESPERADO:
-        // En un día sin marcajes, IsAutoDetected debe ser false y Shift debe ser null.
+        // LÍNEA BASE (F00-05): FirstOrDefault() sobre DateTime devolvía MinValue y autodetectaba un turno falso.
+        // CORREGIDO (F06-03): sin marcaje real no hay candidato.
+        resolution.IsAutoDetected.Should().BeFalse();
+        resolution.Shift.Should().BeNull();
     }
 
     #endregion
@@ -523,7 +512,7 @@ public class AttendanceFindingsReproductionTests
     #region H11 — Extras semanales ignoran autorización diaria y tope depende del rango
 
     [Fact]
-    public void H11_WeeklyOvertime_Ignores_Daily_Authorization_And_PeriodCap_Depends_On_Batch_Range()
+    public void H11_WeeklyOvertime_Respects_Daily_Authorization()
     {
         // ENTRADA:
         // Empleado con OvertimeAuthorized = false globalmente, pero el día tuvo un override.
@@ -559,14 +548,10 @@ public class AttendanceFindingsReproductionTests
             employeeWithoutOvertime,
             DayOfWeek.Monday);
 
-        // DEMOSTRACIÓN DEL DEFECTO H11:
-        // En WeeklyHoursCalculationHelper líneas 123 y 140:
-        // Solo evalúa employee.OvertimeAuthorized (false), ignorando la autorización de dailyAttendance.
-        result[dailyAttendance.Id].Should().Be(0,
-            "en la línea base, se evalúa únicamente la bandera global del empleado, ignorando autorizaciones diarias");
-
-        // RESULTADO ESPERADO:
-        // Debe respetar la autorización diaria de la jornada.
+        // LÍNEA BASE (F00-05): sólo se evaluaba la bandera global del empleado.
+        // CORREGIDO (F06-06): rige la autorización de la jornada (incluidos overrides). El tope de período se
+        // verifica con el recálculo real en Phase06RulesTests.
+        result[dailyAttendance.Id].Should().Be(120, "la jornada está autorizada aunque el empleado no lo esté globalmente");
     }
 
     #endregion

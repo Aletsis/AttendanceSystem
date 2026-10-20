@@ -61,7 +61,7 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
 
             // Filtrar registros de empleados que ya no están activos, que no pertenecen a la sucursal o de fechas anteriores a su ingreso
             var validRecords = dailyRecords
-                .Where(r => empDict.ContainsKey(r.EmployeeId) && r.Date.Date >= empDict[r.EmployeeId].HireDate.Date)
+                .Where(r => empDict.ContainsKey(r.EmployeeId) && empDict[r.EmployeeId].IsActiveOn(r.Date))
                 .ToList();
 
             var absences = validRecords.Where(r => r.IsAbsent && !r.IsRestDay).ToList();

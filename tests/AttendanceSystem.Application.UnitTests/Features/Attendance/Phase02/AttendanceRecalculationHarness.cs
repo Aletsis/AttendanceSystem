@@ -379,6 +379,9 @@ public sealed class AttendanceRecalculationHarness
 
     public string CurrentUser { get; set; } = "rh.operador";
 
+    /// <summary>Configuración del sistema que ve el orquestador (período contable del tope de extras).</summary>
+    public SystemConfiguration? Configuration { get; set; }
+
     /// <summary>Servicio de decisiones con los repositorios del almacén y el orquestador real.</summary>
     public AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService Decisions()
     {
@@ -416,7 +419,7 @@ public sealed class AttendanceRecalculationHarness
                 Store.Rosters.Where(r => r.Date.Date >= s.Date && r.Date.Date <= e.Date && (emp == null || r.EmployeeId == emp)).ToList());
 
         var configRepo = new Mock<ISystemConfigurationRepository>();
-        configRepo.Setup(r => r.GetConfigurationAsync(It.IsAny<CancellationToken>())).ReturnsAsync((SystemConfiguration?)null);
+        configRepo.Setup(r => r.GetConfigurationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => Configuration);
 
         var consolidationRepo = new Mock<IAttendanceConsolidationRepository>();
 

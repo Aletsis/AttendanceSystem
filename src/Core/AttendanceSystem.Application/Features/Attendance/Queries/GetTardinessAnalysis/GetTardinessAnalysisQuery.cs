@@ -61,7 +61,7 @@ public sealed class GetTardinessAnalysisQueryHandler
 
             // Filtrar registros de empleados que ya no están activos, que no pertenecen a la sucursal o de fechas anteriores a su ingreso
             var validRecords = dailyRecords
-                .Where(r => empDict.ContainsKey(r.EmployeeId) && r.Date.Date >= empDict[r.EmployeeId].HireDate.Date)
+                .Where(r => empDict.ContainsKey(r.EmployeeId) && empDict[r.EmployeeId].IsActiveOn(r.Date))
                 .ToList();
 
             var tardies = validRecords.Where(r => r.LateMinutes > 0 && !r.IsRestDay).ToList();

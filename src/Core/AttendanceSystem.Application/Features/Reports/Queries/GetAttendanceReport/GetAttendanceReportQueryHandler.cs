@@ -90,23 +90,19 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                 branchName = reqBranchName;
             }
 
-            // Calcular las horas extras efectivas soportando bolsa diaria y bolsa semanal del período
-            var overtimeByRecordId = Common.WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
-                group,
-                emp,
-                weeklyStartDay);
-
             var sortedRecords = group.OrderBy(x => x.Date).ToList();
 
             foreach (var att in sortedRecords)
             {
-                // Si la fecha del registro es anterior a la fecha de ingreso del empleado, ignorar
-                if (att.Date.Date < emp.HireDate.Date) continue;
+                // F06-08: fuera de un período de empleo (antes del ingreso o durante una baja) no se reporta
+                if (!emp.IsActiveOn(att.Date)) continue;
 
                 // Solo incluir en el reporte los registros que caen dentro del rango solicitado
                 if (att.Date.Date < request.StartDate.Date || att.Date.Date > request.EndDate.Date) continue;
 
-                int effectiveOvertime = overtimeByRecordId.TryGetValue(att.Id, out var ot) ? ot : att.OvertimeMinutes;
+                // F06-09: las extras efectivas las calcula y guarda el motor (autorización diaria, redondeo y topes por
+                // período); el reporte no las reinterpreta con la configuración actual ni con el rango consultado.
+                int effectiveOvertime = att.OvertimeMinutes;
 
                 dtos.Add(new AttendanceReportViewDto
                 {

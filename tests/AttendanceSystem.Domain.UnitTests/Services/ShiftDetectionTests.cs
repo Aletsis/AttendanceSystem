@@ -88,4 +88,14 @@ public class ShiftDetectionTests
         // Assert
         result.Should().BeNull();
     }
+
+    [Fact]
+    public void FindClosestShift_EquidistantCandidates_ResolveDeterministically_ByEarlierStart()
+    {
+        // 10:00 queda a 4 h de las 06:00 y de las 14:00: gana el que empieza antes sin importar el orden de entrada.
+        var punch = new DateTime(2026, 8, 3, 10, 0, 0);
+
+        ShiftDetectionService.FindClosestShift(punch, new[] { _afternoonShift, _morningShift }).Should().BeSameAs(_morningShift);
+        ShiftDetectionService.FindClosestShift(punch, new[] { _morningShift, _afternoonShift }).Should().BeSameAs(_morningShift);
+    }
 }

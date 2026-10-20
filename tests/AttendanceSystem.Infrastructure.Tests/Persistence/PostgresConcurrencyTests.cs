@@ -398,6 +398,53 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
 
     #endregion
 
+    #region Vigencias laborales e incidencias de cálculo
+
+    [Fact]
+    public async Task EmploymentPeriodsAndScheduleAssignments_RoundTrip_AndCalculationIssueIsStored()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var branch = AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch.Create("H01", "Sucursal Historia", null);
+        var department = AttendanceSystem.Domain.Aggregates.DepartmentAggregate.Department.Create("Depto Historia", null);
+        var position = AttendanceSystem.Domain.Aggregates.PositionAggregate.Position.Create("Puesto Historia", null, 1000m);
+        var morning = Shift.Create("Matutino historia", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Matutino);
+        var afternoon = Shift.Create("Vespertino historia", new TimeSpan(14, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Vespertino);
+        var employee = Employee.Create(EmployeeId.From("EMP-PG-H01"), "Empleado", "Historia", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            branch.Id, department.Id, position.Id, ShiftType.Matutino, morning.Id, restDays: Array.Empty<WeekDay>());
+        employee.RecordAssignment(new DateTime(2026, 6, 10), afternoon.Id, ShiftType.Vespertino, branch.Id);
+        employee.Terminate(new DateTime(2026, 6, 20));
+        employee.Rehire(new DateTime(2026, 7, 1));
+
+        var daily = DailyAttendance.Create(employee.Id, new DateTime(2026, 6, 15), afternoon, null, null, false);
+        daily.MarkOpenInterval("Intervalo abierto sin salida registrada desde las 13:00.");
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            context.Branches.Add(branch);
+            context.Departments.Add(department);
+            context.Positions.Add(position);
+            context.Shifts.AddRange(morning, afternoon);
+            context.Employees.Add(employee);
+            context.DailyAttendances.Add(daily);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var loaded = await verify.Employees.SingleAsync(e => e.Id == employee.Id);
+        loaded.EmploymentPeriods.Should().HaveCount(2);
+        loaded.IsActiveOn(new DateTime(2026, 6, 25)).Should().BeFalse("la interrupción entre períodos persiste");
+        loaded.IsActiveOn(new DateTime(2026, 7, 2)).Should().BeTrue();
+        loaded.AssignmentOn(new DateTime(2026, 6, 9)).ScheduleId.Should().Be(morning.Id);
+        loaded.AssignmentOn(new DateTime(2026, 6, 10)).ScheduleId.Should().Be(afternoon.Id);
+
+        var storedDaily = await verify.DailyAttendances.SingleAsync(d => d.Id == daily.Id);
+        storedDaily.HasOpenInterval.Should().BeTrue();
+        storedDaily.CalculationIssue.Should().Contain("13:00");
+    }
+
+    #endregion
+
     #region Infraestructura de prueba
 
     private static DateTime CivilToUtc(DateTime civil) => DateTime.SpecifyKind(civil - UtcMinus6, DateTimeKind.Utc);

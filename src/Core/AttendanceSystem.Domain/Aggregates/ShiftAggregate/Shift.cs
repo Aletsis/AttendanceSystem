@@ -35,6 +35,33 @@ public class Shift : AggregateRoot<ShiftId>
 
     private Shift() { }
 
+    /// <summary>
+    /// F06-04: configuración efectiva de un día de un turno mixto. Conserva identidad, nombre, tolerancias,
+    /// comida, redondeo y modalidad del turno, y toma del día el tipo, la hora de inicio y la duración.
+    /// Los bloques del turno partido no existen en la configuración diaria: un día partido queda sin segundo
+    /// bloque y el procesador lo reporta como configuración incompleta.
+    /// </summary>
+    public Shift EffectiveFor(ShiftDay day) => new()
+    {
+        Id = Id,
+        Name = Name,
+        StartTime = day.StartTime,
+        EndTime = day.EndTime,
+        WorkHours = day.WorkHours,
+        ShiftType = day.ShiftType,
+        ToleranceMinutes = ToleranceMinutes,
+        LunchBreakMinutes = LunchBreakMinutes,
+        RoundingsEnabled = RoundingsEnabled,
+        RoundingInterval = RoundingInterval,
+        FlexWindowEndTime = null,
+        WeeklyWorkHours = WeeklyWorkHours,
+        SecondBlockStartTime = null,
+        SecondBlockEndTime = null,
+        SecondBlockToleranceMinutes = null,
+        PunchTrackingMode = PunchTrackingMode,
+        HasEntryWindow = HasEntryWindow
+    };
+
     public static Shift Create(
         string name,
         TimeSpan startTime,

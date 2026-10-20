@@ -17,7 +17,8 @@ public record ProcessMixAttendanceCommand(
     bool IsRestDay,
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
-    PunchAssignmentDraft? Draft = null) : IRequest;
+    PunchAssignmentDraft? Draft = null,
+    DateTime? NextJornadaEntryStart = null) : IRequest;
 
 public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAttendanceCommand>
 {
@@ -62,72 +63,61 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
             "Empleado {EmpId} - {Date}: Turno mixto. Día de la semana {DayOfWeek} configurado como tipo {DayShiftType}.",
             request.Employee.Id.Value, request.Date.ToString("dd/MM/yyyy"), request.Date.DayOfWeek, dayShiftType);
 
+        // F06-04: los procesadores reciben la configuración efectiva del día (tipo, inicio y duración), no la
+        // del turno base; antes un vespertino de las 14:00 se evaluaba contra el inicio de las 08:00.
+        var effective = request.Shift.EffectiveFor(dayConfig);
+        string? issue = null;
+
         switch (dayShiftType)
         {
-            case ShiftType.Matutino:
-            case ShiftType.Vespertino:
-                await _sender.Send(new ProcessRegularAttendanceCommand(
-                    request.Employee,
-                    request.Date,
-                    request.Shift,
-                    request.Records,
-                    request.IsRestDay,
-                    Adjustment: request.Adjustment,
-                    TimeZoneId: request.TimeZoneId,
-                    Draft: request.Draft), cancellationToken);
-                break;
-
             case ShiftType.Nocturno:
                 await _sender.Send(new ProcessNightlyAttendanceCommand(
-                    request.Employee,
-                    request.Date,
-                    request.Shift,
-                    request.Records,
-                    request.IsRestDay,
-                    dayConfig.StartTime,
-                    dayConfig.EndTime,
-                    Adjustment: request.Adjustment,
-                    TimeZoneId: request.TimeZoneId,
-                    Draft: request.Draft), cancellationToken);
+                    request.Employee, request.Date, effective, request.Records, request.IsRestDay,
+                    dayConfig.StartTime, dayConfig.EndTime,
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft), cancellationToken);
                 break;
 
             case ShiftType.Continuo:
                 await _sender.Send(new ProcessContinuousAttendanceCommand(
-                    request.Employee,
-                    request.Date,
-                    request.Shift,
-                    request.Records,
-                    request.IsRestDay,
-                    Adjustment: request.Adjustment,
-                    TimeZoneId: request.TimeZoneId,
-                    Draft: request.Draft), cancellationToken);
+                    request.Employee, request.Date, effective, request.Records, request.IsRestDay,
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft,
+                    NextJornadaEntryStart: request.NextJornadaEntryStart), cancellationToken);
                 break;
 
             case ShiftType.Flexible:
                 await _sender.Send(new ProcessFlexibleAttendanceCommand(
-                    request.Employee,
-                    request.Date,
-                    request.Shift,
-                    request.Records,
-                    request.IsRestDay,
-                    Adjustment: request.Adjustment,
-                    TimeZoneId: request.TimeZoneId,
-                    Draft: request.Draft), cancellationToken);
+                    request.Employee, request.Date, effective, request.Records, request.IsRestDay,
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft,
+                    NextJornadaEntryStart: request.NextJornadaEntryStart), cancellationToken);
+                break;
+
+            case ShiftType.Partido:
+                // La configuración diaria no define el segundo bloque: el procesador partido lo calcula como un solo
+                // bloque y registra la incidencia de configuración incompleta.
+                await _sender.Send(new ProcessSplitAttendanceCommand(
+                    request.Employee, request.Date, effective, request.Records, request.IsRestDay,
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft), cancellationToken);
+                break;
+
+            case ShiftType.Matutino:
+            case ShiftType.Vespertino:
+                await _sender.Send(new ProcessRegularAttendanceCommand(
+                    request.Employee, request.Date, effective, request.Records, request.IsRestDay,
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft), cancellationToken);
                 break;
 
             default:
-                // Fallback por seguridad
-                _logger.LogWarning("Tipo de turno desconocido o no soportado en turno mixto diario: {Type}. Usando regular.", dayShiftType);
+                issue = $"Tipo {dayShiftType} no soportado en la configuración diaria de turno mixto; calculado como regular.";
+                _logger.LogWarning("Tipo de turno no soportado en turno mixto diario: {Type}. Usando regular.", dayShiftType);
                 await _sender.Send(new ProcessRegularAttendanceCommand(
-                    request.Employee,
-                    request.Date,
-                    request.Shift,
-                    request.Records,
-                    request.IsRestDay,
-                    Adjustment: request.Adjustment,
-                    TimeZoneId: request.TimeZoneId,
-                    Draft: request.Draft), cancellationToken);
+                    request.Employee, request.Date, effective, request.Records, request.IsRestDay,
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft), cancellationToken);
                 break;
+        }
+
+        if (issue != null)
+        {
+            request.Draft?.DailyAttendance?.AddCalculationIssue(issue);
         }
     }
 }

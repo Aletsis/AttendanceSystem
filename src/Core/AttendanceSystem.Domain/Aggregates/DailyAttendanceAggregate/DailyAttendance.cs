@@ -95,10 +95,37 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public bool IsAutoDetectedShift { get; private set; }
 
     /// <summary>
+    /// Incidencias del cálculo visibles para RH (F06-02 / F06-04): configuración incompleta, intervalo abierto, etc.
+    /// No las borra el recálculo de estado; se reconstruyen con la jornada.
+    /// </summary>
+    public string? CalculationIssue { get; private set; }
+
+    /// <summary>MultiInterval con un intervalo sin salida: se muestra como salida faltante (F06-02).</summary>
+    public bool HasOpenInterval { get; private set; }
+
+    public void MarkOpenInterval(string issue)
+    {
+        HasOpenInterval = true;
+        AddCalculationIssue(issue);
+        CalculateStatus();
+    }
+
+    public void AddCalculationIssue(string issue)
+    {
+        if (string.IsNullOrWhiteSpace(issue)) return;
+        CalculationIssue = string.IsNullOrWhiteSpace(CalculationIssue) ? issue : $"{CalculationIssue} | {issue}";
+        if (CalculationIssue.Length > 500) CalculationIssue = CalculationIssue[..500];
+    }
+
+    /// <summary>
     /// Texto dinámico para mostrar en reportes y exportaciones.
     /// Devuelve null si el día no tiene incidencias de salida temporal ni turno autodetectado.
     /// </summary>
-    public string? AttendanceNote => (HasTemporaryExits, TemporaryExitStatus, IsAutoDetectedShift) switch
+    public string? AttendanceNote => string.IsNullOrWhiteSpace(CalculationIssue)
+        ? BaseAttendanceNote
+        : BaseAttendanceNote == null ? $"⚠️ {CalculationIssue}" : $"{BaseAttendanceNote} ⚠️ {CalculationIssue}";
+
+    private string? BaseAttendanceNote => (HasTemporaryExits, TemporaryExitStatus, IsAutoDetectedShift) switch
     {
         (true, TemporaryExitStatus.Pending, true) => $"🔍 Turno autodetectado. ⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
         (true, TemporaryExitStatus.Pending, false) => $"⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
@@ -315,6 +342,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         OvertimeMinutes = Math.Max(0, overtimeMinutes);
     }
 
+    /// <summary>F06-06: resultado del motor de extras (bruto y efectivo) para la jornada.</summary>
+    public void SetCalculatedOvertime(int rawOvertimeMinutes, int effectiveOvertimeMinutes)
+    {
+        RawOvertimeMinutes = Math.Max(0, rawOvertimeMinutes);
+        OvertimeMinutes = Math.Max(0, effectiveOvertimeMinutes);
+    }
+
     public void UpdateShift(Shift shift, bool isAutoDetectedShift = false)
     {
         if (shift == null) throw new ArgumentNullException(nameof(shift));
@@ -504,6 +538,15 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
     private void CalculateStatus()
     {
+        CalculateStatusCore();
+        if (HasOpenInterval && !IsAbsent)
+        {
+            MissingCheckOut = true;
+        }
+    }
+
+    private void CalculateStatusCore()
+    {
         // Reset calculated fields
         IsAbsent = false;
         LateMinutes = 0;
@@ -679,17 +722,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
             TotalWorkedMinutes = (int)totalWorked;
 
-            if (OvertimeAuthorized)
-            {
-                double totalOvertime = otB1 + otB2;
-                RawOvertimeMinutes = (int)Math.Max(0, totalOvertime);
-                OvertimeMinutes = (int)ApplyOvertimeRounding(totalOvertime, OvertimeCalculationMethod);
-            }
-            else
-            {
-                RawOvertimeMinutes = 0;
-                OvertimeMinutes = 0;
-            }
+            SetOvertimeFromSurplus(otB1 + otB2);
 
             return;
         }
@@ -705,11 +738,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 // Jornada base estándar de 8 horas (480 min)
                 int goal = 480;
 
-                if (totalMinutes > goal && OvertimeAuthorized)
-                {
-                    RawOvertimeMinutes = (int)(totalMinutes - goal);
-                    OvertimeMinutes = (int)(totalMinutes - goal);
-                }
+                SetOvertimeFromSurplus(totalMinutes - goal);
             }
             return;
         }
@@ -865,16 +894,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                         EarlyDepartureMinutes = 0;
                         double surplus = TotalWorkedMinutes - scheduledMinutes;
 
-                        if (surplus > 0 && OvertimeAuthorized)
-                        {
-                            RawOvertimeMinutes = (int)surplus;
-                            OvertimeMinutes = (int)ApplyOvertimeRounding(surplus, OvertimeCalculationMethod);
-                        }
-                        else
-                        {
-                            RawOvertimeMinutes = 0;
-                            OvertimeMinutes = 0;
-                        }
+                        SetOvertimeFromSurplus(surplus);
                     }
                 }
             }
@@ -905,20 +925,23 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     if (totalWorkedMinutes < 0) totalWorkedMinutes = 0;
                     TotalWorkedMinutes = (int)totalWorkedMinutes;
 
-                    double overtime = totalWorkedMinutes - scheduledMinutes;
-                    if (overtime > 0 && OvertimeAuthorized)
-                    {
-                        RawOvertimeMinutes = (int)overtime;
-                        OvertimeMinutes = (int)ApplyOvertimeRounding(overtime, OvertimeCalculationMethod);
-                    }
-                    else
-                    {
-                        RawOvertimeMinutes = 0;
-                        OvertimeMinutes = 0;
-                    }
+                    SetOvertimeFromSurplus(totalWorkedMinutes - scheduledMinutes);
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// F06-06: el excedente bruto se conserva siempre (base para autorizaciones diarias, bolsa semanal y topes);
+    /// las extras efectivas sólo existen si la jornada está autorizada. El redondeo y los topes definitivos
+    /// los aplica <c>WeeklyHoursCalculationHelper</c> una sola vez sobre el bruto.
+    /// </summary>
+    private void SetOvertimeFromSurplus(double surplus)
+    {
+        RawOvertimeMinutes = (int)Math.Max(0, surplus);
+        OvertimeMinutes = OvertimeAuthorized && surplus > 0
+            ? (int)ApplyOvertimeRounding(surplus, OvertimeCalculationMethod)
+            : 0;
     }
 
     public static double ApplyOvertimeRounding(double minutes, OvertimeCalculationMethod method)

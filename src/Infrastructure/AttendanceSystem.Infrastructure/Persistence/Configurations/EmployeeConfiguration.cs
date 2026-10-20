@@ -173,5 +173,35 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             fb.Property(p => p.FingerIndex).IsRequired();
             fb.Property(p => p.Template).IsRequired().HasMaxLength(16000); // VX10 templates ~1-2KB base64
         });
+
+        // F06-08: períodos de empleo (alta, baja y reingreso).
+        builder.OwnsMany(e => e.EmploymentPeriods, pb =>
+        {
+            pb.ToTable("EmployeeEmploymentPeriods");
+            pb.WithOwner().HasForeignKey("EmployeeId");
+            pb.HasKey(p => p.Id);
+            pb.Property(p => p.Id).ValueGeneratedNever();
+            pb.Property(p => p.StartDate).HasColumnType("date").IsRequired();
+            pb.Property(p => p.EndDate).HasColumnType("date");
+        });
+        builder.Navigation(e => e.EmploymentPeriods).UsePropertyAccessMode(PropertyAccessMode.Field);
+
+        // F06-08: vigencias de horario, tipo de turno y sucursal.
+        builder.OwnsMany(e => e.ScheduleAssignments, ab =>
+        {
+            ab.ToTable("EmployeeScheduleAssignments");
+            ab.WithOwner().HasForeignKey("EmployeeId");
+            ab.HasKey(a => a.Id);
+            ab.Property(a => a.Id).ValueGeneratedNever();
+            ab.Property(a => a.EffectiveFrom).HasColumnType("date").IsRequired();
+            ab.Property(a => a.ScheduleId)
+                .HasConversion(id => id!.Value, value => ShiftId.From(value))
+                .IsRequired(false);
+            ab.Property(a => a.ShiftType).HasConversion<int?>().IsRequired(false);
+            ab.Property(a => a.BranchId)
+                .HasConversion(id => id.Value, value => BranchId.From(value))
+                .IsRequired();
+        });
+        builder.Navigation(e => e.ScheduleAssignments).UsePropertyAccessMode(PropertyAccessMode.Field);
     }
 }

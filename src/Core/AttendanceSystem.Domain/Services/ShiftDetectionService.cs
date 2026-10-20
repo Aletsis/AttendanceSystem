@@ -34,7 +34,11 @@ public static class ShiftDetectionService
                 diff = 1440 - diff;
             }
 
-            if (diff < minDifferenceMinutes)
+            // Desempate estable: a igual distancia gana el inicio más temprano y, después, el identificador menor.
+            if (diff < minDifferenceMinutes ||
+                (diff == minDifferenceMinutes && bestShift != null &&
+                 (shift.StartTime < bestShift.StartTime ||
+                  (shift.StartTime == bestShift.StartTime && shift.Id.Value.CompareTo(bestShift.Id.Value) < 0))))
             {
                 minDifferenceMinutes = diff;
                 bestShift = shift;

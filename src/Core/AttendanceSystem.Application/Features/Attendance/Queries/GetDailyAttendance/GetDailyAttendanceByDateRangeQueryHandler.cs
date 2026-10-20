@@ -33,7 +33,7 @@ public class GetDailyAttendanceByDateRangeQueryHandler
         var empDict = employees.ToDictionary(e => e.Id, e => e);
 
         return records
-            .Where(r => empDict.TryGetValue(r.EmployeeId, out var emp) && r.Date.Date >= emp.HireDate.Date)
+            .Where(r => empDict.TryGetValue(r.EmployeeId, out var emp) && emp.IsActiveOn(r.Date))
             .ToList();
     }
 }

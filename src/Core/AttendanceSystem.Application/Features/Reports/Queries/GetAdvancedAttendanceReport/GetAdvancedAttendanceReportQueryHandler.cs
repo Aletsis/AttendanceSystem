@@ -103,7 +103,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             if (!employeeDict.TryGetValue(item.EmployeeId, out var emp)) continue;
 
             // Descartar registros anteriores a la fecha de ingreso/alta
-            if (item.Date.Date < emp.HireDate.Date) continue;
+            if (!emp.IsActiveOn(item.Date)) continue;
 
             // Solo incluir en los resultados del reporte los registros dentro del rango solicitado
             if (item.Date.Date < request.StartDate.Date || item.Date.Date > request.EndDate.Date) continue;
@@ -163,15 +163,13 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 ? allRecs
                 : Enumerable.Empty<DailyAttendance>();
 
-            var overtimeByRecordId = Common.WeeklyHoursCalculationHelper.CalculateEffectiveOvertime(
-                empAllRecords,
-                empRef,
-                weeklyStartDay);
+            // F06-09: extras efectivas guardadas por el motor; no se recalculan con la configuración actual.
+            var overtimeByRecordId = empAllRecords.ToDictionary(r => r.Id, r => r.OvertimeMinutes);
 
             // Filtro para "DescansoErroneo": Solo incluir empleados que tengan al menos un registro de trabajo en día de descanso y al menos una falta.
             if (request.ReportType == "DescansoErroneo")
             {
-                var empRecords = empAllRecords.Where(r => r.Date.Date >= empRef.HireDate.Date).ToList();
+                var empRecords = empAllRecords.Where(r => empRef.IsActiveOn(r.Date)).ToList();
                 bool hasWorkedRest = empRecords.Any(r => r.WorkedOnRestDay);
                 bool hasAbsence = empRecords.Any(r => r.IsAbsent);
 
@@ -202,7 +200,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             else if (request.ReportType == "HorasExtra" || request.ReportType == "HorasExtraPorDepartamento")
             {
                 // Calcular tiempo extra efectivo considerando la bolsa semanal si aplica
-                double totalOvertime = details.Sum(d => overtimeByRecordId.TryGetValue(d.Id, out var ot) ? ot : GetEffectiveOvertime(d, empRef));
+                double totalOvertime = details.Sum(d => overtimeByRecordId.TryGetValue(d.Id, out var ot) ? ot : d.OvertimeMinutes);
 
                 // Calcular primero el tiempo trabajado total (para mostrarlo en el resumen)
                 double totalWorkedHours = 0;
@@ -270,9 +268,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
         string workedStr = workedVal.HasValue ? $"{(int)workedVal.Value.TotalHours:00}:{workedVal.Value.Minutes:00}" : "--:--";
 
-        double effectiveOvertime = overtimeByRecordId.TryGetValue(att.Id, out var ot)
-            ? ot
-            : GetEffectiveOvertime(att, emp);
+        double effectiveOvertime = overtimeByRecordId.TryGetValue(att.Id, out var ot) ? ot : att.OvertimeMinutes;
 
         // Logica para las cadenas de CheckIn/CheckOut
         string checkInStr = "--";
@@ -307,67 +303,6 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         };
     }
 
-    private double GetEffectiveOvertime(DailyAttendance att, Employee emp)
-    {
-        if (!emp.OvertimeAuthorized)
-        {
-            return 0;
-        }
-
-        double calculatedOvertime = 0;
-
-        // 1. PRIORIDAD A LOS DATOS ALMACENADOS: Si el registro ha sido procesado y tiene tiempo extra, usarlo.
-        // Este paso asegura que las modificaciones manuales y los datos reprocesados se reflejen.
-        if (att.OvertimeMinutes > 0)
-        {
-            calculatedOvertime = att.OvertimeMinutes;
-        }
-        else
-        {
-            // 2. FALLBACK/RECALCULATION: Si el almacenado es 0 pero tenemos registros, verificar si hay tiempo extra
-            double goal = 480;
-
-            if (att.ScheduledCheckIn.HasValue && att.ScheduledCheckOut.HasValue)
-            {
-                var sIn = att.Date.Add(att.ScheduledCheckIn.Value);
-                var sOut = att.Date.Add(att.ScheduledCheckOut.Value);
-                if (att.ScheduledCheckOut < att.ScheduledCheckIn) sOut = sOut.AddDays(1);
-                goal = (sOut - sIn).TotalMinutes;
-            }
-
-            if (att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
-            {
-                DateTime referenceEntry = GetReferenceEntry(att) ?? att.ActualCheckIn.Value;
-                DateTime referenceExit = GetReferenceExit(att) ?? att.ActualCheckOut.Value;
-                var workedDuration = (referenceExit - referenceEntry).TotalMinutes;
-
-                workedDuration -= att.LunchBreakMinutesApplied;
-                if (att.TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
-                {
-                    workedDuration -= att.TemporaryExitMinutes;
-                }
-                if (workedDuration < 0) workedDuration = 0;
-
-                calculatedOvertime = workedDuration - goal;
-                if (calculatedOvertime < 0) calculatedOvertime = 0;
-            }
-            else
-            {
-                calculatedOvertime = att.OvertimeMinutes;
-            }
-        }
-
-        if (emp.OvertimeCapType == Domain.Enumerations.OvertimeCapType.Daily && emp.OvertimeCapMinutes.HasValue)
-        {
-            calculatedOvertime = Math.Min(calculatedOvertime, emp.OvertimeCapMinutes.Value);
-        }
-
-        // Aplicar redondeo según la configuración del empleado
-        calculatedOvertime = ApplyOvertimeRounding(calculatedOvertime, emp.OvertimeCalculationMethod);
-
-        return calculatedOvertime;
-    }
-
     private DateTime? GetReferenceEntry(DailyAttendance att)
     {
         return att.GetReferenceEntry();
@@ -376,18 +311,5 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
     private DateTime? GetReferenceExit(DailyAttendance att)
     {
         return att.GetReferenceExit();
-    }
-
-    private double ApplyOvertimeRounding(double minutes, OvertimeCalculationMethod method)
-    {
-        switch (method)
-        {
-            case OvertimeCalculationMethod.RoundByHalfHour:
-                return Math.Floor(minutes / 30.0) * 30.0;
-            case OvertimeCalculationMethod.RoundByHour:
-                return Math.Floor(minutes / 60.0) * 60.0;
-            default:
-                return minutes;
-        }
     }
 }

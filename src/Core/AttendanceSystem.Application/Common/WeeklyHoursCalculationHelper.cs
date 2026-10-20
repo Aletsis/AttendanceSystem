@@ -5,9 +5,22 @@ using AttendanceSystem.Domain.ValueObjects;
 
 namespace AttendanceSystem.Application.Common;
 
+/// <summary>Extras de una jornada: excedente bruto y efectivo (autorizado, redondeado y con topes).</summary>
+public readonly record struct OvertimeResult(int Raw, int Effective);
+
 /// <summary>
-/// Provee la lógica de acumulación y cómputo de horas para la Bolsa de Horas Semanal
-/// apoyándose en los períodos semanales y el día de inicio de semana (WeeklyStartDay).
+/// Motor único de horas extra efectivas (F06-06 / F06-07 / F06-09). Reglas:
+/// <list type="number">
+/// <item>Bruto: bolsa diaria = excedente calculado por la jornada (<see cref="DailyAttendance.RawOvertimeMinutes"/>);
+/// bolsa semanal = lo trabajado por encima de la meta semanal desde el día en que se cruza (D-01: excedente del día).</item>
+/// <item>Autorización: la de cada jornada (<see cref="DailyAttendance.OvertimeAuthorized"/>, que ya incluye los overrides
+/// manuales), no la bandera global del empleado.</item>
+/// <item>Redondeo: una sola vez, sobre el bruto, con el método del empleado.</item>
+/// <item>Tope diario: por jornada. Tope de período: acumulado dentro del período contable que contiene la jornada
+/// (<c>periodStartOf</c>), en orden cronológico; no depende del rango solicitado si se le entregan todas las jornadas
+/// del período.</item>
+/// </list>
+/// El resultado se guarda en la jornada; los reportes lo leen y no vuelven a calcularlo.
 /// </summary>
 public static class WeeklyHoursCalculationHelper
 {
@@ -28,124 +41,84 @@ public static class WeeklyHoursCalculationHelper
         return GetWeekStart(date, weeklyStartDay).AddDays(6);
     }
 
-    /// <summary>
-    /// Calcula el tiempo extra efectivo para cada día de un empleado,
-    /// soportando tanto turnos con bolsa diaria como turnos con bolsa semanal.
-    /// Para bolsa semanal, acumula las horas laboradas en la semana (desde weeklyStartDay);
-    /// cualquier excedente sobre la meta semanal (WeeklyWorkHours) genera horas extras
-    /// en el día en que se cruza la meta y en los días posteriores de esa semana.
-    /// </summary>
+    /// <summary>Extras efectivas por jornada (compatibilidad); ver <see cref="Calculate"/>.</summary>
     public static Dictionary<DailyAttendanceId, int> CalculateEffectiveOvertime(
         IEnumerable<DailyAttendance> attendances,
         Employee employee,
-        DayOfWeek weeklyStartDay)
+        DayOfWeek weeklyStartDay,
+        Func<DateTime, DateTime>? periodStartOf = null) =>
+        Calculate(attendances, employee, weeklyStartDay, periodStartOf).ToDictionary(kv => kv.Key, kv => kv.Value.Effective);
+
+    public static Dictionary<DailyAttendanceId, OvertimeResult> Calculate(
+        IEnumerable<DailyAttendance> attendances,
+        Employee employee,
+        DayOfWeek weeklyStartDay,
+        Func<DateTime, DateTime>? periodStartOf = null)
     {
-        var result = new Dictionary<DailyAttendanceId, int>();
-        var sorted = attendances.OrderBy(a => a.Date).ToList();
+        var result = new Dictionary<DailyAttendanceId, OvertimeResult>();
+        var sorted = attendances.OrderBy(a => a.Date).ThenBy(a => a.Id.Value).ToList();
+        periodStartOf ??= date => GetWeekStart(date, weeklyStartDay);
 
-        // Agrupar registros por semana de corte según weeklyStartDay
-        var weeklyGroups = sorted.GroupBy(a => GetWeekStart(a.Date, weeklyStartDay));
+        var accumulatedByPeriod = new Dictionary<DateTime, double>();
+        var workedByWeek = new Dictionary<DateTime, double>();
 
-        double accumulatedPeriodOvertime = 0;
-
-        foreach (var weekGroup in weeklyGroups)
+        foreach (var att in sorted)
         {
-            var weekRecords = weekGroup.OrderBy(a => a.Date).ToList();
-
-            // Identificar si los registros de la semana tienen turno de bolsa semanal
-            // Si hay registros con WeeklyWorkHours > 0, se aplica el acumulador semanal
-            double accumulatedWorkedMinutesInWeek = 0;
-
-            foreach (var att in weekRecords)
+            double raw;
+            if (att.WeeklyWorkHours is { } weekly && weekly > TimeSpan.Zero)
             {
-                bool isWeeklyShift = att.WeeklyWorkHours.HasValue && att.WeeklyWorkHours.Value > TimeSpan.Zero;
+                var week = GetWeekStart(att.Date, weeklyStartDay);
+                var prior = workedByWeek.TryGetValue(week, out var w) ? w : 0;
+                var worked = WorkedMinutes(att);
+                workedByWeek[week] = prior + worked;
 
-                int workedToday = att.TotalWorkedMinutes;
-                if (workedToday <= 0 && att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
+                var goal = weekly.TotalMinutes;
+                raw = prior >= goal ? worked : Math.Max(0, prior + worked - goal);
+            }
+            else
+            {
+                raw = Math.Max(0, att.RawOvertimeMinutes);
+            }
+
+            double effective = 0;
+            if (raw > 0 && att.OvertimeAuthorized)
+            {
+                effective = DailyAttendance.ApplyOvertimeRounding(raw, employee.OvertimeCalculationMethod);
+
+                if (employee.OvertimeCapType == OvertimeCapType.Daily && employee.OvertimeCapMinutes.HasValue)
                 {
-                    DateTime refIn = att.GetReferenceEntry() ?? att.ActualCheckIn.Value;
-                    DateTime refOut = att.GetReferenceExit() ?? att.ActualCheckOut.Value;
-                    double span = (refOut - refIn).TotalMinutes;
-                    span -= att.LunchBreakMinutesApplied;
-                    if (att.TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
-                    {
-                        span -= att.TemporaryExitMinutes;
-                    }
-                    workedToday = (int)Math.Max(0, span);
+                    effective = Math.Min(effective, employee.OvertimeCapMinutes.Value);
                 }
 
-                if (isWeeklyShift)
+                if (employee.OvertimeCapType == OvertimeCapType.Period && employee.OvertimeCapMinutes.HasValue)
                 {
-                    double weeklyGoal = att.WeeklyWorkHours!.Value.TotalMinutes;
-                    double priorAccumulated = accumulatedWorkedMinutesInWeek;
-                    accumulatedWorkedMinutesInWeek += workedToday;
-
-                    double rawOvertime = 0;
-                    if (accumulatedWorkedMinutesInWeek > weeklyGoal)
-                    {
-                        if (priorAccumulated >= weeklyGoal)
-                        {
-                            // La meta ya se había cubierto antes de hoy; todo lo trabajado hoy es tiempo extra
-                            rawOvertime = workedToday;
-                        }
-                        else
-                        {
-                            // Hoy se superó la meta semanal; solo el excedente es tiempo extra
-                            rawOvertime = accumulatedWorkedMinutesInWeek - weeklyGoal;
-                        }
-                    }
-
-                    double effectiveOvertime = 0;
-                    if (rawOvertime > 0 && employee.OvertimeAuthorized)
-                    {
-                        effectiveOvertime = DailyAttendance.ApplyOvertimeRounding(rawOvertime, employee.OvertimeCalculationMethod);
-
-                        if (employee.OvertimeCapType == OvertimeCapType.Daily && employee.OvertimeCapMinutes.HasValue)
-                        {
-                            effectiveOvertime = Math.Min(effectiveOvertime, employee.OvertimeCapMinutes.Value);
-                        }
-
-                        if (employee.OvertimeCapType == OvertimeCapType.Period && employee.OvertimeCapMinutes.HasValue)
-                        {
-                            double remaining = Math.Max(0, employee.OvertimeCapMinutes.Value - accumulatedPeriodOvertime);
-                            effectiveOvertime = Math.Min(effectiveOvertime, remaining);
-                            accumulatedPeriodOvertime += effectiveOvertime;
-                        }
-                    }
-
-                    result[att.Id] = (int)effectiveOvertime;
-                }
-                else
-                {
-                    // Turno diario / estándar / partido: usa el tiempo extra bruto calculado como base
-                    double dailyOt = att.RawOvertimeMinutes > 0 ? att.RawOvertimeMinutes : att.OvertimeMinutes;
-
-                    if (employee.OvertimeAuthorized && dailyOt > 0)
-                    {
-                        dailyOt = DailyAttendance.ApplyOvertimeRounding(dailyOt, employee.OvertimeCalculationMethod);
-
-                        if (employee.OvertimeCapType == OvertimeCapType.Daily && employee.OvertimeCapMinutes.HasValue)
-                        {
-                            dailyOt = Math.Min(dailyOt, employee.OvertimeCapMinutes.Value);
-                        }
-
-                        if (employee.OvertimeCapType == OvertimeCapType.Period && employee.OvertimeCapMinutes.HasValue)
-                        {
-                            double remaining = Math.Max(0, employee.OvertimeCapMinutes.Value - accumulatedPeriodOvertime);
-                            dailyOt = Math.Min(dailyOt, remaining);
-                            accumulatedPeriodOvertime += dailyOt;
-                        }
-                    }
-                    else if (!employee.OvertimeAuthorized)
-                    {
-                        dailyOt = 0;
-                    }
-
-                    result[att.Id] = (int)dailyOt;
+                    var period = periodStartOf(att.Date.Date);
+                    var used = accumulatedByPeriod.TryGetValue(period, out var u) ? u : 0;
+                    effective = Math.Min(effective, Math.Max(0, employee.OvertimeCapMinutes.Value - used));
+                    accumulatedByPeriod[period] = used + effective;
                 }
             }
+
+            result[att.Id] = new OvertimeResult((int)raw, (int)effective);
         }
 
         return result;
+    }
+
+    private static double WorkedMinutes(DailyAttendance att)
+    {
+        int workedToday = att.TotalWorkedMinutes;
+        if (workedToday <= 0 && att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
+        {
+            DateTime refIn = att.GetReferenceEntry() ?? att.ActualCheckIn.Value;
+            DateTime refOut = att.GetReferenceExit() ?? att.ActualCheckOut.Value;
+            double span = (refOut - refIn).TotalMinutes - att.LunchBreakMinutesApplied;
+            if (att.TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
+            {
+                span -= att.TemporaryExitMinutes;
+            }
+            workedToday = (int)Math.Max(0, span);
+        }
+        return workedToday;
     }
 }

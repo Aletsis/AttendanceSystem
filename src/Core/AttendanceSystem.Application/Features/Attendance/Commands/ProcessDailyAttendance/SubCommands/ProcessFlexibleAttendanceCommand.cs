@@ -19,7 +19,9 @@ public record ProcessFlexibleAttendanceCommand(
     bool IsAutoDetectedShift = false,
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
-    PunchAssignmentDraft? Draft = null) : IRequest;
+    PunchAssignmentDraft? Draft = null,
+    DateTime? NextJornadaEntryStart = null,
+    bool Continuous = false) : IRequest;
 
 public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFlexibleAttendanceCommand>
 {
@@ -68,6 +70,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             int totalWorked = 0;
             AttendanceRecord? firstIn = cleanRecords.FirstOrDefault();
             AttendanceRecord? lastOut = null;
+            AttendanceRecord? openInterval = null;
 
             for (int i = 0; i < cleanRecords.Count; i += 2)
             {
@@ -98,6 +101,13 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
                     intervals.Add(new AttendanceIntervalDto(inRec.CheckTime, outRec.CheckTime, refIn, refOut, intervalMinutes));
                 }
+                else
+                {
+                    // F06-02 / C-07 / H09: el marcaje impar abre un intervalo sin salida. Se conserva visible y no
+                    // suma minutos; sólo cuentan los intervalos cerrados.
+                    openInterval = inRec;
+                    intervals.Add(new AttendanceIntervalDto(inRec.CheckTime, null, inRec.CheckTime, null, 0, IsOpen: true));
+                }
             }
 
             string? intervalsJson = intervals.Any() ? System.Text.Json.JsonSerializer.Serialize(intervals) : null;
@@ -120,6 +130,12 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
                 totalWorkedMinutes: totalWorked,
                 intervalsData: intervalsJson,
                 timeZoneId: request.TimeZoneId);
+
+            if (openInterval != null)
+            {
+                multiDailyAttendance.MarkOpenInterval(
+                    $"Intervalo abierto sin salida registrada desde las {openInterval.GetCivilTime(request.TimeZoneId):HH:mm}.");
+            }
 
             // F05-04: MultiInterval también aplica descanso, autorizaciones y asignaciones manuales.
             if (request.Adjustment != null)
@@ -154,28 +170,30 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             checkInRecord = pendingDayRecords.First();
             checkIn = checkInRecord.CheckTime;
 
-            // 2. Buscar salida: si hay registros en el mismo día posteriores a la entrada, la salida es el último de ellos.
-            var sameDayExits = availableRecords
-                .Where(r => r.GetWorkDate(request.TimeZoneId) == targetDateOnly && r.CheckTime > checkIn.Value)
+            // 2. Ventana de salida (F06-01): duración del turno + margen, tope de 24 h y antes de la entrada de la
+            //    jornada siguiente cuando es laborable.
+            var checkInCivil = checkInRecord.GetCivilTime(request.TimeZoneId);
+            var windowEnd = JornadaWindowPolicy.ExitWindowEnd(checkInCivil, request.Shift.WorkHours, request.NextJornadaEntryStart);
+            var exitCandidates = availableRecords
+                .Where(r => r.CheckTime > checkIn.Value && r.GetCivilTime(request.TimeZoneId) <= windowEnd)
                 .ToList();
 
-            if (sameDayExits.Any())
+            if (request.Continuous)
             {
-                checkOutRecord = sameDayExits.Last();
-                checkOut = checkOutRecord.CheckTime;
+                // Continuo: la salida es el último marcaje de la ventana; los anteriores son intermedios.
+                checkOutRecord = exitCandidates.LastOrDefault();
             }
             else
             {
-                // Solo si no hubo salida el mismo día, buscar en la madrugada/mañana siguiente (turno que cruza medianoche)
-                var nextDayExits = availableRecords
-                    .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 18)
-                    .ToList();
+                // Flexible: la salida es el último marcaje del mismo día; si no lo hay, el primero del día
+                // siguiente dentro de la ventana (jornada que cruza medianoche).
+                checkOutRecord = exitCandidates.LastOrDefault(r => r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
+                    ?? exitCandidates.FirstOrDefault();
+            }
 
-                if (nextDayExits.Any())
-                {
-                    checkOutRecord = nextDayExits.First();
-                    checkOut = checkOutRecord.CheckTime;
-                }
+            if (checkOutRecord != null)
+            {
+                checkOut = checkOutRecord.CheckTime;
             }
 
             if (checkOutRecord != null && checkOut.HasValue)
@@ -319,10 +337,12 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
     }
 }
 
+/// <summary>Intervalo de una jornada MultiInterval; <c>IsOpen</c> indica un intervalo sin salida (F06-02).</summary>
 public record AttendanceIntervalDto(
     DateTime CheckIn,
-    DateTime CheckOut,
+    DateTime? CheckOut,
     DateTime ReferenceCheckIn,
-    DateTime ReferenceCheckOut,
-    int WorkedMinutes);
+    DateTime? ReferenceCheckOut,
+    int WorkedMinutes,
+    bool IsOpen = false);
 

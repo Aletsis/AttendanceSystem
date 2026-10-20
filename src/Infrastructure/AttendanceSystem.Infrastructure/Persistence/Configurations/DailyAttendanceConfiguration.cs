@@ -173,6 +173,9 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         // escrituras sobre datos obsoletos de cualquier escritor que no haya tomado el bloqueo del empleado.
         builder.Property<uint>("Version").IsRowVersion();
 
+        builder.Property(x => x.CalculationIssue).HasMaxLength(500);
+        builder.Property(x => x.HasOpenInterval).HasDefaultValue(false);
+
         builder.HasIndex(x => new { x.EmployeeId, x.Date }).IsUnique();
         builder.HasIndex(x => x.Date);
     }
