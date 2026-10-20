@@ -56,6 +56,10 @@ public class WpfCompositionTests
         scope.ServiceProvider.GetService<IDeviceLockService>().Should().NotBeNull();
         scope.ServiceProvider.GetService<IAdmsCommandService>().Should().NotBeNull();
 
+        // F03-02: WPF comparte el protocolo de exclusión de Blazor (bloqueo PostgreSQL por transacción).
+        scope.ServiceProvider.GetService<IAttendanceCalculationLockService>().Should().BeOfType<AttendanceSystem.Infrastructure.Services.PostgresAttendanceCalculationLockService>();
+        scope.ServiceProvider.GetService<IPersistenceFailureClassifier>().Should().BeOfType<AttendanceSystem.Infrastructure.Services.NpgsqlPersistenceFailureClassifier>();
+
         // 2. Servicios de transferencia y sincronización
         scope.ServiceProvider.GetService<ILogTransferService>().Should().NotBeNull();
         scope.ServiceProvider.GetService<ICloudLogSyncService>().Should().NotBeNull();

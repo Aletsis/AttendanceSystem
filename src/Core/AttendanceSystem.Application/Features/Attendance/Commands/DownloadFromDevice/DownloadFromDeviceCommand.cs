@@ -12,6 +12,8 @@ using AttendanceSystem.Domain.Enumerations;
 
 using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
 
+using AttendanceSystem.Application.Features.Attendance.Services;
+
 namespace AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
 
 public sealed record DownloadFromDeviceCommand(
@@ -43,6 +45,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
     private readonly ITimeNormalizer _timeNormalizer;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
+    private readonly IPersistenceFailureClassifier _failureClassifier;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -61,8 +64,10 @@ public sealed class DownloadFromDeviceCommandHandler
         IEmployeeRepository employeeRepository,
         IExternalAttendanceLogRepository externalLogRepository,
         ITimeNormalizer timeNormalizer,
-        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
+        IPersistenceFailureClassifier? failureClassifier = null)
     {
+        _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
         _downloadLogRepository = downloadLogRepository;
@@ -395,24 +400,23 @@ public sealed class DownloadFromDeviceCommandHandler
                 minDate = domainRecords.Min(r => r.CheckTime);
                 maxDate = domainRecords.Max(r => r.CheckTime);
 
-                var existingRecords = await _attendanceRepository.GetByDeviceAndDateRangeAsync(
-                    deviceId, minDate.Value, maxDate.Value, cancellationToken);
+                // Deduplicar el lote leído del dispositivo
+                var candidates = _deduplicationService.FilterNewRecords(domainRecords, Array.Empty<AttendanceRecord>());
+                foreach (var nr in candidates) nr.DownloadLogId = downloadLogId;
 
-                // Usar servicio de dominio para filtrar nuevos
-                var newRecords = _deduplicationService.FilterNewRecords(domainRecords, existingRecords);
-                newRecordsCount = newRecords.Count;
-
-                if (newRecords.Any())
+                // 6. Persistir solo nuevos con la identidad única (empleado, instante), venga de este u otro
+                //    dispositivo, ADMS o nube (F03-01 / F03-05). Un fallo técnico no se confunde con duplicados
+                //    y aborta la descarga antes de limpiar el dispositivo.
+                var ingestion = new AttendanceRecordIngestion(_attendanceRepository, _unitOfWork, _failureClassifier, _logger);
+                var outcome = await ingestion.IngestAsync(candidates, cancellationToken);
+                if (!outcome.IsSuccess)
                 {
-                    affectedEmployeeIds = newRecords.Select(r => r.EmployeeId.Value).Distinct().ToList();
-
-                    // 6. Persistir solo nuevos
-                    foreach (var nr in newRecords) nr.DownloadLogId = downloadLogId;
-
-                    await _attendanceRepository.AddRangeAsync(newRecords, cancellationToken);
-                    // Guardar attendance records. No deberí­a haber conflictos aquí­.
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
+                    throw new InvalidOperationException(
+                        $"No se pudieron guardar los marcajes descargados ({outcome.Failure!.Kind}): {outcome.Failure.Message}");
                 }
+
+                newRecordsCount = outcome.Inserted.Count;
+                affectedEmployeeIds = outcome.Inserted.Select(r => r.EmployeeId.Value).Distinct().ToList();
             }
 
             // 7. Actualizar el dispositivo

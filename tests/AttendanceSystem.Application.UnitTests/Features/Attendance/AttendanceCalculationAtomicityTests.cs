@@ -72,12 +72,6 @@ public class AttendanceCalculationAtomicityTests
         _unitOfWorkMock.Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
             .ReturnsAsync(Mock.Of<IAsyncDisposable>());
 
-        _lockServiceMock
-            .Setup(l => l.ExecuteWithLockAsync(
-                It.IsAny<IEnumerable<EmployeeId>>(),
-                It.IsAny<Func<Task<int>>>(),
-                It.IsAny<CancellationToken>()))
-            .Returns<IEnumerable<EmployeeId>, Func<Task<int>>, CancellationToken>((_, func, _) => func());
     }
 
     [Fact]
@@ -93,6 +87,8 @@ public class AttendanceCalculationAtomicityTests
             _systemConfigRepoMock.Object,
             _adjustmentRepoMock.Object,
             _consolidationRepoMock.Object,
+
+            Mock.Of<IPunchAssignmentRepository>(),
             _lockServiceMock.Object,
             _unitOfWorkMock.Object,
             _senderMock.Object,

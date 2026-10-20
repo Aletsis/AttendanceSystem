@@ -23,6 +23,19 @@ public interface IAttendanceRepository
         DownloadLogId downloadLogId,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// F03-01: identidad técnica del marcaje = (EmployeeId, CheckTime UTC), sin dispositivo ni fuente.
+    /// Devuelve los registros existentes que coinciden con alguna de las identidades indicadas.
+    /// </summary>
+    Task<IReadOnlyList<AttendanceRecord>> GetByIdentitiesAsync(
+        IReadOnlyCollection<(EmployeeId EmployeeId, DateTime CheckTimeUtc)> identities,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deja de rastrear un registro pendiente que no debe persistirse (p. ej. colisión confirmada).
+    /// </summary>
+    void Detach(AttendanceRecord record);
+
     Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(
         EmployeeId employeeId,
         DateTime checkTime,

@@ -4,6 +4,7 @@ using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
@@ -14,7 +15,8 @@ public record ProcessNoShiftAttendanceCommand(
     List<AttendanceRecord> Records,
     bool IsRestDay,
     AttendanceAdjustment? Adjustment = null,
-    string? TimeZoneId = null) : IRequest;
+    string? TimeZoneId = null,
+    PunchAssignmentDraft? Draft = null) : IRequest;
 
 public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoShiftAttendanceCommand>
 {
@@ -40,9 +42,9 @@ public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoS
         AttendanceRecord? checkOutRecord = null;
 
         var targetDateOnly = DateOnly.FromDateTime(request.Date);
-        var dayRecords = request.Records
-            .Where(r => r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
-            .OrderBy(r => r.CheckTime)
+        // F02-05: sin turno también se respetan los marcajes ya consumidos por otra jornada.
+        var dayRecords = PunchAssignmentPolicy.Chronological(request.Records
+            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly))
             .ToList();
 
         if (dayRecords.Any())
@@ -92,5 +94,6 @@ public class ProcessNoShiftAttendanceCommandHandler : IRequestHandler<ProcessNoS
         }
 
         _dailyRepo.Add(dailyAttendance);
+        request.Draft?.Complete(dailyAttendance);
     }
 }

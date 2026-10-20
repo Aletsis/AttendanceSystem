@@ -5,6 +5,7 @@ using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Primitives;
+using AttendanceSystem.Application.Features.Attendance.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
@@ -36,6 +37,7 @@ public sealed class RecordAttendanceBatchCommandHandler
     private readonly ITimeNormalizer _timeNormalizer;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ILogger<RecordAttendanceBatchCommandHandler> _logger;
+    private readonly IPersistenceFailureClassifier _failureClassifier;
 
     public RecordAttendanceBatchCommandHandler(
         IAttendanceRepository attendanceRepository,
@@ -51,8 +53,10 @@ public sealed class RecordAttendanceBatchCommandHandler
         IUnitOfWork unitOfWork,
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver? timeZoneResolver,
-        ILogger<RecordAttendanceBatchCommandHandler>? logger = null)
+        ILogger<RecordAttendanceBatchCommandHandler>? logger = null,
+        IPersistenceFailureClassifier? failureClassifier = null)
     {
+        _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _attendanceRepository = attendanceRepository;
         _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
@@ -101,38 +105,16 @@ public sealed class RecordAttendanceBatchCommandHandler
                 return Result<int>.Success(0);
             }
 
-            var minDate = normalizedLogs.Min(l => l.UtcTime);
-            var maxDate = normalizedLogs.Max(l => l.UtcTime);
-
-            // 2. Recuperar registros existentes en el rango de tiempo del lote para este dispositivo
-            var existingRecords = await _attendanceRepository.GetByDeviceAndDateRangeAsync(
-                deviceId,
-                minDate,
-                maxDate,
-                cancellationToken);
-
-            var existingKeys = existingRecords
-                .Select(r => (r.EmployeeId.Value, r.CheckTime))
-                .ToHashSet();
-
-            var newRecords = new List<AttendanceRecord>();
-            int skippedDuplicates = inBatchDuplicates;
-
+            var candidates = new List<AttendanceRecord>();
             foreach (var (log, utcTime, workDate, recordTz) in normalizedLogs)
             {
-                if (existingKeys.Contains((log.EmployeeId, utcTime)))
-                {
-                    skippedDuplicates++;
-                    continue;
-                }
-
                 var employeeId = EmployeeId.From(log.EmployeeId);
                 var verifyMethod = VerifyMethod.FromValue(log.VerifyMethodCode);
                 var checkType = CheckType.FromValue(log.CheckTypeCode);
 
                 var origCheckTime = log.OriginalCheckTime ?? (log.CheckTime.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(log.CheckTime, recordTz) : log.CheckTime);
 
-                var record = AttendanceRecord.Create(
+                candidates.Add(AttendanceRecord.Create(
                     employeeId,
                     deviceId,
                     utcTime,
@@ -141,62 +123,28 @@ public sealed class RecordAttendanceBatchCommandHandler
                     workDate: workDate,
                     originalCheckTime: origCheckTime,
                     timeZoneId: recordTz,
-                    source: log.Source ?? command.Source ?? "ADMS");
-
-                newRecords.Add(record);
+                    source: log.Source ?? command.Source ?? "ADMS"));
             }
 
-            if (newRecords.Count > 0)
+            // F03-01 / F03-05 / H04: identidad (empleado, instante) sin importar dispositivo; colisiones
+            // concurrentes se confirman contra la base de datos y los fallos técnicos no son duplicados.
+            var ingestion = new AttendanceRecordIngestion(_attendanceRepository, _unitOfWork, _failureClassifier, _logger);
+            var outcome = await ingestion.IngestAsync(candidates, cancellationToken);
+            var skippedDuplicates = inBatchDuplicates + outcome.InBatchDuplicates + outcome.ConfirmedDuplicates.Count;
+
+            if (!outcome.IsSuccess)
             {
-                try
-                {
-                    await _attendanceRepository.AddRangeAsync(newRecords, cancellationToken);
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Conflicto de concurrencia al guardar lote para dispositivo {DeviceId}. Intentando reconciliación fila a fila.",
-                        command.DeviceId);
-
-                    // Reintentar fila a fila para descartar las colisiones concurrentes y guardar el resto
-                    int addedIndividually = 0;
-                    foreach (var record in newRecords)
-                    {
-                        var alreadyExists = await _attendanceRepository.GetByEmployeeAndCheckTimeAsync(
-                            record.EmployeeId,
-                            record.CheckTime,
-                            cancellationToken);
-
-                        if (alreadyExists != null)
-                        {
-                            skippedDuplicates++;
-                            continue;
-                        }
-
-                        try
-                        {
-                            await _attendanceRepository.AddAsync(record, cancellationToken);
-                            await _unitOfWork.SaveChangesAsync(cancellationToken);
-                            addedIndividually++;
-                        }
-                        catch (Exception)
-                        {
-                            skippedDuplicates++;
-                        }
-                    }
-
-                    _logger.LogInformation("Reconciliación de lote completada para dispositivo {DeviceId}. Agregados: {AddedCount}, Duplicados omitidos: {SkippedCount}",
-                        command.DeviceId, addedIndividually, skippedDuplicates);
-
-                    return Result<int>.Success(addedIndividually);
-                }
+                _logger.LogError("Lote de {Count} marcajes del dispositivo {DeviceId} no guardado ({Kind}). Duplicados confirmados: {Skipped}.",
+                    candidates.Count, command.DeviceId, outcome.Failure!.Kind, skippedDuplicates);
+                return Result<int>.Failure(
+                    $"No se guardó el lote ({outcome.Failure.Kind}{(outcome.Failure.IsTransient ? ", reintentable" : string.Empty)}): {outcome.Failure.Message}");
             }
 
             _logger.LogInformation("Procesamiento por lotes completado para dispositivo {DeviceId}. " +
                                   "Agregados: {AddedCount}, Duplicados omitidos: {SkippedCount}",
-                                  command.DeviceId, newRecords.Count, skippedDuplicates);
+                                  command.DeviceId, outcome.Inserted.Count, skippedDuplicates);
 
-            return Result<int>.Success(newRecords.Count);
+            return Result<int>.Success(outcome.Inserted.Count);
         }
         catch (DomainException ex)
         {

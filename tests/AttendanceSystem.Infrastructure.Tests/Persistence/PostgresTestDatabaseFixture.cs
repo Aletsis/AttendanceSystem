@@ -83,6 +83,12 @@ public class PostgresTestDatabaseFixture : IAsyncLifetime
         }
         catch (Exception ex)
         {
+            // C06: en CI la suite relacional es obligatoria; omitirla en silencio ocultaría regresiones.
+            if (string.Equals(Environment.GetEnvironmentVariable("REQUIRE_POSTGRES_TESTS"), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException($"REQUIRE_POSTGRES_TESTS=true pero PostgreSQL no está disponible: {ex.Message}", ex);
+            }
+
             Console.WriteLine($"[AVISO] No se pudo inicializar la base de datos PostgreSQL de prueba: {ex.Message}");
             IsAvailable = false;
         }

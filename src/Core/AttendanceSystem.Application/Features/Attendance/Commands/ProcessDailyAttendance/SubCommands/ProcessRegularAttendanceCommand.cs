@@ -5,6 +5,7 @@ using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
@@ -17,7 +18,8 @@ public record ProcessRegularAttendanceCommand(
     bool IsRestDay,
     bool IsAutoDetectedShift = false,
     AttendanceAdjustment? Adjustment = null,
-    string? TimeZoneId = null) : IRequest;
+    string? TimeZoneId = null,
+    PunchAssignmentDraft? Draft = null) : IRequest;
 
 public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessRegularAttendanceCommand>
 {
@@ -44,9 +46,8 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
         (int Lunch, bool HasTempExits, int TempMinutes)? intermediateAnalysis = null;
 
         var targetDateOnly = DateOnly.FromDateTime(request.Date);
-        var pendingDayRecords = request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
-            .OrderBy(r => r.CheckTime)
+        var pendingDayRecords = PunchAssignmentPolicy.Chronological(request.Records
+            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly))
             .ToList();
 
         if (pendingDayRecords.Count >= 1)
@@ -81,11 +82,15 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
                         .ToList()
                     : new List<AttendanceRecord>();
 
-                var recordsToAnalyze = middleRecords
+                var recordsToAnalyze = PunchAssignmentPolicy.Chronological(middleRecords
                     .Except(entryDoubleTaps)
-                    .Except(exitDoubleTaps)
-                    .OrderBy(r => r.CheckTime)
+                    .Except(exitDoubleTaps))
                     .ToList();
+
+                foreach (var doubleTap in entryDoubleTaps.Concat(exitDoubleTaps))
+                {
+                    request.Draft?.DoubleTap(doubleTap);
+                }
 
                 _logger.LogDebug(
                     "Empleado {EmpId} - {Date}: {Total} intermedios. DoubleTap entrada={DTIn}, salida={DTOut}. Para analizar={ToAnalyze}",
@@ -108,11 +113,15 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
 
                         if (absenceMinutes <= 15)
                         {
+                            request.Draft?.DoubleTap(exitRecord);
+                            request.Draft?.DoubleTap(returnRecord);
                             _logger.LogDebug("Par intermedio ({Exit}-{Return}): {Min} min → doble toque intermedio, ignorado.",
                                 exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes);
                         }
                         else if (absenceMinutes <= 90)
                         {
+                            request.Draft?.Intermediate(exitRecord);
+                            request.Draft?.Intermediate(returnRecord);
                             hasTemporaryExits = true;
                             temporaryExitMinutes += (int)absenceMinutes;
                             _logger.LogInformation("Par intermedio ({Exit}-{Return}): {Min} min → posible permiso temporal detectado.",
@@ -120,6 +129,8 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
                         }
                         else
                         {
+                            request.Draft?.Intermediate(exitRecord);
+                            request.Draft?.Intermediate(returnRecord);
                             if (request.Shift.LunchBreakMinutes > 0)
                             {
                                 lunchMinutesDeducted += request.Shift.LunchBreakMinutes;
@@ -130,6 +141,7 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
                     }
                     else
                     {
+                        request.Draft?.PendingReview(exitRecord);
                         hasTemporaryExits = true;
                         _logger.LogWarning("Checada intermedia huérfana ({Exit}) sin regreso registrado — posible salida sin retorno.",
                             exitRecord.CheckTime);
@@ -188,5 +200,6 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
         }
 
         _dailyRepo.Add(dailyAttendance);
+        request.Draft?.Complete(dailyAttendance);
     }
 }

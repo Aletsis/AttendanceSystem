@@ -1,4 +1,5 @@
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance;
 using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
@@ -7,6 +8,7 @@ using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using FluentAssertions;
+using MediatR;
 using Moq;
 using Xunit;
 
@@ -18,6 +20,8 @@ public class RegisterManualAttendanceCommandHandlerTests
     private readonly Mock<IDailyAttendanceRepository> _dailyRepoMock;
     private readonly Mock<IUnitOfWork> _unitOfWorkMock;
     private readonly Mock<ITimeNormalizer> _timeNormalizerMock;
+    private readonly Mock<ISender> _senderMock = new();
+    private readonly List<AttendanceRecord> _added = new();
     private readonly RegisterManualAttendanceCommandHandler _handler;
 
     private readonly EmployeeId _employeeId = EmployeeId.From("EMP-001");
@@ -35,11 +39,36 @@ public class RegisterManualAttendanceCommandHandlerTests
         _timeNormalizerMock.Setup(t => t.ToWorkDate(It.IsAny<DateTime>(), It.IsAny<string>()))
             .Returns<DateTime, string?>((dt, tz) => DateOnly.FromDateTime(dt));
 
+        // La ingesta agrega con AddRangeAsync; el registro queda disponible por Id para la asignación manual.
+        _attendanceRepoMock
+            .Setup(r => r.AddRangeAsync(It.IsAny<IEnumerable<AttendanceRecord>>(), It.IsAny<CancellationToken>()))
+            .Callback<IEnumerable<AttendanceRecord>, CancellationToken>((records, _) => _added.AddRange(records))
+            .Returns(Task.CompletedTask);
+        _attendanceRepoMock
+            .Setup(r => r.GetByIdAsync(It.IsAny<AttendanceRecordId>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((AttendanceRecordId id, CancellationToken _) => _added.FirstOrDefault(r => r.Id == id));
+        _attendanceRepoMock
+            .Setup(r => r.GetByIdentitiesAsync(It.IsAny<IReadOnlyCollection<(EmployeeId, DateTime)>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+
+        // F03-03: la asignación manual real (con su protocolo de bloqueo) procesa el marcaje capturado.
+        var manualAssign = new ManuallyAssignAttendanceCommandHandler(
+            _dailyRepoMock.Object,
+            _attendanceRepoMock.Object,
+            Mock.Of<IAttendanceAdjustmentRepository>(),
+            Mock.Of<IPunchAssignmentRepository>(),
+            _unitOfWorkMock.Object,
+            Mock.Of<IAttendanceCalculationLockService>());
+        _senderMock
+            .Setup(s => s.Send(It.IsAny<ManuallyAssignAttendanceCommand>(), It.IsAny<CancellationToken>()))
+            .Returns<ManuallyAssignAttendanceCommand, CancellationToken>((c, ct) => manualAssign.Handle(c, ct));
+
         _handler = new RegisterManualAttendanceCommandHandler(
             _attendanceRepoMock.Object,
             _dailyRepoMock.Object,
             _unitOfWorkMock.Object,
-            _timeNormalizerMock.Object);
+            _timeNormalizerMock.Object,
+            _senderMock.Object);
     }
 
     [Fact]
@@ -60,12 +89,14 @@ public class RegisterManualAttendanceCommandHandlerTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        _attendanceRepoMock.Verify(r => r.AddAsync(It.Is<AttendanceRecord>(rec =>
+        _added.Should().ContainSingle(rec =>
             rec.EmployeeId == _employeeId &&
             rec.CheckType == CheckType.CheckIn &&
-            rec.VerifyMethod == VerifyMethod.Manual), It.IsAny<CancellationToken>()), Times.Once);
+            rec.VerifyMethod == VerifyMethod.Manual);
 
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _senderMock.Verify(s => s.Send(It.IsAny<ManuallyAssignAttendanceCommand>(), It.IsAny<CancellationToken>()), Times.Never,
+            "sin jornada calculada el recálculo posterior considerará el marcaje");
     }
 
     [Fact]
@@ -94,9 +125,7 @@ public class RegisterManualAttendanceCommandHandlerTests
             .Setup(r => r.GetByEmployeeAndDateAsync(_employeeId, _date.Date, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingDaily);
 
-        _attendanceRepoMock
-            .Setup(r => r.GetByIdAsync(oldCheckInRecord.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(oldCheckInRecord);
+        _added.Add(oldCheckInRecord);
 
         var newCheckInTime = _date.AddMinutes(20); // 8:20 AM (tarde con 10 min de tolerancia = 20 min de retardo)
         var command = new RegisterManualAttendanceCommand(
@@ -112,15 +141,16 @@ public class RegisterManualAttendanceCommandHandlerTests
         oldCheckInRecord.Status.Should().Be(AttendanceStatus.Pending); // Desasignado / vuelto a pendiente
         _attendanceRepoMock.Verify(r => r.UpdateAsync(oldCheckInRecord, It.IsAny<CancellationToken>()), Times.Once);
 
-        _attendanceRepoMock.Verify(r => r.AddAsync(It.Is<AttendanceRecord>(rec =>
+        _added.Should().ContainSingle(rec =>
             rec.EmployeeId == _employeeId &&
             rec.CheckTime == newCheckInTime &&
             rec.CheckType == CheckType.CheckIn &&
-            rec.Status == AttendanceStatus.Processed), It.IsAny<CancellationToken>()), Times.Once);
+            rec.Status == AttendanceStatus.Processed);
 
         existingDaily.ActualCheckIn.Should().Be(newCheckInTime);
         existingDaily.LateMinutes.Should().Be(20); // Recalculado
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        // Un guardado de la ingesta y otro de la asignación manual coordinada.
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -149,9 +179,7 @@ public class RegisterManualAttendanceCommandHandlerTests
             .Setup(r => r.GetByEmployeeAndDateAsync(_employeeId, _date.Date, It.IsAny<CancellationToken>()))
             .ReturnsAsync(existingDaily);
 
-        _attendanceRepoMock
-            .Setup(r => r.GetByIdAsync(oldCheckOutRecord.Id, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(oldCheckOutRecord);
+        _added.Add(oldCheckOutRecord);
 
         var newCheckOutTime = _date.AddHours(9); // 1 hora de tiempo extra
         var command = new RegisterManualAttendanceCommand(
@@ -167,16 +195,16 @@ public class RegisterManualAttendanceCommandHandlerTests
         oldCheckOutRecord.Status.Should().Be(AttendanceStatus.Pending); // Desasignado
         _attendanceRepoMock.Verify(r => r.UpdateAsync(oldCheckOutRecord, It.IsAny<CancellationToken>()), Times.Once);
 
-        _attendanceRepoMock.Verify(r => r.AddAsync(It.Is<AttendanceRecord>(rec =>
+        _added.Should().ContainSingle(rec =>
             rec.EmployeeId == _employeeId &&
             rec.CheckTime == newCheckOutTime &&
             rec.CheckType == CheckType.CheckOut &&
-            rec.Status == AttendanceStatus.Processed), It.IsAny<CancellationToken>()), Times.Once);
+            rec.Status == AttendanceStatus.Processed);
 
         existingDaily.ActualCheckOut.Should().Be(newCheckOutTime);
         existingDaily.EarlyDepartureMinutes.Should().Be(0);
         existingDaily.MissingCheckOut.Should().BeFalse();
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 
     [Fact]
@@ -209,6 +237,6 @@ public class RegisterManualAttendanceCommandHandlerTests
         result.IsSuccess.Should().BeTrue();
         existingDaily.ActualCheckOut.Should().Be(checkOutTime);
         existingDaily.MissingCheckOut.Should().BeFalse();
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Exactly(2));
     }
 }

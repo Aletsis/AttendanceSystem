@@ -24,4 +24,10 @@ public interface IUnitOfWork
     /// Revierte la transacción activa.
     /// </summary>
     Task RollbackTransactionAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Descarta el seguimiento de cambios tras un fallo (F03-07) para no reutilizar un contexto con
+    /// entidades fallidas aún pendientes. Las entidades leídas antes dejan de rastrearse.
+    /// </summary>
+    void DiscardChanges();
 }

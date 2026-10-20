@@ -5,6 +5,7 @@ using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
@@ -17,7 +18,8 @@ public record ProcessSplitAttendanceCommand(
     bool IsRestDay,
     bool IsAutoDetectedShift = false,
     AttendanceAdjustment? Adjustment = null,
-    string? TimeZoneId = null) : IRequest;
+    string? TimeZoneId = null,
+    PunchAssignmentDraft? Draft = null) : IRequest;
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
@@ -54,9 +56,8 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
         var midpoint = schedB1Out.AddTicks((schedB2In - schedB1Out).Ticks / 2);
 
         // Separar registros pendientes en bloque 1 y bloque 2
-        var pendingRecords = request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending)
-            .OrderBy(r => r.CheckTime)
+        var pendingRecords = PunchAssignmentPolicy.Chronological(request.Records
+            .Where(r => r.Status == AttendanceStatus.Pending))
             .ToList();
 
         var b1Records = pendingRecords
@@ -90,6 +91,7 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             var middleB1 = b1Records.Skip(1).Take(b1Records.Count - 2).ToList();
             foreach (var mid in middleB1)
             {
+                request.Draft?.Intermediate(mid);
                 mid.MarkAsProcessed();
                 await _attendanceRepo.UpdateAsync(mid, cancellationToken);
             }
@@ -120,6 +122,7 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             var middleB2 = b2Records.Skip(1).Take(b2Records.Count - 2).ToList();
             foreach (var mid in middleB2)
             {
+                request.Draft?.Intermediate(mid);
                 mid.MarkAsProcessed();
                 await _attendanceRepo.UpdateAsync(mid, cancellationToken);
             }
@@ -201,5 +204,6 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
         }
 
         _dailyRepo.Add(dailyAttendance);
+        request.Draft?.Complete(dailyAttendance);
     }
 }

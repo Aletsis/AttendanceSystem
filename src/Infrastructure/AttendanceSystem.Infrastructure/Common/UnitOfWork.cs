@@ -33,4 +33,6 @@ public class UnitOfWork : IUnitOfWork
     {
         await _dbContext.Database.RollbackTransactionAsync(cancellationToken);
     }
+
+    public void DiscardChanges() => _dbContext.DiscardChanges();
 }

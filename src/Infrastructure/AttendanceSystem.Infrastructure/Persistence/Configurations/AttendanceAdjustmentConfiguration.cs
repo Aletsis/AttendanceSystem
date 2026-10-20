@@ -84,6 +84,10 @@ public class AttendanceAdjustmentConfiguration : IEntityTypeConfiguration<Attend
 
         builder.Property(x => x.UpdatedAt);
 
+        // F03-03: concurrencia optimista con la columna de sistema xmin (no requiere migración). Detecta
+        // escrituras sobre datos obsoletos de cualquier escritor que no haya tomado el bloqueo del empleado.
+        builder.Property<uint>("Version").IsRowVersion();
+
         // Índice único: solo un ajuste por empleado y fecha
         builder.HasIndex(x => new { x.EmployeeId, x.Date }).IsUnique();
         builder.HasIndex(x => x.Date);

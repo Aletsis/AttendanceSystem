@@ -35,7 +35,10 @@ public class ManuallyAssignAttendanceCommandHandlerTests
             _dailyRepoMock.Object,
             _attendanceRepoMock.Object,
             _adjustmentRepoMock.Object,
-            _unitOfWorkMock.Object);
+
+            Mock.Of<IPunchAssignmentRepository>(),
+            _unitOfWorkMock.Object,
+            Mock.Of<IAttendanceCalculationLockService>());
 
         _splitShift = Shift.Create(
             name: "Partido 9-13 / 17-21",

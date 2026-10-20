@@ -5,6 +5,7 @@ using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.SubCommands;
@@ -19,7 +20,8 @@ public record ProcessNightlyAttendanceCommand(
     TimeSpan DayEndTime,
     bool IsAutoDetectedShift = false,
     AttendanceAdjustment? Adjustment = null,
-    string? TimeZoneId = null) : IRequest;
+    string? TimeZoneId = null,
+    PunchAssignmentDraft? Draft = null) : IRequest;
 
 public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNightlyAttendanceCommand>
 {
@@ -63,14 +65,18 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         var exitWindowStart = scheduledOut.AddHours(-7);
         var exitWindowEnd = scheduledOut.AddHours(7);
 
+        // F02-05: la salida también debe estar libre; un marcaje ya consumido por otra jornada no se reutiliza.
         var exitRecords = request.Records.Where(r =>
             r.GetCivilTime(request.TimeZoneId) >= exitWindowStart &&
-            r.GetCivilTime(request.TimeZoneId) <= exitWindowEnd);
+            r.GetCivilTime(request.TimeZoneId) <= exitWindowEnd &&
+            r.Status == AttendanceStatus.Pending);
 
         var matchIn = entryRecords
             .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime(request.TimeZoneId) - scheduledIn).TotalMinutes) })
             .Where(x => x.Diff <= maxInDistanceMinutes)
             .OrderBy(x => x.Diff)
+            .ThenBy(x => x.Record.CheckTime)
+            .ThenBy(x => x.Record.Id.Value)
             .FirstOrDefault();
 
         if (matchIn != null)
@@ -83,6 +89,8 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
             .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime(request.TimeZoneId) - scheduledOut).TotalMinutes) })
             .Where(x => x.Diff <= maxOutDistanceMinutes)
             .OrderBy(x => x.Diff)
+            .ThenBy(x => x.Record.CheckTime)
+            .ThenBy(x => x.Record.Id.Value)
             .FirstOrDefault();
 
         if (matchOut != null)
@@ -159,5 +167,6 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         }
 
         _dailyRepo.Add(dailyAttendance);
+        request.Draft?.Complete(dailyAttendance);
     }
 }

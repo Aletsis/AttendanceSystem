@@ -75,6 +75,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();
         services.AddScoped<IAttendanceAdjustmentRepository, AttendanceAdjustmentRepository>();
         services.AddScoped<IAttendanceConsolidationRepository, AttendanceConsolidationRepository>();
+        services.AddScoped<IPunchAssignmentRepository, PunchAssignmentRepository>();
 
         // 3. Consultas CQRS (Dapper / SQL optimizado)
         services.AddScoped<IDeviceQueries, DeviceQueries>();
@@ -94,7 +95,12 @@ public static class InfrastructureServiceExtensions
 
         // 5. Servicios del Sistema y Coordinación de Mantenimiento (H05)
         services.AddSingleton<IDeviceLockService, DeviceLockService>();
-        services.AddSingleton<IAttendanceCalculationLockService, AttendanceCalculationLockService>();
+        // F03-02: el bloqueo vive en la transacción del DbContext del ámbito (pg_advisory_xact_lock).
+        services.AddScoped<IAttendanceCalculationLockService>(sp => new PostgresAttendanceCalculationLockService(
+            sp.GetRequiredService<AttendanceDbContext>(),
+            sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PostgresAttendanceCalculationLockService>>(),
+            TimeSpan.FromSeconds(configuration.GetValue("AttendanceLocks:TimeoutSeconds", 30))));
+        services.AddSingleton<IPersistenceFailureClassifier, NpgsqlPersistenceFailureClassifier>();
         services.AddSingleton<IRestoreStateService, RestoreStateService>();
         services.AddSingleton<ICloudDataSourceProvider, CloudDataSourceProvider>();
         services.AddScoped<IBackupService, BackupService>();

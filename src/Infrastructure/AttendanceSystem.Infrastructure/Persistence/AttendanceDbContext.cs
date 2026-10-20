@@ -40,6 +40,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<AdmsIngestionIncident> AdmsIngestionIncidents => Set<AdmsIngestionIncident>();
     public DbSet<AttendanceAdjustment> AttendanceAdjustments => Set<AttendanceAdjustment>();
     public DbSet<AttendanceConsolidationRequest> AttendanceConsolidationRequests => Set<AttendanceConsolidationRequest>();
+    public DbSet<PunchAssignment> PunchAssignments => Set<PunchAssignment>();
 
     private readonly ICurrentUserService? _currentUserService;
 
@@ -103,14 +104,33 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
                 outboxMessages.Add(message);
                 OutboxMessages.Add(message);
             }
-            // H24: Limpiar eventos inmediatamente de la entidad para evitar duplicación en re-saves
-            entity.ClearDomainEvents();
         }
 
         await AuditEmployeeChangesAsync(cancellationToken);
 
         // 2. Persistir agregados y Outbox en la misma transacción atómica
-        var result = await base.SaveChangesAsync(cancellationToken);
+        int result;
+        try
+        {
+            result = await base.SaveChangesAsync(cancellationToken);
+        }
+        catch
+        {
+            // F03-05 / F03-07: si nada se guardó, los mensajes preparados no deben persistirse en un
+            // reintento sin su agregado (eventos huérfanos). Los eventos siguen en las entidades y se
+            // vuelven a preparar si el agregado se guarda después.
+            foreach (var message in outboxMessages)
+            {
+                Entry(message).State = EntityState.Detached;
+            }
+            throw;
+        }
+
+        // H24: limpiar eventos sólo tras guardar, para evitar duplicación en re-saves sin perderlos ante fallos
+        foreach (var entity in domainEntities)
+        {
+            entity.ClearDomainEvents();
+        }
 
         // 3. Despachar eventos inmediatamente en memoria tras commit exitoso
         if (domainEvents.Count > 0)
@@ -157,6 +177,11 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
     {
         await Database.RollbackTransactionAsync(cancellationToken);
+    }
+
+    public void DiscardChanges()
+    {
+        ChangeTracker.Clear();
     }
 
     private async Task AuditEmployeeChangesAsync(CancellationToken cancellationToken)

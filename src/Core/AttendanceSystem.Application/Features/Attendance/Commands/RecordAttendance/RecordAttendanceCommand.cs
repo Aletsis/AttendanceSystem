@@ -4,6 +4,7 @@ using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Primitives;
+using AttendanceSystem.Application.Features.Attendance.Services;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
@@ -26,6 +27,7 @@ public sealed class RecordAttendanceCommandHandler
     private readonly ITimeNormalizer _timeNormalizer;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ILogger<RecordAttendanceCommandHandler> _logger;
+    private readonly IPersistenceFailureClassifier _failureClassifier;
 
     public RecordAttendanceCommandHandler(
         IAttendanceRepository attendanceRepository,
@@ -41,8 +43,10 @@ public sealed class RecordAttendanceCommandHandler
         IUnitOfWork unitOfWork,
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver? timeZoneResolver,
-        ILogger<RecordAttendanceCommandHandler>? logger = null)
+        ILogger<RecordAttendanceCommandHandler>? logger = null,
+        IPersistenceFailureClassifier? failureClassifier = null)
     {
+        _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _attendanceRepository = attendanceRepository;
         _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
@@ -72,20 +76,7 @@ public sealed class RecordAttendanceCommandHandler
                 ? _timeNormalizer.ToCivilTime(command.CheckTime, tz)
                 : command.CheckTime;
 
-            // 2. Comprobar si ya existe el registro (Idempotencia preventiva)
-            var existingRecord = await _attendanceRepository.GetByEmployeeAndCheckTimeAsync(
-                employeeId,
-                utcCheckTime,
-                cancellationToken);
-
-            if (existingRecord != null)
-            {
-                _logger.LogInformation("Marcaje existente detectado para empleado {EmployeeId} a las {CheckTime} UTC. Retornando ID existente {Id}.",
-                    command.EmployeeId, utcCheckTime, existingRecord.Id.Value);
-                return Result<Guid>.Success(existingRecord.Id.Value);
-            }
-
-            // 3. Crear el agregado (contiene lógica de negocio)
+            // 2. Crear el agregado (contiene lógica de negocio)
             var record = AttendanceRecord.Create(
                 employeeId,
                 deviceId,
@@ -97,31 +88,24 @@ public sealed class RecordAttendanceCommandHandler
                 timeZoneId: tz,
                 source: command.Source ?? "API");
 
-            // 4. Persistir con manejo de conflicto esperado de concurrencia
-            try
+            // 3. Inserción idempotente por identidad (EmployeeId, CheckTime): si otro proceso ya lo
+            //    guardó, ambos obtienen el mismo identificador (F03-01 / F03-05).
+            var ingestion = new AttendanceRecordIngestion(_attendanceRepository, _unitOfWork, _failureClassifier, _logger);
+            var outcome = await ingestion.IngestAsync(new[] { record }, cancellationToken);
+
+            if (!outcome.IsSuccess)
             {
-                await _attendanceRepository.AddAsync(record, cancellationToken);
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Posible carrera de concurrencia al insertar marcaje para empleado {EmployeeId} a las {CheckTime} UTC.",
-                    command.EmployeeId, utcCheckTime);
-
-                var concurrentRecord = await _attendanceRepository.GetByEmployeeAndCheckTimeAsync(
-                    employeeId,
-                    utcCheckTime,
-                    cancellationToken);
-
-                if (concurrentRecord != null)
-                {
-                    return Result<Guid>.Success(concurrentRecord.Id.Value);
-                }
-
-                throw;
+                return Result<Guid>.Failure($"No se pudo registrar el marcaje ({outcome.Failure!.Kind}): {outcome.Failure.Message}");
             }
 
-            return Result<Guid>.Success(record.Id.Value);
+            var persistedId = outcome.IdFor(employeeId, utcCheckTime)!;
+            if (persistedId != record.Id)
+            {
+                _logger.LogInformation("Marcaje existente detectado para empleado {EmployeeId} a las {CheckTime} UTC. Retornando ID existente {Id}.",
+                    command.EmployeeId, utcCheckTime, persistedId.Value);
+            }
+
+            return Result<Guid>.Success(persistedId.Value);
         }
         catch (DomainException ex)
         {

@@ -322,8 +322,10 @@ public class Phase01TimeAndWorkDateTests
         var attendanceRepoMock = new Mock<IAttendanceRepository>();
         var unitOfWorkMock = new Mock<IUnitOfWork>();
 
-        attendanceRepoMock.Setup(r => r.GetByEmployeeAndCheckTimeAsync(employeeId, utcCheckTime, It.IsAny<CancellationToken>()))
-            .ReturnsAsync(existingRecord);
+        attendanceRepoMock.Setup(r => r.GetByIdentitiesAsync(
+                It.Is<IReadOnlyCollection<(EmployeeId EmployeeId, DateTime CheckTimeUtc)>>(keys => keys.Any(k => k.EmployeeId == employeeId && k.CheckTimeUtc == utcCheckTime)),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord> { existingRecord });
 
         var handler = new RecordAttendanceCommandHandler(
             attendanceRepoMock.Object,
@@ -346,7 +348,7 @@ public class Phase01TimeAndWorkDateTests
         // ASSERT:
         result.IsSuccess.Should().BeTrue();
         result.Value.Should().Be(existingRecord.Id.Value, "retorna el ID existente en reingreso idéntico");
-        attendanceRepoMock.Verify(r => r.AddAsync(It.IsAny<AttendanceRecord>(), It.IsAny<CancellationToken>()), Times.Never);
+        attendanceRepoMock.Verify(r => r.AddRangeAsync(It.IsAny<IEnumerable<AttendanceRecord>>(), It.IsAny<CancellationToken>()), Times.Never);
         unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
     }
 

@@ -27,7 +27,7 @@ public class SetDailyRestDayOverrideCommandHandlerTests
         _handler = new SetDailyRestDayOverrideCommandHandler(
             _repositoryMock.Object,
             _adjustmentRepoMock.Object,
-            _unitOfWorkMock.Object);
+            _unitOfWorkMock.Object, Mock.Of<IAttendanceCalculationLockService>());
     }
 
     [Fact]
@@ -66,6 +66,10 @@ public class SetDailyRestDayOverrideCommandHandlerTests
         _repositoryMock
             .Setup(r => r.GetByIdAsync(attendance.Id, It.IsAny<CancellationToken>()))
             .ReturnsAsync(attendance);
+        // F03-03: bajo el bloqueo la jornada se relee por empleado y fecha.
+        _repositoryMock
+            .Setup(r => r.GetByEmployeeAndDateAsync(attendance.EmployeeId, attendance.Date, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(attendance);
 
         // Act
         var result = await _handler.Handle(command, CancellationToken.None);
@@ -75,5 +79,25 @@ public class SetDailyRestDayOverrideCommandHandlerTests
         attendance.IsRestDay.Should().BeTrue();
         _repositoryMock.Verify(r => r.Update(attendance), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.CommitTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WhenAttendanceWasReplacedByRecalculation_ReturnsFalseAndRollsBack()
+    {
+        // La pantalla muestra un Id que un recálculo concurrente ya reemplazó (F02-06 / F03-03).
+        var shift = Shift.Create("Matutino", new TimeSpan(8, 0, 0), 10, new TimeSpan(8, 0, 0), ShiftType.Matutino);
+        var stale = DailyAttendance.Create(EmployeeId.From("EMP-001"), new DateTime(2026, 9, 17), shift, null, null, false);
+        var current = DailyAttendance.Create(EmployeeId.From("EMP-001"), new DateTime(2026, 9, 17), shift, null, null, false);
+
+        _repositoryMock.Setup(r => r.GetByIdAsync(stale.Id, It.IsAny<CancellationToken>())).ReturnsAsync(stale);
+        _repositoryMock.Setup(r => r.GetByEmployeeAndDateAsync(stale.EmployeeId, stale.Date, It.IsAny<CancellationToken>())).ReturnsAsync(current);
+
+        var result = await _handler.Handle(new SetDailyRestDayOverrideCommand(stale.Id.Value, IsRestDay: true), CancellationToken.None);
+
+        result.Should().BeFalse();
+        current.IsRestDay.Should().BeFalse();
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.RollbackTransactionAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

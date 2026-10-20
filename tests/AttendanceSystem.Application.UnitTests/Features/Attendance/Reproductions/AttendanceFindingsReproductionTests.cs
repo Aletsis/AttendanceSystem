@@ -101,6 +101,8 @@ public class AttendanceFindingsReproductionTests
         // RESULTADO ESPERADO:
         // La asignación debe conservarse o depender de relaciones explícitas, impidiendo que el recálculo
         // del martes convierta la salida del lunes en entrada huérfana del martes.
+        // CORREGIDO EN FASE 02: el motor ya no reinicia estados por fecha; la regresión con el orquestador
+        // real está en Phase02PunchOwnershipTests.Criterion1_*. Esta prueba conserva la demostración del patrón de línea base.
     }
 
     #endregion
@@ -150,7 +152,11 @@ public class AttendanceFindingsReproductionTests
         // para que la segunda instancia espere hasta que la primera termine o libere la transacción.
     }
 
-    private class InMemoryCalculationLockService : IAttendanceCalculationLockService
+    /// <summary>
+    /// Réplica del bloqueo en memoria de la línea base (semáforos por proceso). La Fase 03 lo sustituyó por
+    /// pg_advisory_xact_lock; la regresión con conexiones distintas está en PostgresConcurrencyTests.
+    /// </summary>
+    private class InMemoryCalculationLockService
     {
         private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _locks = new();
 
@@ -176,11 +182,6 @@ public class AttendanceFindingsReproductionTests
                 for (int i = acquired.Count - 1; i >= 0; i--) acquired[i].Release();
             }
         }
-
-        public Task<T> ExecuteWithLockAsync<T>(
-            IEnumerable<EmployeeId> employeeIds,
-            Func<Task<T>> action,
-            CancellationToken cancellationToken = default) => throw new NotImplementedException();
     }
 
     #endregion
@@ -188,7 +189,7 @@ public class AttendanceFindingsReproductionTests
     #region H04 — Reconciliación de lotes silencia excepciones y las reporta como duplicados
 
     [Fact]
-    public async Task H04_BatchIngestion_Exception_In_SaveChanges_Silently_Counts_Errors_As_Skipped_Duplicates()
+    public async Task H04_BatchIngestion_InfrastructureFailure_Is_Reported_As_Failure_Not_As_Duplicates()
     {
         // ENTRADA:
         // Un lote con un registro nuevo que falla por una excepción en base de datos (ej. error de conexión o restricción)
@@ -202,7 +203,7 @@ public class AttendanceFindingsReproductionTests
         timeNormalizerMock.Setup(t => t.ToWorkDate(It.IsAny<DateTime>(), It.IsAny<string?>()))
             .Returns<DateTime, string?>((d, _) => DateOnly.FromDateTime(d));
 
-        attendanceRepoMock.Setup(r => r.GetByDeviceAndDateRangeAsync(It.IsAny<DeviceId>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+        attendanceRepoMock.Setup(r => r.GetByIdentitiesAsync(It.IsAny<IReadOnlyCollection<(EmployeeId, DateTime)>>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<AttendanceRecord>());
 
         // Simular que SaveChangesAsync arroja una excepción grave (ej. fallo relacional)
@@ -225,13 +226,14 @@ public class AttendanceFindingsReproductionTests
         // ACT:
         var result = await handler.Handle(command, CancellationToken.None);
 
-        // DEMOSTRACIÓN DEL DEFECTO H04:
-        // El handler actual captura la excepción en línea 165 y retorna Success(0) en lugar de Failure
-        result.IsSuccess.Should().BeTrue("en la línea base, el catch genérico absorbe la excepción relacional");
-        result.Value.Should().Be(0, "clasifica el error como 'duplicado omitido' silenciosamente");
-
-        // RESULTADO ESPERADO:
-        // Errores de infraestructura deben propagarse o reportar Result.Failure, diferenciando colisiones reales de fallos técnicos.
+        // LÍNEA BASE (F00-05): el catch genérico devolvía Success(0) y contaba el error como duplicado omitido.
+        // CORREGIDO EN FASE 03 (F03-06): sólo una identidad existente confirmada cuenta como duplicado; un fallo
+        // técnico se reporta como fallo para que el dispositivo reintente.
+        result.IsSuccess.Should().BeFalse("un fallo de infraestructura no es un duplicado");
+        result.Error.Should().Contain("Unknown");
+        attendanceRepoMock.Verify(r => r.GetByEmployeeAndCheckTimeAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never,
+            "no se reintenta fila a fila con las entidades fallidas aún pendientes");
+        attendanceRepoMock.Verify(r => r.Detach(It.IsAny<AttendanceRecord>()), Times.Once, "el contexto se deja coherente tras el fallo");
     }
 
     #endregion
@@ -314,7 +316,7 @@ public class AttendanceFindingsReproductionTests
     #region H07 — Asignación de marcaje ajeno sin validación de pertenencia
 
     [Fact]
-    public async Task H07_ManuallyAssignAttendance_Does_Not_Validate_Punch_Belongs_To_Employee()
+    public async Task H07_ManuallyAssignAttendance_Rejects_Punch_That_Belongs_To_Another_Employee()
     {
         // ENTRADA:
         // Un marcaje biométrico perteneciente a EMP-ROT-002
@@ -344,7 +346,10 @@ public class AttendanceFindingsReproductionTests
             dailyRepoMock.Object,
             attendanceRepoMock.Object,
             adjustmentRepoMock.Object,
-            unitOfWorkMock.Object);
+
+            Mock.Of<IPunchAssignmentRepository>(),
+            unitOfWorkMock.Object,
+            Mock.Of<IAttendanceCalculationLockService>());
 
         var command = new ManuallyAssignAttendanceCommand(
             EmployeeId: AttendanceRegressionFixtures.EmployeeFixedId.Value, // EMP-FIX-001
@@ -355,13 +360,13 @@ public class AttendanceFindingsReproductionTests
         // ACT:
         var result = await handler.Handle(command, CancellationToken.None);
 
-        // DEMOSTRACIÓN DEL DEFECTO H07:
-        // En la línea base, la asignación es aceptada exitosamente sin validar que foreignPunch.EmployeeId != command.EmployeeId
-        result.IsSuccess.Should().BeTrue("en la línea base, no se valida que el marcaje pertenezca al empleado destino");
-        targetDaily.CheckInRecordId.Should().Be(foreignPunch.Id, "se asignó un marcaje de otro empleado a la asistencia diaria");
-
-        // RESULTADO ESPERADO:
-        // Debe rechazar con Result.Failure("El marcaje no pertenece al empleado indicado").
+        // LÍNEA BASE (F00-05): la asignación se aceptaba sin validar foreignPunch.EmployeeId != command.EmployeeId.
+        // CORREGIDO EN FASE 02 (F02-02): se rechaza antes de cualquier escritura.
+        result.IsSuccess.Should().BeFalse("un marcaje de otro empleado no puede asignarse (C-04)");
+        result.Error.Should().Be("El marcaje no pertenece al empleado indicado.");
+        targetDaily.CheckInRecordId.Should().BeNull("el rechazo no deja escrituras parciales");
+        unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Never);
+        adjustmentRepoMock.Verify(a => a.AddAsync(It.IsAny<AttendanceAdjustment>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     #endregion

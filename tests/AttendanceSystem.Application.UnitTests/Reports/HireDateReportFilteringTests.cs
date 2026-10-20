@@ -91,12 +91,6 @@ public class HireDateReportFilteringTests
         var consolidationRepoMock = new Mock<IAttendanceConsolidationRepository>();
         var lockServiceMock = new Mock<IAttendanceCalculationLockService>();
 
-        lockServiceMock
-            .Setup(l => l.ExecuteWithLockAsync(
-                It.IsAny<IEnumerable<EmployeeId>>(),
-                It.IsAny<Func<Task<int>>>(),
-                It.IsAny<CancellationToken>()))
-            .Returns<IEnumerable<EmployeeId>, Func<Task<int>>, CancellationToken>((_, func, _) => func());
 
         unitOfWorkMock
             .Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
@@ -111,6 +105,8 @@ public class HireDateReportFilteringTests
             systemConfigRepoMock.Object,
             adjustmentRepoMock.Object,
             consolidationRepoMock.Object,
+
+            Mock.Of<IPunchAssignmentRepository>(),
             lockServiceMock.Object,
             unitOfWorkMock.Object,
             senderMock.Object,

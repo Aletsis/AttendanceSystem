@@ -3,18 +3,21 @@ namespace AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.ValueObjects;
 
 /// <summary>
-/// Provee exclusión coordinada para operaciones de recálculo y consolidación de asistencia diaria
-/// por empleado, adquiriendo bloqueos en orden determinista para prevenir interbloqueos (deadlocks).
+/// Exclusión entre procesos para escrituras que afectan resultados de asistencia de un empleado
+/// (recálculo, asignación manual, ajustes de descanso o turno). F03-02 / D-04.
+/// <para>
+/// Los bloqueos son de transacción: deben solicitarse dentro de una transacción abierta con
+/// <see cref="IUnitOfWork.BeginTransactionAsync"/> y se liberan solos al confirmar, revertir o
+/// perder la conexión, por lo que una cancelación o la muerte del proceso no dejan bloqueos permanentes.
+/// Se adquieren en orden determinista de clave para evitar interbloqueos.
+/// </para>
 /// </summary>
 public interface IAttendanceCalculationLockService
 {
-    Task ExecuteWithLockAsync(
-        IEnumerable<EmployeeId> employeeIds,
-        Func<Task> action,
-        CancellationToken cancellationToken = default);
-
-    Task<T> ExecuteWithLockAsync<T>(
-        IEnumerable<EmployeeId> employeeIds,
-        Func<Task<T>> action,
-        CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Adquiere los bloqueos de los empleados indicados en la transacción activa. Espera como máximo
+    /// el tiempo configurado; al agotarse lanza una excepción que <see cref="IPersistenceFailureClassifier"/>
+    /// clasifica como <see cref="PersistenceFailureKind.LockTimeout"/>.
+    /// </summary>
+    Task AcquireAsync(IEnumerable<EmployeeId> employeeIds, CancellationToken cancellationToken = default);
 }

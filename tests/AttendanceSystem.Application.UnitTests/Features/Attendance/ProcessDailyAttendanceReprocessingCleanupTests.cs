@@ -70,12 +70,6 @@ public class ProcessDailyAttendanceReprocessingCleanupTests
         _rosterRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<ShiftRoster>());
 
-        _lockServiceMock
-            .Setup(l => l.ExecuteWithLockAsync(
-                It.IsAny<IEnumerable<EmployeeId>>(),
-                It.IsAny<Func<Task<int>>>(),
-                It.IsAny<CancellationToken>()))
-            .Returns<IEnumerable<EmployeeId>, Func<Task<int>>, CancellationToken>((_, func, _) => func());
 
         _unitOfWorkMock
             .Setup(u => u.BeginTransactionAsync(It.IsAny<CancellationToken>()))
@@ -125,6 +119,8 @@ public class ProcessDailyAttendanceReprocessingCleanupTests
             _systemConfigRepoMock.Object,
             _adjustmentRepoMock.Object,
             _consolidationRepoMock.Object,
+
+            Mock.Of<IPunchAssignmentRepository>(),
             _lockServiceMock.Object,
             _unitOfWorkMock.Object,
             _senderMock.Object,

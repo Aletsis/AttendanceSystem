@@ -73,3 +73,51 @@ jobs:
           name: test-results
           path: ./TestResults
           retention-days: 14
+
+  # C06 / F03-08: concurrencia, unicidad y rollback contra PostgreSQL real (no se omiten en CI).
+  postgres-relational-tests:
+    name: PostgreSQL Relational & Concurrency Tests
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: attendanceuser
+          POSTGRES_PASSWORD: AttendancePass
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U attendanceuser"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      TEST_POSTGRES_CONNECTION: Host=localhost;Port=5432;Database=postgres;Username=attendanceuser;Password=AttendancePass
+      REQUIRE_POSTGRES_TESTS: 'true'
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 10 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Run Infrastructure Tests (PostgreSQL)
+        run: >
+          dotnet test tests/AttendanceSystem.Infrastructure.Tests/AttendanceSystem.Infrastructure.Tests.csproj
+          -c Release
+          --logger "trx;LogFileName=postgres-tests.trx"
+          --results-directory ./TestResults
+
+      - name: Upload PostgreSQL Test Results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: postgres-test-results
+          path: ./TestResults
+          retention-days: 14

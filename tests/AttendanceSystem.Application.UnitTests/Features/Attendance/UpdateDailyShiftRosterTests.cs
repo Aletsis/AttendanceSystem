@@ -1,4 +1,5 @@
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
 using AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
@@ -10,6 +11,8 @@ using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.Services;
 using AttendanceSystem.Domain.ValueObjects;
 using FluentAssertions;
+using MediatR;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -67,24 +70,22 @@ public class UpdateDailyShiftRosterTests
     }
 
     [Fact]
-    public async Task Handle_WhenEmployeeHasMultipleRestDays_RespectsAllRestDaysWhenUpdatingShift()
+    public async Task Handle_PersistsShiftOverrideAndDelegatesToCommonRecalculation()
     {
-        // Arrange (H28)
-        // Actualizamos el turno para el Miércoles 14 de octubre de 2026 (día de descanso en RestDays)
+        // Arrange (H28 / F02-05)
+        // El cambio de turno se guarda como decisión manual y la jornada se reconstruye con el motor
+        // común, que resuelve descanso (RestDays múltiples), pertenencia y jornadas dependientes.
         var wednesday = new DateOnly(2026, 10, 14);
-
-        DailyAttendance? savedAttendance = null;
-        _dailyRepoMock.Setup(r => r.Add(It.IsAny<DailyAttendance>()))
-            .Callback<DailyAttendance>(da => savedAttendance = da);
+        var senderMock = new Mock<ISender>();
 
         var handler = new UpdateDailyShiftCommandHandler(
-            _dailyRepoMock.Object,
             _shiftRepoMock.Object,
             _unitOfWorkMock.Object,
-            _attendanceRepoMock.Object,
             _employeeRepoMock.Object,
             _adjustmentRepoMock.Object,
-            _rosterRepoMock.Object);
+            senderMock.Object,
+            NullLogger<UpdateDailyShiftCommandHandler>.Instance,
+            Mock.Of<IAttendanceCalculationLockService>());
 
         var command = new UpdateDailyShiftCommand(_employeeWithMultipleRestDays.Id.Value, wednesday, _newShift.Id.Value);
 
@@ -93,13 +94,19 @@ public class UpdateDailyShiftRosterTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        savedAttendance.Should().NotBeNull();
-        // Miércoles es día de descanso del contrato, debe mantenerse como día de descanso
-        savedAttendance!.IsRestDay.Should().BeTrue();
 
-        // Se persiste el ajuste correspondiente para auditoría (H07/H28)
+        // Se persiste el ajuste correspondiente para auditoría (H07/H28) antes de recalcular
         _adjustmentRepoMock.Verify(r => r.AddAsync(
             It.Is<AttendanceAdjustment>(a => a.ShiftIdOverride == _newShift.Id),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+
+        var expectedDate = wednesday.ToDateTime(TimeOnly.MinValue);
+        senderMock.Verify(s => s.Send(
+            It.Is<ProcessDailyAttendanceCommand>(c =>
+                c.StartDate == expectedDate &&
+                c.EndDate == expectedDate &&
+                c.EmployeeId == _employeeWithMultipleRestDays.Id),
             It.IsAny<CancellationToken>()), Times.Once);
     }
 

@@ -1,13 +1,11 @@
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
-using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
 using MediatR;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Application.Common;
-using AttendanceSystem.Domain.Enumerations;
-
-using AttendanceSystem.Domain.Services;
+using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift;
 
@@ -16,32 +14,37 @@ public sealed record UpdateDailyShiftCommand(
     DateOnly Date,
     Guid ShiftId) : IRequest<Result>;
 
+/// <summary>
+/// Cambia el turno de una jornada como decisión manual persistente y la reconstruye con el motor
+/// común de recálculo (F02-05). Así la selección de marcajes, la pertenencia y las jornadas
+/// dependientes se resuelven igual que en cualquier otro recálculo.
+/// </summary>
 public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDailyShiftCommand, Result>
 {
-    private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IShiftRepository _shiftRepo;
     private readonly IUnitOfWork _unitOfWork;
-    private readonly IAttendanceRepository _attendanceRepo;
     private readonly IEmployeeRepository _employeeRepo;
     private readonly IAttendanceAdjustmentRepository _adjustmentRepo;
-    private readonly IShiftRosterRepository _rosterRepo;
+    private readonly ISender _sender;
+    private readonly ILogger<UpdateDailyShiftCommandHandler> _logger;
+    private readonly IAttendanceCalculationLockService _lockService;
 
     public UpdateDailyShiftCommandHandler(
-        IDailyAttendanceRepository dailyRepo,
         IShiftRepository shiftRepo,
         IUnitOfWork unitOfWork,
-        IAttendanceRepository attendanceRepo,
         IEmployeeRepository employeeRepo,
         IAttendanceAdjustmentRepository adjustmentRepo,
-        IShiftRosterRepository rosterRepo)
+        ISender sender,
+        ILogger<UpdateDailyShiftCommandHandler> logger,
+        IAttendanceCalculationLockService lockService)
     {
-        _dailyRepo = dailyRepo;
         _shiftRepo = shiftRepo;
         _unitOfWork = unitOfWork;
-        _attendanceRepo = attendanceRepo;
         _employeeRepo = employeeRepo;
         _adjustmentRepo = adjustmentRepo;
-        _rosterRepo = rosterRepo;
+        _sender = sender;
+        _logger = logger;
+        _lockService = lockService;
     }
 
     public async Task<Result> Handle(UpdateDailyShiftCommand request, CancellationToken cancellationToken)
@@ -59,239 +62,42 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
         }
 
         var date = request.Date.ToDateTime(TimeOnly.MinValue);
-        var daily = await _dailyRepo.GetByEmployeeAndDateAsync(
-            employeeId,
-            date,
-            cancellationToken);
 
-        // Obtener los registros de ese día para re-evaluar
-        var searchStartDate = request.Date;
-        var searchEndDate = searchStartDate;
-
-        var dayStartTime = shift.StartTime;
-        var dayEndTime = shift.EndTime;
-
-        if (shift.ShiftType == ShiftType.Mixto)
-        {
-            var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
-            if (dayConfig != null)
+        // Cargar o crear el ajuste manual persistente bajo el bloqueo del empleado (F03-03): la decisión
+        // sobrevive a cualquier recálculo posterior y no se pierde frente a uno concurrente.
+        await ExclusiveAttendanceWrite.RunAsync(
+            _unitOfWork,
+            _lockService,
+            new[] { employeeId },
+            async () =>
             {
-                dayStartTime = dayConfig.StartTime;
-                dayEndTime = dayConfig.EndTime;
-            }
-        }
-
-        bool isCrossDay = dayEndTime <= dayStartTime || shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible ||
-                          (shift.ShiftType == ShiftType.Partido && shift.SecondBlockEndTime.HasValue && shift.SecondBlockStartTime.HasValue && shift.SecondBlockEndTime.Value <= shift.SecondBlockStartTime.Value);
-        if (isCrossDay)
-        {
-            searchEndDate = searchStartDate.AddDays(1);
-        }
-
-        var recordsEnumerable = await _attendanceRepo.GetByDateRangeAsync(
-            searchStartDate, searchEndDate, employeeId, cancellationToken);
-
-        var records = recordsEnumerable.OrderBy(r => r.CheckTime).ToList();
-
-        // Libere los registros asignados previamente para que puedan reasignarse o conservarse.
-        if (daily != null)
-        {
-            if (daily.CheckInRecordId != null)
-            {
-                var r = await _attendanceRepo.GetByIdAsync(daily.CheckInRecordId, cancellationToken);
-                if (r != null) { r.ResetStatus(); await _attendanceRepo.UpdateAsync(r, cancellationToken); }
-            }
-            if (daily.CheckOutRecordId != null)
-            {
-                var r = await _attendanceRepo.GetByIdAsync(daily.CheckOutRecordId, cancellationToken);
-                if (r != null) { r.ResetStatus(); await _attendanceRepo.UpdateAsync(r, cancellationToken); }
-            }
-        }
-
-        DateTime? checkIn = null;
-        DateTime? checkOut = null;
-        AttendanceRecord? checkInRecord = null;
-        AttendanceRecord? checkOutRecord = null;
-
-        if (records.Any())
-        {
-            var scheduledIn = date.Add(dayStartTime);
-            var scheduledOut = date.Add(dayEndTime);
-            if (isCrossDay) scheduledOut = scheduledOut.AddDays(1);
-
-            double maxInDistance = 300;
-            double maxOutDistance = 960;
-
-            IEnumerable<AttendanceRecord> entryRecords = records;
-            IEnumerable<AttendanceRecord> exitRecords = records;
-
-            if (isCrossDay)
-            {
-                if (shift.ShiftType == ShiftType.Continuo || shift.ShiftType == ShiftType.Flexible)
+                var adjustment = await _adjustmentRepo.GetByEmployeeAndDateAsync(employeeId, date, cancellationToken);
+                if (adjustment == null)
                 {
-                    var targetDateOnly = DateOnly.FromDateTime(date);
-                    var potentialIn = records
-                        .Where(r => r.GetWorkDate() == targetDateOnly && (r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)))
-                        .OrderBy(r => r.CheckTime)
-                        .FirstOrDefault();
-
-                    if (potentialIn != null)
-                    {
-                        checkInRecord = potentialIn;
-                        checkIn = potentialIn.CheckTime;
-
-                        checkOutRecord = records
-                            .Where(r => r.CheckTime > checkIn.Value && (r.CheckTime - checkIn.Value).TotalHours <= 24)
-                            .OrderBy(r => r.CheckTime)
-                            .FirstOrDefault();
-
-                        if (checkOutRecord != null) checkOut = checkOutRecord.CheckTime;
-                    }
+                    adjustment = AttendanceAdjustment.Create(employeeId, date, "Usuario RH");
+                    adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
+                    await _adjustmentRepo.AddAsync(adjustment, cancellationToken);
                 }
                 else
                 {
-                    var entryWindowStart = scheduledIn.AddHours(-6);
-                    var entryWindowEnd = scheduledIn.AddHours(6);
-                    entryRecords = records.Where(r => r.GetCivilTime() >= entryWindowStart && r.GetCivilTime() <= entryWindowEnd && (r.Status == AttendanceSystem.Domain.Enumerations.AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId)));
-
-                    var exitWindowStart = scheduledOut.AddHours(-10);
-                    var exitWindowEnd = scheduledOut.AddHours(10);
-                    exitRecords = records.Where(r => r.GetCivilTime() >= exitWindowStart && r.GetCivilTime() <= exitWindowEnd);
-
-                    var matchIn = entryRecords
-                        .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledIn).TotalMinutes) })
-                        .Where(x => x.Diff <= maxInDistance)
-                        .OrderBy(x => x.Diff).FirstOrDefault();
-
-                    if (matchIn != null) { checkInRecord = matchIn.Record; checkIn = checkInRecord.CheckTime; }
-
-                    var matchOut = exitRecords
-                        .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledOut).TotalMinutes) })
-                        .Where(x => x.Diff <= maxOutDistance)
-                        .OrderBy(x => x.Diff).FirstOrDefault();
-
-                    if (matchOut != null)
-                    {
-                        if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
-                        {
-                            if (matchOut.Diff < matchIn!.Diff) { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; checkIn = null; checkInRecord = null; }
-                        }
-                        else { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; }
-                    }
+                    adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
+                    _adjustmentRepo.Update(adjustment);
                 }
-            }
-            else
-            {
-                entryRecords = records.Where(r => r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckInRecordId));
-                exitRecords = records.Where(r => r.Status == AttendanceStatus.Pending || (daily != null && r.Id == daily.CheckOutRecordId));
 
-                var matchIn = entryRecords
-                    .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledIn).TotalMinutes) })
-                    .Where(x => x.Diff <= maxInDistance)
-                    .OrderBy(x => x.Diff).FirstOrDefault();
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                return Result.Success();
+            },
+            cancellationToken);
 
-                if (matchIn != null) { checkInRecord = matchIn.Record; checkIn = checkInRecord.CheckTime; }
-
-                var matchOut = exitRecords
-                    .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime() - scheduledOut).TotalMinutes) })
-                    .Where(x => x.Diff <= maxOutDistance)
-                    .OrderBy(x => x.Diff).FirstOrDefault();
-
-                if (matchOut != null)
-                {
-                    if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
-                    {
-                        if (matchOut.Diff < matchIn!.Diff) { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; checkIn = null; checkInRecord = null; }
-                    }
-                    else { checkOutRecord = matchOut.Record; checkOut = checkOutRecord.CheckTime; }
-                }
-            }
-
-            if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
-            {
-                var civilIn = checkInRecord?.GetCivilTime() ?? checkIn.Value;
-                var civilOut = checkOutRecord?.GetCivilTime() ?? checkOut.Value;
-                if (Math.Abs((civilIn - scheduledIn).TotalMinutes) <= Math.Abs((civilOut - scheduledOut).TotalMinutes)) { checkOut = null; checkOutRecord = null; }
-                else { checkIn = null; checkInRecord = null; }
-            }
-        }
-
-        if (checkInRecord != null)
+        try
         {
-            checkInRecord.MarkAsProcessed();
-            checkInRecord.SetInferredType(CheckType.CheckIn);
-            await _attendanceRepo.UpdateAsync(checkInRecord, cancellationToken);
+            await _sender.Send(new ProcessDailyAttendanceCommand(date, date, EmployeeId: employeeId), cancellationToken);
         }
-
-        if (checkOutRecord != null)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            checkOutRecord.MarkAsProcessed();
-            checkOutRecord.SetInferredType(CheckType.CheckOut);
-            await _attendanceRepo.UpdateAsync(checkOutRecord, cancellationToken);
+            _logger.LogError(ex, "El turno de {EmployeeId} para {Date:yyyy-MM-dd} se guardó, pero el recálculo falló.", employeeId.Value, date);
+            return Result.Failure($"El turno se guardó, pero el recálculo de la jornada falló: {ex.Message}");
         }
-
-        // Cargar o crear el ajuste manual persistente
-        var adjustment = await _adjustmentRepo.GetByEmployeeAndDateAsync(employeeId, date, cancellationToken);
-        if (adjustment == null)
-        {
-            adjustment = AttendanceAdjustment.Create(employeeId, date, "Usuario RH");
-            adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
-            await _adjustmentRepo.AddAsync(adjustment, cancellationToken);
-        }
-        else
-        {
-            adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
-            _adjustmentRepo.Update(adjustment);
-        }
-
-        // Consultar roster para evaluar descanso planificado si no hay override explícito
-        var rosters = await _rosterRepo.GetByDateRangeAsync(date, date, null, employeeId, cancellationToken);
-        var rosterEntry = rosters.FirstOrDefault();
-
-        // Determinar descanso usando precedencia centralizada (Ajuste > Roster > Empleado con múltiples RestDays)
-        var resolution = AttendanceShiftResolutionService.Resolve(
-            employee,
-            date,
-            rosterEntry,
-            adjustment,
-            new Dictionary<ShiftId, Shift> { [shiftId] = shift },
-            records.Select(r => r.CheckTime));
-
-        var isRestDay = resolution.IsRestDay;
-
-        if (daily == null)
-        {
-            daily = DailyAttendance.Create(
-                employeeId,
-                date,
-                shift,
-                checkIn,
-                checkOut,
-                isRestDay,
-                checkInRecord?.Id,
-                checkOutRecord?.Id,
-                employee.CalculateOvertimeBeforeEntry,
-                employee.OvertimeAuthorized
-            );
-            if (resolution.IsRestDayOverridden)
-            {
-                daily.SetRestDayOverride(resolution.IsRestDay);
-            }
-            _dailyRepo.Add(daily);
-        }
-        else
-        {
-            daily.UpdateShift(shift);
-            if (resolution.IsRestDayOverridden)
-            {
-                daily.SetRestDayOverride(resolution.IsRestDay);
-            }
-            daily.UpdateOvertimeConfiguration(employee.OvertimeAuthorized, employee.CalculateOvertimeBeforeEntry);
-            if (checkInRecord != null && checkIn.HasValue) daily.SetCheckIn(checkIn.Value, checkInRecord.Id); else daily.RemoveCheckIn();
-            if (checkOutRecord != null && checkOut.HasValue) daily.SetCheckOut(checkOut.Value, checkOutRecord.Id); else daily.RemoveCheckOut();
-        }
-
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         return Result.Success();
     }

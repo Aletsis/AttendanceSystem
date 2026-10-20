@@ -36,6 +36,37 @@ public class AttendanceRepository : IAttendanceRepository
             .FirstOrDefaultAsync(x => x.EmployeeId == employeeId && x.CheckTime == utcCheckTime, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<AttendanceRecord>> GetByIdentitiesAsync(
+        IReadOnlyCollection<(EmployeeId EmployeeId, DateTime CheckTimeUtc)> identities,
+        CancellationToken cancellationToken = default)
+    {
+        if (identities.Count == 0) return new List<AttendanceRecord>();
+
+        var keys = identities
+            .Select(i => (i.EmployeeId.Value, ToUtc(i.CheckTimeUtc)))
+            .ToHashSet();
+        var employeeIds = identities.Select(i => i.EmployeeId).Distinct().ToList();
+        var min = keys.Min(k => k.Item2);
+        var max = keys.Max(k => k.Item2);
+
+        // Filtro grueso en SQL (índice EmployeeId+CheckTime) y exacto en memoria.
+        var candidates = await _context.AttendanceRecords
+            .Where(x => employeeIds.Contains(x.EmployeeId) && x.CheckTime >= min && x.CheckTime <= max)
+            .ToListAsync(cancellationToken);
+
+        return candidates.Where(r => keys.Contains((r.EmployeeId.Value, ToUtc(r.CheckTime)))).ToList();
+    }
+
+    public void Detach(AttendanceRecord record)
+    {
+        _context.Entry(record).State = EntityState.Detached;
+    }
+
+    private static DateTime ToUtc(DateTime value) =>
+        value.Kind == DateTimeKind.Utc
+            ? value
+            : (value.Kind == DateTimeKind.Local ? value.ToUniversalTime() : DateTime.SpecifyKind(value, DateTimeKind.Utc));
+
     public async Task<IReadOnlyList<AttendanceRecord>> GetByDateRangeAsync(
         DateOnly startDate,
         DateOnly endDate,

@@ -37,11 +37,11 @@ public class RecordAttendanceIdempotencyTests
             VerifyMethod.Fingerprint,
             CheckType.CheckIn);
 
-        _repoMock.Setup(r => r.GetByEmployeeAndCheckTimeAsync(
-                It.IsAny<EmployeeId>(),
-                It.IsAny<DateTime>(),
-                default))
-            .ReturnsAsync(existingRecord);
+        // F03-01: la existencia se consulta por identidad (empleado, instante), no por dispositivo.
+        _repoMock.Setup(r => r.GetByIdentitiesAsync(
+                It.IsAny<IReadOnlyCollection<(EmployeeId, DateTime)>>(),
+                It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord> { existingRecord });
 
         var handler = new RecordAttendanceCommandHandler(
             _repoMock.Object,
@@ -64,7 +64,7 @@ public class RecordAttendanceIdempotencyTests
         result.Value.Should().Be(existingRecord.Id.Value);
 
         // No se debe intentar agregar a la base de datos de nuevo
-        _repoMock.Verify(r => r.AddAsync(It.IsAny<AttendanceRecord>(), default), Times.Never);
+        _repoMock.Verify(r => r.AddRangeAsync(It.IsAny<IEnumerable<AttendanceRecord>>(), It.IsAny<CancellationToken>()), Times.Never);
         _uowMock.Verify(u => u.SaveChangesAsync(default), Times.Never);
     }
 
@@ -83,11 +83,9 @@ public class RecordAttendanceIdempotencyTests
             CheckType.CheckIn);
 
         // El registro checkTime1 ya existe en la BD
-        _repoMock.Setup(r => r.GetByDeviceAndDateRangeAsync(
-                It.IsAny<DeviceId>(),
-                It.IsAny<DateTime>(),
-                It.IsAny<DateTime>(),
-                default))
+        _repoMock.Setup(r => r.GetByIdentitiesAsync(
+                It.IsAny<IReadOnlyCollection<(EmployeeId, DateTime)>>(),
+                It.IsAny<CancellationToken>()))
             .ReturnsAsync(new List<AttendanceRecord> { existingRecord });
 
         var handler = new RecordAttendanceBatchCommandHandler(

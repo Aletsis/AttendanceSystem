@@ -169,6 +169,10 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Ignore(x => x.DomainEvents);
 
         // Indexes for performance (Reporting by Date/Employee)
+        // F03-03: concurrencia optimista con la columna de sistema xmin (no requiere migración). Detecta
+        // escrituras sobre datos obsoletos de cualquier escritor que no haya tomado el bloqueo del empleado.
+        builder.Property<uint>("Version").IsRowVersion();
+
         builder.HasIndex(x => new { x.EmployeeId, x.Date }).IsUnique();
         builder.HasIndex(x => x.Date);
     }
