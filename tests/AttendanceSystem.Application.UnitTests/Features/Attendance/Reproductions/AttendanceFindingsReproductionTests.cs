@@ -270,7 +270,7 @@ public class AttendanceFindingsReproductionTests
     #region H06 — Ajustes omitidos en turnos mixtos sin configuración diaria
 
     [Fact]
-    public async Task H06_MixedShift_Without_Day_Config_Omits_Manual_Adjustment()
+    public async Task H06_MixedShift_Without_Day_Config_Preserves_Manual_Adjustment()
     {
         // ENTRADA:
         // Turno mixto donde el Sábado no tiene configuración en Shift.Days.
@@ -297,15 +297,12 @@ public class AttendanceFindingsReproductionTests
         // ACT:
         await handler.Handle(command, CancellationToken.None);
 
-        // DEMOSTRACIÓN DEL DEFECTO H06:
-        // ProcessMixAttendanceCommandHandler en líneas 44-48 delega a ProcessNoShiftAttendanceCommand sin pasar Adjustment:
+        // LÍNEA BASE (F00-05): la delegación a ProcessNoShiftAttendanceCommand omitía el Adjustment del supervisor.
+        // CORREGIDO (F05-04): se conserva el ajuste y la precedencia manual de descanso.
         senderMock.Verify(s => s.Send(
-            It.Is<ProcessNoShiftAttendanceCommand>(cmd => cmd.Adjustment == null),
+            It.Is<ProcessNoShiftAttendanceCommand>(cmd => cmd.Adjustment == adjustment && cmd.IsRestDay),
             It.IsAny<CancellationToken>()), Times.Once,
-            "en la línea base, la delegación cuando falta configuración diaria omite el Adjustment del supervisor");
-
-        // RESULTADO ESPERADO:
-        // Debe preservar Adjustment: adjustment aún si el día de la semana no tenía configuración explícita.
+            "sin configuración diaria el día es descanso salvo decisión manual, y el ajuste se aplica");
     }
 
     #endregion
@@ -342,11 +339,15 @@ public class AttendanceFindingsReproductionTests
         var handler = new ManuallyAssignAttendanceCommandHandler(
             dailyRepoMock.Object,
             attendanceRepoMock.Object,
-            adjustmentRepoMock.Object,
-
             Mock.Of<IPunchAssignmentRepository>(),
-            unitOfWorkMock.Object,
-            Mock.Of<IAttendanceCalculationLockService>());
+            new AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService(
+                adjustmentRepoMock.Object,
+                Mock.Of<IAttendanceConsolidationRepository>(),
+                NoOpConsolidationWakeup.Instance,
+                unitOfWorkMock.Object,
+                Mock.Of<IAttendanceCalculationLockService>(),
+                Mock.Of<ISender>(),
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService>.Instance));
 
         var command = new ManuallyAssignAttendanceCommand(
             EmployeeId: AttendanceRegressionFixtures.EmployeeFixedId.Value, // EMP-FIX-001

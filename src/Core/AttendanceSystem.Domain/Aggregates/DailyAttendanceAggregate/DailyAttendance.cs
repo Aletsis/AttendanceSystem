@@ -381,28 +381,33 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             UpdateShift(shiftOverride, isAutoDetectedShift: false);
         }
 
-        if (adjustment.CheckInRecordId != null && adjustment.CheckInTimeOverride.HasValue)
+        // F05-01: cada posición puede tener asignación forzada o vacío forzado. Primero se vacían las
+        // posiciones que la decisión retira y después se colocan las asignadas, para que mover un marcaje
+        // de una posición a otra no lo deje en ambas.
+        foreach (var position in AttendanceAdjustment.AllPositions)
         {
-            ActualCheckIn = adjustment.CheckInTimeOverride.Value;
-            CheckInRecordId = adjustment.CheckInRecordId;
+            var kind = adjustment.OverrideKind(position);
+            var decided = adjustment.OverrideRecord(position);
+            if (kind == PositionOverrideKind.ForcedEmpty)
+            {
+                ClearPosition(position);
+            }
+            if (decided != null)
+            {
+                foreach (var other in AttendanceAdjustment.AllPositions.Where(p => p != position && PositionRecord(p) == decided))
+                {
+                    ClearPosition(other);
+                }
+            }
         }
 
-        if (adjustment.CheckOutRecordId != null && adjustment.CheckOutTimeOverride.HasValue)
+        foreach (var position in AttendanceAdjustment.AllPositions)
         {
-            ActualCheckOut = adjustment.CheckOutTimeOverride.Value;
-            CheckOutRecordId = adjustment.CheckOutRecordId;
-        }
-
-        if (adjustment.Block1CheckOutRecordId != null && adjustment.Block1CheckOutTimeOverride.HasValue)
-        {
-            ActualBlock1CheckOut = adjustment.Block1CheckOutTimeOverride.Value;
-            Block1CheckOutRecordId = adjustment.Block1CheckOutRecordId;
-        }
-
-        if (adjustment.Block2CheckInRecordId != null && adjustment.Block2CheckInTimeOverride.HasValue)
-        {
-            ActualBlock2CheckIn = adjustment.Block2CheckInTimeOverride.Value;
-            Block2CheckInRecordId = adjustment.Block2CheckInRecordId;
+            if (adjustment.OverrideKind(position) != PositionOverrideKind.Assigned) continue;
+            var recordId = adjustment.OverrideRecord(position);
+            var time = adjustment.OverrideTime(position);
+            if (recordId == null || !time.HasValue) continue;
+            SetPositionValue(position, time.Value, recordId);
         }
 
         if (adjustment.TemporaryExitStatus.HasValue)
@@ -426,6 +431,36 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
         HasManualAdjustments = true;
         CalculateStatus();
+    }
+
+    private AttendanceRecordId? PositionRecord(AttendancePosition position) => position switch
+    {
+        AttendancePosition.CheckIn => CheckInRecordId,
+        AttendancePosition.Block1CheckOut => Block1CheckOutRecordId,
+        AttendancePosition.Block2CheckIn => Block2CheckInRecordId,
+        _ => CheckOutRecordId
+    };
+
+    private void ClearPosition(AttendancePosition position)
+    {
+        switch (position)
+        {
+            case AttendancePosition.CheckIn: ActualCheckIn = null; CheckInRecordId = null; break;
+            case AttendancePosition.Block1CheckOut: ActualBlock1CheckOut = null; Block1CheckOutRecordId = null; break;
+            case AttendancePosition.Block2CheckIn: ActualBlock2CheckIn = null; Block2CheckInRecordId = null; break;
+            default: ActualCheckOut = null; CheckOutRecordId = null; break;
+        }
+    }
+
+    private void SetPositionValue(AttendancePosition position, DateTime time, AttendanceRecordId recordId)
+    {
+        switch (position)
+        {
+            case AttendancePosition.CheckIn: ActualCheckIn = time; CheckInRecordId = recordId; break;
+            case AttendancePosition.Block1CheckOut: ActualBlock1CheckOut = time; Block1CheckOutRecordId = recordId; break;
+            case AttendancePosition.Block2CheckIn: ActualBlock2CheckIn = time; Block2CheckInRecordId = recordId; break;
+            default: ActualCheckOut = time; CheckOutRecordId = recordId; break;
+        }
     }
 
     public void UpdateOvertimeConfiguration(bool overtimeAuthorized, bool calculateOvertimeBeforeEntry)

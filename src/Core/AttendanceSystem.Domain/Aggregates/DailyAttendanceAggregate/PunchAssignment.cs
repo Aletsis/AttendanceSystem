@@ -25,7 +25,10 @@ public enum PunchAssignmentRole
     DiscardedDoubleTap = 7,
 
     /// <summary>Marcaje consumido por la jornada cuyo significado requiere revisión (p. ej. intermedio sin retorno).</summary>
-    PendingReview = 8
+    PendingReview = 8,
+
+    /// <summary>Marcaje retirado por RH con vacío forzado: reservado para la jornada y fuera del cálculo automático.</summary>
+    ManuallyExcluded = 9
 }
 
 public enum PunchAssignmentOrigin

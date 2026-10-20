@@ -67,4 +67,19 @@ public class AttendanceAdjustmentRepository : IAttendanceAdjustmentRepository
     {
         _context.AttendanceAdjustments.Remove(adjustment);
     }
+
+    public async Task AddHistoryAsync(AttendanceAdjustmentHistory entry, CancellationToken cancellationToken = default)
+    {
+        await _context.AttendanceAdjustmentHistory.AddAsync(entry, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<AttendanceAdjustmentHistory>> GetHistoryAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default)
+    {
+        return await _context.AttendanceAdjustmentHistory
+            .AsNoTracking()
+            .Where(x => x.EmployeeId == employeeId && x.Date == date.Date)
+            .OrderBy(x => x.Revision)
+            .ThenBy(x => x.ChangedAt)
+            .ToListAsync(cancellationToken);
+    }
 }

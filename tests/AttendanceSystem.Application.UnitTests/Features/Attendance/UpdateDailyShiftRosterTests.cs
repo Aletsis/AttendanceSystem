@@ -70,44 +70,28 @@ public class UpdateDailyShiftRosterTests
     }
 
     [Fact]
-    public async Task Handle_PersistsShiftOverrideAndDelegatesToCommonRecalculation()
+    public async Task Handle_PersistsShiftOverrideAsAuditedDecision_AndRecalculatesWithTheCommonEngine()
     {
-        // Arrange (H28 / F02-05)
-        // El cambio de turno se guarda como decisión manual y la jornada se reconstruye con el motor
-        // común, que resuelve descanso (RestDays múltiples), pertenencia y jornadas dependientes.
+        // H28 / F02-05 / F05-02: el cambio de turno es una decisión persistente y auditada; el motor común
+        // reconstruye la jornada respetando los RestDays múltiples del contrato.
         var wednesday = new DateOnly(2026, 10, 14);
-        var senderMock = new Mock<ISender>();
+        var h = new Phase02.AttendanceRecalculationHarness();
+        h.Store.Shifts.AddRange(new[] { _oldShift, _newShift });
+        h.Store.Employees.Add(_employeeWithMultipleRestDays);
 
-        var handler = new UpdateDailyShiftCommandHandler(
-            _shiftRepoMock.Object,
-            _unitOfWorkMock.Object,
-            _employeeRepoMock.Object,
-            _adjustmentRepoMock.Object,
-            senderMock.Object,
-            NullLogger<UpdateDailyShiftCommandHandler>.Instance,
-            Mock.Of<IAttendanceCalculationLockService>());
+        var handler = new UpdateDailyShiftCommandHandler(_shiftRepoMock.Object, _employeeRepoMock.Object, h.Decisions());
 
-        var command = new UpdateDailyShiftCommand(_employeeWithMultipleRestDays.Id.Value, wednesday, _newShift.Id.Value);
+        var result = await handler.Handle(new UpdateDailyShiftCommand(_employeeWithMultipleRestDays.Id.Value, wednesday, _newShift.Id.Value), CancellationToken.None);
 
-        // Act
-        var result = await handler.Handle(command, CancellationToken.None);
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+        var adjustment = h.Store.Adjustments.Single();
+        adjustment.ShiftIdOverride.Should().Be(_newShift.Id);
+        h.Store.AdjustmentHistory.Should().ContainSingle(e => e.Action == "Turno" && e.ChangedBy == h.CurrentUser);
+        h.Store.ConsolidationRequests.Should().ContainSingle(r => r.EmployeeId == _employeeWithMultipleRestDays.Id);
 
-        // Assert
-        result.IsSuccess.Should().BeTrue();
-
-        // Se persiste el ajuste correspondiente para auditoría (H07/H28) antes de recalcular
-        _adjustmentRepoMock.Verify(r => r.AddAsync(
-            It.Is<AttendanceAdjustment>(a => a.ShiftIdOverride == _newShift.Id),
-            It.IsAny<CancellationToken>()), Times.Once);
-        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
-
-        var expectedDate = wednesday.ToDateTime(TimeOnly.MinValue);
-        senderMock.Verify(s => s.Send(
-            It.Is<ProcessDailyAttendanceCommand>(c =>
-                c.StartDate == expectedDate &&
-                c.EndDate == expectedDate &&
-                c.EmployeeId == _employeeWithMultipleRestDays.Id),
-            It.IsAny<CancellationToken>()), Times.Once);
+        var daily = h.Daily(_employeeWithMultipleRestDays.Id, wednesday.ToDateTime(TimeOnly.MinValue))!;
+        daily.ShiftName.Should().Be(_newShift.Name);
+        daily.IsRestDay.Should().BeTrue("el miércoles es descanso en los RestDays del contrato");
     }
 
     [Fact]

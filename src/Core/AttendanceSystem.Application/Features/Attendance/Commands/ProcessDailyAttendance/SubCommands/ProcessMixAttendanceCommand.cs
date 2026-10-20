@@ -38,16 +38,19 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
 
         if (dayConfig == null)
         {
-            // Sin configuración para este día: se asume día de descanso / libre
+            // Sin configuración para este día: es descanso salvo decisión manual explícita (C-05 / A02),
+            // y el ajuste se conserva (asignaciones, salidas temporales, extras).
+            var isRestDay = request.Adjustment?.IsRestDayOverride ?? true;
             _logger.LogDebug(
-                "Empleado {EmpId} - {Date}: Turno mixto sin configuración para el día de la semana {DayOfWeek}. Delegando a ProcessNoShiftAttendanceCommand como día de descanso.",
-                request.Employee.Id.Value, request.Date.ToString("dd/MM/yyyy"), request.Date.DayOfWeek);
+                "Empleado {EmpId} - {Date}: Turno mixto sin configuración para el día de la semana {DayOfWeek}. Delegando a ProcessNoShiftAttendanceCommand (descanso={IsRestDay}).",
+                request.Employee.Id.Value, request.Date.ToString("dd/MM/yyyy"), request.Date.DayOfWeek, isRestDay);
 
             await _sender.Send(new ProcessNoShiftAttendanceCommand(
                 request.Employee,
                 request.Date,
                 request.Records,
-                IsRestDay: true,
+                IsRestDay: isRestDay,
+                Adjustment: request.Adjustment,
                 TimeZoneId: request.TimeZoneId,
                 Draft: request.Draft), cancellationToken);
 

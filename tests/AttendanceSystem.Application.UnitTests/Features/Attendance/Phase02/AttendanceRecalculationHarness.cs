@@ -37,6 +37,8 @@ public sealed class InMemoryAttendanceStore
     public List<DailyAttendance> Dailies { get; } = new();
     public List<AttendanceAdjustment> Adjustments { get; } = new();
     public List<PunchAssignment> Assignments { get; } = new();
+    public List<AttendanceAdjustmentHistory> AdjustmentHistory { get; } = new();
+    public List<(EmployeeId EmployeeId, DateTime Start, DateTime End)> ConsolidationRequests { get; } = new();
 
     internal readonly List<DailyAttendance> PendingDailyAdds = new();
     internal readonly List<DailyAttendance> PendingDailyRemoves = new();
@@ -217,6 +219,57 @@ internal sealed class InMemoryAdjustmentRepository : IAttendanceAdjustmentReposi
     public Task AddAsync(AttendanceAdjustment adjustment, CancellationToken cancellationToken = default) { _store.PendingAdjustmentAdds.Add(adjustment); return Task.CompletedTask; }
     public void Update(AttendanceAdjustment adjustment) { }
     public void Remove(AttendanceAdjustment adjustment) => _store.Adjustments.Remove(adjustment);
+
+    public Task AddHistoryAsync(AttendanceAdjustmentHistory entry, CancellationToken cancellationToken = default) { _store.AdjustmentHistory.Add(entry); return Task.CompletedTask; }
+
+    public Task<IReadOnlyList<AttendanceAdjustmentHistory>> GetHistoryAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AttendanceAdjustmentHistory>>(_store.AdjustmentHistory.Where(h => h.EmployeeId == employeeId && h.Date == date.Date).OrderBy(h => h.Revision).ToList());
+}
+
+/// <summary>Sólo registra las solicitudes durables; el consumidor se prueba sobre PostgreSQL.</summary>
+internal sealed class InMemoryConsolidationRepository : IAttendanceConsolidationRepository
+{
+    private readonly InMemoryAttendanceStore _store;
+    public InMemoryConsolidationRepository(InMemoryAttendanceStore store) => _store = store;
+
+    public Task RequestAsync(EmployeeId employeeId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
+    {
+        _store.ConsolidationRequests.Add((employeeId, startDate.Date, endDate.Date));
+        return Task.CompletedTask;
+    }
+
+    public async Task RequestManyAsync(IReadOnlyCollection<EmployeeId> employeeIds, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
+    {
+        foreach (var id in employeeIds) await RequestAsync(id, startDate, endDate, cancellationToken);
+    }
+
+    public Task<IReadOnlyList<ConsolidationClaim>> ClaimAsync(string consumerId, int maxBatchSize, TimeSpan lease, TimeSpan quietPeriod, TimeSpan maxDelay, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<ConsolidationCompletion> CompleteAsync(Guid requestId, string consumerId, int claimedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task FailAsync(Guid requestId, string consumerId, string error, int maxAttempts, TimeSpan baseBackoff, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task ReleaseAsync(Guid requestId, string consumerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<int> RetryFailedAsync(Guid? requestId = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<AttendanceConsolidationRequest?> GetActiveByEmployeeAsync(EmployeeId employeeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<ConsolidationHealth> GetHealthAsync(int recentFailures = 20, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<int> PurgeFinishedAsync(TimeSpan retention, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+}
+
+/// <summary><see cref="ISender"/> del servicio de decisiones: el recálculo inmediato usa el orquestador real.</summary>
+internal sealed class RecalculationSender : ISender
+{
+    private readonly AttendanceRecalculationHarness _harness;
+    public RecalculationSender(AttendanceRecalculationHarness harness) => _harness = harness;
+
+    public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default)
+    {
+        if (request is not ProcessDailyAttendanceCommand command) throw new NotSupportedException(request.GetType().Name);
+        if (_harness.FailNextRecalculation) { _harness.FailNextRecalculation = false; throw new InvalidOperationException("recálculo no disponible"); }
+        return (TResponse)(object)await _harness.RecalculateAsync(command.StartDate, command.EndDate, command.EmployeeId);
+    }
+
+    public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();
+    public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 
 internal sealed class InMemoryPunchAssignmentRepository : IPunchAssignmentRepository
@@ -320,6 +373,31 @@ public sealed class AttendanceRecalculationHarness
     public IAttendanceRepository AttendanceRepository => _attendanceRepo;
     public IAttendanceAdjustmentRepository AdjustmentRepository => _adjustmentRepo;
     public IUnitOfWork UnitOfWork => _unitOfWork;
+
+    /// <summary>Simula que el recálculo inmediato tras una decisión falla (la decisión queda pendiente).</summary>
+    public bool FailNextRecalculation { get; set; }
+
+    public string CurrentUser { get; set; } = "rh.operador";
+
+    /// <summary>Servicio de decisiones con los repositorios del almacén y el orquestador real.</summary>
+    public AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService Decisions()
+    {
+        var user = new Mock<ICurrentUserService>();
+        user.SetupGet(u => u.IsAuthenticated).Returns(true);
+        user.SetupGet(u => u.UserName).Returns(() => CurrentUser);
+        return new AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService(
+            _adjustmentRepo,
+            new InMemoryConsolidationRepository(Store),
+            NoOpConsolidationWakeup.Instance,
+            _unitOfWork,
+            LockService,
+            new RecalculationSender(this),
+            NullLogger<AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService>.Instance,
+            user.Object);
+    }
+
+    public AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommandHandler ManualAssign() =>
+        new(_dailyRepo, _attendanceRepo, _assignmentRepo, Decisions());
 
     /// <summary>Sin base compartida no hay otros procesos: el bloqueo es una operación vacía.</summary>
     public IAttendanceCalculationLockService LockService { get; } = Mock.Of<IAttendanceCalculationLockService>();

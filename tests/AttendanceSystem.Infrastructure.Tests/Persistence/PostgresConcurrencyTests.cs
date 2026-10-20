@@ -323,6 +323,81 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
 
     #endregion
 
+    #region Decisiones manuales (bloqueo + revisión + auditoría)
+
+    [Fact]
+    public async Task TwoOperatorsOnTheSameRevision_OneWins_TheOtherGetsAVisibleConflict()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var employee = CreateEmployee("EMP-PG-D01");
+        var day = new DateTime(2026, 6, 15);
+        var regular = Shift.Create("Matutino 08-16", new TimeSpan(8, 0, 0), 15, TimeSpan.FromHours(8), ShiftType.Matutino);
+        var early = Punch(employee.Id.Value, "DEV-PG-D", CivilToUtc(day.AddHours(7).AddMinutes(55)), day.AddHours(7).AddMinutes(55));
+        var late = Punch(employee.Id.Value, "DEV-PG-D", CivilToUtc(day.AddHours(8).AddMinutes(20)), day.AddHours(8).AddMinutes(20));
+        var exit = Punch(employee.Id.Value, "DEV-PG-D", CivilToUtc(day.AddHours(16)), day.AddHours(16));
+        await SeedAsync(early, late, exit);
+        await RecalculateAsync(employee, regular, day);
+
+        var barrier = new AsyncBarrier(2);
+        async Task<AttendanceSystem.Application.Common.Result> DecideAsync(AttendanceRecord record)
+        {
+            await using var context = _fixture.CreateDbContext();
+            var handler = CreateManualAssign(context);
+            await barrier.SignalAndWaitAsync();
+            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), record.Id.Value.ToString(), "Entrada", ExpectedRevision: 0), CancellationToken.None);
+        }
+
+        var results = await Task.WhenAll(DecideAsync(early), DecideAsync(late));
+
+        results.Count(r => r.IsSuccess).Should().Be(1, "el bloqueo serializa y la revisión esperada detecta la decisión obsoleta");
+        results.Single(r => r.IsFailure).Error.Should().Contain("revisión 1");
+
+        await using var verify = _fixture.CreateDbContext();
+        var adjustment = await verify.AttendanceAdjustments.SingleAsync(a => a.EmployeeId == employee.Id && a.Date == day);
+        adjustment.Revision.Should().Be(1);
+        adjustment.CheckInOverride.Should().Be(PositionOverrideKind.Assigned);
+        var history = await verify.AttendanceAdjustmentHistory.Where(h => h.EmployeeId == employee.Id).ToListAsync();
+        history.Should().ContainSingle();
+        history[0].Revision.Should().Be(1);
+        history[0].After.Should().Contain($"CheckIn=asignado:{adjustment.CheckInRecordId}");
+        (await verify.AttendanceConsolidationRequests.CountAsync(r => r.EmployeeId == employee.Id)).Should().Be(1, "la decisión deja una consolidación durable");
+    }
+
+    [Fact]
+    public async Task ForcedEmpty_IsPersisted_AndSurvivesRecalculations()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var employee = CreateEmployee("EMP-PG-D02");
+        var day = new DateTime(2026, 6, 16);
+        var regular = Shift.Create("Matutino 08-16", new TimeSpan(8, 0, 0), 15, TimeSpan.FromHours(8), ShiftType.Matutino);
+        var checkIn = Punch(employee.Id.Value, "DEV-PG-D", CivilToUtc(day.AddHours(8)), day.AddHours(8));
+        var exit = Punch(employee.Id.Value, "DEV-PG-D", CivilToUtc(day.AddHours(16)), day.AddHours(16));
+        await SeedAsync(checkIn, exit);
+        await RecalculateAsync(employee, regular, day);
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            var result = await CreateManualAssign(context).Handle(
+                new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), exit.Id.Value.ToString(), ManuallyAssignAttendanceCommandHandler.Unassign),
+                CancellationToken.None);
+            result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+        }
+
+        await RecalculateAsync(employee, regular, day);
+        await RecalculateAsync(employee, regular, day);
+
+        await using var verify = _fixture.CreateDbContext();
+        (await verify.DailyAttendances.SingleAsync(d => d.EmployeeId == employee.Id && d.Date == day)).CheckOutRecordId.Should().BeNull();
+        var row = await verify.PunchAssignments.SingleAsync(a => a.Id == exit.Id);
+        row.Role.Should().Be(PunchAssignmentRole.ManuallyExcluded);
+        row.Origin.Should().Be(PunchAssignmentOrigin.Manual);
+        (await verify.AttendanceAdjustments.SingleAsync(a => a.EmployeeId == employee.Id)).CheckOutOverride.Should().Be(PositionOverrideKind.ForcedEmpty);
+    }
+
+    #endregion
+
     #region Infraestructura de prueba
 
     private static DateTime CivilToUtc(DateTime civil) => DateTime.SpecifyKind(civil - UtcMinus6, DateTimeKind.Utc);
@@ -354,9 +429,14 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
     private PostgresAttendanceCalculationLockService CreateLock(AttendanceDbContext context, TimeSpan? timeout = null) =>
         new(context, NullLogger<PostgresAttendanceCalculationLockService>.Instance, timeout ?? TimeSpan.FromSeconds(30));
 
+    /// <summary>Asignación manual con el servicio de decisiones real; el recálculo inmediato se omite (lo hace la prueba).</summary>
     private ManuallyAssignAttendanceCommandHandler CreateManualAssign(AttendanceDbContext context) =>
-        new(new DailyAttendanceRepository(context), new AttendanceRepository(context), new AttendanceAdjustmentRepository(context),
-            new PunchAssignmentRepository(context), context, CreateLock(context), _classifier);
+        new(new DailyAttendanceRepository(context), new AttendanceRepository(context), new PunchAssignmentRepository(context),
+            new AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService(
+                new AttendanceAdjustmentRepository(context), new AttendanceConsolidationRepository(context), NoOpConsolidationWakeup.Instance,
+                context, CreateLock(context), Mock.Of<ISender>(),
+                NullLogger<AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService>.Instance,
+                classifier: _classifier));
 
     private Task RecalculateAsync(Employee employee, Shift shift, DateTime day, Func<IAttendanceCalculationLockService, IAttendanceCalculationLockService>? decorate = null) =>
         RecalculateAsync(new[] { employee }, shift, day, decorate);

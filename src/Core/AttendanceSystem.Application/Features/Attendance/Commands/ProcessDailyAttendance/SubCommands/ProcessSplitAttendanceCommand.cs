@@ -41,7 +41,10 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
     {
         if (!request.Shift.SecondBlockStartTime.HasValue || !request.Shift.SecondBlockEndTime.HasValue)
         {
-            _logger.LogError("El turno {ShiftName} no tiene configurado el segundo bloque.", request.Shift.Name);
+            // F05-04: antes se retornaba sin crear la jornada y se perdía el ajuste. Se registra como un solo
+            // bloque con los marcajes del día y se aplica la decisión manual.
+            _logger.LogError("El turno {ShiftName} no tiene configurado el segundo bloque; se calcula como un solo bloque.", request.Shift.Name);
+            await HandleSingleBlockAsync(request, cancellationToken);
             return;
         }
 
@@ -197,6 +200,52 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
         {
             dailyAttendance.SetBlock2CheckIn(b2InRecord.CheckTime, b2InRecord.Id);
         }
+
+        if (request.Adjustment != null)
+        {
+            dailyAttendance.ApplyAdjustment(request.Adjustment);
+        }
+
+        _dailyRepo.Add(dailyAttendance);
+        request.Draft?.Complete(dailyAttendance);
+    }
+
+    private async Task HandleSingleBlockAsync(ProcessSplitAttendanceCommand request, CancellationToken cancellationToken)
+    {
+        var targetDateOnly = DateOnly.FromDateTime(request.Date);
+        var dayRecords = PunchAssignmentPolicy.Chronological(request.Records
+            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly))
+            .ToList();
+
+        var checkIn = dayRecords.FirstOrDefault();
+        var checkOut = dayRecords.Count > 1 ? dayRecords.Last() : null;
+        foreach (var middle in dayRecords.Skip(1).Take(Math.Max(0, dayRecords.Count - 2)))
+        {
+            request.Draft?.Intermediate(middle);
+            middle.MarkAsProcessed();
+            await _attendanceRepo.UpdateAsync(middle, cancellationToken);
+        }
+        foreach (var (record, type) in new[] { (checkIn, CheckType.CheckIn), (checkOut, CheckType.CheckOut) })
+        {
+            if (record == null) continue;
+            record.MarkAsProcessed();
+            record.SetInferredType(type);
+            await _attendanceRepo.UpdateAsync(record, cancellationToken);
+        }
+
+        var dailyAttendance = DailyAttendance.Create(
+            request.Employee.Id,
+            request.Date,
+            request.Shift,
+            checkIn?.CheckTime,
+            checkOut?.CheckTime,
+            request.IsRestDay,
+            checkIn?.Id,
+            checkOut?.Id,
+            request.Employee.CalculateOvertimeBeforeEntry,
+            request.Employee.OvertimeAuthorized,
+            request.IsAutoDetectedShift,
+            timeZoneId: request.TimeZoneId);
 
         if (request.Adjustment != null)
         {

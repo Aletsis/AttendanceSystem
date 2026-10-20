@@ -32,6 +32,13 @@ public class AttendanceAdjustmentConfiguration : IEntityTypeConfiguration<Attend
                 id => id != null ? id.Value : (Guid?)null,
                 value => value.HasValue ? ShiftId.From(value.Value) : null);
 
+        // F05-01: estado por posición (0 sin decisión, 1 asignación forzada, 2 vacío forzado).
+        builder.Property(x => x.CheckInOverride).HasConversion<int>().HasDefaultValue(PositionOverrideKind.None).IsRequired();
+        builder.Property(x => x.Block1CheckOutOverride).HasConversion<int>().HasDefaultValue(PositionOverrideKind.None).IsRequired();
+        builder.Property(x => x.Block2CheckInOverride).HasConversion<int>().HasDefaultValue(PositionOverrideKind.None).IsRequired();
+        builder.Property(x => x.CheckOutOverride).HasConversion<int>().HasDefaultValue(PositionOverrideKind.None).IsRequired();
+        builder.Property(x => x.Revision).HasDefaultValue(0).IsRequired();
+
         builder.Property(x => x.CheckInRecordId)
             .HasConversion(
                 id => id != null ? id.Value : (Guid?)null,

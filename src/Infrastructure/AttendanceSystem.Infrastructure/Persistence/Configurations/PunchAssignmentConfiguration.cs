@@ -12,7 +12,7 @@ public class PunchAssignmentConfiguration : IEntityTypeConfiguration<PunchAssign
     {
         builder.ToTable("PunchAssignments", t =>
         {
-            t.HasCheckConstraint("CK_PunchAssignments_Role", "\"Role\" BETWEEN 1 AND 8");
+            t.HasCheckConstraint("CK_PunchAssignments_Role", "\"Role\" BETWEEN 1 AND 9");
             t.HasCheckConstraint("CK_PunchAssignments_Origin", "\"Origin\" IN (1, 2)");
         });
 

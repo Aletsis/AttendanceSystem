@@ -80,7 +80,12 @@ internal sealed class EmployeeRecalculationWorkset
 
         foreach (var (recordId, claim) in _loadedClaims)
         {
-            claims[recordId] = claim;
+            // Una fila es decisión manual sólo si el ajuste vigente de su jornada todavía decide ese marcaje:
+            // la fila puede ser anterior a que RH retirara la decisión.
+            var stillManual = claim.IsManual &&
+                Adjustments.TryGetValue(claim.Owner.ToDateTime(TimeOnly.MinValue), out var ownerAdjustment) &&
+                ManualRecordIds(ownerAdjustment).Contains(recordId);
+            claims[recordId] = (claim.Owner, stillManual);
         }
 
         foreach (var (date, adjustment) in Adjustments.OrderBy(kv => kv.Key))
@@ -166,13 +171,9 @@ internal sealed class EmployeeRecalculationWorkset
         ExistingDaily.ContainsKey(date.Date) ||
         _loadedClaims.Values.Any(c => c.Owner == DateOnly.FromDateTime(date));
 
-    public static IEnumerable<AttendanceRecordId> ManualRecordIds(AttendanceAdjustment adjustment)
-    {
-        if (adjustment.CheckInRecordId != null && adjustment.CheckInTimeOverride.HasValue) yield return adjustment.CheckInRecordId;
-        if (adjustment.Block1CheckOutRecordId != null && adjustment.Block1CheckOutTimeOverride.HasValue) yield return adjustment.Block1CheckOutRecordId;
-        if (adjustment.Block2CheckInRecordId != null && adjustment.Block2CheckInTimeOverride.HasValue) yield return adjustment.Block2CheckInRecordId;
-        if (adjustment.CheckOutRecordId != null && adjustment.CheckOutTimeOverride.HasValue) yield return adjustment.CheckOutRecordId;
-    }
+    /// <summary>Marcajes con decisión manual (asignados o excluidos con vacío forzado).</summary>
+    public static IEnumerable<AttendanceRecordId> ManualRecordIds(AttendanceAdjustment adjustment) =>
+        adjustment.DecidedRecordIds();
 
     public static IEnumerable<AttendanceRecordId> PositionRecordIds(DailyAttendance daily)
     {

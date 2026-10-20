@@ -57,8 +57,7 @@ public class Phase02ManualAssignmentAndDiagnosticTests
         return h;
     }
 
-    private static ManuallyAssignAttendanceCommandHandler CreateHandler(AttendanceRecalculationHarness h) =>
-        new(h.DailyRepository, h.AttendanceRepository, h.AdjustmentRepository, h.AssignmentRepository, h.UnitOfWork, h.LockService);
+    private static ManuallyAssignAttendanceCommandHandler CreateHandler(AttendanceRecalculationHarness h) => h.ManualAssign();
 
     [Fact]
     public async Task ManualAssignment_RejectsPunchAlreadyUsedByAnotherJornada_WithoutWrites()
@@ -89,8 +88,9 @@ public class Phase02ManualAssignmentAndDiagnosticTests
 
         (await handler.Handle(new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), exit16.Id.Value.ToString(), "None"), CancellationToken.None))
             .IsSuccess.Should().BeTrue();
-        h.Store.Assignments.Should().NotContain(a => a.AttendanceRecordId == exit16.Id);
-        exit16.Status.Should().Be(AttendanceStatus.Pending);
+        // Desasignar es vacío forzado: el marcaje queda excluido y reservado, no libre.
+        h.Daily(EmployeeA, Tuesday)!.CheckOutRecordId.Should().BeNull();
+        h.Store.Assignments.Single(a => a.AttendanceRecordId == exit16.Id).Role.Should().Be(PunchAssignmentRole.ManuallyExcluded);
 
         (await handler.Handle(new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), exit16.Id.Value.ToString(), "Salida"), CancellationToken.None))
             .IsSuccess.Should().BeTrue();

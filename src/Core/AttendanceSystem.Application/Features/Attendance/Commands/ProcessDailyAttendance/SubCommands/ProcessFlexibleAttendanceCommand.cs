@@ -121,6 +121,12 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
                 intervalsData: intervalsJson,
                 timeZoneId: request.TimeZoneId);
 
+            // F05-04: MultiInterval también aplica descanso, autorizaciones y asignaciones manuales.
+            if (request.Adjustment != null)
+            {
+                multiDailyAttendance.ApplyAdjustment(request.Adjustment);
+            }
+
             _dailyRepo.Add(multiDailyAttendance);
             request.Draft?.Complete(multiDailyAttendance);
             return;

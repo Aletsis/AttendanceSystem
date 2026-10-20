@@ -73,7 +73,8 @@
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida B1"))">Asignar como Salida B1</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada B2"))">Asignar como Entrada B2</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida"))">Asignar como Salida (B2)</MudMenuItem>
-                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar (dejar vacío)</MudMenuItem>
+                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Restaurar"))">Restaurar cálculo automático</MudMenuItem>
                     </MudMenu>
                 </div>
             </CellTemplate>
@@ -246,18 +247,19 @@
 
     private async Task AssignLog(AttendanceLogViewDto record, string type)
     {
+        // La decisión se toma sobre la jornada que se está consultando (CheckTime es UTC y podría caer en otro día).
         var command = new ManuallyAssignAttendanceCommand(
-            record.EmployeeId, 
-            DateOnly.FromDateTime(record.CheckTime), 
-            record.Id.ToString(), 
+            record.EmployeeId,
+            DateOnly.FromDateTime(SelectedDate ?? record.CheckTime),
+            record.Id.ToString(),
             type);
 
         var result = await Mediator.Send(command);
 
         if (result.IsSuccess)
         {
-            Snackbar.Add("Asignación actualizada correctamente", Severity.Success);
-            await LoadData(); 
+            Snackbar.Add(result.Value.UserMessage, result.Value.Consolidated ? Severity.Success : Severity.Warning);
+            await LoadData();
         }
         else
         {

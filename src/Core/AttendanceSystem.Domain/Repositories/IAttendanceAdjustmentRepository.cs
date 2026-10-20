@@ -20,4 +20,9 @@ public interface IAttendanceAdjustmentRepository
     Task AddAsync(AttendanceAdjustment adjustment, CancellationToken cancellationToken = default);
     void Update(AttendanceAdjustment adjustment);
     void Remove(AttendanceAdjustment adjustment);
+
+    /// <summary>Agrega una entrada de auditoría de la decisión (F05-06).</summary>
+    Task AddHistoryAsync(AttendanceAdjustmentHistory entry, CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<AttendanceAdjustmentHistory>> GetHistoryAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default);
 }

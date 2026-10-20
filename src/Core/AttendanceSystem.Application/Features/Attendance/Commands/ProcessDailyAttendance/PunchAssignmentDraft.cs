@@ -48,12 +48,23 @@ public sealed class PunchAssignmentDraft
             result.Add(PunchAssignment.Create(recordId, daily.EmployeeId, workDate, role, origin, assignedAt));
         }
 
-        AddPosition(daily.CheckInRecordId, PunchAssignmentRole.CheckIn, adjustment?.CheckInRecordId);
-        AddPosition(daily.Block1CheckOutRecordId, PunchAssignmentRole.Block1CheckOut, adjustment?.Block1CheckOutRecordId);
-        AddPosition(daily.Block2CheckInRecordId, PunchAssignmentRole.Block2CheckIn, adjustment?.Block2CheckInRecordId);
-        AddPosition(daily.CheckOutRecordId, PunchAssignmentRole.CheckOut, adjustment?.CheckOutRecordId);
+        AttendanceRecordId? Manual(AttendancePosition position) =>
+            adjustment?.OverrideKind(position) == PositionOverrideKind.Assigned ? adjustment.OverrideRecord(position) : null;
+
+        AddPosition(daily.CheckInRecordId, PunchAssignmentRole.CheckIn, Manual(AttendancePosition.CheckIn));
+        AddPosition(daily.Block1CheckOutRecordId, PunchAssignmentRole.Block1CheckOut, Manual(AttendancePosition.Block1CheckOut));
+        AddPosition(daily.Block2CheckInRecordId, PunchAssignmentRole.Block2CheckIn, Manual(AttendancePosition.Block2CheckIn));
+        AddPosition(daily.CheckOutRecordId, PunchAssignmentRole.CheckOut, Manual(AttendancePosition.CheckOut));
 
         var positioned = result.Select(a => a.AttendanceRecordId).ToHashSet();
+
+        // F05-01: un marcaje retirado con vacío forzado queda reservado por la jornada como excluido.
+        foreach (var excluded in adjustment?.ExcludedRecordIds() ?? Enumerable.Empty<AttendanceRecordId>())
+        {
+            if (!positioned.Add(excluded)) continue;
+            result.Add(PunchAssignment.Create(excluded, daily.EmployeeId, workDate, PunchAssignmentRole.ManuallyExcluded, PunchAssignmentOrigin.Manual, assignedAt));
+        }
+
         foreach (var (recordId, role) in _secondary.OrderBy(kv => kv.Key.Value))
         {
             if (positioned.Contains(recordId)) continue;

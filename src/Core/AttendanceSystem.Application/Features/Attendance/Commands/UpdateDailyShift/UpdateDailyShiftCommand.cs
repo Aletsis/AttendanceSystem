@@ -5,7 +5,7 @@ using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAtte
 using MediatR;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Application.Common;
-using Microsoft.Extensions.Logging;
+using AttendanceSystem.Application.Features.Attendance.Decisions;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift;
 
@@ -15,36 +15,23 @@ public sealed record UpdateDailyShiftCommand(
     Guid ShiftId) : IRequest<Result>;
 
 /// <summary>
-/// Cambia el turno de una jornada como decisión manual persistente y la reconstruye con el motor
-/// común de recálculo (F02-05). Así la selección de marcajes, la pertenencia y las jornadas
-/// dependientes se resuelven igual que en cualquier otro recálculo.
+/// Cambia el turno de una jornada como decisión manual persistente (F05-02) y la reconstruye con el motor
+/// común de recálculo (F02-05).
 /// </summary>
 public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDailyShiftCommand, Result>
 {
     private readonly IShiftRepository _shiftRepo;
-    private readonly IUnitOfWork _unitOfWork;
     private readonly IEmployeeRepository _employeeRepo;
-    private readonly IAttendanceAdjustmentRepository _adjustmentRepo;
-    private readonly ISender _sender;
-    private readonly ILogger<UpdateDailyShiftCommandHandler> _logger;
-    private readonly IAttendanceCalculationLockService _lockService;
+    private readonly AttendanceDecisionService _decisions;
 
     public UpdateDailyShiftCommandHandler(
         IShiftRepository shiftRepo,
-        IUnitOfWork unitOfWork,
         IEmployeeRepository employeeRepo,
-        IAttendanceAdjustmentRepository adjustmentRepo,
-        ISender sender,
-        ILogger<UpdateDailyShiftCommandHandler> logger,
-        IAttendanceCalculationLockService lockService)
+        AttendanceDecisionService decisions)
     {
         _shiftRepo = shiftRepo;
-        _unitOfWork = unitOfWork;
         _employeeRepo = employeeRepo;
-        _adjustmentRepo = adjustmentRepo;
-        _sender = sender;
-        _logger = logger;
-        _lockService = lockService;
+        _decisions = decisions;
     }
 
     public async Task<Result> Handle(UpdateDailyShiftCommand request, CancellationToken cancellationToken)
@@ -61,44 +48,20 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             return Result.Failure("El turno seleccionado no existe.");
         }
 
-        var date = request.Date.ToDateTime(TimeOnly.MinValue);
-
-        // Cargar o crear el ajuste manual persistente bajo el bloqueo del empleado (F03-03): la decisión
-        // sobrevive a cualquier recálculo posterior y no se pierde frente a uno concurrente.
-        await ExclusiveAttendanceWrite.RunAsync(
-            _unitOfWork,
-            _lockService,
-            new[] { employeeId },
-            async () =>
+        // Decisión persistente y auditada; el motor común reconstruye la jornada y sus dependencias.
+        var result = await _decisions.DecideAsync(
+            employeeId,
+            request.Date.ToDateTime(TimeOnly.MinValue),
+            "Turno",
+            $"Cambio manual de turno a {shift.Name}",
+            expectedRevision: null,
+            (context, adjustment) =>
             {
-                var adjustment = await _adjustmentRepo.GetByEmployeeAndDateAsync(employeeId, date, cancellationToken);
-                if (adjustment == null)
-                {
-                    adjustment = AttendanceAdjustment.Create(employeeId, date, "Usuario RH");
-                    adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
-                    await _adjustmentRepo.AddAsync(adjustment, cancellationToken);
-                }
-                else
-                {
-                    adjustment.SetShiftOverride(shiftId, "Usuario RH", "Cambio manual de turno");
-                    _adjustmentRepo.Update(adjustment);
-                }
-
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                return Result.Success();
+                adjustment.SetShiftOverride(shiftId, context.Author, "Cambio manual de turno");
+                return Task.FromResult(Result.Success());
             },
             cancellationToken);
 
-        try
-        {
-            await _sender.Send(new ProcessDailyAttendanceCommand(date, date, EmployeeId: employeeId), cancellationToken);
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogError(ex, "El turno de {EmployeeId} para {Date:yyyy-MM-dd} se guardó, pero el recálculo falló.", employeeId.Value, date);
-            return Result.Failure($"El turno se guardó, pero el recálculo de la jornada falló: {ex.Message}");
-        }
-
-        return Result.Success();
+        return result.IsSuccess ? Result.Success() : Result.Failure(result.Error);
     }
 }
