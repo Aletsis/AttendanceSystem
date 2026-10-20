@@ -116,6 +116,18 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<OutboxBackgroundProcessor>();
         services.AddHostedService(sp => sp.GetRequiredService<OutboxBackgroundProcessor>());
 
+        // F04-05: consumidor durable de consolidación. En hosts sin IHost (WPF) no se ejecuta: las solicitudes
+        // quedan en la base de datos y las procesa el servidor.
+        var consolidationOptions = configuration.GetSection(AttendanceSystem.Application.Features.Attendance.Consolidation.ConsolidationOptions.SectionName)
+            .Get<AttendanceSystem.Application.Features.Attendance.Consolidation.ConsolidationOptions>()
+            ?? new AttendanceSystem.Application.Features.Attendance.Consolidation.ConsolidationOptions();
+        services.AddSingleton(consolidationOptions);
+        services.AddSingleton<ConsolidationWakeupSignal>();
+        services.AddSingleton<IConsolidationWakeup>(sp => sp.GetRequiredService<ConsolidationWakeupSignal>());
+        services.AddScoped<IOutboxMonitor>(sp => new AttendanceSystem.Infrastructure.Persistence.Outbox.OutboxStore(sp.GetRequiredService<AttendanceDbContext>()));
+        services.AddSingleton<AttendanceConsolidationWorker>();
+        services.AddHostedService(sp => sp.GetRequiredService<AttendanceConsolidationWorker>());
+
         // 6. Cliente gRPC para Windows Service ZKTeco
         services.AddGrpcClient<ZKTecoService.ZKTecoServiceClient>(options =>
         {

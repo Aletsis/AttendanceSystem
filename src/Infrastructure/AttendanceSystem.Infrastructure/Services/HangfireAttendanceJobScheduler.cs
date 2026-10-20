@@ -111,12 +111,6 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         _backgroundJobClient.Enqueue<AttendanceJobs>(
             jobs => jobs.SyncEmployeeBiometrics(deviceId, employeeId));
     }
-
-    public void EnqueueAttendanceProcessing(DateTime startDate, DateTime endDate, string? employeeId = null)
-    {
-        _backgroundJobClient.Enqueue<AttendanceJobs>(
-            jobs => jobs.ProcessAttendance(startDate, endDate, employeeId));
-    }
 }
 
 public class AttendanceJobs
@@ -213,6 +207,10 @@ public class AttendanceJobs
         }
     }
 
+    /// <summary>
+    /// Ya no se encola: la consolidación la hace AttendanceConsolidationWorker desde solicitudes durables.
+    /// Se conserva para ejecutar los trabajos que quedaron en el almacenamiento de Hangfire antes del cambio.
+    /// </summary>
     [JobDisplayName("Process Attendance for Employee {2} from {0:yyyy-MM-dd} to {1:yyyy-MM-dd}")]
     public async Task ProcessAttendance(DateTime startDate, DateTime endDate, string? employeeId)
     {

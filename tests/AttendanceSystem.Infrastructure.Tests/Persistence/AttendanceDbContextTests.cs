@@ -47,6 +47,6 @@ public class AttendanceDbContextTests
 
         // Assert
         result.Should().BeGreaterThan(0);
-        _publisherMock.Verify(p => p.Publish(It.IsAny<DomainEvent>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        _publisherMock.Verify(p => p.Publish(It.Is<INotification>(n => n is DomainEvent), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
     }
 }

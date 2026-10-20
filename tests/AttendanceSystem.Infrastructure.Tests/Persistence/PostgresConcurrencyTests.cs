@@ -384,7 +384,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
 
         var handler = new ProcessDailyAttendanceCommandHandler(
             dailyRepo, attendanceRepo, employeeRepo.Object, shiftRepo.Object, rosterRepo.Object, configRepo.Object,
-            new AttendanceAdjustmentRepository(context), new AttendanceConsolidationRepository(context), new PunchAssignmentRepository(context),
+            new AttendanceAdjustmentRepository(context), new PunchAssignmentRepository(context),
             lockService, context, new RegularSender(dailyRepo, attendanceRepo), NullLogger<ProcessDailyAttendanceCommandHandler>.Instance);
 
         await handler.Handle(new ProcessDailyAttendanceCommand(day, day, EmployeeId: employees.Count == 1 ? employees[0].Id : null), CancellationToken.None);

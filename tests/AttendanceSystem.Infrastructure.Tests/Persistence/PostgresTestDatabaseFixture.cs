@@ -94,7 +94,7 @@ public class PostgresTestDatabaseFixture : IAsyncLifetime
         }
     }
 
-    public AttendanceDbContext CreateDbContext()
+    public AttendanceDbContext CreateDbContext(MediatR.IPublisher? publisher = null)
     {
         var optionsBuilder = new DbContextOptionsBuilder<AttendanceDbContext>();
         optionsBuilder.UseNpgsql(_testConnectionString, npgsqlOptions =>
@@ -102,8 +102,7 @@ public class PostgresTestDatabaseFixture : IAsyncLifetime
             npgsqlOptions.MigrationsAssembly(typeof(AttendanceDbContext).Assembly.FullName);
         });
 
-        var publisherMock = new Moq.Mock<MediatR.IPublisher>();
-        return new AttendanceDbContext(optionsBuilder.Options, publisherMock.Object);
+        return new AttendanceDbContext(optionsBuilder.Options, publisher ?? new Moq.Mock<MediatR.IPublisher>().Object);
     }
 
     public async Task DisposeAsync()

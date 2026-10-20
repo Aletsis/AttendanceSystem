@@ -351,7 +351,6 @@ public sealed class AttendanceRecalculationHarness
             rosterRepo.Object,
             configRepo.Object,
             _adjustmentRepo,
-            consolidationRepo.Object,
             _assignmentRepo,
             LockService,
             _unitOfWork,

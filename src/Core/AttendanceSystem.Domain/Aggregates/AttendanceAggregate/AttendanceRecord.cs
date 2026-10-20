@@ -70,7 +70,8 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
             record.Id,
             record.EmployeeId,
             record.CheckTime,
-            record.CheckType));
+            record.CheckType,
+            record.WorkDate));
 
         return record;
     }

@@ -568,7 +568,6 @@ public class AdmsController : ControllerBase
         int processed = 0;
         bool batchHasFailures = false;
         DateTime? lastCheckTime = null;
-        var uniqueCalculations = new HashSet<(string Pin, DateTime Date)>();
         var localLogs = new List<AttendanceLogDto>();
         var incidents = new List<AdmsIngestionIncident>();
 
@@ -733,9 +732,6 @@ public class AdmsController : ControllerBase
                             WorkDate: workDate,
                             Source: "ADMS"));
                         processed++;
-
-                        // H17: Agrupar cálculo por la fecha civil/laboral real del trabajador, no por fecha UTC
-                        uniqueCalculations.Add((pin, workDate.ToDateTime(TimeOnly.MinValue)));
                     }
 
                     // Rastrear el timestamp más reciente del batch (incluso si es externo, para no repetir descarga si aplica)
@@ -837,30 +833,8 @@ public class AdmsController : ControllerBase
             _logger.LogInformation("✅ {Count} registros de {SN}, stamp actualizado a {Stamp} (fallas={HasFailures})",
                 processed, SN, (!batchHasFailures && lastCheckTime.HasValue ? lastCheckTime.ToString() : "NO_AVANZADO"), batchHasFailures);
 
-            // F06-P04 / H23: Coalescer intenciones de recálculo por empleado y ventana afectada
-            var coalescedByPin = uniqueCalculations
-                .GroupBy(u => u.Pin)
-                .Select(g => new
-                {
-                    Pin = g.Key,
-                    MinDate = g.Min(x => x.Date),
-                    MaxDate = g.Max(x => x.Date)
-                });
-
-            foreach (var calc in coalescedByPin)
-            {
-                try
-                {
-                    // Expand range by 1 day back to ensure night shifts are caught correctly
-                    var processStartDate = calc.MinDate.AddDays(-1);
-                    _jobScheduler.EnqueueAttendanceProcessing(processStartDate, calc.MaxDate, calc.Pin);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error encolando cálculo coalescido de asistencia para empleado {Pin} en rango {Start} - {End}",
-                        calc.Pin, calc.MinDate, calc.MaxDate);
-                }
-            }
+            // F04-01 / F04-05: la consolidación ya no se encola aquí. Cada marcaje insertado emite AttendanceRecordedEvent
+            // y el outbox registra una solicitud durable por empleado, que el consumidor agrupa y procesa.
         }
 
         return processed;

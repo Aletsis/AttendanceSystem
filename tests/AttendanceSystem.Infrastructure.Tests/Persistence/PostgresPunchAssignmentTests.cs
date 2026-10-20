@@ -215,7 +215,6 @@ public class PostgresPunchAssignmentTests : IClassFixture<PostgresTestDatabaseFi
             rosterRepo.Object,
             configRepo.Object,
             new AttendanceAdjustmentRepository(context),
-            new AttendanceConsolidationRepository(context),
             new PunchAssignmentRepository(context),
             new PostgresAttendanceCalculationLockService(context, NullLogger<PostgresAttendanceCalculationLockService>.Instance),
             context,

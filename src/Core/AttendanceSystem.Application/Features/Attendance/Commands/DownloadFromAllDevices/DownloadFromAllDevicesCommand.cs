@@ -1,3 +1,4 @@
+using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Repositories;
@@ -18,18 +19,24 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
 {
     private readonly IDeviceRepository _deviceRepository;
     private readonly IMediator _mediator;
-    private readonly IAttendanceJobScheduler _jobScheduler;
+    private readonly IEmployeeRepository _employeeRepository;
+    private readonly IAttendanceConsolidationRepository _consolidationRepository;
+    private readonly IConsolidationWakeup _wakeup;
     private readonly ILogger<DownloadFromAllDevicesCommandHandler> _logger;
 
     public DownloadFromAllDevicesCommandHandler(
         IDeviceRepository deviceRepository,
         IMediator mediator,
-        IAttendanceJobScheduler jobScheduler,
+        IEmployeeRepository employeeRepository,
+        IAttendanceConsolidationRepository consolidationRepository,
+        IConsolidationWakeup wakeup,
         ILogger<DownloadFromAllDevicesCommandHandler> logger)
     {
         _deviceRepository = deviceRepository;
         _mediator = mediator;
-        _jobScheduler = jobScheduler;
+        _employeeRepository = employeeRepository;
+        _consolidationRepository = consolidationRepository;
+        _wakeup = wakeup;
         _logger = logger;
     }
 
@@ -98,8 +105,18 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
             // Expandimos 1 día atrás para turnos nocturnos.
             var processStartDate = globalMinDate.Value.AddDays(-1);
 
-            _logger.LogInformation("Encolando procesamiento GLOBAL de asistencia para detectar faltas. Rango: {Start} - {End}", processStartDate, globalMaxDate.Value);
-            _jobScheduler.EnqueueAttendanceProcessing(processStartDate, globalMaxDate.Value, null);
+            // F04-04 / F04-05: solicitudes durables por empleado (agrupadas por el consumidor) en lugar de un
+            // trabajo en memoria que se pierde si el proceso cae antes de ejecutarlo.
+            var employees = await _employeeRepository.GetAllAsync(cancellationToken);
+            var activeIds = employees
+                .Where(e => e.HireDate.Date <= globalMaxDate.Value.Date && (!e.TerminationDate.HasValue || e.TerminationDate.Value.Date >= processStartDate.Date))
+                .Select(e => e.Id)
+                .ToList();
+
+            _logger.LogInformation("Solicitando consolidación GLOBAL de asistencia para detectar faltas. Empleados: {Count}. Rango: {Start} - {End}",
+                activeIds.Count, processStartDate, globalMaxDate.Value);
+            await _consolidationRepository.RequestManyAsync(activeIds, processStartDate, globalMaxDate.Value, cancellationToken);
+            _wakeup.Signal();
         }
 
         return Result<IEnumerable<DownloadResultDto>>.Success(results);

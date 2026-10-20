@@ -86,7 +86,6 @@ public class AttendanceCalculationAtomicityTests
             _rosterRepoMock.Object,
             _systemConfigRepoMock.Object,
             _adjustmentRepoMock.Object,
-            _consolidationRepoMock.Object,
 
             Mock.Of<IPunchAssignmentRepository>(),
             _lockServiceMock.Object,

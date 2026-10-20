@@ -24,6 +24,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<AttendanceValidationService>();
         services.AddScoped<AttendanceSystem.Application.Abstractions.IHistoricalAttendanceDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.HistoricalAttendanceTimeDiagnosticService>();
         services.AddScoped<AttendanceSystem.Application.Abstractions.IPunchAssignmentDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.PunchAssignmentDiagnosticService>();
+        services.AddScoped<AttendanceSystem.Application.Features.Attendance.Consolidation.AttendanceConsolidationProcessor>();
 
         return services;
     }

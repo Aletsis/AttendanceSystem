@@ -53,10 +53,5 @@ namespace AttendanceSystem.WPF.Services
         {
             // No-op for WPF Client - Handled by server
         }
-
-        public void EnqueueAttendanceProcessing(DateTime startDate, DateTime endDate, string? employeeId = null)
-        {
-            // No-op for WPF Client - Handled by server
-        }
     }
 }

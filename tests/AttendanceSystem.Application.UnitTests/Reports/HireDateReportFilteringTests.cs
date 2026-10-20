@@ -104,7 +104,6 @@ public class HireDateReportFilteringTests
             rosterRepoMock.Object,
             systemConfigRepoMock.Object,
             adjustmentRepoMock.Object,
-            consolidationRepoMock.Object,
 
             Mock.Of<IPunchAssignmentRepository>(),
             lockServiceMock.Object,

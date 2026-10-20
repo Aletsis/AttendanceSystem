@@ -30,7 +30,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IShiftRosterRepository _rosterRepo;
     private readonly ISystemConfigurationRepository _systemConfigRepo;
     private readonly IAttendanceAdjustmentRepository _adjustmentRepo;
-    private readonly IAttendanceConsolidationRepository _consolidationRepo;
     private readonly IPunchAssignmentRepository _assignmentRepo;
     private readonly IAttendanceCalculationLockService _lockService;
     private readonly IUnitOfWork _unitOfWork;
@@ -46,7 +45,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IShiftRosterRepository rosterRepo,
         ISystemConfigurationRepository systemConfigRepo,
         IAttendanceAdjustmentRepository adjustmentRepo,
-        IAttendanceConsolidationRepository consolidationRepo,
         IPunchAssignmentRepository assignmentRepo,
         IAttendanceCalculationLockService lockService,
         IUnitOfWork unitOfWork,
@@ -61,7 +59,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         _rosterRepo = rosterRepo;
         _systemConfigRepo = systemConfigRepo;
         _adjustmentRepo = adjustmentRepo;
-        _consolidationRepo = consolidationRepo;
         _assignmentRepo = assignmentRepo;
         _lockService = lockService;
         _unitOfWork = unitOfWork;
@@ -174,8 +171,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     }
 
     /// <summary>
-    /// Una unidad atómica: carga (ya bajo bloqueo), reconstruye, recalcula la semana de extras y completa
-    /// la solicitud de consolidación del empleado. Se ejecuta dentro de la transacción de la unidad.
+    /// Una unidad atómica: carga (ya bajo bloqueo), reconstruye y recalcula la semana de extras del empleado.
+    /// Se ejecuta dentro de la transacción de la unidad.
     /// </summary>
     private async Task<int> RecalculateUnitAsync(
         Employee employee,
@@ -228,14 +225,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             }
         }
 
-        // F05-P06 / H27: Completar la solicitud de consolidación pendiente cubierta por este recálculo
-        var pendingReq = await _consolidationRepo.GetPendingByEmployeeAsync(employee.Id, cancellationToken);
-        if (pendingReq != null && pendingReq.StartDate >= requestStart && pendingReq.EndDate <= requestEnd)
-        {
-            pendingReq.MarkAsCompleted();
-            _consolidationRepo.Update(pendingReq);
-            hasSubsequentUpdates = true;
-        }
+        // Las solicitudes de consolidación no se completan aquí: sólo su consumidor lo hace, comprobando la
+        // versión capturada al reclamarlas, para no descartar ampliaciones concurrentes (F04-06 / A07).
 
         if (hasSubsequentUpdates)
         {

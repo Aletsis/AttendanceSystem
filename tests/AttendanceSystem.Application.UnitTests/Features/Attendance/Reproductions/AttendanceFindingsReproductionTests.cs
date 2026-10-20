@@ -241,31 +241,28 @@ public class AttendanceFindingsReproductionTests
     #region H05 — Errores de consolidación absorbidos y pendientes sin consumidor
 
     [Fact]
-    public void H05_ConsolidationRequests_Have_No_Background_Consumer_In_The_Solution()
+    public void H05_ConsolidationRequests_Have_A_Durable_Consumer_With_Atomic_Transitions()
     {
-        // ENTRADA:
-        // Solicitud en estado Pending creada por AttendanceRecordedEventHandler
-        var request = AttendanceConsolidationRequest.Create(
-            AttendanceRegressionFixtures.EmployeeFixedId,
-            DateTime.Today.AddDays(-1),
-            DateTime.Today);
+        // LÍNEA BASE (F00-05): ninguna clase consumía las solicitudes Pending; si el trabajo de Hangfire en
+        // memoria se perdía, la solicitud quedaba pendiente para siempre, y el manejador absorbía sus errores.
+        // CORREGIDO: AttendanceConsolidationProcessor (Aplicación) procesa solicitudes reclamadas desde la base de
+        // datos con lease y versión; el worker de Infraestructura lo ejecuta. Las transiciones son atómicas.
+        var repositoryMethods = typeof(IAttendanceConsolidationRepository).GetMethods().Select(m => m.Name).ToList();
+        repositoryMethods.Should().Contain(new[]
+        {
+            nameof(IAttendanceConsolidationRepository.RequestAsync),
+            nameof(IAttendanceConsolidationRepository.ClaimAsync),
+            nameof(IAttendanceConsolidationRepository.CompleteAsync),
+            nameof(IAttendanceConsolidationRepository.FailAsync),
+            nameof(IAttendanceConsolidationRepository.ReleaseAsync),
+            nameof(IAttendanceConsolidationRepository.RetryFailedAsync)
+        });
 
-        request.Status.Should().Be(ConsolidationStatus.Pending);
+        typeof(AttendanceSystem.Application.Features.Attendance.Consolidation.AttendanceConsolidationProcessor)
+            .GetMethod("ProcessAsync").Should().NotBeNull("existe un consumidor de solicitudes pendientes");
 
-        // RESULTADO ACTUAL EN LÍNEA BASE (Causa de H05):
-        // IAttendanceConsolidationRepository define GetPendingBatchAsync, pero ninguna clase
-        // en toda la solución (.Application, .Infrastructure, .Blazor) invoca ese método ni procesa la tabla.
-        var usagesOfGetPendingBatch = typeof(IAttendanceConsolidationRepository).Assembly
-            .GetTypes()
-            .SelectMany(t => t.GetMethods())
-            .Where(m => m.Name == nameof(IAttendanceConsolidationRepository.GetPendingBatchAsync))
-            .ToList();
-
-        usagesOfGetPendingBatch.Should().NotBeEmpty();
-
-        // DEMOSTRACIÓN DEL DEFECTO H05:
-        // Si Hangfire se cae o el servidor se reinicia antes de ejecutar el job en memoria,
-        // la solicitud en base de datos queda permanentemente en Pending sin consumidor.
+        // El comportamiento relacional (caídas, dos consumidores, ampliación concurrente) se verifica en
+        // Infrastructure.Tests/Persistence/PostgresConsolidationTests.
     }
 
     #endregion

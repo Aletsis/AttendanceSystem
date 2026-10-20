@@ -35,6 +35,12 @@ public class OutboxMessageConfiguration : IEntityTypeConfiguration<OutboxMessage
             .HasDefaultValue(0)
             .IsRequired();
 
+        builder.Property(x => x.LockedBy).HasMaxLength(200);
+        builder.Property(x => x.LockedUntilUtc);
+        builder.Property(x => x.NextAttemptOnUtc);
+        builder.Property(x => x.DeadLetteredOnUtc);
+
         builder.HasIndex(x => new { x.ProcessedOnUtc, x.OccurredOnUtc });
+        builder.HasIndex(x => new { x.ProcessedOnUtc, x.DeadLetteredOnUtc, x.NextAttemptOnUtc });
     }
 }

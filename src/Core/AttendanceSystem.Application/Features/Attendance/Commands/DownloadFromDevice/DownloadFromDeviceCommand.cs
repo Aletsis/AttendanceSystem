@@ -500,12 +500,8 @@ public sealed class DownloadFromDeviceCommandHandler
             {
                 foreach (var empId in affectedEmployeeIds)
                 {
-                    if (command.CalculateAttendance)
-                    {
-                        // Expand range by 1 day back to ensure night shifts are caught correctly
-                        var processStartDate = minDate.Value.AddDays(-1);
-                        _jobScheduler.EnqueueAttendanceProcessing(processStartDate, maxDate.Value, empId);
-                    }
+                    // La consolidación no se encola aquí: cada marcaje insertado emite AttendanceRecordedEvent, que
+                    // registra una solicitud durable por empleado desde el outbox (F04-01 / F04-05).
 
                     // Queue missing biometrics sync
                     var emp = await _employeeRepository.GetByIdAsync(EmployeeId.From(empId), cancellationToken);

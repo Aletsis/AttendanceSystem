@@ -1,17 +1,23 @@
-using System.Text.Json;
+using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Infrastructure.Persistence;
+using AttendanceSystem.Infrastructure.Persistence.Outbox;
 using MediatR;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Infrastructure.Services;
 
+/// <summary>
+/// Publica los mensajes del outbox que la ruta inmediata no pudo publicar (fallo, caída antes o
+/// después de guardar, transacción confirmada fuera del protocolo). Reclama con lease y
+/// <c>SKIP LOCKED</c>, por lo que varias instancias del servidor pueden ejecutarse a la vez (F04-02).
+/// </summary>
 public class OutboxBackgroundProcessor : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<OutboxBackgroundProcessor> _logger;
+    private readonly string _consumerId = $"outbox:{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
 
     public OutboxBackgroundProcessor(
         IServiceProvider serviceProvider,
@@ -25,14 +31,21 @@ public class OutboxBackgroundProcessor : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
+            int processed = 0;
             try
             {
-                await ProcessPendingMessagesAsync(stoppingToken);
+                processed = await ProcessPendingMessagesAsync(stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error en el procesamiento en segundo plano del Outbox.");
             }
+
+            if (processed > 0) continue;
 
             try
             {
@@ -48,53 +61,32 @@ public class OutboxBackgroundProcessor : BackgroundService
     public async Task<int> ProcessPendingMessagesAsync(CancellationToken cancellationToken = default)
     {
         using var scope = _serviceProvider.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
-        var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
-
-        var pendingMessages = await context.OutboxMessages
-            .Where(m => m.ProcessedOnUtc == null && m.RetryCount < 5)
-            .OrderBy(m => m.OccurredOnUtc)
-            .Take(50)
-            .ToListAsync(cancellationToken);
-
-        if (pendingMessages.Count == 0)
+        var restoreState = scope.ServiceProvider.GetService<IRestoreStateService>();
+        if (restoreState != null && !restoreState.CanWrite)
         {
             return 0;
         }
 
-        int processedCount = 0;
+        var context = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+        var publisher = scope.ServiceProvider.GetRequiredService<IPublisher>();
+        var store = new OutboxStore(context);
 
-        foreach (var message in pendingMessages)
+        var claimed = await store.ClaimAsync(_consumerId, 50, OutboxStore.DefaultLease, cancellationToken);
+        if (claimed.Count == 0)
         {
-            try
-            {
-                var eventType = Type.GetType(message.Type);
-                if (eventType == null)
-                {
-                    message.MarkAsFailed($"No se pudo resolver el tipo '{message.Type}'.");
-                    continue;
-                }
-
-                var domainEvent = JsonSerializer.Deserialize(message.Content, eventType);
-                if (domainEvent is INotification notification)
-                {
-                    await publisher.Publish(notification, cancellationToken);
-                    message.MarkAsProcessed();
-                    processedCount++;
-                }
-                else
-                {
-                    message.MarkAsFailed("El evento deserializado no implementa INotification.");
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error al despachar mensaje Outbox {MessageId}", message.Id);
-                message.MarkAsFailed(ex.Message);
-            }
+            return 0;
         }
 
-        await context.SaveChangesAsync(cancellationToken);
-        return processedCount;
+        await OutboxStore.PublishClaimedAsync(claimed.Select(m => (m, (INotification?)null)).ToList(), publisher, cancellationToken);
+        await context.SaveChangesAsync(CancellationToken.None);
+
+        var processed = claimed.Count(m => m.ProcessedOnUtc != null);
+        var dead = claimed.Count(m => m.DeadLetteredOnUtc != null);
+        if (dead > 0)
+        {
+            _logger.LogError("Outbox: {Dead} mensajes agotaron sus intentos y quedaron como mensajes muertos.", dead);
+        }
+
+        return processed;
     }
 }

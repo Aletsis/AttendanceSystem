@@ -86,8 +86,6 @@ public class EmployeeHistoricalValidityTests
             _rosterRepoMock.Object,
             _systemConfigRepoMock.Object,
             _adjustmentRepoMock.Object,
-            _consolidationRepoMock.Object,
-
             Mock.Of<IPunchAssignmentRepository>(),
             _lockServiceMock.Object,
             _unitOfWorkMock.Object,

@@ -19,20 +19,15 @@ public class UnitOfWork : IUnitOfWork
         return await _dbContext.SaveChangesAsync(cancellationToken);
     }
 
-    public async Task<IAsyncDisposable> BeginTransactionAsync(CancellationToken cancellationToken = default)
-    {
-        return await _dbContext.Database.BeginTransactionAsync(cancellationToken);
-    }
+    // Delega en el contexto para aplicar el mismo protocolo de outbox (publicar sólo tras el commit).
+    public Task<IAsyncDisposable> BeginTransactionAsync(CancellationToken cancellationToken = default) =>
+        _dbContext.BeginTransactionAsync(cancellationToken);
 
-    public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
-    {
-        await _dbContext.Database.CommitTransactionAsync(cancellationToken);
-    }
+    public Task CommitTransactionAsync(CancellationToken cancellationToken = default) =>
+        _dbContext.CommitTransactionAsync(cancellationToken);
 
-    public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
-    {
-        await _dbContext.Database.RollbackTransactionAsync(cancellationToken);
-    }
+    public Task RollbackTransactionAsync(CancellationToken cancellationToken = default) =>
+        _dbContext.RollbackTransactionAsync(cancellationToken);
 
     public void DiscardChanges() => _dbContext.DiscardChanges();
 }

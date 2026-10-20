@@ -13,6 +13,7 @@ using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Domain.Enumerations;
 using System.Text.Json;
+using AttendanceSystem.Infrastructure.Persistence.Outbox;
 
 namespace AttendanceSystem.Infrastructure.Persistence;
 
@@ -82,6 +83,12 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
         }
     }
 
+    /// <summary>Identifica las reclamaciones de outbox hechas por esta instancia (ruta inmediata).</summary>
+    private readonly string _outboxClaimant = $"ctx:{Environment.MachineName}:{Environment.ProcessId}:{Guid.NewGuid():N}";
+
+    /// <summary>Eventos guardados dentro de una transacción explícita que se publicarán tras su commit.</summary>
+    private readonly List<(OutboxMessage Message, INotification Event)> _publishAfterCommit = new();
+
     public override async Task<int> SaveChangesAsync(
         CancellationToken cancellationToken = default)
     {
@@ -91,17 +98,19 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
             .Select(e => e.Entity)
             .ToList();
 
-        var domainEvents = new List<DomainEvent>();
-        var outboxMessages = new List<OutboxMessage>();
+        var prepared = new List<(OutboxMessage Message, INotification Event)>();
+        var lockedUntil = DateTime.UtcNow.Add(OutboxStore.DefaultLease);
 
         foreach (var entity in domainEntities)
         {
             foreach (var domainEvent in entity.DomainEvents)
             {
-                domainEvents.Add(domainEvent);
-                var content = JsonSerializer.Serialize(domainEvent, domainEvent.GetType());
+                var content = DomainEventJson.Serialize(domainEvent);
                 var message = OutboxMessage.Create(domainEvent, content);
-                outboxMessages.Add(message);
+                // F04-02: nace reclamado por esta instancia; el worker no lo toma salvo que venza el lease
+                // (caída antes de publicar), lo que evita la doble publicación entre ambas rutas.
+                message.Lock(_outboxClaimant, lockedUntil);
+                prepared.Add((message, domainEvent));
                 OutboxMessages.Add(message);
             }
         }
@@ -119,7 +128,7 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
             // F03-05 / F03-07: si nada se guardó, los mensajes preparados no deben persistirse en un
             // reintento sin su agregado (eventos huérfanos). Los eventos siguen en las entidades y se
             // vuelven a preparar si el agregado se guarda después.
-            foreach (var message in outboxMessages)
+            foreach (var (message, _) in prepared)
             {
                 Entry(message).State = EntityState.Detached;
             }
@@ -132,56 +141,77 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
             entity.ClearDomainEvents();
         }
 
-        // 3. Despachar eventos inmediatamente en memoria tras commit exitoso
-        if (domainEvents.Count > 0)
-        {
-            for (int i = 0; i < domainEvents.Count; i++)
-            {
-                var domainEvent = domainEvents[i];
-                var outboxMsg = outboxMessages[i];
-                try
-                {
-                    await _publisher.Publish(domainEvent, cancellationToken);
-                    outboxMsg.MarkAsProcessed();
-                }
-                catch (Exception ex)
-                {
-                    // Si el despacho en memoria falla, capturar y registrar en Outbox para background retry
-                    outboxMsg.MarkAsFailed(ex.Message);
-                }
-            }
+        if (prepared.Count == 0) return result;
 
-            try
-            {
-                await base.SaveChangesAsync(cancellationToken);
-            }
-            catch
-            {
-                // Ignorar error de actualización de estado; OutboxBackgroundProcessor reintentará los pendientes
-            }
+        // 3. F04-01: dentro de una transacción explícita nada se publica hasta su commit; si se revierte,
+        //    los mensajes desaparecen con ella y ningún efecto externo depende de datos inexistentes.
+        if (Database.CurrentTransaction != null)
+        {
+            _publishAfterCommit.AddRange(prepared);
+            return result;
         }
 
+        await PublishPreparedAsync(prepared, cancellationToken);
         return result;
+    }
+
+    private async Task PublishPreparedAsync(List<(OutboxMessage Message, INotification Event)> prepared, CancellationToken cancellationToken)
+    {
+        await OutboxStore.PublishClaimedAsync(prepared.Select(p => (p.Message, (INotification?)p.Event)).ToList(), _publisher, cancellationToken);
+
+        try
+        {
+            await base.SaveChangesAsync(CancellationToken.None);
+        }
+        catch
+        {
+            // Si no se puede registrar el resultado, el lease vence y OutboxBackgroundProcessor reintenta.
+        }
     }
 
     public async Task<IAsyncDisposable> BeginTransactionAsync(CancellationToken cancellationToken = default)
     {
+        _publishAfterCommit.Clear();
         return await Database.BeginTransactionAsync(cancellationToken);
     }
 
     public async Task CommitTransactionAsync(CancellationToken cancellationToken = default)
     {
         await Database.CommitTransactionAsync(cancellationToken);
+
+        if (_publishAfterCommit.Count > 0)
+        {
+            var committed = _publishAfterCommit.ToList();
+            _publishAfterCommit.Clear();
+            await PublishPreparedAsync(committed, CancellationToken.None);
+        }
     }
 
     public async Task RollbackTransactionAsync(CancellationToken cancellationToken = default)
     {
-        await Database.RollbackTransactionAsync(cancellationToken);
+        try
+        {
+            await Database.RollbackTransactionAsync(cancellationToken);
+        }
+        finally
+        {
+            DropUncommittedOutbox();
+        }
     }
 
     public void DiscardChanges()
     {
+        DropUncommittedOutbox();
         ChangeTracker.Clear();
+    }
+
+    private void DropUncommittedOutbox()
+    {
+        foreach (var (message, _) in _publishAfterCommit)
+        {
+            Entry(message).State = EntityState.Detached;
+        }
+        _publishAfterCommit.Clear();
     }
 
     private async Task AuditEmployeeChangesAsync(CancellationToken cancellationToken)

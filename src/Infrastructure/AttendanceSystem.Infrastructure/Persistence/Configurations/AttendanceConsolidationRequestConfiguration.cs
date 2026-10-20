@@ -44,7 +44,21 @@ public class AttendanceConsolidationRequestConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.ErrorMessage)
             .HasMaxLength(2000);
 
+        builder.Property(x => x.LastRequestedAt).IsRequired();
+        builder.Property(x => x.Version).IsRequired().HasDefaultValue(1);
+        builder.Property(x => x.ClaimedBy).HasMaxLength(200);
+        builder.Property(x => x.LeaseExpiresAt);
+        builder.Property(x => x.ClaimedVersion);
+        builder.Property(x => x.NextAttemptAt);
+        builder.Ignore(x => x.IsActive);
+
         builder.HasIndex(x => new { x.Status, x.RequestedAt });
         builder.HasIndex(x => new { x.EmployeeId, x.Status });
+
+        // F04-04: como máximo una solicitud activa (Pending o Processing) por empleado.
+        builder.HasIndex(x => x.EmployeeId)
+            .IsUnique()
+            .HasFilter("\"Status\" IN (0, 1)")
+            .HasDatabaseName("IX_AttendanceConsolidationRequests_EmployeeId_Active");
     }
 }

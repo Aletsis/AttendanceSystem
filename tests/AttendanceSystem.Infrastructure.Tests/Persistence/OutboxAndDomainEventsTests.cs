@@ -46,7 +46,7 @@ public class OutboxAndDomainEventsTests
 
         // Assert 1:
         // - El evento se despachó exactamente una vez vía MediatR
-        publisherMock.Verify(p => p.Publish(It.IsAny<DomainEvent>(), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
+        publisherMock.Verify(p => p.Publish(It.Is<INotification>(n => n is DomainEvent), It.IsAny<CancellationToken>()), Times.AtLeastOnce);
 
         // - H24: Los eventos se limpiaron de la entidad (evita retención en memoria)
         record.DomainEvents.Should().BeEmpty();
