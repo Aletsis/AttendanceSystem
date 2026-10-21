@@ -389,6 +389,31 @@ public class Phase06RulesTests
 
     #endregion
 
+    [Theory]
+    [InlineData(8, 0, 18, 0, 0, 120)]   // jornada normal + 2 h: sólo el excedente es extra
+    [InlineData(10, 0, 18, 0, 120, 0)]  // llega a las 10:00: el retardo se registra como en cualquier día
+    public async Task RestDayWorked_CountsAsANormalDay_AndIsFlagged(int inH, int inM, int outH, int outM, int expectedLate, int expectedRawOvertime)
+    {
+        // Decisión de cierre F06-06: el descanso trabajado se calcula como un día normal (retardos incluidos), sólo
+        // es extra lo que excede la duración del horario y la jornada queda marcada como descanso trabajado.
+        var shift = AttendanceRegressionFixtures.CreateRegularShift();
+        var employee = Employee.Create(Emp, "Empleado", "Sintetico", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
+            shift.ShiftType, shift.Id, restDays: new[] { WeekDay.Lunes }, overtimeAuthorized: true);
+        var h = Harness(shift, employee);
+        Punch(h, Monday.AddHours(inH).AddMinutes(inM));
+        Punch(h, Monday.AddHours(outH).AddMinutes(outM));
+
+        await h.RecalculateAsync(Monday, Monday);
+
+        var day = Day(h, Monday)!;
+        day.IsRestDay.Should().BeTrue();
+        day.WorkedOnRestDay.Should().BeTrue();
+        day.LateMinutes.Should().Be(expectedLate);
+        day.RawOvertimeMinutes.Should().Be(expectedRawOvertime);
+        day.IsAbsent.Should().BeFalse();
+    }
+
     #region F06-08 vigencias
 
     [Fact]

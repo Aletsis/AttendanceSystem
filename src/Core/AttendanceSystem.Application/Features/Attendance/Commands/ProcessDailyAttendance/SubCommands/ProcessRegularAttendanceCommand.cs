@@ -20,7 +20,8 @@ public record ProcessRegularAttendanceCommand(
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
-    LunchPolicy? Lunch = null) : IRequest;
+    LunchPolicy? Lunch = null,
+    DateTime? EarlyEntryStart = null) : IRequest;
 
 public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessRegularAttendanceCommand>
 {
@@ -48,7 +49,7 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
 
         var targetDateOnly = DateOnly.FromDateTime(request.Date);
         var pendingDayRecords = PunchAssignmentPolicy.Chronological(request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly))
+            .Where(r => r.Status == AttendanceStatus.Pending && JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart)))
             .ToList();
 
         if (pendingDayRecords.Count >= 1)

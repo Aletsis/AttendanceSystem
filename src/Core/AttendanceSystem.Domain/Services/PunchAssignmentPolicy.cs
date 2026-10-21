@@ -24,8 +24,8 @@ public static class PunchAssignmentPolicy
 {
     /// <summary>
     /// Tope de compatibilidad temporal: una jornada sólo consume marcajes de su fecha laboral
-    /// y de la siguiente (C-03, jornada máxima de 24 horas). Las asignaciones manuales pueden
-    /// además tomar una entrada anticipada del día anterior.
+    /// y de la siguiente (C-03, jornada máxima de 24 horas). Las asignaciones manuales, y la entrada
+    /// anticipada automática de una jornada que empieza cerca de medianoche, pueden tomar el día anterior.
     /// </summary>
     public const int MaxDaysAfterWorkDate = 1;
     public const int MaxManualDaysBeforeWorkDate = 1;
@@ -91,7 +91,10 @@ public static class PunchAssignmentPolicy
             }
 
             var recordWorkDate = record.GetWorkDate(record.TimeZoneId);
-            var earliest = assignment.Origin == PunchAssignmentOrigin.Manual
+            // Manual: puede tomar una entrada del día anterior. Automático: sólo la entrada anticipada (o su doble
+            // toque) de una jornada que empieza cerca de medianoche (cierre F06-01).
+            var earliest = assignment.Origin == PunchAssignmentOrigin.Manual ||
+                           assignment.Role is PunchAssignmentRole.CheckIn or PunchAssignmentRole.DiscardedDoubleTap
                 ? workDate.AddDays(-MaxManualDaysBeforeWorkDate)
                 : workDate;
             var latest = workDate.AddDays(MaxDaysAfterWorkDate);

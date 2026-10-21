@@ -21,7 +21,8 @@ public record ProcessContinuousAttendanceCommand(
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
     DateTime? NextJornadaEntryStart = null,
-    LunchPolicy? Lunch = null) : IRequest;
+    LunchPolicy? Lunch = null,
+    DateTime? EarlyEntryStart = null) : IRequest;
 
 public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<ProcessContinuousAttendanceCommand>
 {
@@ -46,6 +47,7 @@ public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<Process
             Draft: request.Draft,
             NextJornadaEntryStart: request.NextJornadaEntryStart,
             Continuous: true,
-            Lunch: request.Lunch), cancellationToken);
+            Lunch: request.Lunch,
+            EarlyEntryStart: request.EarlyEntryStart), cancellationToken);
     }
 }

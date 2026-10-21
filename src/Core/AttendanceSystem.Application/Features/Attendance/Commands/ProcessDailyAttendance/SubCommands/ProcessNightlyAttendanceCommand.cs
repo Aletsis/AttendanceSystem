@@ -50,7 +50,9 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
 
         var scheduledIn = request.Date.Add(request.DayStartTime);
         var scheduledOut = request.Date.Add(request.DayEndTime);
-        scheduledOut = scheduledOut.AddDays(1); // Cruce de día nocturno siempre asume salida al día siguiente
+        // La salida es del día siguiente cuando el turno cruza medianoche (22:00–06:00); un nocturno que empieza a
+        // las 00:00 termina el mismo día (cierre F06-01).
+        if (request.DayEndTime <= request.DayStartTime) scheduledOut = scheduledOut.AddDays(1);
 
         // Entrada: la más cercana a la programada (±4 h). Salida (decisión 4b): el último marcaje desde 2 h antes
         // de la salida programada hasta 7 h después; un regreso de comida no se toma como salida.

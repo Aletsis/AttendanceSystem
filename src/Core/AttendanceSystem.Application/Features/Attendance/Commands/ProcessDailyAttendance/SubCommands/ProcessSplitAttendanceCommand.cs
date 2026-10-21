@@ -19,7 +19,8 @@ public record ProcessSplitAttendanceCommand(
     bool IsAutoDetectedShift = false,
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
-    PunchAssignmentDraft? Draft = null) : IRequest;
+    PunchAssignmentDraft? Draft = null,
+    DateTime? EarlyEntryStart = null) : IRequest;
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
@@ -214,7 +215,7 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
     {
         var targetDateOnly = DateOnly.FromDateTime(request.Date);
         var dayRecords = PunchAssignmentPolicy.Chronological(request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly))
+            .Where(r => r.Status == AttendanceStatus.Pending && JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart)))
             .ToList();
 
         var checkIn = dayRecords.FirstOrDefault();

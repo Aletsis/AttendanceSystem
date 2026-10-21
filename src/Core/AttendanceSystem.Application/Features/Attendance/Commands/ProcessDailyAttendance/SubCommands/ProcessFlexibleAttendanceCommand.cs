@@ -22,7 +22,8 @@ public record ProcessFlexibleAttendanceCommand(
     PunchAssignmentDraft? Draft = null,
     DateTime? NextJornadaEntryStart = null,
     bool Continuous = false,
-    LunchPolicy? Lunch = null) : IRequest;
+    LunchPolicy? Lunch = null,
+    DateTime? EarlyEntryStart = null) : IRequest;
 
 public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFlexibleAttendanceCommand>
 {
@@ -47,7 +48,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         if (request.Shift.PunchTrackingMode == PunchTrackingMode.MultiInterval)
         {
             var pendingRecords = PunchAssignmentPolicy.Chronological(request.Records
-                .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly))
+                .Where(r => r.Status == AttendanceStatus.Pending && JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart)))
                 .ToList();
 
             // Filtrar dobles toques inmediatos (< 15 segundos)
@@ -157,7 +158,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
         // Marcajes del día
         var pendingDayRecords = PunchAssignmentPolicy.Chronological(request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending && r.GetWorkDate(request.TimeZoneId) == targetDateOnly))
+            .Where(r => r.Status == AttendanceStatus.Pending && JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart)))
             .ToList();
 
         // F02-05: salidas e intermedios sólo entre marcajes libres; nunca se toma uno consumido por otra jornada.
@@ -180,7 +181,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
                 request.NextJornadaEntryStart);
             var exitCandidates = availableRecords
                 .Where(r => r.CheckTime > checkIn.Value &&
-                            (r.GetWorkDate(request.TimeZoneId) == targetDateOnly || r.GetCivilTime(request.TimeZoneId) <= windowEnd))
+                            (JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart) || r.GetCivilTime(request.TimeZoneId) <= windowEnd))
                 .ToList();
 
             if (request.Continuous)
@@ -192,7 +193,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             {
                 // Flexible: la salida es el último marcaje del mismo día; si no lo hay, el primero del día
                 // siguiente dentro de la ventana (jornada que cruza medianoche).
-                checkOutRecord = exitCandidates.LastOrDefault(r => r.GetWorkDate(request.TimeZoneId) == targetDateOnly)
+                checkOutRecord = exitCandidates.LastOrDefault(r => JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart))
                     ?? exitCandidates.FirstOrDefault();
             }
 
