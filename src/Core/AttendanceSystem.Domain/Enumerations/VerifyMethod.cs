@@ -19,7 +19,7 @@ public sealed class VerifyMethod : Enumeration
             15 => FaceRecognition,
             99 => Manual,
             0 => Other,
-            _ => throw new DomainException($"Método de verificación inválido: {value}")
+            _ => Other
         };
     }
 }

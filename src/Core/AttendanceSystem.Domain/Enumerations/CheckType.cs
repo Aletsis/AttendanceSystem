@@ -21,7 +21,7 @@ public sealed class CheckType : Enumeration
             3 => BreakEnd,
             4 => OvertimeIn,
             5 => OvertimeOut,
-            _ => throw new DomainException($"Tipo de checada inválido: {value}")
+            _ => CheckIn
         };
     }
 }
