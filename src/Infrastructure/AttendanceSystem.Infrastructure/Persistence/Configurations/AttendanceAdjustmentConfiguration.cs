@@ -78,6 +78,8 @@ public class AttendanceAdjustmentConfiguration : IEntityTypeConfiguration<Attend
 
         builder.Property(x => x.LunchExcessForgiven).IsRequired().HasDefaultValue(false);
 
+        builder.PrimitiveCollection(x => x.ExcludedPunches).IsRequired();
+
         builder.Property(x => x.Reason)
             .HasMaxLength(500);
 

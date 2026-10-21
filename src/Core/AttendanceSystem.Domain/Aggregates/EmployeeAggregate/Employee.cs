@@ -189,9 +189,10 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         ValidateName(lastName, nameof(lastName));
         ValidateEmail(email);
 
-        var from = (effectiveFrom ?? DateTime.Today).Date;
-        if (from < hireDate.Date)
+        if (effectiveFrom.HasValue && effectiveFrom.Value.Date < hireDate.Date)
             throw new DomainException("La fecha de vigencia no puede ser anterior a la fecha de contratación");
+        // Sin fecha explícita rige hoy, o el ingreso si aún no ocurre.
+        var from = (effectiveFrom ?? (DateTime.Today < hireDate.Date ? hireDate : DateTime.Today)).Date;
 
         // F06-08: los cambios de horario, tipo o sucursal y de alta/baja quedan como vigencias desde la fecha indicada.
         DateTime? recalculateFrom = null;

@@ -978,31 +978,7 @@ public class AdmsController : ControllerBase
 
                         if (employee.DevicePrivilege != devPrivilege)
                         {
-                            employee.Update(
-                                employee.FirstName,
-                                employee.LastName,
-                                employee.Email,
-                                employee.PhoneNumber,
-                                employee.HireDate,
-                                employee.Gender,
-                                employee.Status,
-                                employee.BranchId,
-                                employee.DepartmentId,
-                                employee.PositionId,
-                                employee.ShiftType,
-                                employee.ScheduleId,
-                                employee.RestDay,
-                                employee.OvertimeAuthorized,
-                                employee.OvertimeCalculationMethod,
-                                employee.OvertimeCapType,
-                                employee.OvertimeCapMinutes,
-                                employee.CalculateOvertimeBeforeEntry,
-                                employee.CardNumber,
-                                employee.DevicePassword,
-                                employee.Photo,
-                                devPrivilege,
-                                employee.RestDays
-                            );
+                            employee.UpdateDevicePrivilege(devPrivilege);
                         }
                     }
 

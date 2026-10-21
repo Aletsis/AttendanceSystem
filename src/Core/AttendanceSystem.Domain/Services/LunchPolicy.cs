@@ -10,6 +10,7 @@ namespace AttendanceSystem.Domain.Services;
 /// (empate: la primera); las demás son salidas temporales.</item>
 /// <item>El exceso sobre los minutos con goce se descuenta por defecto; RH puede perdonarlo.</item>
 /// <item>Una ausencia de hasta 15 min es doble toque; fuera de la ventana, salida temporal.</item>
+/// <item>Un marcaje intermedio sin pareja no es salida temporal ni se descuenta: es una incidencia para revisión.</item>
 /// </list>
 /// </summary>
 public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int PaidMinutes)
@@ -57,7 +58,6 @@ public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int P
             if (p.Return == null || !p.ReturnCivil.HasValue)
             {
                 kinds[i] = IntermediateKind.Orphan;
-                hasTemporary = true;
                 continue;
             }
 

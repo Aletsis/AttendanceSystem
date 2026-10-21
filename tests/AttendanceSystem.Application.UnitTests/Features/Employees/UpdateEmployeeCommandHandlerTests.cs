@@ -377,4 +377,19 @@ public class UpdateEmployeeCommandHandlerTests
     }
 
     #endregion
+
+    [Fact]
+    public void Update_WithoutEffectiveDate_ForAnEmployeeHiredLaterToday_DoesNotFail()
+    {
+        // HireDate en UTC puede caer en el día siguiente a la fecha local: sin fecha explícita no es un error.
+        var employee = Employee.Create(EmployeeId.From("EMP-UTC"), "Ana", "G", null, null, DateTime.Today.AddDays(1), Gender.Female,
+            _sampleBranch.Id, _sampleDepartment.Id, _samplePosition.Id, ShiftType.Matutino);
+
+        var act = () => employee.Update(employee.FirstName, employee.LastName, null, null, employee.HireDate, employee.Gender, employee.Status,
+            employee.BranchId, employee.DepartmentId, employee.PositionId, ShiftType.Vespertino);
+
+        act.Should().NotThrow();
+        employee.AssignmentOn(employee.HireDate).ShiftType.Should().Be(ShiftType.Vespertino);
+    }
 }
+

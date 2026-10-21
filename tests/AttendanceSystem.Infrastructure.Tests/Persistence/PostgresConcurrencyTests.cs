@@ -454,6 +454,8 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         daily.ApplyIntermediateAnalysis(lunchMinutesTaken: 55, lunchExcessMinutes: 10, hasTemporaryExits: false, temporaryExitMinutes: 0);
         var adjustment = AttendanceAdjustment.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), "rh");
         adjustment.SetLunchExcessForgiven(true, "rh");
+        var excluded = AttendanceRecordId.CreateNew();
+        adjustment.ExcludePunch(excluded, "rh");
 
         await using (var context = _fixture.CreateDbContext())
         {
@@ -478,7 +480,9 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         storedDaily.LunchMinutesTaken.Should().Be(55);
         storedDaily.LunchExcessMinutes.Should().Be(10);
         storedDaily.LunchBreakMinutesApplied.Should().Be(10);
-        (await verify.AttendanceAdjustments.SingleAsync(a => a.Id == adjustment.Id)).LunchExcessForgiven.Should().BeTrue();
+        var storedAdjustment = await verify.AttendanceAdjustments.SingleAsync(a => a.Id == adjustment.Id);
+        storedAdjustment.LunchExcessForgiven.Should().BeTrue();
+        storedAdjustment.ExcludedRecordIds().Should().ContainSingle().Which.Should().Be(excluded);
     }
 
     #endregion

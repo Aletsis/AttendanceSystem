@@ -9,7 +9,7 @@ namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDaily
 /// </summary>
 internal static class IntermediatePunchAnalysis
 {
-    public static (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes) Analyze(
+    public static (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes, IReadOnlyList<DateTime> Orphans) Analyze(
         IReadOnlyList<AttendanceRecord> recordsToAnalyze,
         LunchPolicy policy,
         string? timeZoneId,
@@ -24,6 +24,7 @@ internal static class IntermediatePunchAnalysis
         }
 
         var result = policy.Classify(pairs);
+        var orphans = new List<DateTime>();
         for (int i = 0; i < pairs.Count; i++)
         {
             var (exit, _, back, _) = pairs[i];
@@ -35,6 +36,7 @@ internal static class IntermediatePunchAnalysis
                     break;
                 case IntermediateKind.Orphan:
                     draft?.PendingReview(exit);
+                    orphans.Add(pairs[i].ExitCivil);
                     break;
                 default:
                     draft?.Intermediate(exit);
@@ -43,6 +45,6 @@ internal static class IntermediatePunchAnalysis
             }
         }
 
-        return (result.LunchMinutes, result.LunchExcessMinutes, result.HasTemporaryExits, result.TemporaryExitMinutes);
+        return (result.LunchMinutes, result.LunchExcessMinutes, result.HasTemporaryExits, result.TemporaryExitMinutes, orphans);
     }
 }

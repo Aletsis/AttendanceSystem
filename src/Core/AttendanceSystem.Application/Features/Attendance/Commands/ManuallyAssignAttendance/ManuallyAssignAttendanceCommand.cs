@@ -124,7 +124,21 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
                 .ToList();
             if (occupied.Count == 0)
             {
-                return Result.Failure("El marcaje no ocupa ninguna posición de la jornada.");
+                // F06-05 (4a): un marcaje sin posición (intermedio sin pareja, de prueba, etc.) se excluye de la
+                // jornada, siempre que sea compatible con ella y no pertenezca a otra.
+                var excludedWorkDate = record.GetWorkDate(record.TimeZoneId);
+                if (excludedWorkDate < workDate.AddDays(-PunchAssignmentPolicy.MaxManualDaysBeforeWorkDate) ||
+                    excludedWorkDate > workDate.AddDays(PunchAssignmentPolicy.MaxDaysAfterWorkDate))
+                {
+                    return Result.Failure($"El marcaje del {excludedWorkDate:dd/MM/yyyy} es incompatible con la jornada del {workDate:dd/MM/yyyy}.");
+                }
+                if (await FindOtherOwnerAsync(record, workDate, cancellationToken) is { } otherOwner)
+                {
+                    return Result.Failure($"El marcaje pertenece a la jornada del {otherOwner:dd/MM/yyyy}; exclúyalo desde esa jornada.");
+                }
+                return adjustment.ExcludePunch(record.Id, context.Author, reason)
+                    ? Result.Success()
+                    : Result.Failure("El marcaje ya está excluido de esta jornada.");
             }
             foreach (var p in occupied)
             {

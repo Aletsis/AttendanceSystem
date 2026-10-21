@@ -199,4 +199,48 @@ public class LunchRuleTests
         (await handler.Handle(new SetLunchExcessForgivenCommand(Emp.Value, DateOnly.FromDateTime(Monday), true), CancellationToken.None))
             .IsFailure.Should().BeTrue("una decisión que no cambia nada se rechaza");
     }
+
+    [Fact]
+    public async Task OrphanIntermediatePunch_IsAReviewIssue_NotATemporaryExit()
+    {
+        var h = Harness();
+        Punches(h, (8, 0), (13, 0), (16, 0));
+
+        var day = await CalculateAsync(h);
+
+        day.HasTemporaryExits.Should().BeFalse("un marcaje sin pareja no es una salida temporal de 0 min");
+        day.CalculationIssue.Should().Contain("sin pareja a las 13:00");
+        day.RequiresReview.Should().BeTrue();
+        day.LunchBreakMinutesApplied.Should().Be(0);
+        day.TotalWorkedMinutes.Should().Be(480, "no se descuenta nada hasta que RH lo resuelva");
+        day.AttendanceNote.Should().Contain("revisar");
+    }
+
+    [Fact]
+    public async Task OrphanIntermediatePunch_ExcludedByHR_ClearsTheIssue()
+    {
+        var h = Harness();
+        Punches(h, (8, 0), (13, 0), (16, 0));
+        await CalculateAsync(h);
+        var orphan = h.Store.Records.Single(r => r.CheckTime == Monday.AddHours(13).AddHours(6));
+
+        var result = await h.ManualAssign().Handle(new AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommand(
+            Emp.Value, DateOnly.FromDateTime(Monday), orphan.Id.Value.ToString(),
+            AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommandHandler.Unassign,
+            Reason: "Marcaje de prueba"), CancellationToken.None);
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+
+        var day = await CalculateAsync(h);
+        day.CalculationIssue.Should().BeNull();
+        day.RequiresReview.Should().BeFalse();
+        day.TotalWorkedMinutes.Should().Be(480);
+        h.Store.Assignments.Single(x => x.Id == orphan.Id).Role.Should().Be(PunchAssignmentRole.ManuallyExcluded);
+
+        // Restaurar devuelve el marcaje al cálculo automático y la incidencia reaparece.
+        var restored = await h.ManualAssign().Handle(new AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommand(
+            Emp.Value, DateOnly.FromDateTime(Monday), orphan.Id.Value.ToString(),
+            AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommandHandler.Restore), CancellationToken.None);
+        restored.IsSuccess.Should().BeTrue(restored.IsSuccess ? string.Empty : restored.Error);
+        (await CalculateAsync(h)).CalculationIssue.Should().Contain("sin pareja a las 13:00");
+    }
 }

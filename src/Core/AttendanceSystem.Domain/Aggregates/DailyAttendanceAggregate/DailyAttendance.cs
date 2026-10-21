@@ -106,6 +106,14 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     /// </summary>
     public string? CalculationIssue { get; private set; }
 
+    /// <summary>
+    /// La jornada necesita revisión de RH: tiene incidencias de cálculo (marcaje sin pareja, intervalo abierto,
+    /// configuración incompleta) o salidas temporales pendientes de clasificar.
+    /// </summary>
+    public bool RequiresReview =>
+        !string.IsNullOrWhiteSpace(CalculationIssue) ||
+        (HasTemporaryExits && TemporaryExitStatus == TemporaryExitStatus.Pending);
+
     /// <summary>MultiInterval con un intervalo sin salida: se muestra como salida faltante (F06-02).</summary>
     public bool HasOpenInterval { get; private set; }
 

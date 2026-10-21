@@ -60,6 +60,12 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     public bool? OvertimeAuthorizedOverride { get; private set; }
     public bool? CalculateOvertimeBeforeEntryOverride { get; private set; }
 
+    /// <summary>
+    /// F06-05 (4a): marcajes intermedios excluidos por RH (sin posición). Quedan reservados por la jornada como
+    /// excluidos y no participan en el análisis de comida ni de salidas temporales.
+    /// </summary>
+    public List<Guid> ExcludedPunches { get; private set; } = new();
+
     /// <summary>F06-05: RH perdona el exceso de comida (no se descuenta).</summary>
     public bool LunchExcessForgiven { get; private set; }
 
@@ -187,8 +193,19 @@ public sealed class AttendanceAdjustment : Entity<Guid>
         {
             SetPosition(position, PositionOverrideKind.None, null, null);
         }
-        if (positions.Count > 0) Touch(updatedBy, reason);
-        return positions.Count > 0;
+        var wasExcluded = ExcludedPunches.Remove(recordId.Value);
+        var changed = positions.Count > 0 || wasExcluded;
+        if (changed) Touch(updatedBy, reason);
+        return changed;
+    }
+
+    /// <summary>Excluye un marcaje que no ocupa posición (p. ej. intermedio sin pareja). Devuelve false si ya lo estaba.</summary>
+    public bool ExcludePunch(AttendanceRecordId recordId, string updatedBy, string? reason = null)
+    {
+        if (ExcludedPunches.Contains(recordId.Value)) return false;
+        ExcludedPunches.Add(recordId.Value);
+        Touch(updatedBy, reason ?? "Marcaje excluido");
+        return true;
     }
 
     public void SetCheckIn(AttendanceRecordId recordId, DateTime checkTime, string updatedBy, string? reason = null) =>
@@ -207,13 +224,17 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     public IEnumerable<AttendanceRecordId> DecidedRecordIds() =>
         AllPositions
             .Where(p => OverrideKind(p) != PositionOverrideKind.None && OverrideRecord(p) != null)
-            .Select(p => OverrideRecord(p)!);
+            .Select(p => OverrideRecord(p)!)
+            .Concat(ExcludedPunches.Select(AttendanceRecordId.From))
+            .Distinct();
 
-    /// <summary>Marcajes excluidos por vacío forzado.</summary>
+    /// <summary>Marcajes excluidos por vacío forzado o por exclusión de un intermedio.</summary>
     public IEnumerable<AttendanceRecordId> ExcludedRecordIds() =>
         AllPositions
             .Where(p => OverrideKind(p) == PositionOverrideKind.ForcedEmpty && OverrideRecord(p) != null)
-            .Select(p => OverrideRecord(p)!);
+            .Select(p => OverrideRecord(p)!)
+            .Concat(ExcludedPunches.Select(AttendanceRecordId.From))
+            .Distinct();
 
     public static readonly IReadOnlyList<AttendancePosition> AllPositions = new[]
     {
@@ -252,7 +273,8 @@ public sealed class AttendanceAdjustment : Entity<Guid>
             $"salidaTemporal={(TemporaryExitStatus?.ToString() ?? "auto")}",
             $"extrasAutorizadas={(OvertimeAuthorizedOverride?.ToString() ?? "auto")}",
             $"extrasAntesEntrada={(CalculateOvertimeBeforeEntryOverride?.ToString() ?? "auto")}",
-            $"excesoComidaPerdonado={LunchExcessForgiven}"
+            $"excesoComidaPerdonado={LunchExcessForgiven}",
+            $"excluidos=[{string.Join(",", ExcludedPunches.OrderBy(g => g))}]"
         }));
     }
 
