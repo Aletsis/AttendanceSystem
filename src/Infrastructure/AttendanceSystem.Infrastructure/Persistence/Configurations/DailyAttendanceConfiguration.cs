@@ -158,6 +158,9 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.LunchBreakMinutesApplied)
             .IsRequired()
             .HasDefaultValue(0);
+        builder.Property(x => x.LunchMinutesTaken).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.LunchExcessMinutes).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.LunchExcessForgiven).IsRequired().HasDefaultValue(false);
 
         builder.Property(x => x.TimeZoneId)
             .HasMaxLength(100)

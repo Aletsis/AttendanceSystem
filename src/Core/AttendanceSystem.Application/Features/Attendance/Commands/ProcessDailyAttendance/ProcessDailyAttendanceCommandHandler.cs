@@ -184,7 +184,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         CancellationToken cancellationToken)
     {
         var tz = await _timeZoneResolver.ResolveForEmployeeAsync(employee.Id, cancellationToken);
-        var ws = new EmployeeRecalculationWorkset(employee, tz);
+        var ws = new EmployeeRecalculationWorkset(employee, tz) { Lunch = systemConfig?.LunchPolicy ?? LunchPolicy.Default };
         var worksets = new Dictionary<EmployeeId, EmployeeRecalculationWorkset> { [employee.Id] = ws };
 
         // Lectura posterior al bloqueo: ningún otro escritor puede cambiar estos datos hasta el commit.
@@ -517,7 +517,14 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 .ToList();
             if (ownDay.Count == 0) return null;
             if (effectiveType == ShiftType.Flexible && ownDay.Count != 1) return null;
-            return JornadaWindowPolicy.ExitWindowEnd(ownDay[0].GetCivilTime(ws.TimeZoneId), shift.WorkHours, null);
+            var effective = shift.ShiftType == ShiftType.Mixto
+                ? shift.EffectiveFor(shift.Days.First(d => d.DayOfWeek == date.DayOfWeek))
+                : shift;
+            return JornadaWindowPolicy.ExitWindowEnd(
+                ownDay[0].GetCivilTime(ws.TimeZoneId),
+                JornadaWindowPolicy.ScheduledStart(date, effective.StartTime, effective.HasEntryWindow),
+                effective.WorkHours,
+                null);
         }
 
         // Regular y sin turno sólo consumen marcajes de su propia fecha laboral.
@@ -592,17 +599,17 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         else if (shift.ShiftType == ShiftType.Mixto)
         {
             await _sender.Send(new ProcessMixAttendanceCommand(
-                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart), cancellationToken);
+                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Continuo)
         {
             await _sender.Send(new ProcessContinuousAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart), cancellationToken);
+                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Flexible)
         {
             await _sender.Send(new ProcessFlexibleAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart), cancellationToken);
+                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Partido)
         {
@@ -617,7 +624,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         else
         {
             await _sender.Send(new ProcessRegularAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
+                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, Lunch: ws.Lunch), cancellationToken);
         }
 
         // F02-02 / F02-06: validar el resultado completo antes de aceptarlo; un fallo revierte toda la unidad.

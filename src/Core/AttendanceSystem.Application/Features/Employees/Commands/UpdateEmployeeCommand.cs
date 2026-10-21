@@ -39,7 +39,8 @@ public sealed record UpdateEmployeeCommand(
     string? DevicePassword = null,
     string? Photo = null,
     DevicePrivilege DevicePrivilege = DevicePrivilege.User,
-    List<int>? RestDays = null) : IRequest<Result<EmployeeDto>>;
+    List<int>? RestDays = null,
+    DateTime? EffectiveFrom = null) : IRequest<Result<EmployeeDto>>;
 
 public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmployeeCommand, Result<EmployeeDto>>
 {
@@ -49,6 +50,9 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
     private readonly IPositionRepository _positionRepository;
     private readonly IShiftRepository _shiftRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAttendanceCalculationLockService _lockService;
+    private readonly IAttendanceConsolidationRepository _consolidations;
+    private readonly IConsolidationWakeup _wakeup;
     private readonly ILogger<UpdateEmployeeCommandHandler> _logger;
 
     public UpdateEmployeeCommandHandler(
@@ -58,8 +62,14 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
         IPositionRepository positionRepository,
         IShiftRepository shiftRepository,
         IUnitOfWork unitOfWork,
+        IAttendanceCalculationLockService lockService,
+        IAttendanceConsolidationRepository consolidations,
+        IConsolidationWakeup wakeup,
         ILogger<UpdateEmployeeCommandHandler> logger)
     {
+        _lockService = lockService;
+        _consolidations = consolidations;
+        _wakeup = wakeup;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
         _departmentRepository = departmentRepository;
@@ -132,33 +142,48 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
 
             var restDays = request.RestDays?.Select(d => (WeekDay)d).ToList();
 
-            employee.Update(
-                request.FirstName,
-                request.LastName,
-                request.Email,
-                request.PhoneNumber,
-                request.HireDate,
-                request.Gender,
-                request.Status,
-                branchId,
-                departmentId,
-                positionId,
-                request.ShiftType,
-                scheduleId,
-                (WeekDay?)request.RestDay,
-                request.OvertimeAuthorized,
-                request.OvertimeCalculationMethod,
-                request.OvertimeCapType,
-                request.OvertimeCapMinutes,
-                request.CalculateOvertimeBeforeEntry,
-                request.CardNumber,
-                request.DevicePassword,
-                request.Photo,
-                request.DevicePrivilege,
-                restDays);
+            DateTime? recalculateFrom = null;
+            var saved = await ExclusiveAttendanceWrite.RunAsync(_unitOfWork, _lockService, new[] { employee.Id }, async () =>
+            {
+                recalculateFrom = employee.Update(
+                    request.FirstName,
+                    request.LastName,
+                    request.Email,
+                    request.PhoneNumber,
+                    request.HireDate,
+                    request.Gender,
+                    request.Status,
+                    branchId,
+                    departmentId,
+                    positionId,
+                    request.ShiftType,
+                    scheduleId,
+                    (WeekDay?)request.RestDay,
+                    request.OvertimeAuthorized,
+                    request.OvertimeCalculationMethod,
+                    request.OvertimeCapType,
+                    request.OvertimeCapMinutes,
+                    request.CalculateOvertimeBeforeEntry,
+                    request.CardNumber,
+                    request.DevicePassword,
+                    request.Photo,
+                    request.DevicePrivilege,
+                    restDays,
+                    request.EffectiveFrom);
 
-            _employeeRepository.Update(employee);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
+                _employeeRepository.Update(employee);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                // F06-08: un cambio con vigencia pasada recalcula de forma durable las jornadas afectadas.
+                if (recalculateFrom is { } from && from <= DateTime.Today)
+                {
+                    await _consolidations.RequestAsync(employee.Id, from, DateTime.Today, cancellationToken);
+                }
+                return Result.Success();
+            }, cancellationToken);
+
+            if (saved.IsFailure) return Result<EmployeeDto>.Failure(saved.Error);
+            if (recalculateFrom.HasValue) _wakeup.Signal();
 
             var effectiveRestDays = employee.GetEffectiveRestDays();
 

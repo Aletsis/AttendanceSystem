@@ -92,15 +92,71 @@ public class Phase06RulesTests
     }
 
     [Fact]
-    public void WindowPolicy_NeverExceeds24Hours()
+    public void WindowPolicy_AnchorsOnScheduledStart_AndAddsTheAllowanceToTheShiftDuration()
     {
-        var checkIn = Monday.AddHours(8);
-        JornadaWindowPolicy.ExitWindowEnd(checkIn, TimeSpan.FromHours(24), null).Should().Be(checkIn.AddHours(24));
-        JornadaWindowPolicy.ExitWindowEnd(checkIn, TimeSpan.FromHours(8), null).Should().Be(checkIn.AddHours(12));
-        JornadaWindowPolicy.ExitWindowEnd(checkIn, TimeSpan.Zero, null).Should().Be(checkIn.AddHours(24));
-        JornadaWindowPolicy.ExitWindowEnd(checkIn, TimeSpan.FromHours(8), checkIn.AddHours(10)).Should().BeBefore(checkIn.AddHours(10));
-        JornadaWindowPolicy.ExitWindowEnd(checkIn, TimeSpan.FromHours(24), checkIn.AddHours(22)).Should().Be(checkIn.AddHours(24),
-            "la entrada siguiente no recorta la duración programada del turno");
+        var scheduled = Monday.AddHours(8);
+        // Entrada anticipada: no acorta la ventana.
+        JornadaWindowPolicy.ExitWindowEnd(scheduled.AddMinutes(-10), scheduled, TimeSpan.FromHours(24), null).Should().Be(scheduled.AddHours(28));
+        // Entrada tardía: la ventana corre desde la entrada real.
+        JornadaWindowPolicy.ExitWindowEnd(scheduled.AddHours(1), scheduled, TimeSpan.FromHours(8), null).Should().Be(scheduled.AddHours(13));
+        // Sin duración definida: 24 h desde la entrada.
+        JornadaWindowPolicy.ExitWindowEnd(scheduled, null, TimeSpan.Zero, null).Should().Be(scheduled.AddHours(24));
+        // La jornada siguiente limita, pero nunca por debajo de la duración programada.
+        JornadaWindowPolicy.ExitWindowEnd(scheduled, scheduled, TimeSpan.FromHours(8), scheduled.AddHours(10)).Should().BeBefore(scheduled.AddHours(10));
+        JornadaWindowPolicy.ExitWindowEnd(scheduled, scheduled, TimeSpan.FromHours(24), scheduled.AddHours(22)).Should().Be(scheduled.AddHours(24));
+    }
+
+    [Fact]
+    public async Task Guard24h_EarlyEntry_AndLateExit_IsACompleteJornada()
+    {
+        // Guardia 24x24: martes de descanso, la salida de 20 min extra pertenece al lunes.
+        var shift = AttendanceRegressionFixtures.CreateContinuous24hShift();
+        var employee = Employee.Create(Emp, "Empleado", "Sintetico", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
+            shift.ShiftType, shift.Id, restDays: new[] { WeekDay.Martes }, overtimeAuthorized: true);
+        var h = Harness(shift, employee);
+        var entry = Punch(h, Monday.AddHours(7).AddMinutes(50));
+        Punch(h, Monday.AddHours(20));
+        var exit = Punch(h, Tuesday.AddHours(8).AddMinutes(10));
+
+        await h.RecalculateAsync(Monday, Tuesday);
+
+        var day = Day(h, Monday)!;
+        day.CheckInRecordId.Should().Be(entry.Id);
+        day.CheckOutRecordId.Should().Be(exit.Id, "24 h 20 min está dentro de la duración del turno + 4 h");
+    }
+
+    [Theory]
+    [InlineData(ShiftType.Flexible)]
+    [InlineData(ShiftType.Continuo)]
+    public async Task EightHourShift_WithSixHoursOvertime_KeepsTheRealExit_AndLunchAsIntermediate(ShiftType type)
+    {
+        var shift = Shift.Create($"{type} 8h", new TimeSpan(8, 0, 0), 15, TimeSpan.FromHours(8), type);
+        var h = Harness(shift, CreateEmployee(shift));
+        Punch(h, Monday.AddHours(8));
+        Punch(h, Monday.AddHours(14));
+        Punch(h, Monday.AddHours(15));
+        var exit = Punch(h, Monday.AddHours(22));
+
+        await h.RecalculateAsync(Monday, Monday);
+
+        Day(h, Monday)!.CheckOutRecordId.Should().Be(exit.Id, "un marcaje del mismo día siempre puede ser la salida");
+    }
+
+    [Theory]
+    [InlineData(ShiftType.Flexible)]
+    [InlineData(ShiftType.Continuo)]
+    public async Task SingleInterval_WorkedMinutes_UseCivilTimeOnBothEnds(ShiftType type)
+    {
+        // Antes la salida quedaba en UTC y la entrada en hora civil: en UTC-6 sumaba 6 h trabajadas.
+        var shift = Shift.Create($"{type} 8h", new TimeSpan(8, 0, 0), 15, TimeSpan.FromHours(8), type);
+        var h = Harness(shift, CreateEmployee(shift));
+        Punch(h, Monday.AddHours(8));
+        Punch(h, Monday.AddHours(17));
+
+        await h.RecalculateAsync(Monday, Monday);
+
+        Day(h, Monday)!.TotalWorkedMinutes.Should().Be(540);
     }
 
     #endregion

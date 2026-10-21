@@ -1,20 +1,20 @@
 namespace AttendanceSystem.Domain.Services;
 
 /// <summary>
-/// Ventanas de búsqueda de salida para jornadas flexibles y continuas (F06-01 / C-03), sustituyendo el
-/// límite fijo de 18 h:
+/// Ventanas de búsqueda de salida para jornadas flexibles y continuas (F06-01), sustituyendo el límite fijo
+/// de 18 h. Reglas acordadas (D-05):
 /// <list type="bullet">
-/// <item>La salida se busca en <c>(entrada, entrada + duración + margen de extras]</c>, con tope absoluto de 24 h
-/// (C-03): un marcaje posterior a 24 h nunca se infiere como salida.</item>
-/// <item>La ventana termina antes de que empiece la ventana de entrada de la jornada siguiente cuando ésta es
-/// laborable: una salida faltante no consume la entrada del día siguiente. Ese límite nunca recorta la duración
-/// programada del turno (una guardia de 24 h diaria conserva su salida aunque coincida con la entrada siguiente).</item>
+/// <item>Un marcaje del mismo día laboral siempre puede ser la salida; la ventana sólo limita la búsqueda en el
+/// día siguiente.</item>
+/// <item>La ventana se ancla en la entrada programada, o en la real si llegó tarde: llegar antes no la acorta.</item>
+/// <item>Fin = ancla + duración del turno + 4 h. Sin duración definida, ancla + 24 h (C-03).</item>
+/// <item>La ventana termina antes de la ventana de entrada de la jornada siguiente cuando ésta es laborable, sin
+/// recortar la duración programada del turno.</item>
 /// </list>
-/// Los márgenes son decisiones de negocio registradas (D-05 en el catálogo de contratos), no supuestos del procesador.
 /// </summary>
 public static class JornadaWindowPolicy
 {
-    /// <summary>C-03: duración máxima de una jornada inferida automáticamente.</summary>
+    /// <summary>C-03: duración máxima de una jornada sin duración definida.</summary>
     public static readonly TimeSpan MaxJornadaDuration = TimeSpan.FromHours(24);
 
     /// <summary>D-05: tiempo extra máximo después de la duración del turno para aceptar una salida.</summary>
@@ -23,20 +23,27 @@ public static class JornadaWindowPolicy
     /// <summary>D-05: anticipación máxima con la que se acepta la entrada de la jornada siguiente.</summary>
     public static readonly TimeSpan EarlyArrivalAllowance = TimeSpan.FromHours(2);
 
-    /// <summary>Último instante civil aceptable como salida de una jornada que empezó en <paramref name="checkInCivil"/>.</summary>
-    public static DateTime ExitWindowEnd(DateTime checkInCivil, TimeSpan workHours, DateTime? nextJornadaEntryStart)
+    /// <summary>
+    /// Último instante civil aceptable como salida en el día siguiente de una jornada con entrada real
+    /// <paramref name="checkInCivil"/> y entrada programada <paramref name="scheduledStartCivil"/> (null si el
+    /// turno no tiene ventana de llegada).
+    /// </summary>
+    public static DateTime ExitWindowEnd(DateTime checkInCivil, DateTime? scheduledStartCivil, TimeSpan workHours, DateTime? nextJornadaEntryStart)
     {
-        var span = workHours > TimeSpan.Zero ? workHours + OvertimeAllowanceAfterShift : MaxJornadaDuration;
-        if (span > MaxJornadaDuration) span = MaxJornadaDuration;
+        var anchor = scheduledStartCivil is { } scheduled && scheduled > checkInCivil ? scheduled : checkInCivil;
+        var end = workHours > TimeSpan.Zero ? anchor + workHours + OvertimeAllowanceAfterShift : anchor + MaxJornadaDuration;
 
-        var end = checkInCivil + span;
         if (nextJornadaEntryStart is { } next && next.AddTicks(-1) < end)
         {
-            var scheduledEnd = checkInCivil + (workHours > MaxJornadaDuration ? MaxJornadaDuration : workHours);
+            var scheduledEnd = anchor + (workHours > TimeSpan.Zero ? workHours : MaxJornadaDuration);
             end = next.AddTicks(-1) > scheduledEnd ? next.AddTicks(-1) : scheduledEnd;
         }
         return end;
     }
+
+    /// <summary>Entrada programada civil de una jornada, o null si el turno no tiene ventana de llegada.</summary>
+    public static DateTime? ScheduledStart(DateTime date, TimeSpan startTime, bool hasEntryWindow) =>
+        hasEntryWindow ? date.Date.Add(startTime) : null;
 
     /// <summary>Inicio civil de la ventana de entrada de una jornada laborable que comienza a <paramref name="scheduledStart"/>.</summary>
     public static DateTime EntryWindowStart(DateTime scheduledStart) => scheduledStart - EarlyArrivalAllowance;

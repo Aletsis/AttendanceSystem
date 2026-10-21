@@ -76,6 +76,8 @@ public class AttendanceAdjustmentConfiguration : IEntityTypeConfiguration<Attend
         builder.Property(x => x.OvertimeAuthorizedOverride);
         builder.Property(x => x.CalculateOvertimeBeforeEntryOverride);
 
+        builder.Property(x => x.LunchExcessForgiven).IsRequired().HasDefaultValue(false);
+
         builder.Property(x => x.Reason)
             .HasMaxLength(500);
 

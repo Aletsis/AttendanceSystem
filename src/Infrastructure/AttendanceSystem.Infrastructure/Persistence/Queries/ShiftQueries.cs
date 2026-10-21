@@ -38,6 +38,7 @@ public class ShiftQueries : IShiftQueries
                 s.SecondBlockEndTime,
                 s.SecondBlockToleranceMinutes,
                 s.PunchTrackingMode,
-                s.HasEntryWindow));
+                s.HasEntryWindow,
+                s.PaidLunchMinutes));
     }
 }

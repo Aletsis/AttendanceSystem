@@ -192,7 +192,10 @@ public sealed record SystemConfigurationDto(
     string? AutoReportEmails = null,
     bool AutoReportForToday = false,
     bool IsCloudSyncEnabled = true,
-    string? CloudDbConnectionString = null)
+    string? CloudDbConnectionString = null,
+    TimeSpan? LunchWindowStart = null,
+    TimeSpan? LunchWindowEnd = null,
+    int PaidLunchMinutes = 30)
 {
     public SystemConfigurationDto() : this(string.Empty, null, TimeSpan.Zero, TimeSpan.Zero, false, false, null, false) { }
 }

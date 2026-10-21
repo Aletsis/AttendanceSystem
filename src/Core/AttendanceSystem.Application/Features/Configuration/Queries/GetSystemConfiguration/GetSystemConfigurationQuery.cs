@@ -60,6 +60,9 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             config.AutoReportEmails,
             config.AutoReportForToday,
             config.IsCloudSyncEnabled,
-            config.CloudDbConnectionString));
+            config.CloudDbConnectionString,
+            config.LunchWindowStart,
+            config.LunchWindowEnd,
+            config.PaidLunchMinutes));
     }
 }

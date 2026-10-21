@@ -262,6 +262,17 @@
                     </MudGrid>
                 </MudTabPanel>
             </MudTabs>
+
+            @if (HasDatedChange)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-4">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">@EffectiveFromTitle</MudText>
+                    <MudDatePicker @bind-Date="_effectiveFrom" Label="@EffectiveFromLabel" Required="true" Editable="true"
+                                   Mask="@(new DateMask("dd/MM/yyyy"))" MinDate="_hireDate"
+                                   MaxDate="@(Status != _originalStatus ? DateTime.Today : null)"
+                                   HelperText="Si la fecha es pasada, las jornadas desde esa fecha se recalculan automáticamente." />
+                </MudPaper>
+            }
         }
     </DialogContent>
     <DialogActions>
@@ -301,6 +312,27 @@
     [Parameter] public DevicePrivilegeEnum DevicePrivilege { get; set; } = DevicePrivilegeEnum.User;
 
     private DateTime? _hireDate;
+
+    // F06-08: fecha de vigencia de cambios de horario, turno, sucursal y estado.
+    private DateTime? _effectiveFrom = DateTime.Today;
+    private Guid _originalBranchId;
+    private ShiftTypeEnum? _originalShiftType;
+    private Guid? _originalScheduleId;
+    private StatusEnum _originalStatus;
+
+    private bool _originalsCaptured;
+
+    private bool HasDatedChange => _isEditing && _originalsCaptured &&
+        (BranchId != _originalBranchId || _selectedShiftType != _originalShiftType ||
+         ScheduleId != _originalScheduleId || Status != _originalStatus);
+
+    private string EffectiveFromTitle => Status != _originalStatus
+        ? (Status == StatusEnum.Baja ? "Fecha de la baja" : "Fecha del reingreso")
+        : "Vigencia del cambio de horario, turno o sucursal";
+
+    private string EffectiveFromLabel => Status != _originalStatus && Status == StatusEnum.Baja
+        ? "Último día laborado"
+        : "Vigente desde";
     private bool _loading = true;
     private bool _isAdmin;
     private bool _isEditing => !string.IsNullOrEmpty(EmployeeId) || ExternalEmployeeId.HasValue;
@@ -387,6 +419,12 @@
             _rotationModel.InitializeShifts(_shifts);
             await LoadRosterInfo();
         }
+
+        _originalBranchId = BranchId;
+        _originalShiftType = _selectedShiftType;
+        _originalScheduleId = ScheduleId;
+        _originalStatus = Status;
+        _originalsCaptured = true;
     }
 
     private void OnShiftTypeChanged(ShiftTypeEnum? newType)
@@ -558,6 +596,12 @@
                 Gender == 0)
             {
                 Snackbar.Add("Por favor complete todos los campos requeridos para el empleado", Severity.Warning);
+                return;
+            }
+
+            if (HasDatedChange && !_effectiveFrom.HasValue)
+            {
+                Snackbar.Add("Indique la fecha de vigencia del cambio", Severity.Warning);
                 return;
             }
 
@@ -740,7 +784,8 @@
                     DevicePassword,
                     Photo,
                     DevicePrivilege,
-                    effectiveRestDays);
+                    effectiveRestDays,
+                    HasDatedChange ? _effectiveFrom : null);
             }
             else
             {

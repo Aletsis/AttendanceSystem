@@ -1,0 +1,99 @@
+namespace AttendanceSystem.Domain.Services;
+
+/// <summary>
+/// Regla de comida acordada (F06-05):
+/// <list type="bullet">
+/// <item>La comida no tiene hora fija por turno: es una ausencia marcada cuya salida cae dentro de la ventana global
+/// de comida.</item>
+/// <item>Los minutos de comida con goce (globales, o los del turno si los define) no se descuentan.</item>
+/// <item>Si hay varias ausencias en la ventana, la comida es la de duración más cercana a los minutos con goce
+/// (empate: la primera); las demás son salidas temporales.</item>
+/// <item>El exceso sobre los minutos con goce se descuenta por defecto; RH puede perdonarlo.</item>
+/// <item>Una ausencia de hasta 15 min es doble toque; fuera de la ventana, salida temporal.</item>
+/// </list>
+/// </summary>
+public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int PaidMinutes)
+{
+    public static readonly TimeSpan DefaultWindowStart = new(12, 30, 0);
+    public static readonly TimeSpan DefaultWindowEnd = new(15, 0, 0);
+    public const int DefaultPaidMinutes = 30;
+    public const int DoubleTapMaxMinutes = 15;
+
+    public static LunchPolicy Default { get; } = new(DefaultWindowStart, DefaultWindowEnd, DefaultPaidMinutes);
+
+    /// <summary>Política efectiva de una jornada: los minutos con goce del turno sustituyen a los globales.</summary>
+    public LunchPolicy ForShift(int? shiftPaidMinutes) =>
+        shiftPaidMinutes is { } minutes ? this with { PaidMinutes = minutes } : this;
+
+    public bool InWindow(DateTime exitCivil) =>
+        exitCivil.TimeOfDay >= WindowStart && exitCivil.TimeOfDay <= WindowEnd;
+
+    /// <summary>Clasifica pares salida/regreso ya ordenados; un elemento sin regreso es un marcaje huérfano.</summary>
+    public IntermediateClassification Classify<T>(IReadOnlyList<(T Exit, DateTime ExitCivil, T? Return, DateTime? ReturnCivil)> pairs)
+        where T : class
+    {
+        var lunchIndex = -1;
+        double bestDistance = double.MaxValue;
+        for (int i = 0; i < pairs.Count; i++)
+        {
+            var p = pairs[i];
+            if (p.Return == null || !p.ReturnCivil.HasValue) continue;
+            var minutes = (p.ReturnCivil.Value - p.ExitCivil).TotalMinutes;
+            if (minutes <= DoubleTapMaxMinutes || !InWindow(p.ExitCivil)) continue;
+            var distance = Math.Abs(minutes - PaidMinutes);
+            if (distance < bestDistance)
+            {
+                bestDistance = distance;
+                lunchIndex = i;
+            }
+        }
+
+        var kinds = new IntermediateKind[pairs.Count];
+        int lunchMinutes = 0, temporaryMinutes = 0;
+        bool hasTemporary = false;
+        for (int i = 0; i < pairs.Count; i++)
+        {
+            var p = pairs[i];
+            if (p.Return == null || !p.ReturnCivil.HasValue)
+            {
+                kinds[i] = IntermediateKind.Orphan;
+                hasTemporary = true;
+                continue;
+            }
+
+            var minutes = (int)(p.ReturnCivil.Value - p.ExitCivil).TotalMinutes;
+            if (minutes <= DoubleTapMaxMinutes) kinds[i] = IntermediateKind.DoubleTap;
+            else if (i == lunchIndex)
+            {
+                kinds[i] = IntermediateKind.Lunch;
+                lunchMinutes = minutes;
+            }
+            else
+            {
+                kinds[i] = IntermediateKind.TemporaryExit;
+                hasTemporary = true;
+                temporaryMinutes += minutes;
+            }
+        }
+
+        return new IntermediateClassification(kinds, lunchMinutes, Math.Max(0, lunchMinutes - PaidMinutes), hasTemporary, temporaryMinutes);
+    }
+}
+
+public enum IntermediateKind
+{
+    DoubleTap,
+    Lunch,
+    TemporaryExit,
+    Orphan
+}
+
+/// <param name="Kinds">Clasificación de cada par, en el orden recibido.</param>
+/// <param name="LunchMinutes">Duración real de la comida (0 si no hubo).</param>
+/// <param name="LunchExcessMinutes">Minutos de comida por encima de los con goce; se descuentan por defecto.</param>
+public sealed record IntermediateClassification(
+    IReadOnlyList<IntermediateKind> Kinds,
+    int LunchMinutes,
+    int LunchExcessMinutes,
+    bool HasTemporaryExits,
+    int TemporaryExitMinutes);

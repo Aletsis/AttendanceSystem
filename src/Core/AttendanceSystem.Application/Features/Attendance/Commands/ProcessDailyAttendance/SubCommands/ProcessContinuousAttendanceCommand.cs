@@ -1,3 +1,4 @@
+using AttendanceSystem.Domain.Services;
 using MediatR;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
@@ -19,7 +20,8 @@ public record ProcessContinuousAttendanceCommand(
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
-    DateTime? NextJornadaEntryStart = null) : IRequest;
+    DateTime? NextJornadaEntryStart = null,
+    LunchPolicy? Lunch = null) : IRequest;
 
 public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<ProcessContinuousAttendanceCommand>
 {
@@ -43,6 +45,7 @@ public class ProcessContinuousAttendanceCommandHandler : IRequestHandler<Process
             TimeZoneId: request.TimeZoneId,
             Draft: request.Draft,
             NextJornadaEntryStart: request.NextJornadaEntryStart,
-            Continuous: true), cancellationToken);
+            Continuous: true,
+            Lunch: request.Lunch), cancellationToken);
     }
 }

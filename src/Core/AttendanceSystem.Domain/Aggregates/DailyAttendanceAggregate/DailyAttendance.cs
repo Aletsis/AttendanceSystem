@@ -90,7 +90,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     /// <summary>Nota de auditoría: quién clasificó y cuándo.</summary>
     public string? TemporaryExitNote { get; private set; }
     /// <summary>Minutos de comida deducidos automáticamente al calcular la jornada.</summary>
+    /// <summary>Minutos de comida descontados del tiempo trabajado: el exceso no perdonado (F06-05).</summary>
     public int LunchBreakMinutesApplied { get; private set; }
+    /// <summary>Duración real de la comida marcada (0 si no hubo).</summary>
+    public int LunchMinutesTaken { get; private set; }
+    /// <summary>Minutos de comida por encima de los con goce.</summary>
+    public int LunchExcessMinutes { get; private set; }
+    public bool LunchExcessForgiven { get; private set; }
     /// <summary>Indica si el turno fue detectado automáticamente por proximidad de marcaje.</summary>
     public bool IsAutoDetectedShift { get; private set; }
 
@@ -121,9 +127,25 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     /// Texto dinámico para mostrar en reportes y exportaciones.
     /// Devuelve null si el día no tiene incidencias de salida temporal ni turno autodetectado.
     /// </summary>
-    public string? AttendanceNote => string.IsNullOrWhiteSpace(CalculationIssue)
-        ? BaseAttendanceNote
-        : BaseAttendanceNote == null ? $"⚠️ {CalculationIssue}" : $"{BaseAttendanceNote} ⚠️ {CalculationIssue}";
+    public string? AttendanceNote
+    {
+        get
+        {
+            var parts = new[]
+            {
+                BaseAttendanceNote,
+                LunchNote,
+                string.IsNullOrWhiteSpace(CalculationIssue) ? null : $"⚠️ {CalculationIssue}"
+            }.Where(p => p != null).ToList();
+            return parts.Count == 0 ? null : string.Join(" ", parts);
+        }
+    }
+
+    private string? LunchNote => LunchExcessMinutes <= 0
+        ? null
+        : LunchExcessForgiven
+            ? $"🍽️ Comida de {LunchMinutesTaken} min — exceso de {LunchExcessMinutes} min perdonado"
+            : $"🍽️ Comida de {LunchMinutesTaken} min — {LunchExcessMinutes} min de exceso descontados";
 
     private string? BaseAttendanceNote => (HasTemporaryExits, TemporaryExitStatus, IsAutoDetectedShift) switch
     {
@@ -463,6 +485,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             CalculateOvertimeBeforeEntry = adjustment.CalculateOvertimeBeforeEntryOverride.Value;
         }
 
+        if (adjustment.LunchExcessForgiven)
+        {
+            LunchExcessForgiven = true;
+            LunchBreakMinutesApplied = 0;
+        }
+
         HasManualAdjustments = true;
         CalculateStatus();
     }
@@ -509,11 +537,14 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     /// <c>ProcessDailyAttendanceCommandHandler</c> y recalcula el estado del día.
     /// </summary>
     public void ApplyIntermediateAnalysis(
-        int lunchMinutesDeducted,
+        int lunchMinutesTaken,
+        int lunchExcessMinutes,
         bool hasTemporaryExits,
         int temporaryExitMinutes)
     {
-        LunchBreakMinutesApplied = lunchMinutesDeducted < 0 ? 0 : lunchMinutesDeducted;
+        LunchMinutesTaken = Math.Max(0, lunchMinutesTaken);
+        LunchExcessMinutes = Math.Max(0, lunchExcessMinutes);
+        LunchBreakMinutesApplied = LunchExcessForgiven ? 0 : LunchExcessMinutes;
         HasTemporaryExits = hasTemporaryExits;
         TemporaryExitMinutes = temporaryExitMinutes < 0 ? 0 : temporaryExitMinutes;
         // Si hay salidas temporales nuevas, forzar estado Pending
@@ -859,7 +890,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 if (PunchTrackingMode == PunchTrackingMode.SingleInterval && ActualCheckIn.HasValue && ActualCheckOut.HasValue)
                 {
                     DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
-                    DateTime referenceExit = ActualCheckOut.Value;
+                    // Ambos extremos en hora civil: la salida en UTC sumaba el desfase de la zona horaria.
+                    DateTime referenceExit = GetReferenceExit() ?? ToCivil(ActualCheckOut.Value);
 
                     var worked = (referenceExit - referenceEntry).TotalMinutes;
                     worked -= LunchBreakMinutesApplied;

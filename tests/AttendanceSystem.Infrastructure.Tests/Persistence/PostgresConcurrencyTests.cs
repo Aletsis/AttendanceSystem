@@ -443,6 +443,44 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         storedDaily.CalculationIssue.Should().Contain("13:00");
     }
 
+    [Fact]
+    public async Task LunchSettings_ShiftPaidMinutes_AndDailyLunchResult_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var shift = Shift.Create("Matutino comida", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Matutino);
+        shift.SetPaidLunchMinutes(45);
+        var daily = DailyAttendance.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), shift, null, null, false);
+        daily.ApplyIntermediateAnalysis(lunchMinutesTaken: 55, lunchExcessMinutes: 10, hasTemporaryExits: false, temporaryExitMinutes: 0);
+        var adjustment = AttendanceAdjustment.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), "rh");
+        adjustment.SetLunchExcessForgiven(true, "rh");
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            var config = await context.SystemConfigurations.FirstOrDefaultAsync();
+            if (config == null)
+            {
+                config = SystemConfiguration.CreateDefault();
+                context.SystemConfigurations.Add(config);
+            }
+            config.UpdateLunchSettings(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40);
+            context.Shifts.Add(shift);
+            context.DailyAttendances.Add(daily);
+            context.AttendanceAdjustments.Add(adjustment);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var storedConfig = await verify.SystemConfigurations.FirstAsync();
+        storedConfig.LunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40));
+        (await verify.Shifts.SingleAsync(s => s.Id == shift.Id)).PaidLunchMinutes.Should().Be(45);
+        var storedDaily = await verify.DailyAttendances.SingleAsync(d => d.Id == daily.Id);
+        storedDaily.LunchMinutesTaken.Should().Be(55);
+        storedDaily.LunchExcessMinutes.Should().Be(10);
+        storedDaily.LunchBreakMinutesApplied.Should().Be(10);
+        (await verify.AttendanceAdjustments.SingleAsync(a => a.Id == adjustment.Id)).LunchExcessForgiven.Should().BeTrue();
+    }
+
     #endregion
 
     #region Infraestructura de prueba

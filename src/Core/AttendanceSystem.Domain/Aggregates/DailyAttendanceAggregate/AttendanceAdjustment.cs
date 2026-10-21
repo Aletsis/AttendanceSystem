@@ -60,6 +60,9 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     public bool? OvertimeAuthorizedOverride { get; private set; }
     public bool? CalculateOvertimeBeforeEntryOverride { get; private set; }
 
+    /// <summary>F06-05: RH perdona el exceso de comida (no se descuenta).</summary>
+    public bool LunchExcessForgiven { get; private set; }
+
     // Auditoría
     public string? Reason { get; private set; }
     public string CreatedBy { get; private set; } = "Sistema";
@@ -248,7 +251,8 @@ public sealed class AttendanceAdjustment : Entity<Guid>
             $"turno={(ShiftIdOverride?.Value.ToString() ?? "auto")}",
             $"salidaTemporal={(TemporaryExitStatus?.ToString() ?? "auto")}",
             $"extrasAutorizadas={(OvertimeAuthorizedOverride?.ToString() ?? "auto")}",
-            $"extrasAntesEntrada={(CalculateOvertimeBeforeEntryOverride?.ToString() ?? "auto")}"
+            $"extrasAntesEntrada={(CalculateOvertimeBeforeEntryOverride?.ToString() ?? "auto")}",
+            $"excesoComidaPerdonado={LunchExcessForgiven}"
         }));
     }
 
@@ -278,6 +282,12 @@ public sealed class AttendanceAdjustment : Entity<Guid>
         OvertimeAuthorizedOverride = overtimeAuthorized;
         CalculateOvertimeBeforeEntryOverride = calculateOvertimeBeforeEntry;
         Touch(updatedBy, "Actualización de configuración de horas extras");
+    }
+
+    public void SetLunchExcessForgiven(bool forgiven, string updatedBy, string? reason = null)
+    {
+        LunchExcessForgiven = forgiven;
+        Touch(updatedBy, reason ?? (forgiven ? "Exceso de comida perdonado" : "Exceso de comida descontado"));
     }
 
     private void Touch(string updatedBy, string? reason)

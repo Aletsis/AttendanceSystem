@@ -156,12 +156,12 @@ public class DailyAttendanceTests
             isRestDay: false,
             overtimeAuthorized: true);
 
-        // Act (Apply intermediate analysis: 60m lunch, 30m temporary exit)
-        da.ApplyIntermediateAnalysis(lunchMinutesDeducted: 60, hasTemporaryExits: true, temporaryExitMinutes: 30);
+        // Act (comida de 90 min con 30 con goce = 60 de exceso descontado; 30 min de salida temporal)
+        da.ApplyIntermediateAnalysis(lunchMinutesTaken: 90, lunchExcessMinutes: 60, hasTemporaryExits: true, temporaryExitMinutes: 30);
         da.ClassifyTemporaryExit(TemporaryExitStatus.ApprovedUnpaid, "Supervisor");
 
         // Assert
-        // Total worked = 600 - 60 (lunch) - 30 (unpaid) = 510 min.
+        // Total worked = 600 - 60 (exceso de comida) - 30 (unpaid) = 510 min.
         // Overtime = 510 - 480 (scheduled) = 30 min.
         da.OvertimeMinutes.Should().Be(30);
         da.TemporaryExitStatus.Should().Be(TemporaryExitStatus.ApprovedUnpaid);

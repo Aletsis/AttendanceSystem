@@ -87,6 +87,22 @@
                                 <MudNumericField Label="Inicio 2do Per." @bind-Value="_fortnightSecondDay" Min="1" Max="28" Variant="Variant.Outlined" />
                             </MudItem>
                         }
+
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.subtitle1" Class="mt-2">Comida</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Una ausencia marcada que inicia dentro de la ventana cuenta como comida; los minutos con goce no se descuentan y el exceso sí. Las ausencias fuera de la ventana son salidas temporales.
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudTimePicker Label="Inicio ventana de comida" @bind-Time="_lunchWindowStart" Variant="Variant.Outlined" Editable="true" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudTimePicker Label="Fin ventana de comida" @bind-Time="_lunchWindowEnd" Variant="Variant.Outlined" Editable="true" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Minutos de comida con goce" @bind-Value="_paidLunchMinutes" Min="0" Max="240" Variant="Variant.Outlined" />
+                        </MudItem>
                     </MudGrid>
                 </MudForm>
             </MudTabPanel>
@@ -374,6 +390,11 @@
     private int _fortnightSecondDay;
     private int _monthlyStartDay;
 
+    // Comida (F06-05)
+    private TimeSpan? _lunchWindowStart = new(12, 30, 0);
+    private TimeSpan? _lunchWindowEnd = new(15, 0, 0);
+    private int _paidLunchMinutes = 30;
+
     // Cloud Sync Fields
     private bool _isCloudSyncEnabled = true;
     private string _cloudDbHost = "";
@@ -459,6 +480,9 @@
                 _fortnightFirstDay = config.FortnightFirstDay;
                 _fortnightSecondDay = config.FortnightSecondDay;
                 _monthlyStartDay = config.MonthlyStartDay;
+                _lunchWindowStart = config.LunchWindowStart ?? _lunchWindowStart;
+                _lunchWindowEnd = config.LunchWindowEnd ?? _lunchWindowEnd;
+                _paidLunchMinutes = config.PaidLunchMinutes;
 
                 // Cloud Sync
                 _isCloudSyncEnabled = config.IsCloudSyncEnabled;
@@ -517,7 +541,10 @@
                 _autoReportEmails,
                 _autoReportForToday,
                 _isCloudSyncEnabled,
-                BuildCloudConnectionString()
+                BuildCloudConnectionString(),
+                _lunchWindowStart,
+                _lunchWindowEnd,
+                _paidLunchMinutes
             );
 
             var result = await Mediator.Send(command);

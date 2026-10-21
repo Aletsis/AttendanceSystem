@@ -1,3 +1,4 @@
+using AttendanceSystem.Domain.Services;
 using MediatR;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
@@ -18,7 +19,8 @@ public record ProcessMixAttendanceCommand(
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
-    DateTime? NextJornadaEntryStart = null) : IRequest;
+    DateTime? NextJornadaEntryStart = null,
+    LunchPolicy? Lunch = null) : IRequest;
 
 public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAttendanceCommand>
 {
@@ -81,14 +83,14 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                 await _sender.Send(new ProcessContinuousAttendanceCommand(
                     request.Employee, request.Date, effective, request.Records, request.IsRestDay,
                     Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft,
-                    NextJornadaEntryStart: request.NextJornadaEntryStart), cancellationToken);
+                    NextJornadaEntryStart: request.NextJornadaEntryStart, Lunch: request.Lunch), cancellationToken);
                 break;
 
             case ShiftType.Flexible:
                 await _sender.Send(new ProcessFlexibleAttendanceCommand(
                     request.Employee, request.Date, effective, request.Records, request.IsRestDay,
                     Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft,
-                    NextJornadaEntryStart: request.NextJornadaEntryStart), cancellationToken);
+                    NextJornadaEntryStart: request.NextJornadaEntryStart, Lunch: request.Lunch), cancellationToken);
                 break;
 
             case ShiftType.Partido:
@@ -103,7 +105,7 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
             case ShiftType.Vespertino:
                 await _sender.Send(new ProcessRegularAttendanceCommand(
                     request.Employee, request.Date, effective, request.Records, request.IsRestDay,
-                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft), cancellationToken);
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft, Lunch: request.Lunch), cancellationToken);
                 break;
 
             default:
@@ -111,7 +113,7 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                 _logger.LogWarning("Tipo de turno no soportado en turno mixto diario: {Type}. Usando regular.", dayShiftType);
                 await _sender.Send(new ProcessRegularAttendanceCommand(
                     request.Employee, request.Date, effective, request.Records, request.IsRestDay,
-                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft), cancellationToken);
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft, Lunch: request.Lunch), cancellationToken);
                 break;
         }
 

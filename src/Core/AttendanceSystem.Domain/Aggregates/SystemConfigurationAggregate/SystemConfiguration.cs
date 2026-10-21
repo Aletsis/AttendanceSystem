@@ -41,6 +41,13 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public int FortnightSecondDay { get; private set; }
     public int MonthlyStartDay { get; private set; }
 
+    // Comida (F06-05): ventana global en la que una ausencia marcada cuenta como comida y minutos con goce.
+    public TimeSpan LunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultWindowStart;
+    public TimeSpan LunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultWindowEnd;
+    public int PaidLunchMinutes { get; private set; } = Services.LunchPolicy.DefaultPaidMinutes;
+
+    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes);
+
     // Alert Settings
     public bool AreAlertsEnabled { get; private set; }
     public string? AbsenceAlertEmails { get; private set; }
@@ -163,6 +170,18 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public void UpdateBackupDirectory(string backupDirectory)
     {
         BackupDirectory = backupDirectory;
+    }
+
+    public void UpdateLunchSettings(TimeSpan windowStart, TimeSpan windowEnd, int paidLunchMinutes)
+    {
+        if (windowStart < TimeSpan.Zero || windowEnd >= TimeSpan.FromDays(1) || windowStart >= windowEnd)
+            throw new DomainException("La ventana de comida debe tener un inicio anterior al fin dentro del mismo día");
+        if (paidLunchMinutes < 0 || paidLunchMinutes > 240)
+            throw new DomainException("Los minutos de comida con goce deben estar entre 0 y 240");
+
+        LunchWindowStart = windowStart;
+        LunchWindowEnd = windowEnd;
+        PaidLunchMinutes = paidLunchMinutes;
     }
 
     public void UpdateWorkPeriodSettings(

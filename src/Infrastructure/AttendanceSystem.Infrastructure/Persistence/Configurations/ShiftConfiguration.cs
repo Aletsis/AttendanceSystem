@@ -42,6 +42,8 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             .IsRequired()
             .HasDefaultValue(0);
 
+        builder.Property(s => s.PaidLunchMinutes);
+
         builder.Property(s => s.RoundingsEnabled)
             .IsRequired()
             .HasDefaultValue(false);

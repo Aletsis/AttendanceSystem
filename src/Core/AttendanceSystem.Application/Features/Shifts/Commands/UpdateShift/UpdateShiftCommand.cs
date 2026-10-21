@@ -25,7 +25,9 @@ public sealed record UpdateShiftCommand(
     TimeSpan? SecondBlockEndTime = null,
     int? SecondBlockToleranceMinutes = null,
     PunchTrackingMode PunchTrackingMode = PunchTrackingMode.SingleInterval,
-    bool HasEntryWindow = true) : IRequest<Result>;
+    bool HasEntryWindow = true,
+    int? PaidLunchMinutes = null,
+    bool UpdatePaidLunchMinutes = false) : IRequest<Result>;
 
 public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftCommand, Result>
 {
@@ -74,6 +76,8 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
                 secondBlockToleranceMinutes: request.SecondBlockToleranceMinutes,
                 punchTrackingMode: request.PunchTrackingMode,
                 hasEntryWindow: request.HasEntryWindow);
+            // Los clientes que no conocen el campo (UpdatePaidLunchMinutes = false) no lo modifican.
+            if (request.UpdatePaidLunchMinutes) shift.SetPaidLunchMinutes(request.PaidLunchMinutes);
 
             _shiftRepository.Update(shift);
             await _unitOfWork.SaveChangesAsync(cancellationToken);

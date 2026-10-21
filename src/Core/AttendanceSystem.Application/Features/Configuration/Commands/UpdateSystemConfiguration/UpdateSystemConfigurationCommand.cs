@@ -40,7 +40,10 @@ public sealed record UpdateSystemConfigurationCommand(
     string? AutoReportEmails = null,
     bool AutoReportForToday = false,
     bool IsCloudSyncEnabled = true,
-    string? CloudDbConnectionString = null) : IRequest<Result<Guid>>;
+    string? CloudDbConnectionString = null,
+    TimeSpan? LunchWindowStart = null,
+    TimeSpan? LunchWindowEnd = null,
+    int? PaidLunchMinutes = null) : IRequest<Result<Guid>>;
 
 public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<UpdateSystemConfigurationCommand, Result<Guid>>
 {
@@ -102,6 +105,15 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.FortnightFirstDay,
             command.FortnightSecondDay,
             command.MonthlyStartDay);
+
+        // F06-05: los clientes que no envían la regla de comida la conservan.
+        if (command.LunchWindowStart.HasValue || command.LunchWindowEnd.HasValue || command.PaidLunchMinutes.HasValue)
+        {
+            config.UpdateLunchSettings(
+                command.LunchWindowStart ?? config.LunchWindowStart,
+                command.LunchWindowEnd ?? config.LunchWindowEnd,
+                command.PaidLunchMinutes ?? config.PaidLunchMinutes);
+        }
 
         config.UpdateCloudSyncSettings(
             command.IsCloudSyncEnabled,

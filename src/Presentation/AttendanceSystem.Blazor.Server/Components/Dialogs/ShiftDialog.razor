@@ -137,6 +137,8 @@
             <MudTimePicker @bind-Time="_startTime" Label="Hora de Inicio" Required="true" Editable="true" />
             <MudTimePicker @bind-Time="_endTime" Label="Hora de Fin" Required="true" Editable="true" />
         }
+        <MudNumericField T="int?" @bind-Value="_paidLunchMinutes" Label="Minutos de comida con goce" Min="0" Max="240" Clearable="true" Class="mt-4"
+                         HelperText="Vacío = valor global de Configuración. La comida se detecta en la ventana global; el exceso se descuenta." />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancelar</MudButton>
@@ -164,6 +166,7 @@
     [Parameter] public int? SecondBlockToleranceMinutes { get; set; }
     [Parameter] public PunchTrackingMode PunchTrackingMode { get; set; } = PunchTrackingMode.SingleInterval;
     [Parameter] public bool HasEntryWindow { get; set; } = true;
+    [Parameter] public int? PaidLunchMinutes { get; set; }
 
     private string _name = "";
     private TimeSpan? _startTime;
@@ -180,6 +183,7 @@
     private bool _roundingsEnabled;
     private int _roundingInterval = 15;
     private PunchTrackingMode _punchTrackingMode = PunchTrackingMode.SingleInterval;
+    private int? _paidLunchMinutes;
     private bool _hasEntryWindow = true;
     
     private List<DayConfig> _days = new();
@@ -235,6 +239,7 @@
         _secondBlockToleranceMinutes = SecondBlockToleranceMinutes ?? ToleranceMinutes;
         _punchTrackingMode = PunchTrackingMode;
         _hasEntryWindow = HasEntryWindow;
+        _paidLunchMinutes = PaidLunchMinutes;
         
         if (WeeklyWorkHours.HasValue && WeeklyWorkHours.Value > TimeSpan.Zero)
         {
@@ -429,7 +434,9 @@
                 SecondBlockEndTime: b2End,
                 SecondBlockToleranceMinutes: b2Tol,
                 PunchTrackingMode: _punchTrackingMode,
-                HasEntryWindow: effectiveHasEntryWindow);
+                HasEntryWindow: effectiveHasEntryWindow,
+                PaidLunchMinutes: _paidLunchMinutes,
+                UpdatePaidLunchMinutes: true);
             MudDialog.Close(DialogResult.Ok(command));
         }
         else
@@ -450,7 +457,8 @@
                 SecondBlockEndTime: b2End,
                 SecondBlockToleranceMinutes: b2Tol,
                 PunchTrackingMode: _punchTrackingMode,
-                HasEntryWindow: effectiveHasEntryWindow);
+                HasEntryWindow: effectiveHasEntryWindow,
+                PaidLunchMinutes: _paidLunchMinutes);
             MudDialog.Close(DialogResult.Ok(command));
         }
     }

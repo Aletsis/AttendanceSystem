@@ -154,7 +154,12 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         }
     }
 
-    public void Update(
+    /// <summary>
+    /// Actualiza el empleado. Los cambios de horario, tipo de turno, sucursal y estado (baja / reingreso) valen
+    /// desde <paramref name="effectiveFrom"/> (hoy si no se indica); en la baja es el último día laborado.
+    /// Devuelve la primera fecha cuyo cálculo cambia, o null si ningún cambio afecta al cálculo.
+    /// </summary>
+    public DateTime? Update(
         string firstName,
         string lastName,
         string? email,
@@ -177,11 +182,40 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         string? devicePassword = null,
         string? photo = null,
         DevicePrivilege devicePrivilege = DevicePrivilege.User,
-        IEnumerable<WeekDay>? restDays = null)
+        IEnumerable<WeekDay>? restDays = null,
+        DateTime? effectiveFrom = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
         ValidateEmail(email);
+
+        var from = (effectiveFrom ?? DateTime.Today).Date;
+        if (from < hireDate.Date)
+            throw new DomainException("La fecha de vigencia no puede ser anterior a la fecha de contratación");
+
+        // F06-08: los cambios de horario, tipo o sucursal y de alta/baja quedan como vigencias desde la fecha indicada.
+        DateTime? recalculateFrom = null;
+        if (RecordAssignment(from, scheduleId, shiftType, branchId)) recalculateFrom = from;
+        if (HireDate.Date != hireDate.Date)
+        {
+            var earliest = hireDate.Date < HireDate.Date ? hireDate.Date : HireDate.Date;
+            MoveHireDate(hireDate);
+            recalculateFrom = recalculateFrom is { } r && r < earliest ? r : earliest;
+        }
+        if (Status != status)
+        {
+            if (from > DateTime.Today)
+                throw new DomainException("La baja o el reingreso no pueden registrarse con fecha futura");
+            if (status == EmployeeStatus.Baja) Terminate(from);
+            else if (Status == EmployeeStatus.Baja)
+            {
+                var lastEnd = _employmentPeriods.Where(p => p.EndDate.HasValue).Select(p => p.EndDate!.Value).DefaultIfEmpty(TerminationDate ?? DateTime.MinValue).Max();
+                if (from <= lastEnd)
+                    throw new DomainException($"El reingreso debe ser posterior a la última baja ({lastEnd:dd/MM/yyyy})");
+                Rehire(from);
+            }
+            recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
+        }
 
         var configuredRestDays = restDays?.Distinct().ToList();
         if (configuredRestDays != null && configuredRestDays.Any())
@@ -205,15 +239,6 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             RestDay = null;
         }
 
-        // F06-08: los cambios de horario, tipo o sucursal y de alta/baja quedan como vigencias desde hoy.
-        RecordAssignment(DateTime.Today, scheduleId, shiftType, branchId);
-        if (HireDate.Date != hireDate.Date) MoveHireDate(hireDate);
-        if (Status != status)
-        {
-            if (status == EmployeeStatus.Baja) Terminate(DateTime.Today);
-            else if (Status == EmployeeStatus.Baja) Rehire(DateTime.Today);
-        }
-
         FirstName = firstName;
         LastName = lastName;
         Email = string.IsNullOrWhiteSpace(email) ? null : email;
@@ -235,6 +260,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         DevicePassword = devicePassword;
         Photo = photo ?? Photo;
         DevicePrivilege = devicePrivilege;
+        return recalculateFrom;
     }
 
     public bool IsRestDay(DayOfWeek dayOfWeek)
@@ -345,8 +371,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             : (effective.ScheduleId, effective.ShiftType, effective.BranchId);
     }
 
-    /// <summary>Registra una asignación vigente desde <paramref name="effectiveFrom"/> si cambia algo.</summary>
-    public void RecordAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId)
+    /// <summary>Registra una asignación vigente desde <paramref name="effectiveFrom"/>; devuelve si cambió algo.</summary>
+    public bool RecordAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId)
     {
         if (_scheduleAssignments.Count == 0)
         {
@@ -355,11 +381,12 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         }
 
         var current = AssignmentOn(effectiveFrom);
-        if (current.ScheduleId == scheduleId && current.ShiftType == shiftType && current.BranchId == branchId) return;
+        if (current.ScheduleId == scheduleId && current.ShiftType == shiftType && current.BranchId == branchId) return false;
 
         var sameDay = _scheduleAssignments.FirstOrDefault(a => a.EffectiveFrom == effectiveFrom.Date);
         if (sameDay != null) sameDay.Replace(scheduleId, shiftType, branchId);
         else _scheduleAssignments.Add(new ScheduleAssignment(effectiveFrom, scheduleId, shiftType, branchId));
+        return true;
     }
 
     private void MoveHireDate(DateTime hireDate)

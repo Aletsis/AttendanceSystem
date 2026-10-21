@@ -40,6 +40,40 @@ public sealed class ClassifyTemporaryExitCommandHandler : IRequestHandler<Classi
 }
 
 /// <summary>
+/// F06-05: el exceso de comida (minutos sobre los con goce) se descuenta por defecto; RH puede perdonarlo
+/// (<c>Forgiven</c> = true) o volver a descontarlo (false).
+/// </summary>
+public sealed record SetLunchExcessForgivenCommand(
+    string EmployeeId,
+    DateOnly Date,
+    bool Forgiven,
+    string? Reason = null,
+    int? ExpectedRevision = null) : IRequest<Result<AttendanceDecisionOutcome>>;
+
+public sealed class SetLunchExcessForgivenCommandHandler : IRequestHandler<SetLunchExcessForgivenCommand, Result<AttendanceDecisionOutcome>>
+{
+    private readonly AttendanceDecisionService _decisions;
+
+    public SetLunchExcessForgivenCommandHandler(AttendanceDecisionService decisions) => _decisions = decisions;
+
+    public Task<Result<AttendanceDecisionOutcome>> Handle(SetLunchExcessForgivenCommand request, CancellationToken cancellationToken) =>
+        _decisions.DecideAsync(
+            EmployeeId.From(request.EmployeeId),
+            request.Date.ToDateTime(TimeOnly.MinValue),
+            "ExcesoComida",
+            request.Reason,
+            request.ExpectedRevision,
+            (context, adjustment) =>
+            {
+                if (adjustment.LunchExcessForgiven == request.Forgiven)
+                    return Task.FromResult(Result.Failure(request.Forgiven ? "El exceso de comida ya está perdonado." : "El exceso de comida ya se descuenta."));
+                adjustment.SetLunchExcessForgiven(request.Forgiven, context.Author, request.Reason);
+                return Task.FromResult(Result.Success());
+            },
+            cancellationToken);
+}
+
+/// <summary>
 /// Autorización de horas extras de una jornada. Ambos valores nulos retiran la decisión y vuelven a la
 /// configuración del empleado.
 /// </summary>

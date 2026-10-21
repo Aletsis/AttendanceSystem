@@ -11,8 +11,13 @@ public class Shift : AggregateRoot<ShiftId>
     public int ToleranceMinutes { get; private set; }
     public TimeSpan WorkHours { get; private set; }
     public ShiftType ShiftType { get; private set; }
-    /// <summary>Minutos de descanso de comida a deducir del tiempo laborado (0 = sin deducción automática).</summary>
+    /// <summary>
+    /// Campo heredado: minutos de comida a deducir. Ya no interviene en el cálculo (F06-05); la comida se rige por la
+    /// ventana global y los minutos con goce (<see cref="PaidLunchMinutes"/>).
+    /// </summary>
     public int LunchBreakMinutes { get; private set; }
+    /// <summary>Minutos de comida con goce propios del turno; null = los de la configuración global (F06-05).</summary>
+    public int? PaidLunchMinutes { get; private set; }
     public bool RoundingsEnabled { get; private set; }
     public int RoundingInterval { get; private set; }
     /// <summary>Hora límite de la ventana de llegada para turnos flexibles (null si no es flexible).</summary>
@@ -35,6 +40,13 @@ public class Shift : AggregateRoot<ShiftId>
 
     private Shift() { }
 
+    public void SetPaidLunchMinutes(int? minutes)
+    {
+        if (minutes is < 0 or > 240)
+            throw new DomainException("Los minutos de comida con goce deben estar entre 0 y 240.");
+        PaidLunchMinutes = minutes;
+    }
+
     /// <summary>
     /// F06-04: configuración efectiva de un día de un turno mixto. Conserva identidad, nombre, tolerancias,
     /// comida, redondeo y modalidad del turno, y toma del día el tipo, la hora de inicio y la duración.
@@ -51,6 +63,7 @@ public class Shift : AggregateRoot<ShiftId>
         ShiftType = day.ShiftType,
         ToleranceMinutes = ToleranceMinutes,
         LunchBreakMinutes = LunchBreakMinutes,
+        PaidLunchMinutes = PaidLunchMinutes,
         RoundingsEnabled = RoundingsEnabled,
         RoundingInterval = RoundingInterval,
         FlexWindowEndTime = null,

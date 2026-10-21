@@ -23,6 +23,9 @@ internal sealed class EmployeeRecalculationWorkset
     public Employee Employee { get; }
     public string? TimeZoneId { get; }
 
+    /// <summary>Regla de comida global vigente durante el recálculo (F06-05).</summary>
+    public AttendanceSystem.Domain.Services.LunchPolicy Lunch { get; init; } = AttendanceSystem.Domain.Services.LunchPolicy.Default;
+
     public Dictionary<DateTime, DailyAttendance> ExistingDaily { get; } = new();
     public Dictionary<DateTime, ShiftRoster> Rosters { get; } = new();
     public Dictionary<DateTime, AttendanceAdjustment> Adjustments { get; } = new();

@@ -21,7 +21,8 @@ public record ProcessFlexibleAttendanceCommand(
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
     DateTime? NextJornadaEntryStart = null,
-    bool Continuous = false) : IRequest;
+    bool Continuous = false,
+    LunchPolicy? Lunch = null) : IRequest;
 
 public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFlexibleAttendanceCommand>
 {
@@ -152,7 +153,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         DateTime? checkOut = null;
         AttendanceRecord? checkInRecord = null;
         AttendanceRecord? checkOutRecord = null;
-        (int Lunch, bool HasTempExits, int TempMinutes)? intermediateAnalysis = null;
+        (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes)? intermediateAnalysis = null;
 
         // Marcajes del día
         var pendingDayRecords = PunchAssignmentPolicy.Chronological(request.Records
@@ -170,12 +171,16 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             checkInRecord = pendingDayRecords.First();
             checkIn = checkInRecord.CheckTime;
 
-            // 2. Ventana de salida (F06-01): duración del turno + margen, tope de 24 h y antes de la entrada de la
-            //    jornada siguiente cuando es laborable.
-            var checkInCivil = checkInRecord.GetCivilTime(request.TimeZoneId);
-            var windowEnd = JornadaWindowPolicy.ExitWindowEnd(checkInCivil, request.Shift.WorkHours, request.NextJornadaEntryStart);
+            // 2. Ventana de salida (F06-01): los marcajes del mismo día siempre son candidatos; en el día siguiente
+            //    sólo hasta el fin de la ventana (entrada programada + duración + margen, antes de la jornada siguiente).
+            var windowEnd = JornadaWindowPolicy.ExitWindowEnd(
+                checkInRecord.GetCivilTime(request.TimeZoneId),
+                JornadaWindowPolicy.ScheduledStart(request.Date, request.Shift.StartTime, request.Shift.HasEntryWindow),
+                request.Shift.WorkHours,
+                request.NextJornadaEntryStart);
             var exitCandidates = availableRecords
-                .Where(r => r.CheckTime > checkIn.Value && r.GetCivilTime(request.TimeZoneId) <= windowEnd)
+                .Where(r => r.CheckTime > checkIn.Value &&
+                            (r.GetWorkDate(request.TimeZoneId) == targetDateOnly || r.GetCivilTime(request.TimeZoneId) <= windowEnd))
                 .ToList();
 
             if (request.Continuous)
@@ -227,57 +232,12 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
                         request.Draft?.DoubleTap(doubleTap);
                     }
 
-                    int lunchMinutesDeducted = 0;
-                    bool hasTemporaryExits = false;
-                    int temporaryExitMinutes = 0;
-
-                    for (int i = 0; i < recordsToAnalyze.Count; i += 2)
-                    {
-                        var exitRecord = recordsToAnalyze[i];
-
-                        if (i + 1 < recordsToAnalyze.Count)
-                        {
-                            var returnRecord = recordsToAnalyze[i + 1];
-                            double absenceMinutes = (returnRecord.CheckTime - exitRecord.CheckTime).TotalMinutes;
-
-                            if (absenceMinutes <= 15)
-                            {
-                                request.Draft?.DoubleTap(exitRecord);
-                                request.Draft?.DoubleTap(returnRecord);
-                                _logger.LogDebug("Par intermedio ({Exit}-{Return}): {Min} min -> doble toque intermedio, ignorado.",
-                                    exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes);
-                            }
-                            else if (absenceMinutes <= 90)
-                            {
-                                request.Draft?.Intermediate(exitRecord);
-                                request.Draft?.Intermediate(returnRecord);
-                                hasTemporaryExits = true;
-                                temporaryExitMinutes += (int)absenceMinutes;
-                                _logger.LogInformation("Par intermedio ({Exit}-{Return}): {Min} min -> posible permiso temporal detectado.",
-                                    exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes);
-                            }
-                            else
-                            {
-                                request.Draft?.Intermediate(exitRecord);
-                                request.Draft?.Intermediate(returnRecord);
-                                if (request.Shift.LunchBreakMinutes > 0)
-                                {
-                                    lunchMinutesDeducted += request.Shift.LunchBreakMinutes;
-                                    _logger.LogDebug("Par intermedio ({Exit}-{Return}): {Min} min -> comida formal. Deduciendo {Lunch} min.",
-                                        exitRecord.CheckTime, returnRecord.CheckTime, (int)absenceMinutes, request.Shift.LunchBreakMinutes);
-                                }
-                            }
-                        }
-                        else
-                        {
-                            request.Draft?.PendingReview(exitRecord);
-                            hasTemporaryExits = true;
-                            _logger.LogWarning("Checada intermedia huérfana ({Exit}) sin regreso registrado en turno flexible.",
-                                exitRecord.CheckTime);
-                        }
-                    }
-
-                    intermediateAnalysis = (lunchMinutesDeducted, hasTemporaryExits, temporaryExitMinutes);
+                    // F06-05: comida por ventana global y minutos con goce; el resto son salidas temporales.
+                    intermediateAnalysis = IntermediatePunchAnalysis.Analyze(
+                        recordsToAnalyze,
+                        (request.Lunch ?? LunchPolicy.Default).ForShift(request.Shift.PaidLunchMinutes),
+                        request.TimeZoneId,
+                        request.Draft);
 
                     foreach (var middle in middleRecords)
                     {
@@ -322,7 +282,8 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         if (intermediateAnalysis.HasValue)
         {
             dailyAttendance.ApplyIntermediateAnalysis(
-                intermediateAnalysis.Value.Lunch,
+                intermediateAnalysis.Value.LunchMinutes,
+                intermediateAnalysis.Value.LunchExcess,
                 intermediateAnalysis.Value.HasTempExits,
                 intermediateAnalysis.Value.TempMinutes);
         }
