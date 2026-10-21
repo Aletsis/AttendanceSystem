@@ -718,7 +718,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         var isRestDay = plan.Resolution.IsRestDay;
         var isAutoDetected = plan.Resolution.IsAutoDetected;
         var adjustment = plan.Adjustment;
-        var empTimeZone = ws.TimeZoneId;
 
         // F02-04: el estado Pending/Processed deja de ser una entrada heredada; se deriva de la pertenencia.
         var unavailable = ws.Unavailable(workDate, includeOwnManual: true);
@@ -756,6 +755,11 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             }
             records.Add(record);
         }
+
+        // La jornada se expresa en la zona del reloj donde se marcó la entrada (su primer marcaje): un empleado que marca
+        // en un reloj de otra zona ve y se le calcula la hora que marcó ese reloj. Sin marcajes, la de su sucursal.
+        // Límite: si la salida se marca en un reloj de otra zona, se expresa en la zona de la entrada.
+        var empTimeZone = records.Select(r => r.TimeZoneId).FirstOrDefault(tz => !string.IsNullOrWhiteSpace(tz)) ?? ws.TimeZoneId;
 
         var draft = new PunchAssignmentDraft();
 

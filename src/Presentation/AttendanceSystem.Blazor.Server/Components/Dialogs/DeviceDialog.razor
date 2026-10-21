@@ -3,6 +3,9 @@
 @using AttendanceSystem.Application.Features.Devices.Commands.CreateDevice
 @using AttendanceSystem.Application.Features.Devices.Commands.UpdateDevice
 @using AttendanceSystem.Domain.Enumerations
+@using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Application.Common
+@inject IAuthoritativeTimeZoneResolver TimeZoneResolver
 
 <MudDialog>
     <DialogContent>
@@ -11,6 +14,14 @@
             <MudTextField @bind-Value="IpAddress" Label="Dirección IP" Required="true" RequiredError="La IP es requerida" />
             <MudNumericField @bind-Value="Port" Label="Puerto" Required="true" Min="1" Max="65535" />
             <MudTextField @bind-Value="Location" Label="Ubicación" />
+
+            <MudSelect T="string" @bind-Value="TimeZoneId" Label="Zona horaria del reloj" Required="true" RequiredError="La zona horaria es requerida"
+                       HelperText="La hora que marca el reloj se interpreta en esta zona; al cambiarla se sincroniza su hora." Class="mb-3">
+                @foreach (var zone in _zones)
+                {
+                    <MudSelectItem Value="@zone.Id">@TimeZoneCatalog.Describe(zone.Id)</MudSelectItem>
+                }
+            </MudSelect>
             
             <MudSelect T="DeviceBrand" Label="Marca" Value="Brand" ValueChanged="OnBrandChanged" Required="true" Class="mb-3">
                 <MudSelectItem Value="@DeviceBrand.ZKTeco">ZKTeco</MudSelectItem>
@@ -67,12 +78,25 @@
     [Parameter] public string? SerialNumber { get; set; }
     [Parameter] public string? Username { get; set; }
     [Parameter] public string? Password { get; set; }
+    [Parameter] public string? TimeZoneId { get; set; }
+
+    private IReadOnlyList<TimeZoneCatalog.Entry> _zones = TimeZoneCatalog.Common;
 
     private bool success;
     private MudForm form = default!;
 
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
+        // Reloj nuevo o sin zona: se propone la zona del sistema.
+        if (string.IsNullOrWhiteSpace(TimeZoneId))
+        {
+            TimeZoneId = await TimeZoneResolver.GetSystemDefaultTimeZoneAsync();
+        }
+        if (_zones.All(z => z.Id != TimeZoneId))
+        {
+            _zones = _zones.Prepend(new TimeZoneCatalog.Entry(TimeZoneId!, TimeZoneId!)).ToList();
+        }
+
         if (Brand == DeviceBrand.Hikvision)
         {
             DownloadMethod = DeviceDownloadMethod.Sdk;
@@ -128,11 +152,11 @@
 
             if (string.IsNullOrEmpty(DeviceId))
             {
-                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword)));
+                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword, TimeZoneId)));
             }
             else
             {
-                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword)));
+                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword, TimeZoneId)));
             }
         }
     }

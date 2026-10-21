@@ -169,7 +169,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                         result.Parameters.GetValue<DeviceDownloadMethod>("DownloadMethod"),
                         result.Parameters.GetValue<string?>("SerialNumber"),
                         result.Parameters.GetValue<string?>("Username"),
-                        result.Parameters.GetValue<string?>("Password")
+                        result.Parameters.GetValue<string?>("Password"),
+                        result.Parameters.GetValue<string?>("TimeZoneId")
                     );
 
                     var createResult = await _mediator.Send(command);
@@ -204,7 +205,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 { "SerialNumber", deviceData.SerialNumber ?? string.Empty },
                 { "ShouldClearAfterDownload", deviceData.ShouldClearAfterDownload },
                 { "Username", deviceData.Username ?? string.Empty },
-                { "Password", deviceData.Password ?? string.Empty }
+                { "Password", deviceData.Password ?? string.Empty },
+                { "TimeZoneId", deviceData.TimeZoneId ?? string.Empty }
             };
 
             _dialogService.ShowDialog("DeviceDetailDialog", parameters, async result =>
@@ -222,7 +224,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                         result.Parameters.GetValue<DeviceDownloadMethod>("DownloadMethod"),
                         result.Parameters.GetValue<string?>("SerialNumber"),
                         result.Parameters.GetValue<string?>("Username"),
-                        result.Parameters.GetValue<string?>("Password")
+                        result.Parameters.GetValue<string?>("Password"),
+                        result.Parameters.GetValue<string?>("TimeZoneId")
                     );
 
                     var updateResult = await _mediator.Send(command);

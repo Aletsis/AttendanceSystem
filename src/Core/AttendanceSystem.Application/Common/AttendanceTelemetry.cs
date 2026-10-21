@@ -51,6 +51,9 @@ public static class AttendanceTelemetry
     public static readonly Counter<long> ConsolidationClaims =
         Meter.CreateCounter<long>("attendance.consolidation.claims", "{request}", "Solicitudes de consolidación atendidas por resultado");
 
+    public static readonly Counter<long> DeviceClockCorrections =
+        Meter.CreateCounter<long>("attendance.device.clock_corrections", "{correction}", "Relojes resincronizados por desvío de hora");
+
     /// <summary>Última lectura de salud (la actualiza el consumidor de consolidación).</summary>
     public static OperationalHealth LastHealth { get; set; } = OperationalHealth.Unknown;
 

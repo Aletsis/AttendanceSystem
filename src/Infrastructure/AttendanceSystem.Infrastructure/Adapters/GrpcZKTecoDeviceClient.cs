@@ -293,7 +293,8 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
     {
         try
         {
-            var request = new SetDeviceTimeRequest { DateTime = dateTime.ToString("o") };
+            // Hora civil de la zona del reloj, sin zona: el servicio no debe convertirla a su hora local.
+            var request = new SetDeviceTimeRequest { DateTime = dateTime.ToString("yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture) };
             var response = await _client.SetDeviceTimeAsync(request, headers: CreateHeaders(), cancellationToken: cancellationToken);
             return response.Success;
         }
@@ -301,6 +302,23 @@ public class GrpcZKTecoDeviceClient : IDeviceClient
         {
             _logger.LogError(ex, "Sesión {SessionId}: Error configurando hora", _sessionId);
             return false;
+        }
+    }
+
+    public async Task<DateTime?> GetDeviceTimeAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var response = await _client.GetDeviceTimeAsync(new GetDeviceTimeRequest(), headers: CreateHeaders(), cancellationToken: cancellationToken);
+            if (!response.Success) return null;
+            return DateTime.TryParseExact(response.DateTime, "yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var time) ? DateTime.SpecifyKind(time, DateTimeKind.Unspecified) : null;
+        }
+        catch (Exception ex)
+        {
+            // Un servicio sin GetDeviceTime (versión anterior) no impide la descarga: sólo no se verifica el desvío.
+            _logger.LogWarning(ex, "Sesión {SessionId}: no se pudo leer la hora del dispositivo", _sessionId);
+            return null;
         }
     }
 

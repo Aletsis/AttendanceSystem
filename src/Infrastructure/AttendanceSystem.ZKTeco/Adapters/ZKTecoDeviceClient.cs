@@ -99,10 +99,9 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
 
             try
             {
-                // El SDK de ZKTeco devuelve fechas en hora LOCAL del dispositivo.
-                // fromDate/toDate llegan en UTC desde la capa de aplicación.
-                // Convertimos a hora local antes de filtrar para evitar descartar
-                // registros válidos por el desfase de zona horaria.
+                // El SDK de ZKTeco devuelve fechas en hora LOCAL del dispositivo. La capa de aplicación envía la ventana
+                // ya en la hora civil de la zona del reloj (sin zona). Sólo un cliente antiguo que envíe UTC cae en la
+                // conversión con la zona de este servicio, que puede no ser la del reloj.
                 var localFromDate = fromDate.HasValue
                     ? fromDate.Value.Kind == DateTimeKind.Utc
                         ? fromDate.Value.ToLocalTime()
@@ -641,6 +640,7 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
         {
             try
             {
+                // Hora civil de la zona del reloj: el reloj por SDK no maneja zonas horarias.
                 return _device.SetDeviceTime2(1, dateTime.Year, dateTime.Month, dateTime.Day, dateTime.Hour, dateTime.Minute, dateTime.Second);
             }
             catch
@@ -649,6 +649,34 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
                 return false;
             }
         }, cancellationToken);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    public async Task<DateTime?> GetDeviceTimeAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_isConnected) throw new InvalidOperationException("Dispositivo no conectado");
+
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            return await Task.Run<DateTime?>(() =>
+            {
+                int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+                if (!_device.GetDeviceTime(1, ref year, ref month, ref day, ref hour, ref minute, ref second)) return null;
+                try
+                {
+                    return new DateTime(year, month, day, hour, minute, second, DateTimeKind.Unspecified);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    _logger.LogWarning("El reloj devolvió una fecha inválida: {Year}-{Month}-{Day} {Hour}:{Minute}:{Second}", year, month, day, hour, minute, second);
+                    return null;
+                }
+            }, cancellationToken);
         }
         finally
         {

@@ -15,6 +15,8 @@
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 @inject IDeviceQueries DeviceQueries
+@inject AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService Clock
+@using AttendanceSystem.Application.Common
 
 <MudDialog>
     <DialogContent>
@@ -354,8 +356,12 @@
                                   </CardHeaderActions>
                               </MudCardHeader>
                               <MudCardContent>
-                                  <MudText>Configura la fecha y hora del dispositivo a la hora actual del servidor.</MudText>
-                                  <MudText Class="mt-2" Typo="Typo.caption">Hora del Servidor: @DateTime.Now.ToString("g")</MudText>
+                                  <MudText>Configura la fecha y hora del dispositivo con la hora actual de su zona horaria.</MudText>
+                                  @if (_clockZone != null)
+                                  {
+                                      <MudText Class="mt-2" Typo="Typo.caption">Zona del reloj: @TimeZoneCatalog.Describe(_clockZone)</MudText>
+                                      <MudText Typo="Typo.caption">Hora que debe marcar: @Clock.ExpectedCivilNow(_clockZone).ToString("g")</MudText>
+                                  }
                               </MudCardContent>
                               <MudCardActions>
                                   <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="SyncTime" Disabled="@_processingAction">Sincronizar Hora</MudButton>
@@ -446,6 +452,12 @@
     private bool _processingAction = false;
     private DateRange? _dateRange;
     private int? _selectedPrivilegeFilter = null;
+    private string? _clockZone;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        _clockZone = await Clock.TimeZoneOfAsync(AttendanceSystem.Domain.ValueObjects.DeviceId.From(Device.DeviceId));
+    }
 
     private IEnumerable<DeviceUserDto> FilteredUsers
     {
@@ -531,7 +543,7 @@
     private async Task SyncTime()
     {
         _processingAction = true;
-        var result = await Sender.Send(new SetDeviceTimeCommand(Device.DeviceId, DateTime.Now));
+        var result = await Sender.Send(new SetDeviceTimeCommand(Device.DeviceId));
         
         if (result.IsSuccess) Snackbar.Add("Hora sincronizada correctamente", Severity.Success);
         else Snackbar.Add($"Error al sincronizar hora: {result.Error}", Severity.Error);

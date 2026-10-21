@@ -49,7 +49,8 @@ public sealed record DeviceDto(
     string? DeviceType = null,
     string? PushVersion = null,
     string? SdkVersion = null,
-    string? MacAddress = null)
+    string? MacAddress = null,
+    string? TimeZoneId = null)
 {
     public DeviceDto() : this(string.Empty, string.Empty, string.Empty, 4370, null, true, "Active", DeviceBrand.ZKTeco, DeviceDownloadMethod.Sdk, null, 0) { }
 }

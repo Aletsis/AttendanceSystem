@@ -19,7 +19,8 @@ public sealed record CreateDeviceCommand(
     DeviceDownloadMethod DownloadMethod,
     string? SerialNumber = null,
     string? Username = null,
-    string? Password = null) : IRequest<Result<Guid>>;
+    string? Password = null,
+    string? TimeZoneId = null) : IRequest<Result<Guid>>;
 
 public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCommand, Result<Guid>>
 {
@@ -42,6 +43,13 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
 
     public async Task<Result<Guid>> Handle(CreateDeviceCommand request, CancellationToken cancellationToken)
     {
+        // Zona del reloj: la hora que marca se interpreta en ella. Sin zona, el reloj usa la del sistema.
+        var timeZoneId = string.IsNullOrWhiteSpace(request.TimeZoneId) ? null : request.TimeZoneId.Trim();
+        if (timeZoneId != null && !TimeZoneCatalog.IsValid(timeZoneId))
+        {
+            return Result<Guid>.Failure($"Zona horaria desconocida: {timeZoneId}");
+        }
+
         var device = Device.Create(
             Guid.NewGuid().ToString(),
             request.Name,
@@ -53,7 +61,8 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
             request.DownloadMethod,
             request.SerialNumber,
             request.Username,
-            request.Password);
+            request.Password,
+            timeZoneId);
 
         // Intentar conectar y obtener información del dispositivo solo si es SDK
         if (request.DownloadMethod == DeviceDownloadMethod.Sdk)

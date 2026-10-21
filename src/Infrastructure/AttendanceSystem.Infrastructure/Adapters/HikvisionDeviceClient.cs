@@ -490,11 +490,40 @@ public class HikvisionDeviceClient : IDeviceClient
         }
     }
 
-    public async Task<bool> SetDeviceTimeAsync(DateTime dateTime, CancellationToken cancellationToken = default)
+    public Task<bool> SetDeviceTimeAsync(DateTime dateTime, CancellationToken cancellationToken = default)
+        => PutTimeAsync(dateTime, null, cancellationToken);
+
+    public Task<bool> SetDeviceClockAsync(DateTime civilTime, TimeSpan utcOffset, CancellationToken cancellationToken = default)
+        => PutTimeAsync(civilTime, utcOffset, cancellationToken);
+
+    public async Task<DateTime?> GetDeviceTimeAsync(CancellationToken cancellationToken = default)
     {
+        try
+        {
+            var response = await SendRequestAsync(HttpMethod.Get, "/ISAPI/System/time", null, cancellationToken);
+            if (!response.IsSuccessStatusCode) return null;
+            var xml = await response.Content.ReadAsStringAsync(cancellationToken);
+            var match = System.Text.RegularExpressions.Regex.Match(xml, @"<localTime>(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})");
+            // La hora local del equipo, sin su desfase: es la hora civil que marca el reloj.
+            return match.Success && DateTime.TryParseExact(match.Groups[1].Value, "yyyy-MM-ddTHH:mm:ss", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var time) ? DateTime.SpecifyKind(time, DateTimeKind.Unspecified) : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task<bool> PutTimeAsync(DateTime dateTime, TimeSpan? utcOffset, CancellationToken cancellationToken)
+    {
+        // ISAPI expresa la zona en notación POSIX: el signo es el inverso del desfase (UTC-6 → "CST+6:00:00").
+        var zone = utcOffset is { } offset
+            ? $"<timeZone>CST{(offset <= TimeSpan.Zero ? "+" : "-")}{Math.Abs(offset.Hours)}:{Math.Abs(offset.Minutes):00}:00</timeZone>"
+            : string.Empty;
         var timeXml = $@"<Time>
             <timeMode>manual</timeMode>
             <localTime>{dateTime:yyyy-MM-ddTHH:mm:ss}</localTime>
+            {zone}
         </Time>";
 
         try

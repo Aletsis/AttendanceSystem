@@ -39,9 +39,21 @@ public interface IDeviceClient
     Task<bool> ResetToFactorySettingsAsync(
         CancellationToken cancellationToken = default);
 
+    /// <summary>Escribe en el reloj la hora indicada, que es hora civil de la zona del reloj.</summary>
     Task<bool> SetDeviceTimeAsync(
         DateTime dateTime,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Ajusta el reloj a <paramref name="civilTime"/> (hora civil de su zona) y, si el protocolo lo admite, también su
+    /// desfase respecto a UTC. Los relojes por SDK sólo guardan una hora local: el desfase se ignora.
+    /// </summary>
+    Task<bool> SetDeviceClockAsync(DateTime civilTime, TimeSpan utcOffset, CancellationToken cancellationToken = default)
+        => SetDeviceTimeAsync(civilTime, cancellationToken);
+
+    /// <summary>Hora que marca el reloj ahora (civil, de su zona), o null si el protocolo no permite leerla.</summary>
+    Task<DateTime?> GetDeviceTimeAsync(CancellationToken cancellationToken = default)
+        => Task.FromResult<DateTime?>(null);
 
     Task<bool> SetUserAsync(
         DeviceUserDto user,

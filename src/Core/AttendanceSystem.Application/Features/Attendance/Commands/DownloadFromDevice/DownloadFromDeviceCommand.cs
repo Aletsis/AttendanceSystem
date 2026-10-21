@@ -46,6 +46,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly ITimeNormalizer _timeNormalizer;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly IPersistenceFailureClassifier _failureClassifier;
+    private readonly AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService _clock;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -65,7 +66,8 @@ public sealed class DownloadFromDeviceCommandHandler
         IExternalAttendanceLogRepository externalLogRepository,
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
-        IPersistenceFailureClassifier? failureClassifier = null)
+        IPersistenceFailureClassifier? failureClassifier = null,
+        AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService? clock = null)
     {
         _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _deviceRepository = deviceRepository;
@@ -85,6 +87,7 @@ public sealed class DownloadFromDeviceCommandHandler
         _externalLogRepository = externalLogRepository;
         _timeNormalizer = timeNormalizer;
         _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
+        _clock = clock ?? new AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService(_timeNormalizer, _timeZoneResolver);
     }
 
     public async Task<Result<DownloadResultDto>> Handle(
@@ -158,6 +161,7 @@ public sealed class DownloadFromDeviceCommandHandler
                 }
 
                 var isAccess = device.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true;
+                var admsTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
 
                 if (command.ForceFullSync || !filterDate.HasValue)
                 {
@@ -186,11 +190,13 @@ public sealed class DownloadFromDeviceCommandHandler
                 }
                 else
                 {
-                    var fromStr = filterDate.Value.ToString("yyyy-MM-dd HH:mm:ss");
-                    var toStr = (command.ToDate ?? DateTime.Now).ToString("yyyy-MM-dd HH:mm:ss");
+                    // El reloj filtra con su hora civil: la ventana se expresa en su zona, no en la del servidor.
+                    var fromCivil = ToDeviceCivil(filterDate.Value, admsTimeZone);
+                    var fromStr = fromCivil.ToString("yyyy-MM-dd HH:mm:ss");
+                    var toStr = (command.ToDate.HasValue ? ToDeviceCivil(command.ToDate.Value, admsTimeZone) : _clock.ExpectedCivilNow(admsTimeZone)).ToString("yyyy-MM-dd HH:mm:ss");
 
-                    // Actualizar stamp para que /push responda con la fecha requerida
-                    await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, filterDate.Value, cancellationToken);
+                    // Actualizar stamp para que /push responda con la fecha requerida (el stamp es hora del reloj)
+                    await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, fromCivil, cancellationToken);
                     await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                     _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} hasta {ToDate} para SN:{SerialNumber} (CHECK + DATA QUERY + LOG)",
@@ -240,6 +246,7 @@ public sealed class DownloadFromDeviceCommandHandler
         var password = device.Password;
         var shouldClear = device.ShouldClearAfterDownload;
         var deviceSerialNumber = device.HardwareInfo?.SerialNumber;
+        var deviceName = device.Name;
 
         // LIMPIAR EL TRACKER COMPLETO
         // Esto asegura que no hay entidades "viejas" o "sucias" trackeadas.
@@ -273,11 +280,18 @@ public sealed class DownloadFromDeviceCommandHandler
                 return Result<DownloadResultDto>.Failure("No se pudo conectar al dispositivo");
             }
 
+            // Zona del reloj: con ella se interpreta la hora que marca. Antes de leer se verifica que su hora coincida
+            // con la de esa zona; si se desvió, se resincroniza y queda una alerta (los marcajes ya capturados con la
+            // hora equivocada no se alteran aquí).
+            var authoritativeTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
+            await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken);
+
             // 5. Descargar registros mediante contrato explícito de resultados
+            // La ventana se expresa en la hora civil del reloj (el SDK compara con la hora que marca).
             var readResult = await deviceClient.GetAttendanceLogsAsync(
                 deviceIdValue,
-                filterDate,
-                requestToDate,
+                filterDate.HasValue ? ToDeviceCivil(filterDate.Value, authoritativeTimeZone) : null,
+                ToDeviceCivil(requestToDate, authoritativeTimeZone),
                 cancellationToken);
 
             if (readResult.Status == DeviceReadStatus.Failed)
@@ -311,7 +325,6 @@ public sealed class DownloadFromDeviceCommandHandler
             // 5. Convertir a entidades de dominio
             // Nota: Usamos deviceId (ValueObject) que creamos al principio
             var domainRecords = new List<AttendanceRecord>();
-            var authoritativeTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
 
             // Obtener todas las sucursales externas para filtrar rápido
             var allBranches = await _branchRepository.GetAllAsync(cancellationToken);
@@ -335,10 +348,12 @@ public sealed class DownloadFromDeviceCommandHandler
                             branchCode, actualEmployeeId);
 
                         var deviceSerial = deviceSerialNumber ?? command.DeviceId;
+                        // Instante UTC con la zona del reloj (igual que ADMS): el destino no conoce la zona del reloj.
+                        var externalUtc = _timeNormalizer.ToUtc(raw.CheckTime, authoritativeTimeZone);
                         var localExtLog = ExternalAttendanceLog.Create(
                             branchCode,
                             actualEmployeeId,
-                            raw.CheckTime,
+                            externalUtc,
                             raw.VerifyMethod,
                             raw.InOutMode,
                             deviceSerial);
@@ -349,7 +364,7 @@ public sealed class DownloadFromDeviceCommandHandler
                         var transferResult = await _logTransferService.TransferLogAsync(
                             branchCode,
                             actualEmployeeId,
-                            raw.CheckTime,
+                            externalUtc,
                             raw.VerifyMethod,
                             raw.InOutMode,
                             deviceSerial,
@@ -562,4 +577,11 @@ public sealed class DownloadFromDeviceCommandHandler
             return Result<DownloadResultDto>.Failure($"Error: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// Fecha de la ventana de descarga en la hora civil del reloj: un instante UTC (última descarga, ahora) se convierte
+    /// a su zona; una fecha elegida en pantalla ya es civil y se conserva.
+    /// </summary>
+    private DateTime ToDeviceCivil(DateTime value, string timeZoneId)
+        => DateTime.SpecifyKind(value.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(value, timeZoneId) : value, DateTimeKind.Unspecified);
 }

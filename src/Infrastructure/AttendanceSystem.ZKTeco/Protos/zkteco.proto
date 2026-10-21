@@ -40,6 +40,9 @@ service ZKTecoService {
   // Configurar fecha y hora del dispositivo
   rpc SetDeviceTime (SetDeviceTimeRequest) returns (SetDeviceTimeResponse);
 
+  // Leer la fecha y hora que marca el dispositivo
+  rpc GetDeviceTime (GetDeviceTimeRequest) returns (GetDeviceTimeResponse);
+
   // Buscar dispositivos en la red local (Discovery)
   rpc DiscoverDevices (DiscoverDevicesRequest) returns (DiscoverDevicesResponse);
 }
@@ -227,12 +230,22 @@ message ResetToFactorySettingsResponse {
 
 message SetDeviceTimeRequest {
   string device_id = 1;
-  string date_time = 2; // ISO 8601
+  string date_time = 2; // yyyy-MM-ddTHH:mm:ss, hora civil de la zona del reloj (sin zona)
 }
 
 message SetDeviceTimeResponse {
   bool success = 1;
   string message = 2;
+}
+
+message GetDeviceTimeRequest {
+  string device_id = 1;
+}
+
+message GetDeviceTimeResponse {
+  bool success = 1;
+  string message = 2;
+  string date_time = 3; // yyyy-MM-ddTHH:mm:ss, hora civil del reloj (sin zona)
 }
 
 // ========== Mensajes de Descubrimiento ==========

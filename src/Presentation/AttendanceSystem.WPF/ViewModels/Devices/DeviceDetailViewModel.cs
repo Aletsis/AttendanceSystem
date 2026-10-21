@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Windows.Input;
+using AttendanceSystem.Application.Common;
 using AttendanceSystem.Domain.Enumerations;
 using Prism.Commands;
 using Prism.Mvvm;
@@ -22,6 +23,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private bool _shouldClearAfterDownload;
         private string? _username;
         private string? _password;
+        private string? _timeZoneId = string.Empty;
         private string _title = "Nuevo Dispositivo";
 
         public string Title { get => _title; set => SetProperty(ref _title, value); }
@@ -35,6 +37,11 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public bool ShouldClearAfterDownload { get => _shouldClearAfterDownload; set => SetProperty(ref _shouldClearAfterDownload, value); }
         public string? Username { get => _username; set => SetProperty(ref _username, value); }
         public string? Password { get => _password; set => SetProperty(ref _password, value); }
+        /// <summary>Zona horaria del reloj; vacía = la zona del sistema.</summary>
+        public string? TimeZoneId { get => _timeZoneId; set => SetProperty(ref _timeZoneId, value); }
+
+        public IReadOnlyList<TimeZoneCatalog.Entry> TimeZones { get; private set; } =
+            new[] { new TimeZoneCatalog.Entry(string.Empty, "Zona del sistema") }.Concat(TimeZoneCatalog.Common).ToList();
 
         public IEnumerable<DeviceBrand> Brands => Enum.GetValues(typeof(DeviceBrand)).Cast<DeviceBrand>();
         public IEnumerable<DeviceDownloadMethod> DownloadMethods => Enum.GetValues(typeof(DeviceDownloadMethod)).Cast<DeviceDownloadMethod>();
@@ -70,7 +77,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 { "SerialNumber", SerialNumber ?? string.Empty },
                 { "ShouldClearAfterDownload", ShouldClearAfterDownload },
                 { "Username", Username ?? string.Empty },
-                { "Password", Password ?? string.Empty }
+                { "Password", Password ?? string.Empty },
+                { "TimeZoneId", TimeZoneId ?? string.Empty }
             };
 
             if (!string.IsNullOrEmpty(_deviceId))
@@ -104,6 +112,13 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 ShouldClearAfterDownload = parameters.GetValue<bool>("ShouldClearAfterDownload");
                 Username = parameters.GetValue<string?>("Username");
                 Password = parameters.GetValue<string?>("Password");
+                var timeZoneId = parameters.ContainsKey("TimeZoneId") ? parameters.GetValue<string?>("TimeZoneId") : null;
+                if (!string.IsNullOrWhiteSpace(timeZoneId) && TimeZones.All(z => z.Id != timeZoneId))
+                {
+                    TimeZones = TimeZones.Append(new TimeZoneCatalog.Entry(timeZoneId, timeZoneId)).ToList();
+                    RaisePropertyChanged(nameof(TimeZones));
+                }
+                TimeZoneId = timeZoneId ?? string.Empty;
                 Title = "Editar Dispositivo";
             }
         }

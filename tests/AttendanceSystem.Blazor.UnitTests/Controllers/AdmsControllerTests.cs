@@ -43,6 +43,9 @@ public class AdmsControllerTests
             .Returns<DateTime, string?>((dt, tz) => DateTime.SpecifyKind(dt, DateTimeKind.Utc));
         _timeNormalizerMock.Setup(t => t.ToWorkDate(It.IsAny<DateTime>(), It.IsAny<string>()))
             .Returns<DateTime, string?>((dt, tz) => DateOnly.FromDateTime(dt));
+        _timeNormalizerMock.Setup(t => t.ToCivilTime(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns<DateTime, string?>((dt, tz) => DateTime.SpecifyKind(dt, DateTimeKind.Unspecified));
+        _timeNormalizerMock.Setup(t => t.ResolveTimeZone(It.IsAny<string>())).Returns(TimeZoneInfo.Utc);
 
         _controller = new AdmsController(
             _loggerMock.Object,

@@ -50,7 +50,7 @@ public class SetDeviceTimeCommandHandlerTests
     public async Task Handle_WhenDeviceNotFound_ShouldReturnFailure()
     {
         // Arrange
-        var command = new SetDeviceTimeCommand("UNKNOWN-DEV", DateTime.UtcNow);
+        var command = new SetDeviceTimeCommand("UNKNOWN-DEV");
 
         _deviceQueriesMock
             .Setup(q => q.GetDeviceByIdAsync("UNKNOWN-DEV", It.IsAny<CancellationToken>()))
@@ -68,7 +68,7 @@ public class SetDeviceTimeCommandHandlerTests
     public async Task Handle_WhenConnectionFails_ShouldReturnFailure()
     {
         // Arrange
-        var command = new SetDeviceTimeCommand("DEV-100", DateTime.UtcNow);
+        var command = new SetDeviceTimeCommand("DEV-100");
 
         _deviceQueriesMock
             .Setup(q => q.GetDeviceByIdAsync("DEV-100", It.IsAny<CancellationToken>()))
@@ -89,8 +89,8 @@ public class SetDeviceTimeCommandHandlerTests
     [Fact]
     public async Task Handle_WhenSuccessful_ShouldSetTimeAndDisconnect()
     {
-        // Arrange
-        var targetTime = new DateTime(2026, 9, 17, 12, 0, 0, DateTimeKind.Utc);
+        // Arrange: hora explícita en la zona del reloj (la del sistema por defecto: UTC-6)
+        var targetTime = new DateTime(2026, 9, 17, 12, 0, 0);
         var command = new SetDeviceTimeCommand("DEV-100", targetTime);
 
         _deviceQueriesMock
@@ -102,7 +102,7 @@ public class SetDeviceTimeCommandHandlerTests
             .ReturnsAsync(true);
 
         _deviceClientMock
-            .Setup(c => c.SetDeviceTimeAsync(targetTime, It.IsAny<CancellationToken>()))
+            .Setup(c => c.SetDeviceClockAsync(targetTime, TimeSpan.FromHours(-6), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
 
         // Act
@@ -110,7 +110,7 @@ public class SetDeviceTimeCommandHandlerTests
 
         // Assert
         result.IsSuccess.Should().BeTrue();
-        _deviceClientMock.Verify(c => c.SetDeviceTimeAsync(targetTime, It.IsAny<CancellationToken>()), Times.Once);
+        _deviceClientMock.Verify(c => c.SetDeviceClockAsync(targetTime, TimeSpan.FromHours(-6), It.IsAny<CancellationToken>()), Times.Once);
         _deviceClientMock.Verify(c => c.DisconnectAsync(It.IsAny<CancellationToken>()), Times.Once);
     }
 }

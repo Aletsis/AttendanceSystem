@@ -134,12 +134,12 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private async Task ExecuteSetTimeAsync()
         {
             if (_device == null) return;
-            var confirmed = await _messageService.ShowConfirmationAsync("Sincronizar Hora", "¿Desea sincronizar la fecha y hora del dispositivo con este servidor?");
+            var confirmed = await _messageService.ShowConfirmationAsync("Sincronizar Hora", "¿Desea sincronizar la fecha y hora del dispositivo con la hora actual de su zona horaria?");
             if (!confirmed) return;
 
             try
             {
-                var result = await _mediator.Send(new SetDeviceTimeCommand(_device.DeviceId, DateTime.Now));
+                var result = await _mediator.Send(new SetDeviceTimeCommand(_device.DeviceId));
                 if (result.IsSuccess) await _messageService.ShowSuccessAsync("Hora sincronizada correctamente.");
                 else await _messageService.ShowErrorAsync($"Error: {result.Error}");
             }

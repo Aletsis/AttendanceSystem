@@ -394,6 +394,24 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         }
     }
 
+    public override async Task<GetDeviceTimeResponse> GetDeviceTime(GetDeviceTimeRequest request, ServerCallContext context)
+    {
+        var sessionId = GetSessionId(context);
+        try
+        {
+            var client = await _sessionManager.GetSessionAsync(sessionId);
+            var time = await client.GetDeviceTimeAsync(context.CancellationToken);
+            return time.HasValue
+                ? new GetDeviceTimeResponse { Success = true, DateTime = time.Value.ToString("yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture) }
+                : new GetDeviceTimeResponse { Success = false, Message = "El dispositivo no devolvió su hora" };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Sesión {SessionId}: Error leyendo la hora del dispositivo", sessionId);
+            return new GetDeviceTimeResponse { Success = false, Message = ex.Message };
+        }
+    }
+
     public override async Task<SetDeviceTimeResponse> SetDeviceTime(SetDeviceTimeRequest request, ServerCallContext context)
     {
         var sessionId = GetSessionId(context);
@@ -401,10 +419,12 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
         try
         {
             var client = await _sessionManager.GetSessionAsync(sessionId);
+            // Hora civil del reloj: se descarta cualquier zona para que el servicio no la convierta a su hora local.
             if (!DateTime.TryParse(request.DateTime, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
             {
                 return new SetDeviceTimeResponse { Success = false, Message = "Formato de fecha inválido" };
             }
+            dt = DateTime.SpecifyKind(dt, DateTimeKind.Unspecified);
 
             var success = await client.SetDeviceTimeAsync(dt, context.CancellationToken);
             return new SetDeviceTimeResponse

@@ -198,14 +198,25 @@ public class AdmsDeviceClient : IDeviceClient
     {
         if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
 
-        var tzOffsetHours = (int)TimeZoneInfo.Local.GetUtcOffset(dateTime).TotalHours;
-
-        // Encolar configuración de Zona Horaria y desactivar Horario de Verano para evitar desfases con la cabecera HTTP Date
-        _admsCommandService.EnqueueCommand(_serialNumber, $"SET OPTIONS TimeZone={tzOffsetHours},TZ={tzOffsetHours},~TimeZone={tzOffsetHours},DaylightSavingTime=0,~DaylightSavingTime=0");
+        // Sin desfase conocido sólo se fija la hora: nunca se impone la zona del servidor.
         _admsCommandService.EnqueueCommand(_serialNumber, $"SET OPTIONS DateTime={dateTime:yyyy-MM-dd HH:mm:ss}");
+        _logger.LogInformation("ADMS: Encolada hora {DateTime:yyyy-MM-dd HH:mm:ss} para SN: {SN}", dateTime, _serialNumber);
+        return Task.FromResult(true);
+    }
 
-        _logger.LogInformation("ADMS: Encolados comandos de zona horaria (UTC{Offset:+#;-#;+0}) y hora ({DateTime:yyyy-MM-dd HH:mm:ss}) para SN: {SN}",
-            tzOffsetHours, dateTime, _serialNumber);
+    public Task<bool> SetDeviceClockAsync(DateTime civilTime, TimeSpan utcOffset, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
+
+        // Zona del propio reloj (no la del servidor) y sin horario de verano: el reloj calcula su hora con el
+        // encabezado Date (UTC) más este desfase, así que debe coincidir con la hora civil enviada.
+        foreach (var clockCommand in AttendanceSystem.Application.Common.AdmsTimeZone.ClockCommands(civilTime, utcOffset))
+        {
+            _admsCommandService.EnqueueCommand(_serialNumber, clockCommand);
+        }
+
+        _logger.LogInformation("ADMS: Encolados comandos de zona horaria (UTC{Offset}) y hora ({DateTime:yyyy-MM-dd HH:mm:ss}) para SN: {SN}",
+            utcOffset.ToString(@"\+hh\:mm;\-hh\:mm"), civilTime, _serialNumber);
 
         return Task.FromResult(true);
     }

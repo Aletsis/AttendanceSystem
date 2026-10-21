@@ -1,3 +1,5 @@
+using AttendanceSystem.Application.Features.Devices.Clock;
+using AttendanceSystem.Application.Common;
 using Microsoft.Extensions.DependencyInjection;
 using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
@@ -35,6 +37,7 @@ public class AdmsController : ControllerBase
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
     private readonly ITimeNormalizer _timeNormalizer;
     private readonly IServiceScopeFactory? _scopeFactory;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
 
     public AdmsController(
         ILogger<AdmsController> logger,
@@ -49,7 +52,8 @@ public class AdmsController : ControllerBase
         IAttendanceJobScheduler jobScheduler,
         IExternalAttendanceLogRepository externalLogRepository,
         ITimeNormalizer timeNormalizer,
-        IServiceScopeFactory? scopeFactory = null)
+        IServiceScopeFactory? scopeFactory = null,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
     {
         _logger = logger;
         _mediator = mediator;
@@ -64,6 +68,7 @@ public class AdmsController : ControllerBase
         _externalLogRepository = externalLogRepository;
         _timeNormalizer = timeNormalizer;
         _scopeFactory = scopeFactory;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
     }
 
     private async Task<Device?> ValidateAuthorizedDeviceAsync(string? sn)
@@ -216,7 +221,15 @@ public class AdmsController : ControllerBase
         // TransTables compatible con ambos modos (Transaction y User Transaction, Push 2.0 y 3.x)
         var transTable = isAccessMode ? "Transaction,User Transaction" : "Transaction";
 
-        var tzOffsetHours = (int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalHours;
+        // Zona del propio reloj (su TimeZoneId o la del sistema), nunca la del sistema operativo del servidor: el reloj
+        // fija su hora con el encabezado Date (UTC) más este desfase.
+        var deviceTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(device?.Id);
+        var utcOffset = _timeNormalizer.ResolveTimeZone(deviceTimeZone).GetUtcOffset(DateTime.UtcNow);
+        var tzOffsetHours = AdmsTimeZone.Format(utcOffset);
+        if (utcOffset.Minutes != 0)
+        {
+            _logger.LogWarning("ADMS: la zona {TimeZone} del reloj {SN} tiene desfase {Offset}; ADMS sólo admite horas enteras.", deviceTimeZone, SN, utcOffset);
+        }
 
         // Manual sección 7.5: configuración y stamps de push (compatible con modo att y acc, Push 2.0 y 3.x)
         var sessionId = Guid.NewGuid().ToString("N").ToUpper();
@@ -578,6 +591,9 @@ public class AdmsController : ControllerBase
 
         var pendingExternalLogs = new List<ExternalAttendanceLog>();
 
+        // La hora que marca el reloj se interpreta en SU zona (la del dispositivo o, si no tiene, la del sistema).
+        var deviceTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(device.Id);
+
         foreach (var line in lines)
         {
             try
@@ -703,7 +719,7 @@ public class AdmsController : ControllerBase
                             _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Almacenando localmente (transferencia diferida) para empleado {Id}",
                                 branchCode, actualEmployeeId);
 
-                            var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
+                            var utcCheckTime = _timeNormalizer.ToUtc(checkTime, deviceTimeZone);
 
                             var localExtLog = ExternalAttendanceLog.Create(
                                 branchCode,
@@ -720,8 +736,8 @@ public class AdmsController : ControllerBase
 
                     if (!isExternal)
                     {
-                        var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
-                        var workDate = _timeNormalizer.ToWorkDate(utcCheckTime);
+                        var utcCheckTime = _timeNormalizer.ToUtc(checkTime, deviceTimeZone);
+                        var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, deviceTimeZone);
 
                         localLogs.Add(new AttendanceLogDto(
                             pin,
@@ -730,6 +746,7 @@ public class AdmsController : ControllerBase
                             checkType,
                             OriginalCheckTime: checkTime,
                             WorkDate: workDate,
+                            TimeZoneId: deviceTimeZone,
                             Source: "ADMS"));
                         processed++;
                     }
@@ -819,6 +836,21 @@ public class AdmsController : ControllerBase
         {
             device.RecordSuccessfulDownload(processed);
             await _deviceRepository.UpdateAsync(device);
+
+            // Un marcaje posterior a la hora actual de la zona del reloj indica que su hora se adelantó: se le reenvían
+            // su zona y su hora (se aplican en su siguiente consulta de comandos) y queda una alerta.
+            var expectedNow = _timeNormalizer.ToCivilTime(DateTime.UtcNow, deviceTimeZone);
+            if (lastCheckTime.HasValue && lastCheckTime.Value - expectedNow > DeviceClockService.DriftTolerance)
+            {
+                var utcOffset = _timeNormalizer.ResolveTimeZone(deviceTimeZone).GetUtcOffset(DateTime.UtcNow);
+                foreach (var clockCommand in AdmsTimeZone.ClockCommands(expectedNow, utcOffset))
+                {
+                    _admsCommandService.EnqueueCommand(SN, clockCommand);
+                }
+                AttendanceTelemetry.DeviceClockCorrections.Add(1, new KeyValuePair<string, object?>("outcome", "queued"));
+                _logger.LogWarning("ALERTA: el reloj ADMS {SN} envió un marcaje de {Reported:yyyy-MM-dd HH:mm:ss} cuando en su zona {TimeZone} eran las {Expected:yyyy-MM-dd HH:mm:ss}. Se encoló su resincronización.",
+                    SN, lastCheckTime.Value, deviceTimeZone, expectedNow);
+            }
 
             if (!batchHasFailures && lastCheckTime.HasValue)
             {
