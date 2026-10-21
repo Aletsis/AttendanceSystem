@@ -103,6 +103,13 @@
                         <MudItem xs="12" sm="4">
                             <MudNumericField Label="Minutos de comida con goce" @bind-Value="_paidLunchMinutes" Min="0" Max="240" Variant="Variant.Outlined" />
                         </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudTimePicker Label="Inicio ventana de comida nocturna" @bind-Time="_nightLunchWindowStart" Variant="Variant.Outlined" Editable="true" />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudTimePicker Label="Fin ventana de comida nocturna" @bind-Time="_nightLunchWindowEnd" Variant="Variant.Outlined" Editable="true"
+                                           HelperText="Para turnos nocturnos; puede cruzar la medianoche (p. ej. 23:00–04:00)." />
+                        </MudItem>
                     </MudGrid>
                 </MudForm>
             </MudTabPanel>
@@ -394,6 +401,8 @@
     private TimeSpan? _lunchWindowStart = new(12, 30, 0);
     private TimeSpan? _lunchWindowEnd = new(15, 0, 0);
     private int _paidLunchMinutes = 30;
+    private TimeSpan? _nightLunchWindowStart = new(23, 0, 0);
+    private TimeSpan? _nightLunchWindowEnd = new(4, 0, 0);
 
     // Cloud Sync Fields
     private bool _isCloudSyncEnabled = true;
@@ -483,6 +492,8 @@
                 _lunchWindowStart = config.LunchWindowStart ?? _lunchWindowStart;
                 _lunchWindowEnd = config.LunchWindowEnd ?? _lunchWindowEnd;
                 _paidLunchMinutes = config.PaidLunchMinutes;
+                _nightLunchWindowStart = config.NightLunchWindowStart ?? _nightLunchWindowStart;
+                _nightLunchWindowEnd = config.NightLunchWindowEnd ?? _nightLunchWindowEnd;
 
                 // Cloud Sync
                 _isCloudSyncEnabled = config.IsCloudSyncEnabled;
@@ -544,7 +555,9 @@
                 BuildCloudConnectionString(),
                 _lunchWindowStart,
                 _lunchWindowEnd,
-                _paidLunchMinutes
+                _paidLunchMinutes,
+                _nightLunchWindowStart,
+                _nightLunchWindowEnd
             );
 
             var result = await Mediator.Send(command);

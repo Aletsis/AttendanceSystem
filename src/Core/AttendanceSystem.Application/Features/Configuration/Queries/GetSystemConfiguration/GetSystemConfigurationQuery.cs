@@ -63,6 +63,8 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             config.CloudDbConnectionString,
             config.LunchWindowStart,
             config.LunchWindowEnd,
-            config.PaidLunchMinutes));
+            config.PaidLunchMinutes,
+            config.NightLunchWindowStart,
+            config.NightLunchWindowEnd));
     }
 }

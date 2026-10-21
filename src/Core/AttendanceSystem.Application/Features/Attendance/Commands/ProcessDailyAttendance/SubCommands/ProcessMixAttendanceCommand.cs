@@ -20,7 +20,8 @@ public record ProcessMixAttendanceCommand(
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
     DateTime? NextJornadaEntryStart = null,
-    LunchPolicy? Lunch = null) : IRequest;
+    LunchPolicy? Lunch = null,
+    LunchPolicy? NightLunch = null) : IRequest;
 
 public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAttendanceCommand>
 {
@@ -76,7 +77,8 @@ public class ProcessMixAttendanceCommandHandler : IRequestHandler<ProcessMixAtte
                 await _sender.Send(new ProcessNightlyAttendanceCommand(
                     request.Employee, request.Date, effective, request.Records, request.IsRestDay,
                     dayConfig.StartTime, dayConfig.EndTime,
-                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft), cancellationToken);
+                    Adjustment: request.Adjustment, TimeZoneId: request.TimeZoneId, Draft: request.Draft, Lunch: request.NightLunch,
+                    NextJornadaEntryStart: request.NextJornadaEntryStart), cancellationToken);
                 break;
 
             case ShiftType.Continuo:

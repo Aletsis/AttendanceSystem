@@ -45,8 +45,12 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public TimeSpan LunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultWindowStart;
     public TimeSpan LunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultWindowEnd;
     public int PaidLunchMinutes { get; private set; } = Services.LunchPolicy.DefaultPaidMinutes;
+    // Ventana de comida de turnos nocturnos; puede cruzar medianoche.
+    public TimeSpan NightLunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultNightWindowStart;
+    public TimeSpan NightLunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultNightWindowEnd;
 
     public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes);
+    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes);
 
     // Alert Settings
     public bool AreAlertsEnabled { get; private set; }
@@ -182,6 +186,16 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         LunchWindowStart = windowStart;
         LunchWindowEnd = windowEnd;
         PaidLunchMinutes = paidLunchMinutes;
+    }
+
+    public void UpdateNightLunchWindow(TimeSpan windowStart, TimeSpan windowEnd)
+    {
+        if (windowStart < TimeSpan.Zero || windowStart >= TimeSpan.FromDays(1) ||
+            windowEnd < TimeSpan.Zero || windowEnd >= TimeSpan.FromDays(1) || windowStart == windowEnd)
+            throw new DomainException("La ventana de comida nocturna debe tener inicio y fin distintos dentro de las 24 horas");
+
+        NightLunchWindowStart = windowStart;
+        NightLunchWindowEnd = windowEnd;
     }
 
     public void UpdateWorkPeriodSettings(

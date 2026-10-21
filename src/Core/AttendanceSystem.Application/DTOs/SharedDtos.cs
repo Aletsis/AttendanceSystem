@@ -195,7 +195,9 @@ public sealed record SystemConfigurationDto(
     string? CloudDbConnectionString = null,
     TimeSpan? LunchWindowStart = null,
     TimeSpan? LunchWindowEnd = null,
-    int PaidLunchMinutes = 30)
+    int PaidLunchMinutes = 30,
+    TimeSpan? NightLunchWindowStart = null,
+    TimeSpan? NightLunchWindowEnd = null)
 {
     public SystemConfigurationDto() : this(string.Empty, null, TimeSpan.Zero, TimeSpan.Zero, false, false, null, false) { }
 }

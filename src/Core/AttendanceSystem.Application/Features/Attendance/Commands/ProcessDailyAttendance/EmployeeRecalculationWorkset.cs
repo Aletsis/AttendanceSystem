@@ -25,6 +25,7 @@ internal sealed class EmployeeRecalculationWorkset
 
     /// <summary>Regla de comida global vigente durante el recálculo (F06-05).</summary>
     public AttendanceSystem.Domain.Services.LunchPolicy Lunch { get; init; } = AttendanceSystem.Domain.Services.LunchPolicy.Default;
+    public AttendanceSystem.Domain.Services.LunchPolicy NightLunch { get; init; } = AttendanceSystem.Domain.Services.LunchPolicy.DefaultNight;
 
     public Dictionary<DateTime, DailyAttendance> ExistingDaily { get; } = new();
     public Dictionary<DateTime, ShiftRoster> Rosters { get; } = new();

@@ -184,7 +184,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         CancellationToken cancellationToken)
     {
         var tz = await _timeZoneResolver.ResolveForEmployeeAsync(employee.Id, cancellationToken);
-        var ws = new EmployeeRecalculationWorkset(employee, tz) { Lunch = systemConfig?.LunchPolicy ?? LunchPolicy.Default };
+        var ws = new EmployeeRecalculationWorkset(employee, tz) { Lunch = systemConfig?.LunchPolicy ?? LunchPolicy.Default, NightLunch = systemConfig?.NightLunchPolicy ?? LunchPolicy.DefaultNight };
         var worksets = new Dictionary<EmployeeId, EmployeeRecalculationWorkset> { [employee.Id] = ws };
 
         // Lectura posterior al bloqueo: ningún otro escritor puede cambiar estos datos hasta el commit.
@@ -599,7 +599,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         else if (shift.ShiftType == ShiftType.Mixto)
         {
             await _sender.Send(new ProcessMixAttendanceCommand(
-                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch), cancellationToken);
+                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch, NightLunch: ws.NightLunch), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Continuo)
         {
@@ -619,7 +619,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         else if (shift.ShiftType == ShiftType.Nocturno || (plan.DayEndTime <= plan.DayStartTime && shift.ShiftType != ShiftType.Continuo && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
         {
             await _sender.Send(new ProcessNightlyAttendanceCommand(
-                employee, date, shift, records, isRestDay, plan.DayStartTime, plan.DayEndTime, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
+                employee, date, shift, records, isRestDay, plan.DayStartTime, plan.DayEndTime, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, Lunch: ws.NightLunch, NextJornadaEntryStart: nextEntryStart), cancellationToken);
         }
         else
         {

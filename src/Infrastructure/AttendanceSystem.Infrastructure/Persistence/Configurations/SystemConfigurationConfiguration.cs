@@ -55,7 +55,10 @@ public class SystemConfigurationConfiguration : IEntityTypeConfiguration<SystemC
         builder.Property(c => c.LunchWindowStart).IsRequired().HasDefaultValue(new TimeSpan(12, 30, 0));
         builder.Property(c => c.LunchWindowEnd).IsRequired().HasDefaultValue(new TimeSpan(15, 0, 0));
         builder.Property(c => c.PaidLunchMinutes).IsRequired().HasDefaultValue(30);
+        builder.Property(c => c.NightLunchWindowStart).IsRequired().HasDefaultValue(new TimeSpan(23, 0, 0));
+        builder.Property(c => c.NightLunchWindowEnd).IsRequired().HasDefaultValue(new TimeSpan(4, 0, 0));
         builder.Ignore(c => c.LunchPolicy);
+        builder.Ignore(c => c.NightLunchPolicy);
 
         builder.Property(c => c.AreAlertsEnabled)
             .IsRequired()

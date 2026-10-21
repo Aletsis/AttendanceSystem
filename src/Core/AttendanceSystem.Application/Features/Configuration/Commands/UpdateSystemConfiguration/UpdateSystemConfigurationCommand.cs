@@ -43,7 +43,9 @@ public sealed record UpdateSystemConfigurationCommand(
     string? CloudDbConnectionString = null,
     TimeSpan? LunchWindowStart = null,
     TimeSpan? LunchWindowEnd = null,
-    int? PaidLunchMinutes = null) : IRequest<Result<Guid>>;
+    int? PaidLunchMinutes = null,
+    TimeSpan? NightLunchWindowStart = null,
+    TimeSpan? NightLunchWindowEnd = null) : IRequest<Result<Guid>>;
 
 public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<UpdateSystemConfigurationCommand, Result<Guid>>
 {
@@ -113,6 +115,13 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
                 command.LunchWindowStart ?? config.LunchWindowStart,
                 command.LunchWindowEnd ?? config.LunchWindowEnd,
                 command.PaidLunchMinutes ?? config.PaidLunchMinutes);
+        }
+
+        if (command.NightLunchWindowStart.HasValue || command.NightLunchWindowEnd.HasValue)
+        {
+            config.UpdateNightLunchWindow(
+                command.NightLunchWindowStart ?? config.NightLunchWindowStart,
+                command.NightLunchWindowEnd ?? config.NightLunchWindowEnd);
         }
 
         config.UpdateCloudSyncSettings(
