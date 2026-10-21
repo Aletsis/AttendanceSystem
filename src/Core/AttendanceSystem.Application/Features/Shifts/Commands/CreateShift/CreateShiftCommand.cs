@@ -42,12 +42,9 @@ public sealed class CreateShiftCommandHandler : IRequestHandler<CreateShiftComma
     {
         try
         {
-            var days = request.Days?.Select(d => new ShiftDay(
-                d.DayOfWeek,
-                d.StartTime,
-                d.WorkHours,
-                d.ShiftType
-            )).ToList();
+            var builtDays = await MixedShiftDays.BuildAsync(request.ShiftType, request.Days, _shiftRepository, null, cancellationToken);
+            if (builtDays.IsFailure) return Result<Guid>.Failure(builtDays.Error);
+            var days = builtDays.Value;
 
             var shift = Shift.Create(
                 request.Name,

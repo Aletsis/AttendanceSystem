@@ -90,6 +90,13 @@ public class ShiftConfiguration : IEntityTypeConfiguration<Shift>
             d.Property(x => x.EndTime).IsRequired();
             d.Property(x => x.WorkHours).IsRequired();
 
+            // Decisión 5: horario existente que rige el día (null = formato anterior con horas por día).
+            d.Property(x => x.DayShiftId)
+                .HasConversion(id => id!.Value, value => ShiftId.From(value))
+                .IsRequired(false);
+            d.HasIndex(x => x.DayShiftId);
+            d.Ignore(x => x.IsLegacy);
+
             d.Property(x => x.ShiftType)
                 .IsRequired()
                 .HasDefaultValue(AttendanceSystem.Domain.Enumerations.ShiftType.Matutino)

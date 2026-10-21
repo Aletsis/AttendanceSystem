@@ -57,16 +57,27 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Rotativo, "Rotativo" }
         };
 
-        public Dictionary<ShiftType, string> DayShiftTypes { get; } = new()
+        // Decisión 5: cada día del mixto usa un horario existente; todos los tipos excepto Mixto y Rotativo.
+        public List<KeyValuePair<ShiftType?, string>> DayShiftTypes { get; } = new()
         {
-            { ShiftType.Matutino, "Matutino" },
-            { ShiftType.Vespertino, "Vespertino" },
-            { ShiftType.Nocturno, "Nocturno" },
-            { ShiftType.Continuo, "Continuo" },
-            { ShiftType.Flexible, "Flexible" },
-            { ShiftType.Partido, "Partido / Doble Turno" },
-            { ShiftType.Rotativo, "Rotativo" }
+            new(null, "Descanso"),
+            new(ShiftType.Matutino, "Matutino"),
+            new(ShiftType.Vespertino, "Vespertino"),
+            new(ShiftType.Nocturno, "Nocturno"),
+            new(ShiftType.Continuo, "Continuo"),
+            new(ShiftType.Flexible, "Flexible"),
+            new(ShiftType.Partido, "Partido / Doble Turno")
         };
+
+        private List<ShiftDto> _availableShifts = new();
+
+        private IEnumerable<ScheduleOption> SchedulesOfType(ShiftType type) =>
+            _availableShifts
+                .Where(x => x.ShiftType == type && x.Id != _shiftId)
+                .OrderBy(x => x.StartTime)
+                .Select(x => new ScheduleOption(x.Id, x.ShiftType == ShiftType.Partido && x.SecondBlockStartTime.HasValue && x.SecondBlockEndTime.HasValue
+                    ? $"{x.Name} ({x.StartTime:hh\\:mm}–{x.EndTime:hh\\:mm} y {x.SecondBlockStartTime:hh\\:mm}–{x.SecondBlockEndTime:hh\\:mm})"
+                    : $"{x.Name} ({x.StartTime:hh\\:mm}–{x.EndTime:hh\\:mm})"));
 
         public KeyValuePair<ShiftType, string> SelectedShiftType
         {
@@ -256,12 +267,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
             foreach (var kvp in spanishDays)
             {
-                _days.Add(new DayConfigViewModel
+                _days.Add(new DayConfigViewModel(SchedulesOfType)
                 {
                     DayOfWeek = kvp.Key,
-                    DayName = kvp.Value,
-                    StartDateTime = DateTime.Today.AddHours(9),
-                    EndDateTime = DateTime.Today.AddHours(18)
+                    DayName = kvp.Value
                 });
             }
         }
@@ -340,13 +349,17 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             var dayDtos = new List<ShiftDayDto>();
             if (SelectedShiftType.Key == ShiftType.Mixto)
             {
-                foreach (var d in Days)
+                // Sólo los días con tipo; el servidor exige un horario existente en cada uno.
+                foreach (var d in Days.Where(d => d.Type.HasValue))
                 {
-                    var dStart = d.StartDateTime?.TimeOfDay ?? TimeSpan.Zero;
-                    var dEnd = d.EndDateTime?.TimeOfDay ?? TimeSpan.Zero;
-                    var dDur = dEnd <= dStart ? dEnd.Add(TimeSpan.FromHours(24)) : dEnd;
-
-                    dayDtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart, d.ShiftType));
+                    var schedule = _availableShifts.FirstOrDefault(x => x.Id == d.DayShiftId);
+                    dayDtos.Add(new ShiftDayDto(d.DayOfWeek,
+                        schedule?.StartTime ?? TimeSpan.Zero,
+                        schedule?.EndTime ?? TimeSpan.Zero,
+                        schedule?.WorkHours ?? TimeSpan.Zero,
+                        d.Type!.Value,
+                        d.DayShiftId,
+                        schedule?.Name));
                 }
             }
 
@@ -392,6 +405,11 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
         public void OnDialogOpened(IDialogParameters parameters)
         {
+            if (parameters.ContainsKey("AvailableShifts"))
+            {
+                _availableShifts = parameters.GetValue<IEnumerable<ShiftDto>>("AvailableShifts")?.ToList() ?? new();
+            }
+
             if (parameters.ContainsKey("ShiftId"))
             {
                 _shiftId = parameters.GetValue<Guid>("ShiftId");
@@ -501,11 +519,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         var vm = Days.FirstOrDefault(d => d.DayOfWeek == day.DayOfWeek);
                         if (vm != null)
                         {
-                            vm.StartDateTime = DateTime.Today.Add(day.StartTime);
-                            var dEnd = day.StartTime.Add(day.WorkHours);
-                            if (dEnd.TotalDays >= 1) dEnd = dEnd.Subtract(TimeSpan.FromDays(1));
-                            vm.EndDateTime = DateTime.Today.Add(dEnd);
-                            vm.ShiftType = day.ShiftType;
+                            vm.Type = day.ShiftType;
+                            vm.DayShiftId = day.DayShiftId;
+                            vm.Legacy = day.DayShiftId == null;
                         }
                     }
                 }
@@ -515,31 +531,49 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         }
     }
 
+    public sealed record ScheduleOption(Guid Id, string Label);
+
     public class DayConfigViewModel : BindableBase
     {
-        private DateTime? _startDateTime;
-        private DateTime? _endDateTime;
-        private ShiftType _shiftType = ShiftType.Matutino;
+        private readonly Func<ShiftType, IEnumerable<ScheduleOption>> _schedulesOfType;
+        private ShiftType? _type;
+        private Guid? _dayShiftId;
+        private bool _legacy;
+
+        public DayConfigViewModel(Func<ShiftType, IEnumerable<ScheduleOption>> schedulesOfType) => _schedulesOfType = schedulesOfType;
 
         public DayOfWeek DayOfWeek { get; set; }
         public string DayName { get; set; } = string.Empty;
 
-        public DateTime? StartDateTime
+        /// <summary>Tipo elegido para filtrar horarios; null = descanso.</summary>
+        public ShiftType? Type
         {
-            get => _startDateTime;
-            set => SetProperty(ref _startDateTime, value);
+            get => _type;
+            set
+            {
+                if (!SetProperty(ref _type, value)) return;
+                AvailableSchedules = new ObservableCollection<ScheduleOption>(value.HasValue ? _schedulesOfType(value.Value) : Enumerable.Empty<ScheduleOption>());
+                RaisePropertyChanged(nameof(AvailableSchedules));
+                RaisePropertyChanged(nameof(HasSchedule));
+                if (DayShiftId.HasValue && !AvailableSchedules.Any(o => o.Id == DayShiftId)) DayShiftId = null;
+            }
         }
 
-        public DateTime? EndDateTime
+        public bool HasSchedule => Type.HasValue;
+
+        public ObservableCollection<ScheduleOption> AvailableSchedules { get; private set; } = new();
+
+        public Guid? DayShiftId
         {
-            get => _endDateTime;
-            set => SetProperty(ref _endDateTime, value);
+            get => _dayShiftId;
+            set => SetProperty(ref _dayShiftId, value);
         }
 
-        public ShiftType ShiftType
+        /// <summary>Día guardado con horas por día (formato anterior), sin horario asignado.</summary>
+        public bool Legacy
         {
-            get => _shiftType;
-            set => SetProperty(ref _shiftType, value);
+            get => _legacy;
+            set => SetProperty(ref _legacy, value);
         }
     }
 }

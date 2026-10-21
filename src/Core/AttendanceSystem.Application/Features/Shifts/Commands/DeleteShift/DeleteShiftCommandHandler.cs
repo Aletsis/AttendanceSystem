@@ -5,7 +5,7 @@ using AttendanceSystem.Application.Abstractions;
 
 namespace AttendanceSystem.Application.Features.Shifts.Commands.DeleteShift;
 
-internal sealed class DeleteShiftCommandHandler : IRequestHandler<DeleteShiftCommand, Result>
+public sealed class DeleteShiftCommandHandler : IRequestHandler<DeleteShiftCommand, Result>
 {
     private readonly IShiftRepository _shiftRepository;
     private readonly IEmployeeRepository _employeeRepository;
@@ -34,6 +34,16 @@ internal sealed class DeleteShiftCommandHandler : IRequestHandler<DeleteShiftCom
         if (await _employeeRepository.IsShiftInUseAsync(request.ShiftId, cancellationToken))
         {
             return Result.Failure("No se puede eliminar el turno porque está asignado a uno o más empleados.");
+        }
+
+        // Decisión 5: un horario asignado a un día de un turno mixto no se elimina.
+        var usedBy = (await _shiftRepository.GetAllAsync(cancellationToken))
+            .Where(s => s.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Mixto && s.Days.Any(d => d.DayShiftId == request.ShiftId))
+            .Select(s => s.Name)
+            .ToList();
+        if (usedBy.Count > 0)
+        {
+            return Result.Failure($"No se puede eliminar el turno porque lo usan los turnos mixtos: {string.Join(", ", usedBy)}.");
         }
 
         _shiftRepository.Delete(shift);

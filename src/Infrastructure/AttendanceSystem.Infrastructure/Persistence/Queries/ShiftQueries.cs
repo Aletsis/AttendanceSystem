@@ -21,6 +21,7 @@ public class ShiftQueries : IShiftQueries
             .AsNoTracking()
             .ToListAsync(cancellationToken);
 
+        var byId = shifts.ToDictionary(s => s.Id);
         return shifts.Select(s => new ShiftDto(
                 s.Id.Value,
                 s.Name,
@@ -29,7 +30,9 @@ public class ShiftQueries : IShiftQueries
                 s.ToleranceMinutes,
                 s.WorkHours,
                 s.ShiftType,
-                s.Days.Select(d => new ShiftDayDto(d.DayOfWeek, d.StartTime, d.EndTime, d.WorkHours, d.ShiftType)).ToList(),
+                s.Days.Select(d => d.DayShiftId is { } dayShiftId && byId.TryGetValue(dayShiftId, out var dayShift)
+                    ? new ShiftDayDto(d.DayOfWeek, dayShift.StartTime, dayShift.EndTime, dayShift.WorkHours, dayShift.ShiftType, dayShift.Id.Value, dayShift.Name)
+                    : new ShiftDayDto(d.DayOfWeek, d.StartTime, d.EndTime, d.WorkHours, d.ShiftType, d.DayShiftId?.Value)).ToList(),
                 s.RoundingsEnabled,
                 s.RoundingInterval,
                 s.FlexWindowEndTime,

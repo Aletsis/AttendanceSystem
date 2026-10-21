@@ -8,5 +8,7 @@ public record ShiftDayDto(
     TimeSpan StartTime,
     TimeSpan EndTime,
     TimeSpan WorkHours,
-    ShiftType ShiftType
+    ShiftType ShiftType,
+    Guid? DayShiftId = null,
+    string? DayShiftName = null
 );

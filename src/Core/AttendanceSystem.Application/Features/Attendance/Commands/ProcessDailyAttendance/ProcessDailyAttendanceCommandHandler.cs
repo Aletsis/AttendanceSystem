@@ -415,23 +415,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             dayStartTime = shift.StartTime;
             dayEndTime = shift.EndTime;
 
-            if (shift.ShiftType == ShiftType.Mixto)
-            {
-                var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
-                if (dayConfig != null)
-                {
-                    dayStartTime = dayConfig.StartTime;
-                    dayEndTime = dayConfig.EndTime;
-
-                    if (dayEndTime <= dayStartTime || dayConfig.ShiftType == ShiftType.Nocturno ||
-                        dayConfig.ShiftType == ShiftType.Continuo || dayConfig.ShiftType == ShiftType.Flexible ||
-                        dayConfig.ShiftType == ShiftType.Partido || dayConfig.ShiftType == ShiftType.Rotativo)
-                    {
-                        isCrossDay = true;
-                    }
-                }
-            }
-            else if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) ||
+            // Decisión 5: un turno mixto ya llega resuelto al horario del día (AttendanceShiftResolutionService).
+            if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) ||
                      shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo ||
                      shift.ShiftType == ShiftType.Flexible || shift.ShiftType == ShiftType.Partido)
             {
@@ -473,12 +458,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         if (shift == null || plan.SearchEndDate == plan.SearchStartDate) return null;
 
         var effectiveType = shift.ShiftType;
-        if (shift.ShiftType == ShiftType.Mixto)
-        {
-            var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
-            if (dayConfig == null) return null;
-            effectiveType = dayConfig.ShiftType;
-        }
 
         bool routesToNightly = effectiveType == ShiftType.Nocturno ||
             (plan.DayEndTime <= plan.DayStartTime &&
@@ -517,13 +496,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 .ToList();
             if (ownDay.Count == 0) return null;
             if (effectiveType == ShiftType.Flexible && ownDay.Count != 1) return null;
-            var effective = shift.ShiftType == ShiftType.Mixto
-                ? shift.EffectiveFor(shift.Days.First(d => d.DayOfWeek == date.DayOfWeek))
-                : shift;
             return JornadaWindowPolicy.ExitWindowEnd(
                 ownDay[0].GetCivilTime(ws.TimeZoneId),
-                JornadaWindowPolicy.ScheduledStart(date, effective.StartTime, effective.HasEntryWindow),
-                effective.WorkHours,
+                JornadaWindowPolicy.ScheduledStart(date, shift.StartTime, shift.HasEntryWindow),
+                shift.WorkHours,
                 null);
         }
 
@@ -596,11 +572,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             await _sender.Send(new ProcessNoShiftAttendanceCommand(
                 employee, date, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
         }
-        else if (shift.ShiftType == ShiftType.Mixto)
-        {
-            await _sender.Send(new ProcessMixAttendanceCommand(
-                employee, date, shift, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch, NightLunch: ws.NightLunch), cancellationToken);
-        }
         else if (shift.ShiftType == ShiftType.Continuo)
         {
             await _sender.Send(new ProcessContinuousAttendanceCommand(
@@ -628,6 +599,11 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         }
 
         // F02-02 / F02-06: validar el resultado completo antes de aceptarlo; un fallo revierte toda la unidad.
+        if (plan.Resolution.Issue != null)
+        {
+            draft.DailyAttendance?.AddCalculationIssue(plan.Resolution.Issue);
+        }
+
         var proposed = draft.BuildAssignments(adjustment, assignedAt);
         if (proposed.Count > 0)
         {

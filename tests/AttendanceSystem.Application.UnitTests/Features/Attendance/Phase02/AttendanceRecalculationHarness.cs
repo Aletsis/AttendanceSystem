@@ -336,7 +336,6 @@ internal sealed class SubCommandRoutingSender : ISender
             ProcessSplitAttendanceCommand c => new ProcessSplitAttendanceCommandHandler(_dailyRepo, _attendanceRepo, NullLogger<ProcessSplitAttendanceCommandHandler>.Instance).Handle(c, cancellationToken),
             ProcessNoShiftAttendanceCommand c => new ProcessNoShiftAttendanceCommandHandler(_dailyRepo, _attendanceRepo, NullLogger<ProcessNoShiftAttendanceCommandHandler>.Instance).Handle(c, cancellationToken),
             ProcessContinuousAttendanceCommand c => new ProcessContinuousAttendanceCommandHandler(this).Handle(c, cancellationToken),
-            ProcessMixAttendanceCommand c => new ProcessMixAttendanceCommandHandler(this, NullLogger<ProcessMixAttendanceCommandHandler>.Instance).Handle(c, cancellationToken),
             _ => throw new NotSupportedException(request.GetType().Name)
         };
 

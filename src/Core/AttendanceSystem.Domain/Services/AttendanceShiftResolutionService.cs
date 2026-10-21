@@ -12,7 +12,8 @@ public sealed record ShiftResolutionResult(
     bool IsRestDay,
     bool IsAutoDetected,
     bool IsRestDayOverridden,
-    bool IsShiftOverridden);
+    bool IsShiftOverridden,
+    string? Issue = null);
 
 /// <summary>
 /// Servicio de dominio que centraliza la resolución de turno y descanso diario,
@@ -96,7 +97,9 @@ public static class AttendanceShiftResolutionService
                 DateTime? firstPunch = dayPunches?.OrderBy(p => p).Select(p => (DateTime?)p).FirstOrDefault();
                 if (firstPunch.HasValue)
                 {
-                    var autoShift = ShiftDetectionService.FindClosestShift(firstPunch.Value, availableShifts.Values);
+                    // Un turno mixto es una plantilla semanal, no un horario candidato.
+                    var autoShift = ShiftDetectionService.FindClosestShift(firstPunch.Value,
+                        availableShifts.Values.Where(s => s.ShiftType != ShiftType.Mixto));
                     if (autoShift != null)
                     {
                         shift = autoShift;
@@ -113,6 +116,49 @@ public static class AttendanceShiftResolutionService
             }
         }
 
-        return new ShiftResolutionResult(shift, isRestDay, isAutoDetected, isRestDayOverridden, isShiftOverridden);
+        // 5. Decisión 5: un turno mixto se sustituye por el horario de ese día, que rige el cálculo completo.
+        string? issue = null;
+        if (shift?.ShiftType == ShiftType.Mixto)
+        {
+            var mixed = shift;
+            var day = mixed.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
+            if (day == null)
+            {
+                // Día sin horario en la plantilla: descanso salvo decisión manual explícita (C-05).
+                shift = null;
+                if (!isRestDayOverridden) isRestDay = true;
+            }
+            else if (day.DayShiftId is { } dayShiftId)
+            {
+                if (availableShifts.TryGetValue(dayShiftId, out var dayShift) && dayShift.ShiftType is not (ShiftType.Mixto or ShiftType.Rotativo))
+                {
+                    shift = dayShift;
+                }
+                else
+                {
+                    shift = null;
+                    issue = $"El horario asignado al {DayName(date.DayOfWeek)} en el turno mixto '{mixed.Name}' no existe o no es válido.";
+                }
+            }
+            else
+            {
+                // Formato anterior (horas por día): se calcula como antes hasta que RH asigne un horario al día.
+                shift = mixed.EffectiveFor(day);
+                issue = $"Turno mixto '{mixed.Name}' con horas por día (formato anterior): asigne un horario al {DayName(date.DayOfWeek)}.";
+            }
+        }
+
+        return new ShiftResolutionResult(shift, isRestDay, isAutoDetected, isRestDayOverridden, isShiftOverridden, issue);
     }
+
+    private static string DayName(DayOfWeek day) => day switch
+    {
+        DayOfWeek.Monday => "lunes",
+        DayOfWeek.Tuesday => "martes",
+        DayOfWeek.Wednesday => "miércoles",
+        DayOfWeek.Thursday => "jueves",
+        DayOfWeek.Friday => "viernes",
+        DayOfWeek.Saturday => "sábado",
+        _ => "domingo"
+    };
 }

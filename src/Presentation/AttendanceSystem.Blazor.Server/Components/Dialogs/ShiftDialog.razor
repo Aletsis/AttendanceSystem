@@ -18,29 +18,38 @@
 
         @if (_shiftType == ShiftType.Mixto)
         {
-            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">Configuración por Día</MudText>
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">Horario por Día</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">
+                Cada día usa un horario existente con todas sus reglas (bloques, tolerancias, comida, ventanas). Un día sin horario es descanso.
+            </MudText>
             <MudTable Items="_days" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
                 <HeaderContent>
                     <MudTh>Día</MudTh>
-                    <MudTh>Tipo de Turno</MudTh>
-                    <MudTh>Hora Inicio</MudTh>
-                    <MudTh>Hora Fin</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>Horario</MudTh>
                 </HeaderContent>
                 <RowTemplate>
                     <MudTd DataLabel="Día">@context.DayName</MudTd>
-                    <MudTd DataLabel="Tipo de Turno">
-                        <MudSelect @bind-Value="context.ShiftType" Margin="Margin.Dense">
+                    <MudTd DataLabel="Tipo">
+                        <MudSelect T="ShiftType?" Value="context.Type" ValueChanged="@(t => OnDayTypeChanged(context, t))" Margin="Margin.Dense">
+                            <MudSelectItem T="ShiftType?" Value="@((ShiftType?)null)">Descanso</MudSelectItem>
                             @foreach (ShiftType type in AvailableDayShiftTypes)
                             {
-                                <MudSelectItem Value="@type">@GetShiftTypeName(type)</MudSelectItem>
+                                <MudSelectItem T="ShiftType?" Value="@((ShiftType?)type)">@GetShiftTypeName(type)</MudSelectItem>
                             }
                         </MudSelect>
                     </MudTd>
-                    <MudTd DataLabel="Hora Inicio">
-                        <MudTimePicker @bind-Time="context.StartTime" Required="true" Editable="true" />
-                    </MudTd>
-                    <MudTd DataLabel="Hora Fin">
-                        <MudTimePicker @bind-Time="context.EndTime" Required="true" Editable="true" />
+                    <MudTd DataLabel="Horario">
+                        @if (context.Type.HasValue)
+                        {
+                            <MudSelect T="Guid?" @bind-Value="context.DayShiftId" Margin="Margin.Dense" Required="true"
+                                       HelperText="@(context.Legacy ? "Formato anterior: seleccione un horario" : null)">
+                                @foreach (var option in SchedulesOfType(context.Type.Value))
+                                {
+                                    <MudSelectItem T="Guid?" Value="@((Guid?)option.Id)">@ScheduleLabel(option)</MudSelectItem>
+                                }
+                            </MudSelect>
+                        }
                     </MudTd>
                 </RowTemplate>
             </MudTable>
@@ -167,6 +176,8 @@
     [Parameter] public PunchTrackingMode PunchTrackingMode { get; set; } = PunchTrackingMode.SingleInterval;
     [Parameter] public bool HasEntryWindow { get; set; } = true;
     [Parameter] public int? PaidLunchMinutes { get; set; }
+    /// <summary>Horarios existentes que pueden asignarse a los días de un turno mixto.</summary>
+    [Parameter] public IEnumerable<ShiftDto>? AvailableShifts { get; set; }
 
     private string _name = "";
     private TimeSpan? _startTime;
@@ -192,9 +203,29 @@
     {
         public DayOfWeek DayOfWeek { get; set; }
         public string DayName { get; set; } = "";
-        public TimeSpan? StartTime { get; set; }
-        public TimeSpan? EndTime { get; set; }
-        public ShiftType ShiftType { get; set; } = ShiftType.Matutino;
+        /// <summary>Tipo elegido para filtrar horarios; null = descanso.</summary>
+        public ShiftType? Type { get; set; }
+        public Guid? DayShiftId { get; set; }
+        /// <summary>Día guardado con horas por día (formato anterior), sin horario asignado.</summary>
+        public bool Legacy { get; set; }
+    }
+
+    private IEnumerable<ShiftDto> SchedulesOfType(ShiftType type) =>
+        (AvailableShifts ?? Enumerable.Empty<ShiftDto>())
+            .Where(s => s.ShiftType == type && s.Id != ShiftId)
+            .OrderBy(s => s.StartTime);
+
+    private static string ScheduleLabel(ShiftDto s) => s.ShiftType == ShiftType.Partido && s.SecondBlockStartTime.HasValue && s.SecondBlockEndTime.HasValue
+        ? $"{s.Name} ({s.StartTime:hh\\:mm}–{s.EndTime:hh\\:mm} y {s.SecondBlockStartTime:hh\\:mm}–{s.SecondBlockEndTime:hh\\:mm})"
+        : $"{s.Name} ({s.StartTime:hh\\:mm}–{s.EndTime:hh\\:mm})";
+
+    private void OnDayTypeChanged(DayConfig day, ShiftType? type)
+    {
+        day.Type = type;
+        if (type == null || !SchedulesOfType(type.Value).Any(s => s.Id == day.DayShiftId))
+        {
+            day.DayShiftId = null;
+        }
     }
 
     private static readonly ShiftType[] AvailableShiftTypes =
@@ -207,11 +238,13 @@
         ShiftType.Partido
     ];
 
+    // Decisión 5: todos los tipos excepto Mixto y Rotativo.
     private static readonly ShiftType[] AvailableDayShiftTypes =
     [
         ShiftType.Matutino,
         ShiftType.Vespertino,
         ShiftType.Nocturno,
+        ShiftType.Continuo,
         ShiftType.Flexible,
         ShiftType.Partido
     ];
@@ -295,31 +328,14 @@
         foreach (var kvp in spanishDays)
         {
             var existing = Days?.FirstOrDefault(d => d.DayOfWeek == kvp.Key);
-            if (existing != null)
+            _days.Add(new DayConfig
             {
-                var end = existing.StartTime.Add(existing.WorkHours);
-                if (end.TotalDays >= 1) end = end.Subtract(TimeSpan.FromDays(1));
-
-                _days.Add(new DayConfig
-                {
-                    DayOfWeek = kvp.Key,
-                    DayName = kvp.Value,
-                    StartTime = existing.StartTime,
-                    EndTime = end,
-                    ShiftType = existing.ShiftType
-                });
-            }
-            else
-            {
-                _days.Add(new DayConfig
-                {
-                    DayOfWeek = kvp.Key,
-                    DayName = kvp.Value,
-                    StartTime = new TimeSpan(9, 0, 0),
-                    EndTime = new TimeSpan(18, 0, 0),
-                    ShiftType = ShiftType.Matutino
-                });
-            }
+                DayOfWeek = kvp.Key,
+                DayName = kvp.Value,
+                Type = existing?.ShiftType,
+                DayShiftId = existing?.DayShiftId,
+                Legacy = existing != null && existing.DayShiftId == null
+            });
         }
     }
 
@@ -386,16 +402,18 @@
         var dtos = new List<ShiftDayDto>();
         if (_shiftType == ShiftType.Mixto)
         {
-            foreach (var d in _days)
+            // Sólo los días con tipo; el servidor exige un horario existente en cada uno.
+            foreach (var d in _days.Where(d => d.Type.HasValue))
             {
-                if (d.StartTime.HasValue && d.EndTime.HasValue)
-                {
-                    var dStart = d.StartTime.Value;
-                    var dEnd = d.EndTime.Value;
-                    var dDur = dEnd <= dStart ? dEnd.Add(TimeSpan.FromHours(24)) : dEnd;
-                    
-                    dtos.Add(new ShiftDayDto(d.DayOfWeek, dStart, dEnd, dDur - dStart, d.ShiftType));
-                }
+                var schedule = (AvailableShifts ?? Enumerable.Empty<ShiftDto>()).FirstOrDefault(s => s.Id == d.DayShiftId);
+                dtos.Add(new ShiftDayDto(
+                    d.DayOfWeek,
+                    schedule?.StartTime ?? TimeSpan.Zero,
+                    schedule?.EndTime ?? TimeSpan.Zero,
+                    schedule?.WorkHours ?? TimeSpan.Zero,
+                    d.Type!.Value,
+                    d.DayShiftId,
+                    schedule?.Name));
             }
         }
 

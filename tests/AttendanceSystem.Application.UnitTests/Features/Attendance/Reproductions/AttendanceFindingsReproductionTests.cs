@@ -270,39 +270,28 @@ public class AttendanceFindingsReproductionTests
     #region H06 — Ajustes omitidos en turnos mixtos sin configuración diaria
 
     [Fact]
-    public async Task H06_MixedShift_Without_Day_Config_Preserves_Manual_Adjustment()
+    public void H06_MixedShift_Without_Day_Config_Preserves_Manual_Adjustment()
     {
-        // ENTRADA:
-        // Turno mixto donde el Sábado no tiene configuración en Shift.Days.
+        // ENTRADA: turno mixto donde el sábado no tiene configuración en Shift.Days.
         var mixedShift = AttendanceRegressionFixtures.CreateMixedShift();
-        var dateSabado = new DateTime(2026, 8, 29); // Sábado
+        var dateSabado = new DateTime(2026, 8, 29);
         dateSabado.DayOfWeek.Should().Be(DayOfWeek.Saturday);
+        var employee = Employee.Create(EmployeeId.From("EMP-MIX-006"), "Empleado", "Mixto", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
+            ShiftType.Mixto, mixedShift.Id, restDays: Array.Empty<WeekDay>());
+        var shifts = new Dictionary<ShiftId, Shift> { [mixedShift.Id] = mixedShift };
 
-        var employee = AttendanceRegressionFixtures.CreateFixedEmployee();
-        var senderMock = new Mock<ISender>();
-        var loggerMock = new Mock<ILogger<ProcessMixAttendanceCommandHandler>>();
-
-        var handler = new ProcessMixAttendanceCommandHandler(senderMock.Object, loggerMock.Object);
+        // LÍNEA BASE (F00-05): la delegación omitía el ajuste del supervisor.
+        // CORREGIDO (F05-04 y decisión 5): el mixto se resuelve al horario del día antes de calcular; sin horario
+        // es descanso, salvo decisión manual explícita, que prevalece.
+        var withoutDecision = AttendanceShiftResolutionService.Resolve(employee, dateSabado, null, null, shifts, Array.Empty<DateTime>());
+        withoutDecision.Shift.Should().BeNull();
+        withoutDecision.IsRestDay.Should().BeTrue("sin horario en la plantilla el día es descanso");
 
         var adjustment = AttendanceAdjustment.Create(employee.Id, dateSabado, "Supervisor RH", "Autorizado");
-
-        var command = new ProcessMixAttendanceCommand(
-            employee,
-            dateSabado,
-            mixedShift,
-            new List<AttendanceRecord>(),
-            IsRestDay: false,
-            Adjustment: adjustment);
-
-        // ACT:
-        await handler.Handle(command, CancellationToken.None);
-
-        // LÍNEA BASE (F00-05): la delegación a ProcessNoShiftAttendanceCommand omitía el Adjustment del supervisor.
-        // CORREGIDO (F05-04): se conserva el ajuste y la precedencia manual de descanso.
-        senderMock.Verify(s => s.Send(
-            It.Is<ProcessNoShiftAttendanceCommand>(cmd => cmd.Adjustment == adjustment && cmd.IsRestDay),
-            It.IsAny<CancellationToken>()), Times.Once,
-            "sin configuración diaria el día es descanso salvo decisión manual, y el ajuste se aplica");
+        adjustment.SetRestDayOverride(false, "Supervisor RH");
+        var withDecision = AttendanceShiftResolutionService.Resolve(employee, dateSabado, null, adjustment, shifts, Array.Empty<DateTime>());
+        withDecision.IsRestDay.Should().BeFalse("la decisión manual de laborable prevalece");
     }
 
     #endregion

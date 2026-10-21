@@ -155,7 +155,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
         private void ExecuteAddShift()
         {
-            _dialogService.ShowDialog("ShiftDetailDialog", null, async result =>
+            var addParameters = new DialogParameters { { "AvailableShifts", _allShiftsData.ToList() } };
+            _dialogService.ShowDialog("ShiftDetailDialog", addParameters, async result =>
             {
                 if (result.Result == ButtonResult.OK)
                 {
@@ -227,7 +228,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 { "SecondBlockEndTime", shiftData.SecondBlockEndTime! },
                 { "SecondBlockToleranceMinutes", shiftData.SecondBlockToleranceMinutes! },
                 { "PunchTrackingMode", shiftData.PunchTrackingMode },
-                { "HasEntryWindow", shiftData.HasEntryWindow }
+                { "HasEntryWindow", shiftData.HasEntryWindow },
+                { "AvailableShifts", _allShiftsData.ToList() }
             };
 
             _dialogService.ShowDialog("ShiftDetailDialog", parameters, async result =>

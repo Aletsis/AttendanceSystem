@@ -28,22 +28,22 @@
             <Grid Margin="0,5">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="80"/>
-                    <ColumnDefinition Width="90"/>
-                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="140"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Text="{Binding DayName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#4E5D78"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.DayShiftTypes, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                          SelectedValue="{Binding ShiftType}"
+                          SelectedValue="{Binding Type}"
                           SelectedValuePath="Key"
                           DisplayMemberPath="Value"
                           Margin="5,0"/>
-                <mah:TimePicker Grid.Column="2" SelectedDateTime="{Binding StartDateTime}" 
-                                mah:TextBoxHelper.Watermark="Entrada" Margin="5,0"
-                                Culture="es-MX" IsClockVisible="False"/>
-                <mah:TimePicker Grid.Column="3" SelectedDateTime="{Binding EndDateTime}" 
-                                mah:TextBoxHelper.Watermark="Salida" Margin="5,0"
-                                Culture="es-MX" IsClockVisible="False"/>
+                <ComboBox Grid.Column="2" ItemsSource="{Binding AvailableSchedules}"
+                          SelectedValue="{Binding DayShiftId}"
+                          SelectedValuePath="Id"
+                          DisplayMemberPath="Label"
+                          Visibility="{Binding HasSchedule, Converter={StaticResource BoolToVis}}"
+                          mah:TextBoxHelper.Watermark="Seleccione un horario"
+                          Margin="5,0"/>
             </Grid>
         </DataTemplate>
     </UserControl.Resources>
@@ -160,7 +160,7 @@
 
                     <!-- Mixto Shift -->
                     <StackPanel Visibility="{Binding IsMixedShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                        <TextBlock Text="Configuración por Día" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,8"/>
+                        <TextBlock Text="Horario por Día (un día sin horario es descanso)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,8"/>
                         <Border BorderThickness="1" BorderBrush="#EAECF4" CornerRadius="8" Padding="10">
                             <ItemsControl ItemsSource="{Binding Days}" ItemTemplate="{StaticResource DayConfigTemplate}"/>
                         </Border>

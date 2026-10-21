@@ -487,6 +487,32 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         storedAdjustment.ExcludedRecordIds().Should().ContainSingle().Which.Should().Be(excluded);
     }
 
+    [Fact]
+    public async Task MixedShiftDays_ReferenceExistingSchedules_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var morning = Shift.Create("Matutino plantilla", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Matutino);
+        var night = Shift.Create("Nocturno plantilla", new TimeSpan(22, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Nocturno);
+        var mixed = Shift.Create("Mixto plantilla", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Mixto, new[]
+        {
+            ShiftDay.ForShift(DayOfWeek.Monday, morning),
+            ShiftDay.ForShift(DayOfWeek.Tuesday, night)
+        });
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            context.Shifts.AddRange(morning, night, mixed);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var stored = await verify.Shifts.Include(s => s.Days).SingleAsync(s => s.Id == mixed.Id);
+        stored.Days.Should().HaveCount(2);
+        stored.Days.Single(d => d.DayOfWeek == DayOfWeek.Monday).DayShiftId.Should().Be(morning.Id);
+        stored.Days.Single(d => d.DayOfWeek == DayOfWeek.Tuesday).DayShiftId.Should().Be(night.Id);
+    }
+
     #endregion
 
     #region Infraestructura de prueba

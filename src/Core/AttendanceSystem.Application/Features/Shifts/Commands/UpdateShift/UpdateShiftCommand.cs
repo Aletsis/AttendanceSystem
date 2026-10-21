@@ -52,12 +52,17 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
 
         try
         {
-            var days = request.Days?.Select(d => new ShiftDay(
-                d.DayOfWeek,
-                d.StartTime,
-                d.WorkHours,
-                d.ShiftType
-            )).ToList();
+            var builtDays = await MixedShiftDays.BuildAsync(request.ShiftType, request.Days, _shiftRepository, shiftId, cancellationToken);
+            if (builtDays.IsFailure) return Result.Failure(builtDays.Error);
+            var days = builtDays.Value;
+
+            // Un horario usado por un turno mixto no puede volverse mixto ni rotativo.
+            if (request.ShiftType is ShiftType.Mixto or ShiftType.Rotativo && shift.ShiftType is not (ShiftType.Mixto or ShiftType.Rotativo))
+            {
+                var usedBy = await MixedShiftsUsingAsync(shiftId, cancellationToken);
+                if (usedBy.Count > 0)
+                    return Result.Failure($"El horario se usa en los turnos mixtos {string.Join(", ", usedBy)}; no puede convertirse en {request.ShiftType}.");
+            }
 
             shift.Update(
                 request.Name,
@@ -89,4 +94,10 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
             return Result.Failure(ex.Message);
         }
     }
+
+    private async Task<List<string>> MixedShiftsUsingAsync(ShiftId shiftId, CancellationToken cancellationToken) =>
+        (await _shiftRepository.GetAllAsync(cancellationToken))
+            .Where(s => s.ShiftType == ShiftType.Mixto && s.Days.Any(d => d.DayShiftId == shiftId))
+            .Select(s => s.Name)
+            .ToList();
 }
