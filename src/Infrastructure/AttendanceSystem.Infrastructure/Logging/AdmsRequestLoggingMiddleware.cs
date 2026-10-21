@@ -111,7 +111,18 @@ public class AdmsRequestLoggingMiddleware
                                               bodyContent.Contains("TMP=", StringComparison.OrdinalIgnoreCase) ||
                                               bodyContent.Contains("BIODATA", StringComparison.OrdinalIgnoreCase);
 
-                if (isSensitiveTable || containsSensitiveFields)
+                var isDeviceInfo = pathAndQuery.Contains("devicecmd", StringComparison.OrdinalIgnoreCase) ||
+                                   pathAndQuery.Contains("options", StringComparison.OrdinalIgnoreCase);
+
+                if (isDeviceInfo)
+                {
+                    var sanitized = System.Text.RegularExpressions.Regex.Replace(bodyContent, @"(Passwd|Password)=[^&\r\n\t]+", "$1=***", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    const int maxInfoLength = 2048;
+                    bodyDisplay = sanitized.Length > maxInfoLength
+                        ? $"{sanitized.Substring(0, maxInfoLength)}... [Truncado, total {sanitized.Length} bytes]"
+                        : sanitized;
+                }
+                else if (isSensitiveTable || containsSensitiveFields)
                 {
                     bodyDisplay = $"[REDACTED: Contenido sensible protegido ({bodyContent.Length} bytes)]";
                 }

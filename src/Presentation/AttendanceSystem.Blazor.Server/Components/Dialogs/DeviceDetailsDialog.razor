@@ -235,21 +235,35 @@
                                     </tr>
                                     <tr>
                                         <td><MudIcon Icon="@Icons.Material.Filled.Fingerprint" Size="Size.Small" Class="mr-1" Color="Color.Secondary" /> Huellas Digitales</td>
-                                        <td style="text-align:center" class="font-weight-bold">@(Device.FingerprintCount?.ToString() ?? "-")</td>
-                                        <td style="text-align:center">@(Device.FingerprintCapacity?.ToString() ?? "-")</td>
-                                        <td>
-                                            <MudProgressLinear Color="@GetUsageColor(Device.FingerprintCount, Device.FingerprintCapacity)" Value="@GetUsageValue(Device.FingerprintCount, Device.FingerprintCapacity)" Rounded="true" Size="Size.Medium" />
-                                        </td>
-                                        <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.FingerprintCount, Device.FingerprintCapacity)</td>
+                                        @if ((Device.FingerprintCapacity ?? 0) > 0 || (Device.FingerprintCount ?? 0) > 0)
+                                        {
+                                            <td style="text-align:center" class="font-weight-bold">@(Device.FingerprintCount?.ToString() ?? "-")</td>
+                                            <td style="text-align:center">@(Device.FingerprintCapacity?.ToString() ?? "-")</td>
+                                            <td>
+                                                <MudProgressLinear Color="@GetUsageColor(Device.FingerprintCount, Device.FingerprintCapacity)" Value="@GetUsageValue(Device.FingerprintCount, Device.FingerprintCapacity)" Rounded="true" Size="Size.Medium" />
+                                            </td>
+                                            <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.FingerprintCount, Device.FingerprintCapacity)</td>
+                                        }
+                                        else
+                                        {
+                                            <td colspan="4" style="text-align:center; color: var(--mud-palette-text-disabled);"><em>No soportado por el hardware</em></td>
+                                        }
                                     </tr>
                                     <tr>
                                         <td><MudIcon Icon="@Icons.Material.Filled.Face" Size="Size.Small" Class="mr-1" Color="Color.Info" /> Rostros</td>
-                                        <td style="text-align:center" class="font-weight-bold">@(Device.FaceCount?.ToString() ?? "-")</td>
-                                        <td style="text-align:center">@(Device.FaceCapacity?.ToString() ?? "-")</td>
-                                        <td>
-                                            <MudProgressLinear Color="@GetUsageColor(Device.FaceCount, Device.FaceCapacity)" Value="@GetUsageValue(Device.FaceCount, Device.FaceCapacity)" Rounded="true" Size="Size.Medium" />
-                                        </td>
-                                        <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.FaceCount, Device.FaceCapacity)</td>
+                                        @if ((Device.FaceCapacity ?? 0) > 0 || (Device.FaceCount ?? 0) > 0)
+                                        {
+                                            <td style="text-align:center" class="font-weight-bold">@(Device.FaceCount?.ToString() ?? "-")</td>
+                                            <td style="text-align:center">@(Device.FaceCapacity?.ToString() ?? "-")</td>
+                                            <td>
+                                                <MudProgressLinear Color="@GetUsageColor(Device.FaceCount, Device.FaceCapacity)" Value="@GetUsageValue(Device.FaceCount, Device.FaceCapacity)" Rounded="true" Size="Size.Medium" />
+                                            </td>
+                                            <td style="text-align:right" class="font-weight-bold">@GetUsagePercentage(Device.FaceCount, Device.FaceCapacity)</td>
+                                        }
+                                        else
+                                        {
+                                            <td colspan="4" style="text-align:center; color: var(--mud-palette-text-disabled);"><em>No soportado por el hardware</em></td>
+                                        }
                                     </tr>
                                     <tr>
                                         <td><MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Small" Class="mr-1" Color="Color.Warning" /> Registros de Asistencia</td>
@@ -322,9 +336,12 @@
                                      <MudCheckBox T="bool" Value="@context.Enabled" ReadOnly="true" Dense="true" Size="Size.Small"></MudCheckBox>
                                  </MudTd>
                                  <MudTd DataLabel="Acciones">
-                                     <MudTooltip Text="Borrar Huellas">
-                                         <MudIconButton Icon="@Icons.Material.Filled.Fingerprint" Color="Color.Warning" Size="Size.Small" OnClick="@(() => DeleteFingerprints(context))"/>
-                                     </MudTooltip>
+                                     @if ((Device.FingerprintCapacity ?? 0) > 0)
+                                     {
+                                         <MudTooltip Text="Borrar Huellas">
+                                             <MudIconButton Icon="@Icons.Material.Filled.Fingerprint" Color="Color.Warning" Size="Size.Small" OnClick="@(() => DeleteFingerprints(context))"/>
+                                         </MudTooltip>
+                                     }
                                      <MudTooltip Text="Eliminar Usuario">
                                         <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" Size="Size.Small" OnClick="@(() => DeleteUser(context))"/>
                                      </MudTooltip>
@@ -423,7 +440,7 @@
                                        </CardHeaderActions>
                                    </MudCardHeader>
                                    <MudCardContent>
-                                       <MudText>Solicita las opciones y variables internas del reloj (<code>DATA QUERY tablename=options</code>) para diagnóstico.</MudText>
+                                       <MudText>Solicita información técnica y opciones del reloj para diagnóstico.</MudText>
                                    </MudCardContent>
                                    <MudCardActions>
                                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="QueryOptions" Disabled="@_processingAction">Consultar Opciones</MudButton>
@@ -556,7 +573,7 @@
         _processingAction = true;
         var result = await Sender.Send(new QueryDeviceOptionsCommand(Device.DeviceId));
         
-        if (result.IsSuccess) Snackbar.Add("Comando de consulta de opciones (DATA QUERY) encolado. El reloj responderá en su siguiente latido.", Severity.Success);
+        if (result.IsSuccess) Snackbar.Add("Consulta de información técnica encolada. Se enviará cuando el reloj vuelva a comunicarse.", Severity.Success);
         else Snackbar.Add($"Error al consultar opciones: {result.Error}", Severity.Error);
         
         _processingAction = false;

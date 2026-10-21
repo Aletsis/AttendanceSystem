@@ -104,6 +104,75 @@ public class AdmsControllerTests
         };
     }
 
+    [Theory]
+    [InlineData("ID=10&Return=0&CMD=INFO")]
+    [InlineData("ID=10&Return=-1&CMD=INFO\nFirmwareVersion=failed")]
+    [InlineData("ID=10&Return=0&CMD=INFO\nUserCount=invalid")]
+    [InlineData("ID=10&Return=0&CMD=INFO\n~SerialNumber=OTHER\nFWVersion=1.0")]
+    public async Task DeviceCmd_InfoWithoutValidTechnicalData_DoesNotCompleteInfoRequest(string body)
+    {
+        SetRequestBody(body);
+
+        await _controller.DeviceCmd("CL5Z202660239");
+
+        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceived(
+            It.IsAny<string>(), It.IsAny<AttendanceSystem.Application.DTOs.DeviceInfoDto>(), It.IsAny<string?>()), Times.Never);
+        _deviceRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<Device>(), default), Times.Never);
+    }
+
+    [Theory]
+    [InlineData("\n")]
+    [InlineData("\t")]
+    [InlineData("&")]
+    public async Task DeviceCmd_InfoUpdatesOnlyTechnicalData(string separator)
+    {
+        SetRequestBody("ID=10&Return=0&CMD=INFO\n" +
+            string.Join(separator, "FWVersion=1.2.3", "UserCount=42", "FPCount=3", "TransactionCount=123"));
+
+        await _controller.DeviceCmd("CL5Z202660239");
+
+        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceived("CL5Z202660239",
+            It.Is<AttendanceSystem.Application.DTOs.DeviceInfoDto>(i =>
+                i.FirmwareVersion == "1.2.3" && i.UserCount == 42 &&
+                i.FingerprintCount == 3 && i.AttendanceRecordCount == 123), "10"), Times.Once);
+        _admsCommandServiceMock.Verify(s => s.AcknowledgeCommandExecutionAsync(
+            "CL5Z202660239", "10", 0, null, default), Times.Once);
+        _mediatorMock.VerifyNoOtherCalls();
+        _employeeRepositoryMock.VerifyNoOtherCalls();
+        _admsCommandServiceMock.Verify(s => s.EnqueueCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task DeviceCmd_InfoScalesCapacitiesAndSuppressesFingerprintsOnNfModel()
+    {
+        // MiniAC Plus: ZAM170-NF-Ver1.1.20, ~MaxUserCount=30, ~MaxAttLogCount=15, ~MaxFaceCount=3000, FPCount=12, ~MaxFingerCount=100
+        SetRequestBody("ID=20&Return=0&CMD=INFO\n" +
+            "FWVersion=ZAM170-NF-Ver1.1.20\n" +
+            "UserCount=354\n" +
+            "~MaxUserCount=30\n" +
+            "FPCount=12\n" +
+            "~MaxFingerCount=100\n" +
+            "FaceCount=280\n" +
+            "~MaxFaceCount=3000\n" +
+            "AttLogCount=0\n" +
+            "TransactionCount=1500\n" +
+            "~MaxAttLogCount=15\n");
+
+        await _controller.DeviceCmd("CL5Z202660239");
+
+        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceived("CL5Z202660239",
+            It.Is<AttendanceSystem.Application.DTOs.DeviceInfoDto>(i =>
+                i.FirmwareVersion == "ZAM170-NF-Ver1.1.20" &&
+                i.UserCount == 354 &&
+                i.UserCapacity == 3000 &&
+                i.FingerprintCount == 0 &&
+                i.FingerprintCapacity == 0 &&
+                i.FaceCount == 280 &&
+                i.FaceCapacity == 3000 &&
+                i.AttendanceRecordCount == 1500 &&
+                i.AttendanceRecordCapacity == 150000), "20"), Times.Once);
+    }
+
     [Fact]
     public async Task QueryData_WhenTransactionTableQueried_ShouldReturnOkContentAndNotIncludeCount()
     {
