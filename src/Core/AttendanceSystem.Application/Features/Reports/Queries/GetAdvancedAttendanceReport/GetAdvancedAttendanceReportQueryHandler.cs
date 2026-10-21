@@ -130,7 +130,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                     if (item.ScheduledCheckIn.HasValue && item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
                     {
                         var scheduled = item.Date.Add(item.ScheduledCheckIn.Value);
-                        var actual = item.ActualCheckIn.Value;
+                        var actual = item.CivilCheckIn!.Value; // comparar en hora civil con el horario
                         var diff = (actual - scheduled).TotalMinutes;
                         if (diff <= -25 || diff >= 16) include = true;
                     }
@@ -268,20 +268,17 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
         double effectiveOvertime = overtimeByRecordId.TryGetValue(att.Id, out var ot) ? ot : att.OvertimeMinutes;
 
         // Logica para las cadenas de CheckIn/CheckOut
+        // Hora civil de la sucursal (ActualCheckIn/Out son instantes UTC).
         string checkInStr = "--";
-        if (att.ActualCheckIn.HasValue)
+        if (att.CivilCheckIn is { } checkIn)
         {
-            checkInStr = (att.ActualCheckIn.Value.Date == att.Date)
-               ? att.ActualCheckIn.Value.ToString("HH:mm:ss")
-               : att.ActualCheckIn.Value.ToString("dd/MM/yyyy HH:mm:ss");
+            checkInStr = checkIn.Date == att.Date ? checkIn.ToString("HH:mm:ss") : checkIn.ToString("dd/MM/yyyy HH:mm:ss");
         }
 
         string checkOutStr = "--";
-        if (att.ActualCheckOut.HasValue)
+        if (att.CivilCheckOut is { } checkOut)
         {
-            checkOutStr = (att.ActualCheckOut.Value.Date == att.Date)
-               ? att.ActualCheckOut.Value.ToString("HH:mm:ss")
-               : att.ActualCheckOut.Value.ToString("dd/MM/yyyy HH:mm:ss");
+            checkOutStr = checkOut.Date == att.Date ? checkOut.ToString("HH:mm:ss") : checkOut.ToString("dd/MM/yyyy HH:mm:ss");
         }
 
         return new AdvancedReportDetailDto

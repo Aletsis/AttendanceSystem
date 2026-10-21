@@ -14,6 +14,7 @@ public sealed record AttendanceReportViewDto
     public string PositionName { get; init; } = string.Empty;
     public TimeSpan? ScheduledCheckIn { get; init; }
     public TimeSpan? ScheduledCheckOut { get; init; }
+    /// <summary>Hora civil de la sucursal (no el instante UTC).</summary>
     public DateTime? ActualCheckIn { get; init; }
     public DateTime? ActualCheckOut { get; init; }
     public int LateMinutes { get; init; }

@@ -36,7 +36,7 @@ public sealed class GetEmployeeAttendanceQueryHandler
             Id: r.Id.Value,
             EmployeeId: r.EmployeeId.Value,
             DeviceId: r.DeviceId.Value,
-            CheckTime: r.CheckTime,
+            CheckTime: r.GetCivilTime(), // hora civil del marcaje (CheckTime es el instante UTC)
             VerifyMethod: r.VerifyMethod.Name,
             CheckType: r.CheckType.Name,
             Status: r.Status.ToString()

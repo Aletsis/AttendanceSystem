@@ -51,7 +51,7 @@ public class GetAttendanceByDownloadLogQueryHandler : IRequestHandler<GetAttenda
                 Id = r.Id.Value,
                 EmployeeId = r.EmployeeId.Value,
                 EmployeeName = empName,
-                CheckTime = r.CheckTime,
+                CheckTime = r.GetCivilTime(), // hora civil del marcaje (CheckTime es el instante UTC)
                 EntryType = "Pendiente", // Since they are new, they might not be processed yet
                 VerifyMethod = r.VerifyMethod.Name,
                 DeviceName = devName,

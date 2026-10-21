@@ -123,9 +123,9 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
                             EmployeeNumber = employeeId,
                             EmployeeName = employeeName,
                             Date = daily.Date,
-                            EntryTime = daily.ActualCheckIn?.ToString("HH:mm") ?? "--:--",
-                            ExitTime = daily.ActualCheckOut?.ToString("HH:mm") ?? "--:--",
-                            WorkedHours = CalculateWorkedHours(daily.ActualCheckIn, daily.ActualCheckOut),
+                            EntryTime = daily.CivilCheckIn?.ToString("HH:mm") ?? "--:--",
+                            ExitTime = daily.CivilCheckOut?.ToString("HH:mm") ?? "--:--",
+                            WorkedHours = CalculateWorkedHours(daily.CivilCheckIn, daily.CivilCheckOut),
                             Status = status,
                             Notes = daily.AttendanceNote
                         };

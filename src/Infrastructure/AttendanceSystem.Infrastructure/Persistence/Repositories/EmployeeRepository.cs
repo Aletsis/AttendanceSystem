@@ -83,6 +83,12 @@ public class EmployeeRepository : IEmployeeRepository
             .AnyAsync(e => e.PositionId == positionId, cancellationToken);
     }
 
+    private async Task<List<EmployeeId>> IdsContainingAsync(string text, CancellationToken cancellationToken)
+    {
+        var ids = await _dbContext.Set<Employee>().AsNoTracking().Select(e => e.Id).ToListAsync(cancellationToken);
+        return ids.Where(id => id.Value.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
+    }
+
     public async Task<(IReadOnlyList<Employee> Items, int TotalCount)> GetPaginatedAsync(
         int pageNumber,
         int pageSize,
@@ -97,6 +103,9 @@ public class EmployeeRepository : IEmployeeRepository
         IEnumerable<string>? statusFilter = null,
         CancellationToken cancellationToken = default)
     {
+        // El Id es un objeto de valor convertido a texto: EF no traduce e.Id.Value a SQL (la consulta fallaba y la
+        // lista de empleados quedaba vacía). Búsqueda: se resuelven primero los Id que coinciden (sólo la columna Id)
+        // y se filtra con Contains; el orden natural por Id se calcula sobre la lista de Id. Funciona en SQL y en memoria.
         // Consulta base sin seguimiento (AsNoTracking) y sin cargar huellas/plantillas pesadas
         var query = _dbContext.Set<Employee>().AsNoTracking();
 
@@ -104,18 +113,19 @@ public class EmployeeRepository : IEmployeeRepository
         if (!string.IsNullOrWhiteSpace(searchString))
         {
             var search = searchString.Trim();
+            var matchingIds = await IdsContainingAsync(search, cancellationToken);
             query = query.Where(e =>
                 e.FirstName.Contains(search) ||
                 e.LastName.Contains(search) ||
                 (e.FirstName + " " + e.LastName).Contains(search) ||
-                e.Id.Value.Contains(search));
+                matchingIds.Contains(e.Id));
         }
 
         // 2. Filtros por columna
         if (!string.IsNullOrWhiteSpace(idFilter))
         {
-            var idF = idFilter.Trim();
-            query = query.Where(e => e.Id.Value.Contains(idF));
+            var idMatches = await IdsContainingAsync(idFilter.Trim(), cancellationToken);
+            query = query.Where(e => idMatches.Contains(e.Id));
         }
 
         if (!string.IsNullOrWhiteSpace(nameFilter))
@@ -180,42 +190,36 @@ public class EmployeeRepository : IEmployeeRepository
             }
         }
 
-        // 3. Ordenamiento en SQL
-        bool ascending = sortDirection == 1;
-        if (!string.IsNullOrEmpty(sortLabel))
-        {
-            query = sortLabel switch
-            {
-                "ID" => ascending
-                    ? query.OrderBy(e => e.Id.Value.Length).ThenBy(e => e.Id.Value)
-                    : query.OrderByDescending(e => e.Id.Value.Length).ThenByDescending(e => e.Id.Value),
-                "Nombre Completo" => ascending
-                    ? query.OrderBy(e => e.FirstName).ThenBy(e => e.LastName)
-                    : query.OrderByDescending(e => e.FirstName).ThenByDescending(e => e.LastName),
-                "Estado" => ascending
-                    ? query.OrderBy(e => e.Status)
-                    : query.OrderByDescending(e => e.Status),
-                _ => ascending
-                    ? query.OrderBy(e => e.Id.Value.Length).ThenBy(e => e.Id.Value)
-                    : query.OrderByDescending(e => e.Id.Value.Length).ThenByDescending(e => e.Id.Value)
-            };
-        }
-        else
-        {
-            query = query.OrderBy(e => e.Id.Value.Length).ThenBy(e => e.Id.Value);
-        }
-
-        // 4. Conteo y Paginación directa en BD
-        var totalCount = await query.CountAsync(cancellationToken);
-
         var safePageSize = pageSize > 0 ? pageSize : 20;
         var safePageNumber = Math.Max(0, pageNumber);
+        bool ascending = sortDirection == 1;
 
-        var items = await query
-            .Skip(safePageNumber * safePageSize)
-            .Take(safePageSize)
-            .ToListAsync(cancellationToken);
+        // 3. Orden por nombre o estado: en SQL.
+        if (sortLabel is "Nombre Completo" or "Estado")
+        {
+            query = sortLabel == "Nombre Completo"
+                ? (ascending ? query.OrderBy(e => e.FirstName).ThenBy(e => e.LastName) : query.OrderByDescending(e => e.FirstName).ThenByDescending(e => e.LastName))
+                : (ascending ? query.OrderBy(e => e.Status) : query.OrderByDescending(e => e.Status));
 
-        return (items, totalCount);
+            var total = await query.CountAsync(cancellationToken);
+            var page = await query.Skip(safePageNumber * safePageSize).Take(safePageSize).ToListAsync(cancellationToken);
+            return (page, total);
+        }
+
+        // 4. Orden por ID (el predeterminado), natural: longitud y luego valor ("2" antes que "10"). Se ordena la lista
+        //    de Id ya filtrada en SQL (sólo esa columna) y se cargan únicamente los empleados de la página.
+        var filteredIds = await query.Select(e => e.Id).ToListAsync(cancellationToken);
+        var descending = !string.IsNullOrEmpty(sortLabel) && !ascending;
+        var orderedIds = descending
+            ? filteredIds.OrderByDescending(id => id.Value.Length).ThenByDescending(id => id.Value, StringComparer.Ordinal)
+            : filteredIds.OrderBy(id => id.Value.Length).ThenBy(id => id.Value, StringComparer.Ordinal);
+        var pageIds = orderedIds.Skip(safePageNumber * safePageSize).Take(safePageSize).ToList();
+
+        var position = pageIds.Select((id, index) => (id, index)).ToDictionary(x => x.id, x => x.index);
+        var items = (await query.Where(e => pageIds.Contains(e.Id)).ToListAsync(cancellationToken))
+            .OrderBy(e => position[e.Id])
+            .ToList();
+
+        return (items, filteredIds.Count);
     }
 }

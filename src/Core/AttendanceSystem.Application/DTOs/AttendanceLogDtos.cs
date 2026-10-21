@@ -7,6 +7,7 @@ public sealed record AttendanceLogViewDto
     public Guid Id { get; init; }
     public string EmployeeId { get; init; } = string.Empty;
     public string EmployeeName { get; init; } = string.Empty;
+    /// <summary>Hora civil del marcaje en la zona de su sucursal (no el instante UTC).</summary>
     public DateTime CheckTime { get; init; }
     public string EntryType { get; init; } = "No Válida";
     public string VerifyMethod { get; init; } = string.Empty;

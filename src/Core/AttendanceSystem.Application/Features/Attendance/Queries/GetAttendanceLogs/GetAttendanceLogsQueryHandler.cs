@@ -97,7 +97,7 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
                 Id = r.Id.Value,
                 EmployeeId = r.EmployeeId.Value,
                 EmployeeName = empName,
-                CheckTime = r.CheckTime,
+                CheckTime = r.GetCivilTime(), // hora civil del marcaje (CheckTime es el instante UTC)
                 EntryType = entryType,
                 VerifyMethod = r.VerifyMethod.Name,
                 DeviceName = devName,
