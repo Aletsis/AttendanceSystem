@@ -1,3 +1,4 @@
+using AttendanceSystem.Domain.Aggregates.SystemAlertAggregate;
 using AttendanceSystem.Application.Features.Devices.Clock;
 using AttendanceSystem.Application.Common;
 using Microsoft.Extensions.DependencyInjection;
@@ -38,6 +39,8 @@ public class AdmsController : ControllerBase
     private readonly ITimeNormalizer _timeNormalizer;
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
+    private readonly ISystemAlertRepository? _alerts;
+    private readonly IDeviceHeartbeatTracker? _heartbeatTracker;
 
     public AdmsController(
         ILogger<AdmsController> logger,
@@ -53,8 +56,11 @@ public class AdmsController : ControllerBase
         IExternalAttendanceLogRepository externalLogRepository,
         ITimeNormalizer timeNormalizer,
         IServiceScopeFactory? scopeFactory = null,
-        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
+        ISystemAlertRepository? alerts = null,
+        IDeviceHeartbeatTracker? heartbeatTracker = null)
     {
+        _alerts = alerts;
         _logger = logger;
         _mediator = mediator;
         _deviceRepository = deviceRepository;
@@ -69,6 +75,13 @@ public class AdmsController : ControllerBase
         _timeNormalizer = timeNormalizer;
         _scopeFactory = scopeFactory;
         _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
+        _heartbeatTracker = heartbeatTracker;
+    }
+
+    private void TouchDeviceActivity(Device device, string sn)
+    {
+        var cleanSn = !string.IsNullOrWhiteSpace(sn) ? sn.Trim() : (device.HardwareInfo?.SerialNumber ?? "");
+        _heartbeatTracker?.RecordActivity(cleanSn, device.Id.Value.ToString());
     }
 
     private async Task<Device?> ValidateAuthorizedDeviceAsync(string? sn)
@@ -79,13 +92,15 @@ public class AdmsController : ControllerBase
             return null;
         }
 
-        var device = await _deviceRepository.GetBySerialNumberAsync(sn);
+        var cleanSn = sn.Trim();
+        var device = await _deviceRepository.GetBySerialNumberAsync(cleanSn);
         if (device == null || !device.IsActive)
         {
-            _logger.LogWarning("Intento de acceso ADMS rechazado para dispositivo no registrado o inactivo: {SN}", sn);
+            _logger.LogWarning("Intento de acceso ADMS rechazado para dispositivo no registrado o inactivo: {SN}", cleanSn);
             return null;
         }
 
+        TouchDeviceActivity(device, cleanSn);
         return device;
     }
 
@@ -438,8 +453,12 @@ public class AdmsController : ControllerBase
 
     // Ping endpoint for connectivity check
     [HttpGet("ping")]
-    public IActionResult Ping()
+    public async Task<IActionResult> Ping([FromQuery] string? SN = null)
     {
+        if (!string.IsNullOrWhiteSpace(SN))
+        {
+            _ = await ValidateAuthorizedDeviceAsync(SN);
+        }
         return Content("OK\r\n", "text/plain");
     }
 
@@ -465,9 +484,11 @@ public class AdmsController : ControllerBase
                 sn = Request.Query["SN"].FirstOrDefault() ?? "";
 
             // Parsear si vienen en body como form-encoded
-            if (body.Contains("=") && (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(ret)))
+            if (body.Contains("="))
             {
-                var parsed = System.Web.HttpUtility.ParseQueryString(body);
+                // El encabezado form-encoded termina antes de la lista de opciones de INFO.
+                var header = body.Split(new[] { '\r', '\n' }, 2)[0];
+                var parsed = System.Web.HttpUtility.ParseQueryString(header);
                 if (string.IsNullOrEmpty(id)) id = parsed["ID"] ?? "";
                 if (string.IsNullOrEmpty(ret)) ret = parsed["Return"] ?? "";
                 if (string.IsNullOrEmpty(cmd)) cmd = parsed["CMD"] ?? "";
@@ -488,19 +509,20 @@ public class AdmsController : ControllerBase
         _logger.LogInformation("📬 devicecmd SN:{SN} ID:{ID} Return:{Return} CMD:{CMD}", sn, id, ret, cmd);
 
         // Si el body contiene opciones o parámetros del dispositivo devueltos por INFO o DATA QUERY
-        if (!string.IsNullOrEmpty(sn) &&
-            (cmd.Equals("INFO", StringComparison.OrdinalIgnoreCase) ||
+        var isInfoResponse = cmd.Equals("INFO", StringComparison.OrdinalIgnoreCase) ||
              body.Contains("FirmwareVersion", StringComparison.OrdinalIgnoreCase) ||
+             body.Contains("FWVersion", StringComparison.OrdinalIgnoreCase) ||
              body.Contains("~SerialNumber", StringComparison.OrdinalIgnoreCase) ||
              body.Contains("UserCount", StringComparison.OrdinalIgnoreCase) ||
-             body.Contains("~UserCount", StringComparison.OrdinalIgnoreCase)))
+             body.Contains("~UserCount", StringComparison.OrdinalIgnoreCase);
+        if (isInfoResponse && int.TryParse(ret, out var infoReturnCode) && infoReturnCode >= 0)
         {
-            _logger.LogInformation("📋 [ADMS] Información del dispositivo recibida en devicecmd para SN: {SN}:\n{Body}", sn, body);
-            await ProcessDeviceOptions(body, sn);
+            _logger.LogInformation("📋 [ADMS] Información técnica recibida en devicecmd para SN: {SN}", sn);
+            await ProcessDeviceOptions(body, sn, id);
         }
 
         // Si el body contiene registros de asistencia (en formato TSV o key=value) devueltos por DATA QUERY
-        if (!string.IsNullOrEmpty(sn) && (body.Contains("\t") || body.Contains("pin=") || body.Contains("PIN=")))
+        if (!isInfoResponse && !string.IsNullOrEmpty(sn) && (body.Contains("\t") || body.Contains("pin=") || body.Contains("PIN=")))
         {
             var lines = body.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries)
                 .Where(l => !l.StartsWith("ID=", StringComparison.OrdinalIgnoreCase) &&
@@ -850,6 +872,15 @@ public class AdmsController : ControllerBase
                 AttendanceTelemetry.DeviceClockCorrections.Add(1, new KeyValuePair<string, object?>("outcome", "queued"));
                 _logger.LogWarning("ALERTA: el reloj ADMS {SN} envió un marcaje de {Reported:yyyy-MM-dd HH:mm:ss} cuando en su zona {TimeZone} eran las {Expected:yyyy-MM-dd HH:mm:ss}. Se encoló su resincronización.",
                     SN, lastCheckTime.Value, deviceTimeZone, expectedNow);
+                if (_alerts != null)
+                {
+                    await _alerts.AddAsync(SystemAlert.Create(AlertType.DeviceClockDrift, device.Id.Value,
+                        $"El reloj {device.Name} envió un marcaje de {lastCheckTime.Value:dd/MM/yyyy HH:mm} cuando en su zona eran las {expectedNow:dd/MM/yyyy HH:mm}; se reenviaron su zona y su hora."));
+                }
+
+                // El cursor no avanza más allá de la hora actual del reloj: si no, tras corregirlo se saltarían los
+                // marcajes legítimos con hora anterior a la que reportó adelantado.
+                lastCheckTime = expectedNow;
             }
 
             if (!batchHasFailures && lastCheckTime.HasValue)
@@ -1093,7 +1124,7 @@ public class AdmsController : ControllerBase
         return false;
     }
 
-    private async Task ProcessDeviceOptions(string body, string SN)
+    private async Task ProcessDeviceOptions(string body, string SN, string? commandId = null)
     {
         if (string.IsNullOrWhiteSpace(SN) || string.IsNullOrWhiteSpace(body)) return;
 
@@ -1102,7 +1133,7 @@ public class AdmsController : ControllerBase
             var device = await _deviceRepository.GetBySerialNumberAsync(SN);
             if (device == null) return;
 
-            var lines = body.Split(new[] { '\r', '\n', ',' }, StringSplitOptions.RemoveEmptyEntries);
+            var lines = body.Split(new[] { '\r', '\n', ',', '\t', '&' }, StringSplitOptions.RemoveEmptyEntries);
             var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
             foreach (var line in lines)
@@ -1116,8 +1147,18 @@ public class AdmsController : ControllerBase
                     {
                         dict[key] = val;
                     }
+                    var cleanKey = key.TrimStart('~');
+                    if (!dict.ContainsKey(cleanKey))
+                    {
+                        dict[cleanKey] = val;
+                    }
                 }
             }
+
+            var debugParams = dict
+                .Where(kv => !kv.Key.Contains("pass", StringComparison.OrdinalIgnoreCase))
+                .Select(kv => $"{kv.Key}={kv.Value}");
+            _logger.LogInformation("📋 [ADMS PARÁMETROS COMPLETOS {SN}]:\n{Params}", SN, string.Join(", ", debugParams));
 
             string? GetVal(params string[] keys)
             {
@@ -1125,6 +1166,9 @@ public class AdmsController : ControllerBase
                 {
                     if (dict.TryGetValue(k, out var v) && !string.IsNullOrWhiteSpace(v))
                         return v;
+                    var altKey = k.StartsWith('~') ? k[1..] : "~" + k;
+                    if (dict.TryGetValue(altKey, out var altV) && !string.IsNullOrWhiteSpace(altV))
+                        return altV;
                 }
                 return null;
             }
@@ -1132,7 +1176,7 @@ public class AdmsController : ControllerBase
             int? GetInt(params string[] keys)
             {
                 var v = GetVal(keys);
-                if (int.TryParse(v, out var n)) return n;
+                if (int.TryParse(v, out var n) && n >= 0) return n;
                 return null;
             }
 
@@ -1144,16 +1188,93 @@ public class AdmsController : ControllerBase
             var devType = GetVal("DeviceType", "~DeviceType");
 
             var userCount = GetInt("UserCount", "~UserCount");
-            var fpCount = GetInt("FPCount", "FingerCount", "~FingerCount");
             var faceCount = GetInt("FaceCount", "~FaceCount");
-            var attCount = GetInt("AttLogCount", "RecordCount", "~AttLogCount");
 
-            var userCap = GetInt("~MaxUserCount", "MaxUser", "MaxUserCapacity");
-            var fpCap = GetInt("~MaxFingerCount", "MaxFinger", "MaxFingerCapacity");
-            var faceCap = GetInt("~MaxFaceCount", "MaxFace", "MaxFaceCapacity");
-            var attCap = GetInt("~MaxAttLogCount", "MaxAttLog", "MaxAttLogCapacity");
+            // Detección de soporte de huellas digitales en hardware:
+            // 1. Firmwares ZKTeco con "NF" (Non-Fingerprint), p. ej. "ZAM170-NF-Ver1.1.20".
+            // 2. Parámetro FingerFunOn / ~FingerFunOn == 0.
+            // 3. ZKFPVersion == "0" o ausente en modelos NF.
+            var isNoFingerprintDevice =
+                (fw?.Contains("-NF", StringComparison.OrdinalIgnoreCase) == true) ||
+                (platform?.Contains("-NF", StringComparison.OrdinalIgnoreCase) == true) ||
+                (GetVal("FingerFunOn", "~FingerFunOn") == "0") ||
+                (GetVal("ZKFPVersion", "~ZKFPVersion") == "0" && fw?.Contains("-NF", StringComparison.OrdinalIgnoreCase) == true);
+
+            int? fpCount = null;
+            int? fpCap = null;
+            if (isNoFingerprintDevice)
+            {
+                fpCount = 0;
+                fpCap = 0;
+            }
+            else
+            {
+                fpCount = GetInt("FPCount", "FingerCount", "~FingerCount");
+                var rawFpCap = GetInt("~MaxFingerCount", "MaxFinger", "MaxFingerCapacity");
+                if (rawFpCap.HasValue && rawFpCap.Value > 0)
+                {
+                    fpCap = (rawFpCap.Value <= 100) ? rawFpCap.Value * 100 : rawFpCap.Value;
+                }
+            }
+
+            // Conteo de registros (Logs):
+            // En modo acceso (acc) o ADMS push, AttLogCount reporta registros nuevos/pendientes (frecuentemente 0),
+            // mientras TransactionCount / RecordCount / LogCount / AttCount reporta el total histórico de checadas en memoria.
+            var transCount = GetInt("TransactionCount", "RecordCount", "LogCount", "AttCount", "TotalLogCount", "TotalRecordCount", "TotalTransactionCount");
+            var attLogCount = GetInt("AttLogCount");
+            int? attCount = (transCount.HasValue && attLogCount.HasValue)
+                ? Math.Max(transCount.Value, attLogCount.Value)
+                : (transCount ?? attLogCount);
+
+            // Escalamiento de capacidades según estándares ZKTeco (valores <= 100 vienen en factores de escala):
+            var rawUserCap = GetInt("~MaxUserCount", "MaxUser", "MaxUserCapacity");
+            int? userCap = null;
+            if (rawUserCap.HasValue && rawUserCap.Value > 0)
+            {
+                userCap = (rawUserCap.Value <= 100) ? rawUserCap.Value * 100 : rawUserCap.Value;
+                if (userCount.HasValue && userCap.Value < userCount.Value)
+                {
+                    userCap = Math.Max(userCount.Value > 3000 ? 10000 : 3000, userCount.Value);
+                }
+            }
+
+            var rawFaceCap = GetInt("~MaxFaceCount", "MaxFace", "MaxFaceCapacity");
+            int? faceCap = null;
+            if (rawFaceCap.HasValue && rawFaceCap.Value > 0)
+            {
+                faceCap = (rawFaceCap.Value <= 100) ? rawFaceCap.Value * 100 : rawFaceCap.Value;
+            }
+
+            var rawAttCap = GetInt("~MaxAttLogCount", "MaxAttLog", "MaxAttLogCapacity");
+            int? attCap = null;
+            if (rawAttCap.HasValue && rawAttCap.Value > 0)
+            {
+                attCap = (rawAttCap.Value <= 100) ? rawAttCap.Value * 10000 : rawAttCap.Value;
+                if (attCount.HasValue && attCap.Value < attCount.Value)
+                {
+                    attCap = Math.Max(attCount.Value > 50000 ? 100000 : 50000, attCount.Value);
+                }
+            }
+
+            var reportedSn = GetVal("~SerialNumber", "SerialNumber");
+            if (reportedSn != null && !reportedSn.Equals(SN, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("ADMS: información técnica descartada por número de serie distinto para {SN}", SN);
+                return;
+            }
+
+            // Un ACK, opciones desconocidas o contadores inválidos no constituyen datos técnicos nuevos.
+            if (fw == null && platform == null && pushVer == null && sdkVer == null && mac == null &&
+                userCount == null && fpCount == null && faceCount == null && attCount == null &&
+                userCap == null && fpCap == null && faceCap == null && attCap == null)
+            {
+                return;
+            }
 
             var currentHw = device.HardwareInfo ?? DeviceHardwareInfo.Empty;
+
+            var finalUserCap = userCap ?? (currentHw.UserCapacity.HasValue && currentHw.UserCapacity.Value <= 100 && currentHw.UserCapacity.Value > 0 ? currentHw.UserCapacity.Value * 100 : currentHw.UserCapacity);
+            var finalAttCap = attCap ?? (currentHw.AttendanceRecordCapacity.HasValue && currentHw.AttendanceRecordCapacity.Value <= 100 && currentHw.AttendanceRecordCapacity.Value > 0 ? currentHw.AttendanceRecordCapacity.Value * 10000 : currentHw.AttendanceRecordCapacity);
 
             var updatedHw = currentHw with
             {
@@ -1163,13 +1284,13 @@ public class AdmsController : ControllerBase
                 SdkVersion = sdkVer ?? currentHw.SdkVersion,
                 MacAddress = mac ?? currentHw.MacAddress,
                 UserCount = userCount ?? currentHw.UserCount,
-                FingerprintCount = fpCount ?? currentHw.FingerprintCount,
+                FingerprintCount = isNoFingerprintDevice ? 0 : (fpCount ?? currentHw.FingerprintCount),
                 FaceCount = faceCount ?? currentHw.FaceCount,
                 AttendanceRecordCount = attCount ?? currentHw.AttendanceRecordCount,
-                UserCapacity = userCap ?? currentHw.UserCapacity,
-                FingerprintCapacity = fpCap ?? currentHw.FingerprintCapacity,
+                UserCapacity = finalUserCap,
+                FingerprintCapacity = isNoFingerprintDevice ? 0 : (fpCap ?? currentHw.FingerprintCapacity),
                 FaceCapacity = faceCap ?? currentHw.FaceCapacity,
-                AttendanceRecordCapacity = attCap ?? currentHw.AttendanceRecordCapacity
+                AttendanceRecordCapacity = finalAttCap
             };
 
             device.UpdateDeviceInfo(updatedHw);
@@ -1204,7 +1325,7 @@ public class AdmsController : ControllerBase
                 updatedHw.MacAddress
             );
 
-            _admsCommandService.NotifyDeviceInfoReceived(SN, deviceInfoDto);
+            _admsCommandService.NotifyDeviceInfoReceived(SN, deviceInfoDto, commandId);
         }
         catch (Exception ex)
         {

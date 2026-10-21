@@ -18,19 +18,22 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
     private readonly IEmailService _emailService;
     private readonly IMediator _mediator;
     private readonly ILogger<MonitorDeviceHealthCommandHandler> _logger;
+    private readonly IDeviceHeartbeatTracker _heartbeatTracker;
 
     public MonitorDeviceHealthCommandHandler(
         IDeviceRepository deviceRepository,
         IDeviceClientFactory deviceClientFactory,
         IEmailService emailService,
         IMediator mediator,
-        ILogger<MonitorDeviceHealthCommandHandler> logger)
+        ILogger<MonitorDeviceHealthCommandHandler> logger,
+        IDeviceHeartbeatTracker heartbeatTracker)
     {
         _deviceRepository = deviceRepository;
         _deviceClientFactory = deviceClientFactory;
         _emailService = emailService;
         _mediator = mediator;
         _logger = logger;
+        _heartbeatTracker = heartbeatTracker;
     }
 
     public async Task<Result<int>> Handle(MonitorDeviceHealthCommand request, CancellationToken cancellationToken)
@@ -50,14 +53,45 @@ public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorD
 
             foreach (var device in devices)
             {
-                // Only monitor active SDK devices (ADMS devices push to server, harder to ping directly unless IP is known and reachable)
-                if (!device.IsActive || device.DownloadMethod != DeviceDownloadMethod.Sdk)
+                if (!device.IsActive)
                 {
                     continue;
                 }
 
                 devicesChecked++;
                 var previousStatus = device.Status;
+
+                // Monitoreo de dispositivos ADMS mediante rastreo de latidos y actividad reciente
+                if (device.DownloadMethod == DeviceDownloadMethod.Adms)
+                {
+                    var isOnline = _heartbeatTracker.IsDeviceOnline(device.HardwareInfo?.SerialNumber, device.Id.Value, TimeSpan.FromSeconds(60));
+
+                    if (isOnline)
+                    {
+                        if (device.Status != DeviceStatus.Online)
+                        {
+                            device.MarkAsOnline();
+                            await _deviceRepository.UpdateAsync(device, cancellationToken);
+                        }
+                    }
+                    else
+                    {
+                        if (device.Status == DeviceStatus.Online)
+                        {
+                            device.MarkAsOffline();
+                            await _deviceRepository.UpdateAsync(device, cancellationToken);
+
+                            if (config != null && !string.IsNullOrWhiteSpace(config.SystemFailureAlertEmails))
+                            {
+                                var subject = $"🔴 Alerta de Conexión: Dispositivo ADMS {device.Name} Offline";
+                                var body = $"<p>El dispositivo ADMS <b>{device.Name}</b> (SN: {device.HardwareInfo?.SerialNumber}) no ha reportado actividad en los últimos 60 segundos y ha sido marcado como desconectado.</p>";
+                                await _emailService.SendAlertAsync(subject, body, AlertLevel.SystemFailure, cancellationToken);
+                            }
+                        }
+                    }
+
+                    continue;
+                }
 
                 try
                 {

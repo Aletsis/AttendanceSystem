@@ -41,8 +41,12 @@ public class DeviceRepository : IDeviceRepository
         string serialNumber,
         CancellationToken cancellationToken = default)
     {
+        if (string.IsNullOrWhiteSpace(serialNumber)) return null;
+        var cleanSn = serialNumber.Trim();
         return await _context.Devices
-            .FirstOrDefaultAsync(x => x.HardwareInfo.SerialNumber == serialNumber, cancellationToken);
+            .FirstOrDefaultAsync(x => x.HardwareInfo.SerialNumber == cleanSn ||
+                                      (x.HardwareInfo.SerialNumber != null && EF.Functions.ILike(x.HardwareInfo.SerialNumber, cleanSn)),
+                                      cancellationToken);
     }
 
     public async Task<DateTime?> GetLastAttLogTimestampAsync(

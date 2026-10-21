@@ -9,6 +9,7 @@
 @using AttendanceSystem.Domain.Enumerations
 @using Microsoft.AspNetCore.Authorization
 @attribute [Authorize(Roles = "Administrador")]
+@implements IAsyncDisposable
 @inject ISender Sender
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -49,7 +50,13 @@ else
                             </MudStack>
                         </CardHeaderContent>
                         <CardHeaderActions>
-                            <MudChip T="string" Color="@GetStatusColor(device.Status)" Size="Size.Small" Variant="Variant.Text">@device.Status</MudChip>
+                            <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center">
+                                @if (device.DownloadMethod == DeviceDownloadMethod.Adms)
+                                {
+                                    <MudChip T="string" Color="Color.Info" Size="Size.Small" Variant="Variant.Outlined">ADMS</MudChip>
+                                }
+                                <MudChip T="string" Color="@GetStatusColor(device.Status)" Size="Size.Small" Variant="Variant.Text">@device.Status</MudChip>
+                            </MudStack>
                         </CardHeaderActions>
                     </MudCardHeader>
                     <MudCardContent Class="flex-grow-1">
@@ -67,20 +74,26 @@ else
                                     </div>
                                     <MudProgressLinear Color="@GetUsageColor(device.UserCount, device.UserCapacity)" Value="@GetPercentage(device.UserCount, device.UserCapacity)" Size="Size.Small" />
                                 </div>
-                                <div>
-                                    <div class="d-flex justify-space-between mb-1">
-                                        <MudText Typo="Typo.caption">Huellas (@device.FingerprintCount / @(device.FingerprintCapacity ?? 0))</MudText>
-                                        <MudText Typo="Typo.caption">@GetPercentage(device.FingerprintCount, device.FingerprintCapacity)%</MudText>
+                                @if ((device.FingerprintCapacity ?? 0) > 0 || (device.FingerprintCount ?? 0) > 0)
+                                {
+                                    <div>
+                                        <div class="d-flex justify-space-between mb-1">
+                                            <MudText Typo="Typo.caption">Huellas (@device.FingerprintCount / @(device.FingerprintCapacity ?? 0))</MudText>
+                                            <MudText Typo="Typo.caption">@GetPercentage(device.FingerprintCount, device.FingerprintCapacity)%</MudText>
+                                        </div>
+                                        <MudProgressLinear Color="@GetUsageColor(device.FingerprintCount, device.FingerprintCapacity)" Value="@GetPercentage(device.FingerprintCount, device.FingerprintCapacity)" Size="Size.Small" />
                                     </div>
-                                    <MudProgressLinear Color="@GetUsageColor(device.FingerprintCount, device.FingerprintCapacity)" Value="@GetPercentage(device.FingerprintCount, device.FingerprintCapacity)" Size="Size.Small" />
-                                </div>
-                                <div>
-                                    <div class="d-flex justify-space-between mb-1">
-                                        <MudText Typo="Typo.caption">Rostros (@device.FaceCount / @(device.FaceCapacity ?? 0))</MudText>
-                                        <MudText Typo="Typo.caption">@GetPercentage(device.FaceCount, device.FaceCapacity)%</MudText>
+                                }
+                                @if ((device.FaceCapacity ?? 0) > 0 || (device.FaceCount ?? 0) > 0)
+                                {
+                                    <div>
+                                        <div class="d-flex justify-space-between mb-1">
+                                            <MudText Typo="Typo.caption">Rostros (@device.FaceCount / @(device.FaceCapacity ?? 0))</MudText>
+                                            <MudText Typo="Typo.caption">@GetPercentage(device.FaceCount, device.FaceCapacity)%</MudText>
+                                        </div>
+                                        <MudProgressLinear Color="@GetUsageColor(device.FaceCount, device.FaceCapacity)" Value="@GetPercentage(device.FaceCount, device.FaceCapacity)" Size="Size.Small" />
                                     </div>
-                                    <MudProgressLinear Color="@GetUsageColor(device.FaceCount, device.FaceCapacity)" Value="@GetPercentage(device.FaceCount, device.FaceCapacity)" Size="Size.Small" />
-                                </div>
+                                }
                                 <div>
                                     <div class="d-flex justify-space-between mb-1">
                                         <MudText Typo="Typo.caption">Logs (@device.AttendanceRecordCount / @(device.AttendanceRecordCapacity ?? 0))</MudText>
@@ -94,8 +107,14 @@ else
                                 <MudAlert Severity="Severity.Error" Dense="true" NoIcon="true" Class="py-1">Desconectado</MudAlert>
                             }
                             
-                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-2">
-                                Última descarga: @(device.LastDownloadAt?.ToString("g") ?? "Nunca")
+                            @if (device.LastActivityAt.HasValue)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mt-1">
+                                    <MudIcon Icon="@Icons.Material.Filled.AccessTime" Size="Size.Small" Class="mr-1" />Última actividad: @GetRelativeTime(device.LastActivityAt.Value)
+                                </MudText>
+                            }
+                            <MudText Typo="Typo.caption" Color="Color.Secondary" Class="@(device.LastActivityAt.HasValue ? "mt-0" : "mt-2")">
+                                <MudIcon Icon="@Icons.Material.Filled.CloudDownload" Size="Size.Small" Class="mr-1" />Última descarga: @(device.LastDownloadAt?.ToString("g") ?? "Nunca")
                             </MudText>
                         </MudStack>
                     </MudCardContent>
@@ -124,25 +143,53 @@ else
     private IEnumerable<DeviceDto> _devices = new List<DeviceDto>();
     private bool _loading = true;
     private string _searchString = "";
+    private CancellationTokenSource? _cts;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadDevices();
+        await LoadDevices(isInitial: true);
+        _cts = new CancellationTokenSource();
+        _ = StartPeriodicRefreshAsync(_cts.Token);
     }
 
-    private async Task LoadDevices()
+    private async Task StartPeriodicRefreshAsync(CancellationToken token)
     {
-        _loading = true;
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
+        try
+        {
+            while (!token.IsCancellationRequested && await timer.WaitForNextTickAsync(token))
+            {
+                await LoadDevices(isInitial: false);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Esperado al desmontar el componente
+        }
+    }
+
+    private async Task LoadDevices(bool isInitial = false)
+    {
+        if (isInitial)
+        {
+            _loading = true;
+        }
+
         var result = await Sender.Send(new GetAllDevicesQuery());
         if (result.IsSuccess)
         {
             _devices = result.Value;
         }
-        else
+        else if (isInitial)
         {
             Snackbar.Add($"Error al cargar dispositivos: {result.Error}", Severity.Error);
         }
-        _loading = false;
+
+        if (isInitial)
+        {
+            _loading = false;
+        }
     }
 
     private bool FilterFunc(DeviceDto device)
@@ -164,9 +211,20 @@ else
         {
             "Online" or "En Línea" => Color.Success,
             "Offline" or "Desconectado" => Color.Dark,
+            "Disconnected" or "Sin Conexión" => Color.Error,
             "Error" => Color.Error,
             _ => Color.Default
         };
+    }
+
+    private string GetRelativeTime(DateTime utcTime)
+    {
+        var elapsed = DateTime.UtcNow - utcTime;
+        if (elapsed.TotalSeconds < 10) return "Hace unos segundos";
+        if (elapsed.TotalSeconds < 60) return $"Hace {Math.Max(1, (int)elapsed.TotalSeconds)}s";
+        if (elapsed.TotalMinutes < 60) return $"Hace {(int)elapsed.TotalMinutes}m";
+        if (elapsed.TotalHours < 24) return $"Hace {(int)elapsed.TotalHours}h";
+        return utcTime.ToLocalTime().ToString("g");
     }
 
     private async Task SyncEmployees(DeviceDto device)
@@ -349,5 +407,12 @@ else
         if (pc < 70) return Color.Success;
         if (pc < 90) return Color.Warning;
         return Color.Error;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

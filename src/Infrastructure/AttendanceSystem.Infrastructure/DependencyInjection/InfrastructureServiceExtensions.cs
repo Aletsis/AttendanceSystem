@@ -70,6 +70,8 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ISystemConfigurationRepository, SystemConfigurationRepository>();
         services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
         services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
+        services.AddScoped<IQuarantinedPunchRepository, QuarantinedPunchRepository>();
+        services.AddScoped<IPunchTimeCorrectionRepository, PunchTimeCorrectionRepository>();
         services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
         services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
         services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();
@@ -109,6 +111,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ILogTransferService, LogTransferService>();
         services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();
         services.AddSingleton<IAdmsCommandService, AdmsCommandService>();
+        services.AddSingleton<IDeviceHeartbeatTracker, DeviceHeartbeatTracker>();
         services.AddScoped<IReportExportService, ReportExportService>();
         services.AddScoped<IImportService, ImportService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
