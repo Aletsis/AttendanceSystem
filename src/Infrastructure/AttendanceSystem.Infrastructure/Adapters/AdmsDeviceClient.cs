@@ -69,6 +69,7 @@ public class AdmsDeviceClient : IDeviceClient
 
     public async Task<DeviceInfoDto?> GetDeviceInfoAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         // Intento 1: SDK (solo información del dispositivo)
         if (!string.IsNullOrEmpty(_ipAddress) && _port > 0)
         {
@@ -95,6 +96,10 @@ public class AdmsDeviceClient : IDeviceClient
                 }
                 _logger.LogWarning("No se pudo conectar u obtener info del dispositivo {SN} vía SDK. Procediendo a fallback vía comando ADMS...", _serialNumber);
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogWarning(ex, "Excepción al intentar usar SDK para obtener info del dispositivo {SN}. Procediendo a fallback vía comando ADMS...", _serialNumber);
@@ -108,19 +113,32 @@ public class AdmsDeviceClient : IDeviceClient
             {
                 _logger.LogInformation("Intentando obtener info del dispositivo vía comando ADMS (fallback) para {SN}", _serialNumber);
 
-                // Encolar comando INFO y DATA QUERY tablename=options (solo parámetros/info de dispositivo)
-                _admsCommandService.EnqueueCommand(_serialNumber, "INFO");
-                _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=options");
-
-                // Esperar respuesta con timeout prudente (4 segundos)
-                var admsInfo = await _admsCommandService.WaitForDeviceInfoAsync(_serialNumber, TimeSpan.FromSeconds(4), cancellationToken);
-                if (admsInfo != null)
+                cancellationToken.ThrowIfCancellationRequested();
+                // Registrar la espera antes de publicar: una respuesta rápida no debe perderse.
+                // INFO consulta información técnica; no dispara consultas de usuarios, biometría o marcajes.
+                using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                var response = _admsCommandService.WaitForDeviceInfoAsync(_serialNumber, TimeSpan.FromSeconds(30), waitCancellation.Token);
+                try
                 {
-                    _logger.LogInformation("Info obtenida exitosamente vía comando ADMS del dispositivo {SN}", _serialNumber);
-                    return admsInfo;
-                }
+                    _admsCommandService.EnqueueCommand(_serialNumber, "INFO");
+                    var admsInfo = await response;
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (admsInfo != null)
+                    {
+                        _logger.LogInformation("Info obtenida exitosamente vía comando ADMS del dispositivo {SN}", _serialNumber);
+                        return admsInfo;
+                    }
 
-                _logger.LogWarning("No hubo respuesta a través de comando ADMS para {SN} dentro del tiempo límite.", _serialNumber);
+                    _logger.LogWarning("No hubo respuesta a través de comando ADMS para {SN} dentro del tiempo límite.", _serialNumber);
+                }
+                finally
+                {
+                    await waitCancellation.CancelAsync();
+                }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -170,6 +188,7 @@ public class AdmsDeviceClient : IDeviceClient
         // Encolar consulta de usuarios, fotos y biometría usando sintaxis estándar Push 3.x
         _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=user,fields=*");
         _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=userpic,fields=*");
+        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=biophoto,fields=*");
         _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=biodata,fields=*");
 
         _logger.LogInformation("Comandos de consulta de datos encolados para dispositivo ADMS {SN}", _serialNumber);
