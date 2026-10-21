@@ -93,6 +93,8 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public override async Task<int> SaveChangesAsync(
         CancellationToken cancellationToken = default)
     {
+        KeepUnchangedReplacedDailies();
+
         // 1. H24: Recolectar eventos de dominio de entidades IAggregateRoot y preparar Outbox
         var domainEntities = ChangeTracker.Entries<IAggregateRoot>()
             .Where(e => e.Entity.DomainEvents.Any())
@@ -154,6 +156,33 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
 
         await PublishPreparedAsync(prepared, cancellationToken);
         return result;
+    }
+
+    /// <summary>
+    /// F07-07: el recálculo reemplaza cada jornada (borra la anterior e inserta la nueva, F02-06). Si la nueva tiene
+    /// exactamente los mismos valores que la que reemplaza, se conserva la fila existente y no se escribe nada: el
+    /// resultado es idéntico y los consumidores referencian la jornada por (EmployeeId, Date), no por su Id.
+    /// </summary>
+    private void KeepUnchangedReplacedDailies()
+    {
+        var deleted = ChangeTracker.Entries<DailyAttendance>()
+            .Where(e => e.State == EntityState.Deleted)
+            .ToDictionary(e => (e.Entity.EmployeeId, e.Entity.Date.Date));
+        if (deleted.Count == 0) return;
+
+        foreach (var added in ChangeTracker.Entries<DailyAttendance>().Where(e => e.State == EntityState.Added).ToList())
+        {
+            if (added.Entity.DomainEvents.Count > 0) continue;
+            if (!deleted.TryGetValue((added.Entity.EmployeeId, added.Entity.Date.Date), out var existing)) continue;
+
+            var same = added.Properties.All(p =>
+                p.Metadata.IsPrimaryKey() || p.Metadata.IsConcurrencyToken ||
+                Equals(p.CurrentValue, existing.Property(p.Metadata.Name).OriginalValue));
+            if (!same) continue;
+
+            added.State = EntityState.Detached;
+            existing.State = EntityState.Unchanged;
+        }
     }
 
     private async Task PublishPreparedAsync(List<(OutboxMessage Message, INotification Event)> prepared, CancellationToken cancellationToken)

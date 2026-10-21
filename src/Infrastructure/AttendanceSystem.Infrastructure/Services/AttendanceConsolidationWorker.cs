@@ -48,6 +48,7 @@ public sealed class AttendanceConsolidationWorker : BackgroundService
             {
                 handled = await DrainOnceAsync(stoppingToken);
                 await PurgeIfDueAsync(stoppingToken);
+                await MonitorHealthAsync(stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -85,14 +86,64 @@ public sealed class AttendanceConsolidationWorker : BackgroundService
                 _consumerId, _options.BatchSize, _options.Lease, _options.QuietPeriod, _options.MaxDelay, cancellationToken);
         }
 
-        foreach (var claim in claims)
+        if (claims.Count > 0)
         {
+            // F07-08: las solicitudes reclamadas se recalculan juntas (por rango) en un ámbito; el recálculo libera el
+            // seguimiento de entidades tras cada lote interno.
             using var scope = _scopeFactory.CreateScope();
             var processor = scope.ServiceProvider.GetRequiredService<AttendanceConsolidationProcessor>();
-            await processor.ProcessAsync(claim, _consumerId, _options, cancellationToken);
+            await processor.ProcessBatchAsync(claims, _consumerId, _options, cancellationToken);
         }
 
         return claims.Count;
+    }
+
+    private DateTime _nextHealthUtc = DateTime.MinValue;
+    private readonly HashSet<string> _activeAlerts = new();
+
+    /// <summary>
+    /// F07-01: actualiza las métricas de salud y emite alertas (log de advertencia, una vez por cambio de estado) por
+    /// pendientes envejecidos, reintentos agotados y eventos en dead letter.
+    /// </summary>
+    public async Task MonitorHealthAsync(CancellationToken cancellationToken)
+    {
+        if (DateTime.UtcNow < _nextHealthUtc) return;
+        _nextHealthUtc = DateTime.UtcNow.Add(_options.HealthCheckInterval);
+
+        // La supervisión nunca detiene el consumo: un fallo al leer la salud sólo se registra.
+        ConsolidationHealth consolidation;
+        OutboxHealth? outbox;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            consolidation = await scope.ServiceProvider.GetRequiredService<IAttendanceConsolidationRepository>().GetHealthAsync(5, cancellationToken);
+            var monitor = scope.ServiceProvider.GetService<IOutboxMonitor>();
+            outbox = monitor == null ? null : await monitor.GetHealthAsync(5, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "No se pudo leer la salud de consolidación y outbox.");
+            return;
+        }
+
+        var oldestAge = consolidation.OldestPendingRequestedAt is { } oldest ? Math.Max(0, (DateTime.UtcNow - oldest).TotalSeconds) : 0;
+        AttendanceSystem.Application.Common.AttendanceTelemetry.LastHealth = new AttendanceSystem.Application.Common.OperationalHealth(
+            consolidation.Pending, consolidation.Failed, oldestAge, outbox?.Pending ?? 0, outbox?.DeadLettered ?? 0);
+
+        Alert("consolidation-age", oldestAge > _options.AlertPendingAge.TotalSeconds,
+            "ALERTA: la solicitud de consolidación pendiente más antigua tiene {Age:F0} s (umbral {Threshold:F0} s); {Pending} pendientes.",
+            oldestAge, _options.AlertPendingAge.TotalSeconds, consolidation.Pending);
+        Alert("consolidation-failed", consolidation.Failed > 0,
+            "ALERTA: {Failed} solicitudes de consolidación agotaron sus reintentos; reintentar desde api/consolidation tras corregir la causa.",
+            consolidation.Failed);
+        Alert("outbox-dead", (outbox?.DeadLettered ?? 0) > 0,
+            "ALERTA: {Dead} eventos del outbox en dead letter; revisar y revivir desde api/consolidation.", outbox?.DeadLettered ?? 0);
+    }
+
+    private void Alert(string key, bool active, string message, params object[] args)
+    {
+        if (active && _activeAlerts.Add(key)) _logger.LogWarning(message, args);
+        else if (!active && _activeAlerts.Remove(key)) _logger.LogInformation("Alerta {Alert} resuelta.", key);
     }
 
     private async Task PurgeIfDueAsync(CancellationToken cancellationToken)

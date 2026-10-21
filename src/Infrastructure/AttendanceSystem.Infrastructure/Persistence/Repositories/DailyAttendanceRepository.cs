@@ -67,6 +67,8 @@ public class DailyAttendanceRepository : IDailyAttendanceRepository
 
     public void Update(DailyAttendance dailyAttendance)
     {
+        // F07-07: sólo se adjuntan entidades sueltas; las seguidas escriben únicamente sus cambios reales.
+        if (_context.Entry(dailyAttendance).State != EntityState.Detached) return;
         _context.DailyAttendances.Update(dailyAttendance);
     }
 

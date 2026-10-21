@@ -131,7 +131,12 @@ public class AttendanceRepository : IAttendanceRepository
         AttendanceRecord record,
         CancellationToken cancellationToken = default)
     {
-        _context.AttendanceRecords.Update(record);
+        // F07-07: una entidad ya seguida no se marca entera como modificada; el detector de cambios escribe sólo lo
+        // que cambió (nada, si el recálculo deja el marcaje igual). Las entidades sueltas sí se adjuntan.
+        if (_context.Entry(record).State == Microsoft.EntityFrameworkCore.EntityState.Detached)
+        {
+            _context.AttendanceRecords.Update(record);
+        }
         return Task.CompletedTask;
     }
 

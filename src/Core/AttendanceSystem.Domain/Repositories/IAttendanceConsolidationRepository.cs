@@ -28,6 +28,12 @@ public interface IAttendanceConsolidationRepository
     Task RequestManyAsync(IReadOnlyCollection<EmployeeId> employeeIds, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Igual que <see cref="RequestAsync"/> para un rango por empleado (se unen los del mismo empleado), en una sola
+    /// sentencia por lote (F07-04 / C01).
+    /// </summary>
+    Task RequestRangesAsync(IReadOnlyCollection<(EmployeeId EmployeeId, DateTime StartDate, DateTime EndDate)> ranges, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Reclama hasta <paramref name="maxBatchSize"/> solicitudes listas (sin bloquear a otros consumidores):
     /// pendientes cuya espera breve terminó o cuya antigüedad superó el máximo, y en proceso con lease vencido.
     /// </summary>
@@ -38,6 +44,13 @@ public interface IAttendanceConsolidationRepository
         TimeSpan quietPeriod,
         TimeSpan maxDelay,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// F07-08: igual que <see cref="CompleteAsync"/> para varias solicitudes del mismo consumidor en una sentencia
+    /// (una confirmación); cada una con su versión reclamada.
+    /// </summary>
+    Task<IReadOnlyDictionary<Guid, ConsolidationCompletion>> CompleteManyAsync(
+        IReadOnlyCollection<(Guid RequestId, int ClaimedVersion)> claims, string consumerId, CancellationToken cancellationToken = default);
 
     Task<ConsolidationCompletion> CompleteAsync(Guid requestId, string consumerId, int claimedVersion, CancellationToken cancellationToken = default);
 

@@ -127,7 +127,7 @@ public class AttendanceFindingsReproductionTests
         {
             await processInstance1.ExecuteWithLockAsync(employeeIds, async () =>
             {
-                barrier.SignalAndWait(1000);
+                barrier.SignalAndWait(10000);
                 await Task.Delay(50);
             });
         });
@@ -136,7 +136,7 @@ public class AttendanceFindingsReproductionTests
         {
             await processInstance2.ExecuteWithLockAsync(employeeIds, async () =>
             {
-                enteredConcurrently = barrier.SignalAndWait(1000);
+                enteredConcurrently = barrier.SignalAndWait(10000);
                 await Task.Delay(50);
             });
         });

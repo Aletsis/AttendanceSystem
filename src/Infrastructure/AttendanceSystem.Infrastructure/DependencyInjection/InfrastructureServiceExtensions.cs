@@ -76,6 +76,8 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IAttendanceAdjustmentRepository, AttendanceAdjustmentRepository>();
         services.AddScoped<IAttendanceConsolidationRepository, AttendanceConsolidationRepository>();
         services.AddScoped<IPunchAssignmentRepository, PunchAssignmentRepository>();
+        // F07-03 / F07-04: lecturas del recálculo por lotes de empleados.
+        services.AddScoped<IAttendanceCalculationReader, EfAttendanceCalculationReader>();
 
         // 3. Consultas CQRS (Dapper / SQL optimizado)
         services.AddScoped<IDeviceQueries, DeviceQueries>();

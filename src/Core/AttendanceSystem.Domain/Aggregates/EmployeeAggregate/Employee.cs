@@ -358,6 +358,20 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         return HireDate.Date <= end.Date && (!TerminationDate.HasValue || TerminationDate.Value.Date >= start.Date);
     }
 
+    /// <summary>F07-03: perteneció a la sucursal algún día de [inicio, fin] según sus vigencias (o su sucursal actual sin historia).</summary>
+    public bool WasInBranchDuring(BranchId branchId, DateTime start, DateTime end)
+    {
+        if (_scheduleAssignments.Count == 0) return BranchId == branchId;
+        var ordered = _scheduleAssignments.OrderBy(a => a.EffectiveFrom).ToList();
+        for (int i = 0; i < ordered.Count; i++)
+        {
+            var from = i == 0 ? DateTime.MinValue : ordered[i].EffectiveFrom;
+            var until = i + 1 < ordered.Count ? ordered[i + 1].EffectiveFrom.AddDays(-1) : DateTime.MaxValue.Date;
+            if (ordered[i].BranchId == branchId && from <= end.Date && until >= start.Date) return true;
+        }
+        return false;
+    }
+
     /// <summary>F06-08: horario, tipo y sucursal vigentes en una fecha (la asignación actual si no hay historia).</summary>
     public (ShiftId? ScheduleId, ShiftType? ShiftType, BranchId BranchId) AssignmentOn(DateTime date)
     {

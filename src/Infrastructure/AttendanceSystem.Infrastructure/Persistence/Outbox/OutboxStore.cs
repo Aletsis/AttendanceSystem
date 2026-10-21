@@ -89,6 +89,25 @@ RETURNING m.""Id""";
         IPublisher publisher,
         CancellationToken cancellationToken)
     {
+        // F07-04 / C01: los marcajes del lote registran su consolidación en una sentencia. Si falla, cada evento la
+        // registra por su cuenta (mismo resultado, más consultas); nunca se pierde una solicitud.
+        var recorded = claimed.Select(c => c.Event).OfType<AttendanceSystem.Domain.Events.AttendanceRecordedEvent>().ToList();
+        if (recorded.Count > 1)
+        {
+            try
+            {
+                await publisher.Publish(new AttendanceSystem.Application.Features.Attendance.EventHandlers.AttendanceRecordedBatch(recorded), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                // Respaldo: el manejador individual de cada evento.
+            }
+        }
+
         foreach (var (message, domainEvent) in claimed)
         {
             try

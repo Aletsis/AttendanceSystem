@@ -1,3 +1,5 @@
+using AttendanceSystem.Domain.Services;
+using AttendanceSystem.Application.Abstractions;
 using MediatR;
 using AttendanceSystem.Application.DTOs;
 using System;
@@ -10,4 +12,7 @@ public record GetAttendanceReportQuery(
     DateTime StartDate,
     DateTime EndDate,
     BranchId? BranchId = null,
-    string? EmployeeId = null) : IRequest<IEnumerable<AttendanceReportViewDto>>;
+    string? EmployeeId = null) : IRequest<IEnumerable<AttendanceReportViewDto>>, IDateRangeRequest
+{
+    int IDateRangeRequest.MaxRangeDays => DateRangePolicy.MaxQueryDays;
+}

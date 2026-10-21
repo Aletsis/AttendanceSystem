@@ -24,6 +24,12 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     /// </summary>
     private const int ExtensionLoadChunkDays = 7;
 
+    /// <summary>
+    /// F07-04: empleados por transacción. El lote comparte bloqueos (un viaje), lecturas y guardado; si falla, se
+    /// reprocesa empleado por empleado para que un fallo sólo revierta su propia unidad (F03-04).
+    /// </summary>
+    public const int DefaultBatchSize = 25;
+
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IEmployeeRepository _employeeRepo;
@@ -37,6 +43,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly ISender _sender;
     private readonly ILogger<ProcessDailyAttendanceCommandHandler> _logger;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
+    private readonly IAttendanceCalculationReader _reader;
+    private readonly int _batchSize;
+    private readonly Dictionary<BranchId, string> _branchTimeZones = new();
 
     public ProcessDailyAttendanceCommandHandler(
         IDailyAttendanceRepository dailyRepo,
@@ -51,8 +60,12 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IUnitOfWork unitOfWork,
         ISender sender,
         ILogger<ProcessDailyAttendanceCommandHandler> logger,
-        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
+        IAttendanceCalculationReader? reader = null,
+        int batchSize = DefaultBatchSize)
     {
+        _reader = reader ?? new RepositoryCalculationReader(employeeRepo, dailyRepo, rosterRepo, adjustmentRepo, attendanceRepo, assignmentRepo);
+        _batchSize = Math.Max(1, batchSize);
         _dailyRepo = dailyRepo;
         _attendanceRepo = attendanceRepo;
         _employeeRepo = employeeRepo;
@@ -77,24 +90,13 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             request.BranchId?.Value,
             request.EmployeeId?.Value);
 
-        // 1. Obtenemos todos los empleados base
-        var allEmployees = (await _employeeRepo.GetAllAsync(cancellationToken)).ToList();
+        // F07-02 / A05: el rango se valida antes de consultar o modificar nada (también si se invoca sin MediatR).
+        var rangeError = DateRangePolicy.Validate(request.StartDate, request.EndDate, DateRangePolicy.MaxRecalculationDays);
+        if (rangeError != null) throw new AttendanceSystem.Application.Exceptions.InvalidDateRangeException(rangeError);
 
-        if (request.BranchId != null)
-        {
-            allEmployees = allEmployees.Where(e => e.BranchId == request.BranchId).ToList();
-        }
-
-        if (request.EmployeeId != null)
-        {
-            allEmployees = allEmployees.Where(e => e.Id == request.EmployeeId).ToList();
-        }
-
-        // F05-P02 / H08: Identificar empleados con vigencia histórica en el rango solicitado
-        // (empleados que estuvieron activos en cualquier fecha del rango, o cuya fecha de ingreso/baja solapa el periodo)
-        // F02-05: orden estable por identificador para que el resultado no dependa del orden de lectura.
-        // F06-08: con períodos de empleo (reingresos), sólo se procesan los días cubiertos por alguno.
-        var targetEmployees = allEmployees.Where(e => e.IsActiveDuring(request.StartDate, request.EndDate))
+        // F07-03: sólo los empleados del alcance, filtrados en la base de datos por vigencia de empleo y, con
+        // sucursal, por la sucursal vigente en el rango (F06-08). Orden estable por identificador (F02-05).
+        var targetEmployees = (await _reader.GetEmployeesActiveDuringAsync(request.StartDate, request.EndDate, request.BranchId, request.EmployeeId, request.EmployeeIds, cancellationToken))
             .OrderBy(e => e.Id.Value, StringComparer.Ordinal).ToList();
 
 
@@ -120,29 +122,52 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         int successfulUnits = 0;
         var failures = new List<(AttendanceRecalculationUnitFailure Failure, Exception Exception)>();
 
-        foreach (var employee in targetEmployees)
+        using var activity = AttendanceTelemetry.ActivitySource.StartActivity("attendance.recalc");
+        activity?.SetTag("attendance.employees", targetEmployees.Count);
+        activity?.SetTag("attendance.days", (requestEnd - requestStart).Days + 1);
+
+        foreach (var batch in targetEmployees.Chunk(_batchSize))
         {
             cancellationToken.ThrowIfCancellationRequested();
             try
             {
-                processedCount += await ExclusiveAttendanceWrite.RunAsync(
-                    _unitOfWork,
-                    _lockService,
-                    new[] { employee.Id },
-                    () => RecalculateUnitAsync(employee, requestStart, requestEnd, shifts, weeklyStartDay, systemConfig, assignedAt, cancellationToken),
-                    _ => true,
-                    cancellationToken);
-                successfulUnits++;
+                processedCount += await RunBatchAsync(batch, requestStart, requestEnd, shifts, weeklyStartDay, systemConfig, assignedAt, cancellationToken);
+                successfulUnits += batch.Length;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
+                // Los lotes confirmados quedan; el lote en curso se revirtió y liberó conexión y bloqueos.
                 _logger.LogWarning(
-                    "Recálculo cancelado: {Successful} de {Total} empleados confirmados; la unidad en curso se revirtió.",
+                    "Recálculo cancelado: {Successful} de {Total} empleados confirmados; el lote en curso se revirtió.",
                     successfulUnits, targetEmployees.Count);
                 throw;
             }
+            catch (Exception ex) when (batch.Length > 1)
+            {
+                // Aislamiento: el lote se revirtió entero; cada empleado se reprocesa en su propia unidad.
+                _logger.LogWarning(ex, "Falló un lote de {Count} empleados; se reprocesa empleado por empleado.", batch.Length);
+                foreach (var employee in batch)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    try
+                    {
+                        processedCount += await RunBatchAsync(new[] { employee }, requestStart, requestEnd, shifts, weeklyStartDay, systemConfig, assignedAt, cancellationToken);
+                        successfulUnits++;
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception unitEx)
+                    {
+                        _logger.LogError(unitEx, "Error en la unidad de recálculo del empleado {EmployeeId}. Se revirtió solo esa unidad.", employee.Id.Value);
+                        failures.Add((new AttendanceRecalculationUnitFailure(employee.Id.Value, unitEx.GetType().Name, unitEx.Message), unitEx));
+                    }
+                }
+            }
             catch (Exception ex)
             {
+                var employee = batch[0];
                 _logger.LogError(ex, "Error en la unidad de recálculo del empleado {EmployeeId}. Se revirtió solo esa unidad.", employee.Id.Value);
                 failures.Add((new AttendanceRecalculationUnitFailure(employee.Id.Value, ex.GetType().Name, ex.Message), ex));
             }
@@ -170,11 +195,11 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     }
 
     /// <summary>
-    /// Una unidad atómica: carga (ya bajo bloqueo), reconstruye y recalcula la semana de extras del empleado.
-    /// Se ejecuta dentro de la transacción de la unidad.
+    /// Un lote en su propia transacción con los bloqueos de sus empleados (F03-02 / F03-04). Tras confirmar se
+    /// libera el seguimiento de entidades (F07-07): la memoria no crece con la plantilla.
     /// </summary>
-    private async Task<int> RecalculateUnitAsync(
-        Employee employee,
+    private async Task<int> RunBatchAsync(
+        IReadOnlyList<Employee> batch,
         DateTime requestStart,
         DateTime requestEnd,
         IReadOnlyDictionary<ShiftId, Shift> shifts,
@@ -183,61 +208,129 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         DateTime assignedAt,
         CancellationToken cancellationToken)
     {
-        var tz = await _timeZoneResolver.ResolveForEmployeeAsync(employee.Id, cancellationToken);
-        var ws = new EmployeeRecalculationWorkset(employee, tz) { Lunch = systemConfig?.LunchPolicy ?? LunchPolicy.Default, NightLunch = systemConfig?.NightLunchPolicy ?? LunchPolicy.DefaultNight };
-        var worksets = new Dictionary<EmployeeId, EmployeeRecalculationWorkset> { [employee.Id] = ws };
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        var outcome = "failed";
+        var stats = new BatchStats();
+        try
+        {
+            var processed = await ExclusiveAttendanceWrite.RunAsync(
+                _unitOfWork,
+                _lockService,
+                batch.Select(e => e.Id).ToList(),
+                () => RecalculateBatchAsync(batch, requestStart, requestEnd, shifts, weeklyStartDay, systemConfig, assignedAt, stats, cancellationToken),
+                _ => true,
+                cancellationToken);
+            _unitOfWork.DiscardChanges();
+            outcome = "succeeded";
+            return processed;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            outcome = "cancelled";
+            throw;
+        }
+        finally
+        {
+            RecordBatch(stopwatch.Elapsed.TotalMilliseconds, outcome, batch.Count, stats);
+        }
+    }
+
+    private sealed class BatchStats
+    {
+        public int Days;
+        public int Punches;
+    }
+
+    private static void RecordBatch(double elapsedMs, string outcome, int employees, BatchStats stats)
+    {
+        var tag = new KeyValuePair<string, object?>("outcome", outcome);
+        AttendanceTelemetry.Units.Add(employees, tag);
+        AttendanceTelemetry.UnitDuration.Record(elapsedMs, tag);
+        if (outcome != "succeeded") return;
+        AttendanceTelemetry.UnitDays.Record(stats.Days);
+        AttendanceTelemetry.UnitPunches.Record(stats.Punches);
+        if (stats.Days > 0)
+        {
+            // Coste por empleado-día del lote: cada jornada del lote comparte las lecturas, bloqueos y guardado.
+            var perDay = elapsedMs / stats.Days;
+            for (int i = 0; i < employees; i++) AttendanceTelemetry.EmployeeDayDuration.Record(perDay);
+        }
+    }
+
+    private async Task<string> TimeZoneOfAsync(Employee employee, CancellationToken cancellationToken)
+    {
+        if (_branchTimeZones.TryGetValue(employee.BranchId, out var tz)) return tz;
+        tz = await _timeZoneResolver.ResolveForBranchAsync(employee.BranchId, cancellationToken);
+        _branchTimeZones[employee.BranchId] = tz;
+        return tz;
+    }
+
+    /// <summary>
+    /// Un lote atómico: carga (ya bajo bloqueo) los datos de todos sus empleados, reconstruye cada unidad y
+    /// recalcula las semanas y períodos de extras. Se ejecuta dentro de la transacción del lote.
+    /// </summary>
+    private async Task<int> RecalculateBatchAsync(
+        IReadOnlyList<Employee> batch,
+        DateTime requestStart,
+        DateTime requestEnd,
+        IReadOnlyDictionary<ShiftId, Shift> shifts,
+        DayOfWeek weeklyStartDay,
+        SystemConfiguration? systemConfig,
+        DateTime assignedAt,
+        BatchStats stats,
+        CancellationToken cancellationToken)
+    {
+        var worksets = new Dictionary<EmployeeId, EmployeeRecalculationWorkset>();
+        foreach (var employee in batch)
+        {
+            var tz = await TimeZoneOfAsync(employee, cancellationToken);
+            worksets[employee.Id] = new EmployeeRecalculationWorkset(employee, tz)
+            {
+                Lunch = systemConfig?.LunchPolicy ?? LunchPolicy.Default,
+                NightLunch = systemConfig?.NightLunchPolicy ?? LunchPolicy.DefaultNight
+            };
+        }
+
+        var stage = System.Diagnostics.Stopwatch.StartNew();
 
         // Lectura posterior al bloqueo: ningún otro escritor puede cambiar estos datos hasta el commit.
-        await LoadAsync(worksets, requestStart.AddDays(-1), requestEnd.AddDays(1), null, employee.Id, cancellationToken);
+        await LoadAsync(worksets, requestStart.AddDays(-1), requestEnd.AddDays(1), cancellationToken);
+        AttendanceTelemetry.RecordStage("load", stage);
 
-        var processed = await RecalculateEmployeeAsync(ws, requestStart, requestEnd, shifts, assignedAt, cancellationToken);
+        int processed = 0;
+        foreach (var ws in worksets.Values)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            processed += await RecalculateEmployeeAsync(ws, requestStart, requestEnd, shifts, assignedAt, cancellationToken);
+            stats.Days += ws.UnitDates.Count;
+            stats.Punches += ws.Records.Count;
+        }
+        AttendanceTelemetry.RecordStage("compute", stage);
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        AttendanceTelemetry.RecordStage("save", stage);
 
-        // F06-06 / F06-07: extras efectivas de todas las jornadas que dependen de la unidad: las semanas que
-        // la contienen (bolsa semanal) y, con tope de período, el período contable completo. Se recalculan
-        // siempre (no sólo con bolsa semanal) para que autorización diaria, redondeo y topes sean uniformes.
-        bool hasSubsequentUpdates = false;
-        var unitStart = ws.UnitDates.Count > 0 ? ws.UnitDates.Min : requestStart;
-        var unitEnd = ws.UnitDates.Count > 0 ? ws.UnitDates.Max : requestEnd;
-        var first = unitStart < requestStart ? unitStart : requestStart;
-        var last = unitEnd > requestEnd ? unitEnd : requestEnd;
-        var earliest = WeeklyHoursCalculationHelper.GetWeekStart(first, weeklyStartDay);
-        var latest = WeeklyHoursCalculationHelper.GetWeekEnd(last, weeklyStartDay);
+        // F06-06 / F06-07: extras efectivas de todas las jornadas que dependen de cada unidad, leídas para todo el lote.
+        var ranges = worksets.Values.ToDictionary(ws => ws.Employee.Id, ws => OvertimeRange(ws, requestStart, requestEnd, weeklyStartDay, systemConfig));
+        var allAttendances = await _reader.GetDailiesAsync(
+            worksets.Keys.ToList(), ranges.Values.Min(r => r.Earliest), ranges.Values.Max(r => r.Latest), cancellationToken);
         Func<DateTime, DateTime> periodStartOf = date => WorkPeriodCalculator.Containing(date, systemConfig).Start;
-        if (employee.OvertimeCapType == OvertimeCapType.Period)
-        {
-            var firstPeriod = WorkPeriodCalculator.Containing(first, systemConfig);
-            var lastPeriod = WorkPeriodCalculator.Containing(last, systemConfig);
-            if (firstPeriod.Start < earliest) earliest = firstPeriod.Start;
-            if (lastPeriod.End > latest) latest = lastPeriod.End;
-        }
 
-        var empAttendances = (await _dailyRepo.GetByEmployeeAndDateRangeAsync(
-            employee.Id,
-            earliest,
-            latest,
-            cancellationToken)) ?? new List<DailyAttendance>();
-
-        // Cierre F06-06: los días sin jornada calculada (futuros o fuera del empleo) se describen con la resolución
-        // vigente para la meta proporcional de la bolsa semanal en semanas partidas.
-        ExpectedDay ExpectedDayOf(DateTime date)
+        bool hasSubsequentUpdates = false;
+        foreach (var group in allAttendances.GroupBy(a => a.EmployeeId))
         {
-            var plan = ResolvePlan(ws, date, shifts);
-            var dayShift = plan.Resolution.Shift;
-            if (dayShift == null || plan.Resolution.IsRestDay) return new ExpectedDay(false, false, false, 0);
-            var bag = dayShift.WeeklyWorkHours is { } w && w > TimeSpan.Zero;
-            return new ExpectedDay(true, employee.IsActiveOn(date), bag, bag ? 0 : (int)dayShift.WorkHours.TotalMinutes);
-        }
-
-        var overtime = WeeklyHoursCalculationHelper.Calculate(empAttendances, employee, weeklyStartDay, periodStartOf, ExpectedDayOf);
-        foreach (var att in empAttendances)
-        {
-            if (overtime.TryGetValue(att.Id, out var ot) && (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw))
+            if (!worksets.TryGetValue(group.Key, out var ws)) continue;
+            var range = ranges[group.Key];
+            var empAttendances = group.Where(a => a.Date.Date >= range.Earliest && a.Date.Date <= range.Latest).ToList();
+            var overtime = WeeklyHoursCalculationHelper.Calculate(empAttendances, ws.Employee, weeklyStartDay, periodStartOf, date => ExpectedDayOf(ws, date, shifts));
+            foreach (var att in empAttendances)
             {
-                att.SetCalculatedOvertime(ot.Raw, ot.Effective);
-                _dailyRepo.Update(att);
-                hasSubsequentUpdates = true;
+                if (overtime.TryGetValue(att.Id, out var ot) && (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw))
+                {
+                    att.SetCalculatedOvertime(ot.Raw, ot.Effective);
+                    _dailyRepo.Update(att);
+                    hasSubsequentUpdates = true;
+                }
             }
         }
 
@@ -248,8 +341,45 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
+        AttendanceTelemetry.RecordStage("overtime", stage);
 
         return processed;
+    }
+
+    /// <summary>
+    /// Semanas que contienen la unidad (bolsa semanal) y, con tope de período, el período contable completo.
+    /// Se recalculan siempre (no sólo con bolsa semanal) para que autorización diaria, redondeo y topes sean uniformes.
+    /// </summary>
+    private static (DateTime Earliest, DateTime Latest) OvertimeRange(
+        EmployeeRecalculationWorkset ws, DateTime requestStart, DateTime requestEnd, DayOfWeek weeklyStartDay, SystemConfiguration? systemConfig)
+    {
+        var unitStart = ws.UnitDates.Count > 0 ? ws.UnitDates.Min : requestStart;
+        var unitEnd = ws.UnitDates.Count > 0 ? ws.UnitDates.Max : requestEnd;
+        var first = unitStart < requestStart ? unitStart : requestStart;
+        var last = unitEnd > requestEnd ? unitEnd : requestEnd;
+        var earliest = WeeklyHoursCalculationHelper.GetWeekStart(first, weeklyStartDay);
+        var latest = WeeklyHoursCalculationHelper.GetWeekEnd(last, weeklyStartDay);
+        if (ws.Employee.OvertimeCapType == OvertimeCapType.Period)
+        {
+            var firstPeriod = WorkPeriodCalculator.Containing(first, systemConfig);
+            var lastPeriod = WorkPeriodCalculator.Containing(last, systemConfig);
+            if (firstPeriod.Start < earliest) earliest = firstPeriod.Start;
+            if (lastPeriod.End > latest) latest = lastPeriod.End;
+        }
+        return (earliest, latest);
+    }
+
+    /// <summary>
+    /// Cierre F06-06: los días sin jornada calculada (futuros o fuera del empleo) se describen con la resolución
+    /// vigente para la meta proporcional de la bolsa semanal en semanas partidas.
+    /// </summary>
+    private ExpectedDay ExpectedDayOf(EmployeeRecalculationWorkset ws, DateTime date, IReadOnlyDictionary<ShiftId, Shift> shifts)
+    {
+        var plan = ResolvePlan(ws, date, shifts);
+        var dayShift = plan.Resolution.Shift;
+        if (dayShift == null || plan.Resolution.IsRestDay) return new ExpectedDay(false, false, false, 0);
+        var bag = dayShift.WeeklyWorkHours is { } w && w > TimeSpan.Zero;
+        return new ExpectedDay(true, ws.Employee.IsActiveOn(date), bag, bag ? 0 : (int)dayShift.WorkHours.TotalMinutes);
     }
 
     /// <summary>
@@ -756,11 +886,12 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
     private async Task EnsureKnownAsync(EmployeeRecalculationWorkset ws, IEnumerable<AttendanceRecordId> recordIds, CancellationToken cancellationToken)
     {
-        foreach (var recordId in recordIds)
+        // F07-04: una consulta para todos los marcajes que faltan (antes una por marcaje).
+        var missing = recordIds.Where(id => !ws.KnownRecords.ContainsKey(id)).Distinct().ToList();
+        if (missing.Count == 0) return;
+        foreach (var record in await _reader.GetRecordsByIdsAsync(missing, cancellationToken))
         {
-            if (ws.KnownRecords.ContainsKey(recordId)) continue;
-            var record = await _attendanceRepo.GetByIdAsync(recordId, cancellationToken);
-            if (record != null) ws.KnownRecords[record.Id] = record;
+            ws.KnownRecords.TryAdd(record.Id, record);
         }
     }
 
@@ -772,7 +903,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         var to = date.AddDays(ExtensionLoadChunkDays - 1);
         await LoadAsync(
             new Dictionary<EmployeeId, EmployeeRecalculationWorkset> { [ws.Employee.Id] = ws },
-            from, to, null, ws.Employee.Id, cancellationToken);
+            from, to, cancellationToken);
     }
 
     /// <summary>
@@ -783,65 +914,60 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         IReadOnlyDictionary<EmployeeId, EmployeeRecalculationWorkset> worksets,
         DateTime from,
         DateTime to,
-        BranchId? branchId,
-        EmployeeId? employeeId,
         CancellationToken cancellationToken)
     {
         var claimFrom = from.AddDays(-1);
         var claimTo = to.AddDays(1);
 
-        var dailies = (await _dailyRepo.GetByDateRangeAsync(claimFrom, claimTo, branchId, employeeId, cancellationToken)) ?? new List<DailyAttendance>();
-        foreach (var daily in dailies)
+        // F07-04: una lectura por tipo de dato para todo el lote, filtrada por sus empleados.
+        var window = await _reader.LoadWindowAsync(worksets.Keys.ToList(), from, to, cancellationToken);
+
+        foreach (var daily in window.Dailies)
         {
             if (daily.Date.Date < claimFrom || daily.Date.Date > claimTo) continue;
             if (worksets.TryGetValue(daily.EmployeeId, out var ws)) ws.ExistingDaily.TryAdd(daily.Date.Date, daily);
         }
 
-        var rosters = (await _rosterRepo.GetByDateRangeAsync(from, to, branchId, employeeId, cancellationToken)) ?? Enumerable.Empty<ShiftRoster>();
-        foreach (var roster in rosters)
+        foreach (var roster in window.Rosters)
         {
             if (roster.Date.Date < from || roster.Date.Date > to) continue;
             if (worksets.TryGetValue(roster.EmployeeId, out var ws)) ws.Rosters.TryAdd(roster.Date.Date, roster);
         }
 
-        var adjustments = (await _adjustmentRepo.GetByDateRangeAsync(claimFrom, claimTo, branchId, employeeId, cancellationToken)) ?? Enumerable.Empty<AttendanceAdjustment>();
-        foreach (var adjustment in adjustments)
+        foreach (var adjustment in window.Adjustments)
         {
             if (adjustment.Date.Date < claimFrom || adjustment.Date.Date > claimTo) continue;
             if (worksets.TryGetValue(adjustment.EmployeeId, out var ws)) ws.Adjustments.TryAdd(adjustment.Date.Date, adjustment);
         }
 
-        var records = (await _attendanceRepo.GetByDateRangeAsync(
-            DateOnly.FromDateTime(from),
-            DateOnly.FromDateTime(claimTo),
-            employeeId,
-            cancellationToken)) ?? new List<AttendanceRecord>();
-        foreach (var record in records)
+        foreach (var record in window.Records)
         {
             if (worksets.TryGetValue(record.EmployeeId, out var ws)) ws.AddRecord(record);
         }
 
+        foreach (var assignment in window.Assignments)
+        {
+            if (worksets.TryGetValue(assignment.EmployeeId, out var ws)) ws.TrackLoaded(assignment);
+        }
+
         foreach (var ws in worksets.Values)
         {
-            var byJornada = (await _assignmentRepo.GetByEmployeeAndWorkDateRangeAsync(
-                ws.Employee.Id,
-                DateOnly.FromDateTime(claimFrom),
-                DateOnly.FromDateTime(claimTo),
-                cancellationToken)) ?? new List<PunchAssignment>();
-
-            var byRecord = ws.Records.Count == 0
-                ? new List<PunchAssignment>()
-                : (await _assignmentRepo.GetByRecordIdsAsync(ws.Records.Keys.ToList(), cancellationToken)) ?? new List<PunchAssignment>();
-
-            foreach (var assignment in byJornada.Concat(byRecord))
-            {
-                ws.TrackLoaded(assignment);
-            }
-
-            // Marcajes referenciados manualmente: se cargan para validar propietario y fecha (H07).
-            await EnsureKnownAsync(ws, ws.Adjustments.Values.SelectMany(EmployeeRecalculationWorkset.ManualRecordIds), cancellationToken);
-
             if (to > ws.LoadedThrough) ws.LoadedThrough = to;
+        }
+
+        // Marcajes referenciados manualmente: se cargan para validar propietario y fecha (H07), en una consulta.
+        var manual = worksets.Values
+            .SelectMany(ws => ws.Adjustments.Values.SelectMany(EmployeeRecalculationWorkset.ManualRecordIds).Select(id => (ws, id)))
+            .Where(x => !x.ws.KnownRecords.ContainsKey(x.id))
+            .ToList();
+        if (manual.Count > 0)
+        {
+            var loaded = (await _reader.GetRecordsByIdsAsync(manual.Select(x => x.id).Distinct().ToList(), cancellationToken))
+                .ToDictionary(r => r.Id);
+            foreach (var (ws, id) in manual)
+            {
+                if (loaded.TryGetValue(id, out var record)) ws.KnownRecords.TryAdd(id, record);
+            }
         }
     }
 }

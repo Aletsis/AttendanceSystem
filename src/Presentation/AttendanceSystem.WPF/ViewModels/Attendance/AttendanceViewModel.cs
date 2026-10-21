@@ -184,6 +184,14 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             SetBusy(true, "Calculando asistencia...");
             try
             {
+                // F07-02: la misma validación que aplica el servidor, antes de enviar.
+                var rangeError = AttendanceSystem.Domain.Services.DateRangePolicy.Validate(StartDate, EndDate, AttendanceSystem.Domain.Services.DateRangePolicy.MaxRecalculationDays);
+                if (rangeError != null)
+                {
+                    await _messageService.ShowErrorAsync(rangeError);
+                    return;
+                }
+
                 var command = new ProcessDailyAttendanceCommand(StartDate, EndDate);
                 var processedCount = await _mediator.Send(command);
 

@@ -243,7 +243,13 @@ internal sealed class InMemoryConsolidationRepository : IAttendanceConsolidation
         foreach (var id in employeeIds) await RequestAsync(id, startDate, endDate, cancellationToken);
     }
 
+    public async Task RequestRangesAsync(IReadOnlyCollection<(EmployeeId EmployeeId, DateTime StartDate, DateTime EndDate)> ranges, CancellationToken cancellationToken = default)
+    {
+        foreach (var range in ranges) await RequestAsync(range.EmployeeId, range.StartDate, range.EndDate, cancellationToken);
+    }
+
     public Task<IReadOnlyList<ConsolidationClaim>> ClaimAsync(string consumerId, int maxBatchSize, TimeSpan lease, TimeSpan quietPeriod, TimeSpan maxDelay, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<IReadOnlyDictionary<Guid, ConsolidationCompletion>> CompleteManyAsync(IReadOnlyCollection<(Guid RequestId, int ClaimedVersion)> claims, string consumerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<ConsolidationCompletion> CompleteAsync(Guid requestId, string consumerId, int claimedVersion, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task FailAsync(Guid requestId, string consumerId, string error, int maxAttempts, TimeSpan baseBackoff, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task ReleaseAsync(Guid requestId, string consumerId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

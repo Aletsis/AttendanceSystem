@@ -1,3 +1,5 @@
+using AttendanceSystem.Domain.Services;
+using AttendanceSystem.Application.Abstractions;
 using MediatR;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.ValueObjects;
@@ -9,4 +11,7 @@ public record GetDailyAttendanceByDateRangeQuery(
     DateTime EndDate,
     BranchId? BranchId = null,
     EmployeeId? EmployeeId = null)
-    : IRequest<IReadOnlyList<DailyAttendance>>;
+    : IRequest<IReadOnlyList<DailyAttendance>>, IDateRangeRequest
+{
+    int IDateRangeRequest.MaxRangeDays => DateRangePolicy.MaxQueryDays;
+}

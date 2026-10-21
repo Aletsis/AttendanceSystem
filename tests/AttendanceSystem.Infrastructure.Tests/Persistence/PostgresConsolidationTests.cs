@@ -330,6 +330,129 @@ public class PostgresConsolidationTests : IClassFixture<PostgresTestDatabaseFixt
     }
 
     [Fact]
+    public async Task RequestRanges_RegistersEveryEmployeeInOneStatement_MergingRangesAndAbsorbingFailures()
+    {
+        if (!_fixture.IsAvailable) return;
+        await ResetAsync();
+
+        var first = EmployeeId.From("EMP-PG-K21");
+        var second = EmployeeId.From("EMP-PG-K22");
+        var day = new DateTime(2026, 5, 10);
+        await RequestAsync(second, day.AddDays(-5), day.AddDays(-5));
+        await using (var context = _fixture.CreateDbContext())
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "UPDATE \"AttendanceConsolidationRequests\" SET \"Status\" = 3 WHERE \"EmployeeId\" = {0}", second.Value);
+        }
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            await new AttendanceConsolidationRepository(context).RequestRangesAsync(new[]
+            {
+                (first, day, day),
+                (second, day.AddDays(1), day.AddDays(2)),
+                (first, day.AddDays(3), day.AddDays(3))
+            });
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var active = await verify.AttendanceConsolidationRequests
+            .Where(r => (r.EmployeeId == first || r.EmployeeId == second) && (int)r.Status == 0)
+            .ToListAsync();
+        active.Should().HaveCount(2, "una solicitud activa por empleado");
+        var firstRow = active.Single(r => r.EmployeeId == first);
+        firstRow.StartDate.Should().Be(day);
+        firstRow.EndDate.Should().Be(day.AddDays(3), "los rangos del mismo empleado se unen");
+        var secondRow = active.Single(r => r.EmployeeId == second);
+        secondRow.StartDate.Should().Be(day.AddDays(-5), "la solicitud fallida se absorbe en la nueva");
+        secondRow.EndDate.Should().Be(day.AddDays(2));
+        (await verify.AttendanceConsolidationRequests.CountAsync(r => r.EmployeeId == second && (int)r.Status == 4))
+            .Should().Be(1, "la fallida queda marcada como absorbida");
+    }
+
+    [Fact]
+    public async Task CompleteMany_AppliesEachClaimsVersionAndLease_InOneStatement()
+    {
+        if (!_fixture.IsAvailable) return;
+        await ResetAsync();
+
+        var day = new DateTime(2026, 5, 25);
+        var completed = EmployeeId.From("EMP-PG-K41");
+        var expanded = EmployeeId.From("EMP-PG-K42");
+        var stolen = EmployeeId.From("EMP-PG-K43");
+        foreach (var e in new[] { completed, expanded, stolen }) await RequestAsync(e, day, day);
+
+        IReadOnlyList<ConsolidationClaim> claims;
+        await using (var context = _fixture.CreateDbContext())
+        {
+            claims = await new AttendanceConsolidationRepository(context).ClaimAsync("consumer-A", 10, TimeSpan.FromMinutes(5), TimeSpan.Zero, TimeSpan.Zero);
+        }
+        claims.Select(c => c.EmployeeId).Should().Contain(new[] { completed, expanded, stolen });
+
+        await RequestAsync(expanded, day.AddDays(1), day.AddDays(1)); // ampliada durante el cálculo (Version+1)
+        await using (var context = _fixture.CreateDbContext())
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "UPDATE \"AttendanceConsolidationRequests\" SET \"ClaimedBy\" = 'consumer-B' WHERE \"EmployeeId\" = {0}", stolen.Value);
+        }
+
+        IReadOnlyDictionary<Guid, ConsolidationCompletion> result;
+        await using (var context = _fixture.CreateDbContext())
+        {
+            result = await new AttendanceConsolidationRepository(context).CompleteManyAsync(
+                claims.Select(c => (c.Id, c.Version)).ToList(), "consumer-A");
+        }
+
+        result[claims.Single(c => c.EmployeeId == completed).Id].Should().Be(ConsolidationCompletion.Completed);
+        result[claims.Single(c => c.EmployeeId == expanded).Id].Should().Be(ConsolidationCompletion.Requeued);
+        result[claims.Single(c => c.EmployeeId == stolen).Id].Should().Be(ConsolidationCompletion.LeaseLost);
+
+        await using var verify = _fixture.CreateDbContext();
+        var expandedRow = await verify.AttendanceConsolidationRequests.SingleAsync(r => r.EmployeeId == expanded);
+        ((int)expandedRow.Status).Should().Be(0, "vuelve a pendiente con el rango acumulado");
+        expandedRow.EndDate.Should().Be(day.AddDays(1));
+        ((int)(await verify.AttendanceConsolidationRequests.SingleAsync(r => r.EmployeeId == stolen)).Status).Should().Be(1, "el consumidor que perdió el lease no la toca");
+    }
+
+    [Fact]
+    public async Task HealthMonitor_ReportsExhaustedRetries_InMetricsAndAlertsOncePerStateChange()
+    {
+        if (!_fixture.IsAvailable) return;
+        await ResetAsync();
+
+        var employee = EmployeeId.From("EMP-PG-K31");
+        await RequestAsync(employee, new DateTime(2026, 5, 20), new DateTime(2026, 5, 20));
+        await using (var context = _fixture.CreateDbContext())
+        {
+            await context.Database.ExecuteSqlRawAsync(
+                "UPDATE \"AttendanceConsolidationRequests\" SET \"Status\" = 3, \"RetryCount\" = 5 WHERE \"EmployeeId\" = {0}", employee.Value);
+        }
+
+        using var services = BuildServices(new RecordingRecalculation());
+        var logger = new CapturingLogger<AttendanceConsolidationWorker>();
+        var options = Immediate();
+        options.HealthCheckInterval = TimeSpan.Zero;
+        var worker = new AttendanceConsolidationWorker(services.GetRequiredService<IServiceScopeFactory>(), new ConsolidationWakeupSignal(), options, logger);
+
+        await worker.MonitorHealthAsync(CancellationToken.None);
+        await worker.MonitorHealthAsync(CancellationToken.None);
+
+        AttendanceSystem.Application.Common.AttendanceTelemetry.LastHealth.FailedRequests.Should().BeGreaterThanOrEqualTo(1);
+        logger.Warnings.Count(w => w.Contains("agotaron sus reintentos")).Should().Be(1, "la alerta se emite al cambiar de estado, no en cada ciclo");
+    }
+
+    private sealed class CapturingLogger<T> : Microsoft.Extensions.Logging.ILogger<T>
+    {
+        public List<string> Warnings { get; } = new();
+        public IDisposable? BeginScope<TState>(TState state) where TState : notnull => null;
+        public bool IsEnabled(Microsoft.Extensions.Logging.LogLevel logLevel) => true;
+        public void Log<TState>(Microsoft.Extensions.Logging.LogLevel logLevel, Microsoft.Extensions.Logging.EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+        {
+            if (logLevel == Microsoft.Extensions.Logging.LogLevel.Warning) Warnings.Add(formatter(state, exception));
+        }
+    }
+
+    [Fact]
     public async Task UnfinishedLease_IsNotCompletedByTheConsumerThatLostIt()
     {
         if (!_fixture.IsAvailable) return;

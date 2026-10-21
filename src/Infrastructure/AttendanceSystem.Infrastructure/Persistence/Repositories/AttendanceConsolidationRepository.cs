@@ -26,38 +26,63 @@ public class AttendanceConsolidationRepository : IAttendanceConsolidationReposit
     public Task RequestAsync(EmployeeId employeeId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default) =>
         RequestManyAsync(new[] { employeeId }, startDate, endDate, cancellationToken);
 
-    public async Task RequestManyAsync(IReadOnlyCollection<EmployeeId> employeeIds, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
+    public Task RequestManyAsync(IReadOnlyCollection<EmployeeId> employeeIds, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default) =>
+        RequestRangesAsync(employeeIds.Select(e => (e, startDate, endDate)).ToList(), cancellationToken);
+
+    public async Task RequestRangesAsync(
+        IReadOnlyCollection<(EmployeeId EmployeeId, DateTime StartDate, DateTime EndDate)> ranges,
+        CancellationToken cancellationToken = default)
     {
-        if (employeeIds.Count == 0) return;
+        if (ranges.Count == 0) return;
 
-        // DateOnly se envía como date: sin conversión de zona horaria de la sesión.
-        var start = DateOnly.FromDateTime(startDate.Date <= endDate.Date ? startDate : endDate);
-        var end = DateOnly.FromDateTime(startDate.Date <= endDate.Date ? endDate : startDate);
+        // Un rango por empleado (unión) y en orden de empleado: ON CONFLICT no puede tocar la misma fila dos veces
+        // y el orden fijo evita interbloqueos entre procesos que amplían a la vez.
+        var merged = ranges
+            .Select(r => (Id: r.EmployeeId.Value,
+                          Start: DateOnly.FromDateTime(r.StartDate.Date <= r.EndDate.Date ? r.StartDate : r.EndDate),
+                          End: DateOnly.FromDateTime(r.StartDate.Date <= r.EndDate.Date ? r.EndDate : r.StartDate)))
+            .GroupBy(r => r.Id, StringComparer.Ordinal)
+            .Select(g => (Id: g.Key, Start: g.Min(r => r.Start), End: g.Max(r => r.End)))
+            .OrderBy(r => r.Id, StringComparer.Ordinal)
+            .ToList();
 
-        // Un solo INSERT ... ON CONFLICT por empleado y en orden: ampliar es atómico (unión de rangos y
-        // Version+1) aunque otro proceso amplíe a la vez o la solicitud esté siendo procesada. Las fallidas
-        // del empleado se absorben en la activa para que la nueva actividad las reintente.
-        foreach (var employeeId in employeeIds.Select(e => e.Value).Distinct(StringComparer.Ordinal).OrderBy(e => e, StringComparer.Ordinal))
+        // F07-04 / C01: una sola sentencia para todo el lote (antes una por empleado). Cada empleado: absorbe sus
+        // fallidas y registra o amplía su solicitud activa (unión de rangos, Version+1), igual que la versión individual.
+        foreach (var chunk in merged.Chunk(1000))
         {
             await _context.Database.ExecuteSqlRawAsync($@"
-WITH absorbed AS (
-    UPDATE {Table}
+WITH input AS (
+    SELECT * FROM unnest({{0}}::text[], {{1}}::date[], {{2}}::date[], {{3}}::uuid[])
+             AS i(""EmployeeId"", ""StartDate"", ""EndDate"", ""Id"")),
+absorbed AS (
+    UPDATE {Table} t
        SET ""Status"" = 4, ""ProcessedAt"" = now(),
-           ""ErrorMessage"" = left(coalesce(""ErrorMessage"", '') || ' [absorbida por una nueva solicitud]', 2000)
-     WHERE ""EmployeeId"" = {{0}} AND ""Status"" = 3
- RETURNING ""StartDate"", ""EndDate"")
+           ""ErrorMessage"" = left(coalesce(t.""ErrorMessage"", '') || ' [absorbida por una nueva solicitud]', 2000)
+      FROM input i
+     WHERE t.""EmployeeId"" = i.""EmployeeId"" AND t.""Status"" = 3
+ RETURNING t.""EmployeeId"", t.""StartDate"", t.""EndDate""),
+merged AS (
+    SELECT i.""Id"", i.""EmployeeId"",
+           LEAST(i.""StartDate"", (SELECT min(a.""StartDate"") FROM absorbed a WHERE a.""EmployeeId"" = i.""EmployeeId"")) AS ""StartDate"",
+           GREATEST(i.""EndDate"", (SELECT max(a.""EndDate"") FROM absorbed a WHERE a.""EmployeeId"" = i.""EmployeeId"")) AS ""EndDate""
+      FROM input i)
 INSERT INTO {Table} AS r
        (""Id"", ""EmployeeId"", ""StartDate"", ""EndDate"", ""Status"", ""RequestedAt"", ""LastRequestedAt"", ""Version"", ""RetryCount"")
-SELECT {{1}}, {{0}},
-       LEAST({{2}}, (SELECT min(""StartDate"") FROM absorbed)),
-       GREATEST({{3}}, (SELECT max(""EndDate"") FROM absorbed)),
-       0, now(), now(), 1, 0
+SELECT m.""Id"", m.""EmployeeId"", m.""StartDate"", m.""EndDate"", 0, now(), now(), 1, 0
+  FROM merged m
+ ORDER BY m.""EmployeeId""
 ON CONFLICT (""EmployeeId"") WHERE ""Status"" IN (0, 1)
 DO UPDATE SET ""StartDate"" = LEAST(r.""StartDate"", EXCLUDED.""StartDate""),
               ""EndDate"" = GREATEST(r.""EndDate"", EXCLUDED.""EndDate""),
               ""Version"" = r.""Version"" + 1,
               ""LastRequestedAt"" = now()",
-                new object[] { employeeId, Guid.NewGuid(), start, end },
+                new object[]
+                {
+                    chunk.Select(r => r.Id).ToArray(),
+                    chunk.Select(r => r.Start).ToArray(),
+                    chunk.Select(r => r.End).ToArray(),
+                    chunk.Select(_ => Guid.NewGuid()).ToArray()
+                },
                 cancellationToken);
         }
     }
@@ -127,6 +152,39 @@ RETURNING ""Status""";
             int s when s == (int)ConsolidationStatus.Completed => ConsolidationCompletion.Completed,
             _ => ConsolidationCompletion.Requeued
         };
+    }
+
+    public async Task<IReadOnlyDictionary<Guid, ConsolidationCompletion>> CompleteManyAsync(
+        IReadOnlyCollection<(Guid RequestId, int ClaimedVersion)> claims, string consumerId, CancellationToken cancellationToken = default)
+    {
+        var result = claims.ToDictionary(c => c.RequestId, _ => ConsolidationCompletion.LeaseLost);
+        if (claims.Count == 0) return result;
+
+        // Mismas reglas que CompleteAsync, en una sentencia (una confirmación): completar sólo la versión procesada; si
+        // se amplió durante el cálculo vuelve a Pending con el rango acumulado; sin lease del consumidor no se toca.
+        var sql = $@"
+UPDATE {Table} r
+   SET ""Status"" = CASE WHEN r.""Version"" = i.version THEN 2 ELSE 0 END,
+       ""ProcessedAt"" = CASE WHEN r.""Version"" = i.version THEN now() ELSE r.""ProcessedAt"" END,
+       ""RetryCount"" = CASE WHEN r.""Version"" = i.version THEN 0 ELSE r.""RetryCount"" END,
+       ""ErrorMessage"" = NULL, ""NextAttemptAt"" = NULL,
+       ""ClaimedBy"" = NULL, ""ClaimedVersion"" = NULL, ""LeaseExpiresAt"" = NULL
+  FROM unnest(@ids, @versions) AS i(id, version)
+ WHERE r.""Id"" = i.id AND r.""Status"" = 1 AND r.""ClaimedBy"" = @consumer
+RETURNING r.""Id"", r.""Status""";
+
+        await using var command = await CreateCommandAsync(sql, cancellationToken,
+            ("ids", claims.Select(c => c.RequestId).ToArray()),
+            ("versions", claims.Select(c => c.ClaimedVersion).ToArray()),
+            ("consumer", consumerId));
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            result[reader.GetGuid(0)] = reader.GetInt32(1) == (int)ConsolidationStatus.Completed
+                ? ConsolidationCompletion.Completed
+                : ConsolidationCompletion.Requeued;
+        }
+        return result;
     }
 
     public async Task FailAsync(Guid requestId, string consumerId, string error, int maxAttempts, TimeSpan baseBackoff, CancellationToken cancellationToken = default)

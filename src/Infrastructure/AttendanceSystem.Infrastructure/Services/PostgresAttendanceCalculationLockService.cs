@@ -58,18 +58,20 @@ public sealed class PostgresAttendanceCalculationLockService : IAttendanceCalcul
             .ToList();
         if (keys.Count == 0) return;
 
+        var waitStopwatch = System.Diagnostics.Stopwatch.StartNew();
         var timeoutMs = Math.Max(1, (int)_timeout.TotalMilliseconds);
-        await _context.Database.ExecuteSqlRawAsync($"SET LOCAL lock_timeout = {timeoutMs}", cancellationToken);
-
+        // F07-04: un solo viaje para todo el lote. Las sentencias se ejecutan en orden (clave ascendente), cada
+        // espera respeta el lock_timeout local y la primera que lo agote aborta la transacción (55P03).
+        // Las claves son enteros calculados aquí (no entrada externa): se escriben como literales.
+        var sql = new StringBuilder();
+        sql.Append("SET LOCAL lock_timeout = ").Append(timeoutMs).Append(';');
         foreach (var key in keys)
         {
-            await _context.Database.ExecuteSqlRawAsync(
-                "SELECT pg_advisory_xact_lock({0}, {1})",
-                new object[] { LockNamespace, key },
-                cancellationToken);
+            sql.Append("SELECT pg_advisory_xact_lock(").Append(LockNamespace).Append(", ").Append(key).Append(");");
         }
-
-        await _context.Database.ExecuteSqlRawAsync("SET LOCAL lock_timeout TO DEFAULT", cancellationToken);
+        sql.Append("SET LOCAL lock_timeout TO DEFAULT;");
+        await _context.Database.ExecuteSqlRawAsync(sql.ToString(), cancellationToken);
+        AttendanceSystem.Application.Common.AttendanceTelemetry.LockWait.Record(waitStopwatch.Elapsed.TotalMilliseconds);
         _logger.LogDebug("Bloqueos de asistencia adquiridos: {Count}", keys.Count);
     }
 

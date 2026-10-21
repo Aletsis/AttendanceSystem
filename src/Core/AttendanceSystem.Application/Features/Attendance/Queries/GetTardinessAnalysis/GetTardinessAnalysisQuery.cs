@@ -1,3 +1,5 @@
+using AttendanceSystem.Domain.Services;
+using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Repositories;
@@ -10,7 +12,10 @@ namespace AttendanceSystem.Application.Features.Attendance.Queries.GetTardinessA
 public sealed record GetTardinessAnalysisQuery(
     DateTime StartDate,
     DateTime EndDate,
-    BranchId? BranchId = null) : IRequest<Result<TardinessAnalysisDto>>;
+    BranchId? BranchId = null) : IRequest<Result<TardinessAnalysisDto>>, IDateRangeRequest
+{
+    int IDateRangeRequest.MaxRangeDays => DateRangePolicy.MaxQueryDays;
+}
 
 public sealed class GetTardinessAnalysisQueryHandler
     : IRequestHandler<GetTardinessAnalysisQuery, Result<TardinessAnalysisDto>>

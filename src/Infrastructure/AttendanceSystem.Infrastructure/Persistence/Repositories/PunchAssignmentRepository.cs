@@ -53,6 +53,8 @@ public class PunchAssignmentRepository : IPunchAssignmentRepository
 
     public void Update(PunchAssignment assignment)
     {
+        // F07-07: sólo se adjuntan entidades sueltas; las seguidas escriben únicamente sus cambios reales.
+        if (_context.Entry(assignment).State != EntityState.Detached) return;
         _context.PunchAssignments.Update(assignment);
     }
 

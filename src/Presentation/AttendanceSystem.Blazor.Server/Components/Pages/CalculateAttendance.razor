@@ -96,6 +96,11 @@
                             @if (_processing) { <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true"/> }
                             else { <MudText>Calcular</MudText> }
                         </MudButton>
+                        @if (_processing)
+                        {
+                            <MudButton Variant="Variant.Outlined" Color="Color.Secondary" OnClick="CancelCalculation" Size="Size.Large" Class="ml-2"
+                                       StartIcon="@Icons.Material.Filled.Cancel">Cancelar</MudButton>
+                        }
                     </MudItem>
                 </MudGrid>
             </MudCardContent>
@@ -126,6 +131,10 @@
     private SystemConfigurationDto? _config;
     
     private bool _processing = false;
+    private CancellationTokenSource? _calculationCts;
+
+    // F07-02: cancelación cooperativa. Los lotes ya confirmados se conservan; el lote en curso se revierte.
+    private void CancelCalculation() => _calculationCts?.Cancel();
     private string ResultHeader = "";
 
     protected override async Task OnInitializedAsync()
@@ -232,17 +241,31 @@
              end = dates.End;
         }
 
+        // F07-02: la misma validación que aplica el servidor, antes de enviar.
+        var rangeError = AttendanceSystem.Domain.Services.DateRangePolicy.Validate(start, end, AttendanceSystem.Domain.Services.DateRangePolicy.MaxRecalculationDays);
+        if (rangeError != null)
+        {
+            Snackbar.Add(rangeError, Severity.Warning);
+            return;
+        }
+
         _processing = true;
         ResultHeader = "";
+        _calculationCts = new CancellationTokenSource();
         try
         {
             var branchId = SelectedBranchId.HasValue ? BranchId.From(SelectedBranchId.Value) : null;
             var employeeId = !string.IsNullOrEmpty(SelectedEmployeeObj?.Id) ? EmployeeId.From(SelectedEmployeeObj.Id) : null;
 
-            var count = await Mediator.Send(new ProcessDailyAttendanceCommand(start, end, branchId, employeeId));
+            var count = await Mediator.Send(new ProcessDailyAttendanceCommand(start, end, branchId, employeeId), _calculationCts.Token);
             
             ResultHeader = $"Cálculo completado exitosamente. Se procesaron {count} registros entre {start.ToShortDateString()} y {end.ToShortDateString()}.";
             Snackbar.Add($"Procesados {count} registros", Severity.Success);
+        }
+        catch (OperationCanceledException) when (_calculationCts.IsCancellationRequested)
+        {
+            ResultHeader = "Cálculo cancelado. Los lotes de empleados ya confirmados se conservan; puede volver a calcular para completar.";
+            Snackbar.Add("Cálculo cancelado", Severity.Info);
         }
         catch (Exception ex)
         {
@@ -251,6 +274,8 @@
         finally
         {
             _processing = false;
+            _calculationCts.Dispose();
+            _calculationCts = null;
         }
     }
 }
