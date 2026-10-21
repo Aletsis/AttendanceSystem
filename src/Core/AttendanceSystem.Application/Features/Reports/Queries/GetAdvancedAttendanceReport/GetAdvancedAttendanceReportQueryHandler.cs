@@ -221,11 +221,8 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                     }
                 }
 
-                // Maneja el límite de tiempo extra por periodo si aplica
-                if (empRef.OvertimeCapType == OvertimeCapType.Period && empRef.OvertimeCapMinutes.HasValue)
-                {
-                    totalOvertime = Math.Min(totalOvertime, empRef.OvertimeCapMinutes.Value);
-                }
+                // F06-09: las extras guardadas ya llevan el tope de su período contable; volver a topar el total del
+                // rango consultado recortaba los rangos que abarcan más de un período.
 
                 summary.TotalMetric = totalOvertime;
                 var otSpan = TimeSpan.FromMinutes(totalOvertime);

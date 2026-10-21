@@ -7,6 +7,7 @@ using AttendanceSystem.Domain.Aggregates.ShiftAggregate;
 using AttendanceSystem.Domain.Aggregates.SystemAlertAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Domain.Services;
 using AttendanceSystem.Domain.ValueObjects;
 using MediatR;
 
@@ -25,6 +26,8 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
     private readonly ISystemAlertRepository _alertRepository;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ITimeNormalizer _timeNormalizer;
+    private readonly IShiftRosterRepository? _rosterRepository;
+    private readonly IAttendanceAdjustmentRepository? _adjustmentRepository;
 
     public CheckCriticalAbsencesCommandHandler(
         IUnitOfWork unitOfWork,
@@ -35,8 +38,12 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
         IShiftRepository shiftRepository,
         ISystemAlertRepository alertRepository,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
-        ITimeNormalizer? timeNormalizer = null)
+        ITimeNormalizer? timeNormalizer = null,
+        IShiftRosterRepository? rosterRepository = null,
+        IAttendanceAdjustmentRepository? adjustmentRepository = null)
     {
+        _rosterRepository = rosterRepository;
+        _adjustmentRepository = adjustmentRepository;
         _unitOfWork = unitOfWork;
         _emailService = emailService;
         _positionRepository = positionRepository;
@@ -66,30 +73,27 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
 
             // 2. Get Active Employees
             var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
+            // F06-08: período de empleo vigente hoy (no sólo el estatus actual).
             var employees = allEmployees
-                .Where(e => criticalPositionIds.Contains(e.PositionId) && e.Status == EmployeeStatus.Alta && today >= e.HireDate.Date)
+                .Where(e => criticalPositionIds.Contains(e.PositionId) && e.IsActiveOn(today))
                 .ToList();
+            var shifts = (await _shiftRepository.GetAllAsync(cancellationToken)).ToDictionary(s => s.Id);
 
             int alertsSent = 0;
 
             foreach (var employee in employees)
             {
-                if (employee.ScheduleId == null) continue;
+                // Misma resolución que el cálculo: ajuste del día, roster, descanso, horario vigente y día del mixto.
+                var roster = _rosterRepository == null
+                    ? null
+                    : (await _rosterRepository.GetByDateRangeAsync(today, today, null, employee.Id, cancellationToken)).FirstOrDefault();
+                var adjustment = _adjustmentRepository == null
+                    ? null
+                    : await _adjustmentRepository.GetByEmployeeAndDateAsync(employee.Id, today, cancellationToken);
+                var resolution = AttendanceShiftResolutionService.Resolve(employee, today, roster, adjustment, shifts);
+                if (resolution.Shift == null || resolution.IsRestDay) continue;
 
-                var shift = await _shiftRepository.GetByIdAsync(employee.ScheduleId, cancellationToken);
-                if (shift == null) continue;
-
-                bool isWorkingDay = true;
-                TimeSpan startTime = shift.StartTime;
-
-                if (shift.ShiftType == ShiftType.Mixto)
-                {
-                    var dayConfig = shift.Days.FirstOrDefault(d => d.DayOfWeek == localNow.DayOfWeek);
-                    if (dayConfig == null) isWorkingDay = false;
-                    else startTime = dayConfig.StartTime;
-                }
-
-                if (!isWorkingDay) continue;
+                TimeSpan startTime = resolution.Shift.StartTime;
 
                 var alertThreshold = startTime.Add(TimeSpan.FromMinutes(15));
                 if (currentTime < alertThreshold) continue;

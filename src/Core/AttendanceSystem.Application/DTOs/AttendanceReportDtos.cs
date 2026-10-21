@@ -46,23 +46,9 @@ public sealed record AttendanceReportViewDto
     public PunchTrackingMode PunchTrackingMode { get; init; } = PunchTrackingMode.SingleInterval;
     public string? IntervalsData { get; init; }
 
-    public int RoundedOvertimeMinutes
-    {
-        get
-        {
-            if (OvertimeMinutes <= 0) return 0;
-
-            int minutes = OvertimeMinutes;
-            switch (OvertimeCalculationMethod)
-            {
-                case OvertimeCalculationMethod.RoundByHalfHour:
-                    minutes = (minutes / 30) * 30;
-                    break;
-                case OvertimeCalculationMethod.RoundByHour:
-                    minutes = (minutes / 60) * 60;
-                    break;
-            }
-            return Math.Max(0, minutes);
-        }
-    }
+    /// <summary>
+    /// Extras efectivas tal como las guardó el motor (ya redondeadas una vez y con topes). F06-09: no se vuelven a
+    /// redondear con el método actual del empleado, que reinterpretaba la historia y redondeaba dos veces.
+    /// </summary>
+    public int RoundedOvertimeMinutes => Math.Max(0, OvertimeMinutes);
 }
