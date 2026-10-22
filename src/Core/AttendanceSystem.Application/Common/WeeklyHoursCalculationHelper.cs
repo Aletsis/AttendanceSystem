@@ -183,20 +183,6 @@ public static class WeeklyHoursCalculationHelper
         return 0;
     }
 
-    private static double WorkedMinutes(DailyAttendance att)
-    {
-        int workedToday = att.TotalWorkedMinutes;
-        if (workedToday <= 0 && att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
-        {
-            DateTime refIn = att.GetReferenceEntry() ?? att.ActualCheckIn.Value;
-            DateTime refOut = att.GetReferenceExit() ?? att.ActualCheckOut.Value;
-            double span = (refOut - refIn).TotalMinutes - att.LunchBreakMinutesApplied;
-            if (att.TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
-            {
-                span -= att.TemporaryExitMinutes;
-            }
-            workedToday = (int)Math.Max(0, span);
-        }
-        return workedToday;
-    }
+    /// <summary>Tiempo trabajado guardado por la jornada (única fuente).</summary>
+    private static double WorkedMinutes(DailyAttendance att) => att.TotalWorkedMinutes;
 }

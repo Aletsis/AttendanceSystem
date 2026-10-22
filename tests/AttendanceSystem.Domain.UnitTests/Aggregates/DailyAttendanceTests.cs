@@ -156,7 +156,7 @@ public class DailyAttendanceTests
             isRestDay: false,
             overtimeAuthorized: true);
 
-        // Act (comida de 90 min con 30 con goce = 60 de exceso descontado; 30 min de salida temporal)
+        // Act (60 min de comida descontados; 30 min de salida temporal)
         da.ApplyIntermediateAnalysis(lunchMinutesTaken: 90, lunchExcessMinutes: 60, hasTemporaryExits: true, temporaryExitMinutes: 30);
         da.ClassifyTemporaryExit(TemporaryExitStatus.ApprovedUnpaid, "Supervisor");
 
@@ -882,5 +882,48 @@ public class DailyAttendanceTests
         da.MissingBlock1CheckOut.Should().BeFalse();
         da.MissingBlock2CheckIn.Should().BeFalse();
     }
-}
 
+    [Fact]
+    public void Notes_IncludeEarlyDeparture_WithoutOtherConditions()
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, _standardShift, _date.AddHours(8), _date.AddHours(15).AddMinutes(30), isRestDay: false);
+
+        da.EarlyDepartureMinutes.Should().Be(30);
+        da.Notes.Should().ContainSingle().Which.Should().Be("Salida anticipada de 30 min");
+    }
+
+    [Fact]
+    public void TotalWorkedMinutes_FollowsTheCurrentPositions()
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, _standardShift, _date.AddHours(8), _date.AddHours(16), isRestDay: false);
+        da.TotalWorkedMinutes.Should().Be(480);
+
+        da.RemoveCheckOut();
+
+        da.TotalWorkedMinutes.Should().Be(0, "sin salida no queda tiempo trabajado de la posición retirada");
+        da.MissingCheckOut.Should().BeTrue();
+    }
+
+    [Fact]
+    public void WithoutShift_StoresTheWorkedTime()
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, shift: null, _date.AddHours(9), _date.AddHours(18), isRestDay: false);
+
+        da.TotalWorkedMinutes.Should().Be(540);
+    }
+
+    [Theory]
+    [InlineData(8, 10, 8, 0)]   // dentro de la tolerancia: desde la hora programada
+    [InlineData(8, 11, 8, 30)]  // pasa la tolerancia: siguiente bloque de 30 min
+    [InlineData(8, 40, 8, 30)]  // dentro de la tolerancia del bloque de las 08:30
+    [InlineData(8, 41, 9, 0)]
+    [InlineData(9, 10, 9, 0)]
+    [InlineData(9, 11, 9, 30)]
+    public void LateEntry_CountsFromTheNextHalfHourBlock_RepeatingTheTolerance(int h, int m, int refH, int refM)
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, _standardShift, _date.AddHours(h).AddMinutes(m), _date.AddHours(16), isRestDay: false);
+
+        da.GetReferenceEntry().Should().Be(_date.AddHours(refH).AddMinutes(refM));
+        da.TotalWorkedMinutes.Should().Be((int)(_date.AddHours(16) - _date.AddHours(refH).AddMinutes(refM)).TotalMinutes);
+    }
+}

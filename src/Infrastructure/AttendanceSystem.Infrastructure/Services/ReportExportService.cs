@@ -40,7 +40,7 @@ public class ReportExportService : IReportExportService
         string[] headers = {
             "Id", "Nombre", "Horario Entrada", "Horario Salida", "Entrada", "Salida",
             "Tiempo trabajado", "Tiempo Extra", "Sucursal",
-            "Falta injustificada", "Descanso trabajado", "Retardo"
+            "Falta injustificada", "Descanso trabajado", "Retardo", "Notas"
         };
 
         for (int i = 0; i < headers.Length; i++)
@@ -61,11 +61,7 @@ public class ReportExportService : IReportExportService
 
         foreach (var item in sortedData)
         {
-            TimeSpan worked = TimeSpan.Zero;
-            if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
-            {
-                worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
-            }
+            var worked = TimeSpan.FromMinutes(item.TotalWorkedMinutes);
 
             int col = 1;
             SetCell(worksheet, currentRow, col++, item.EmployeeId);
@@ -82,6 +78,7 @@ public class ReportExportService : IReportExportService
             SetCell(worksheet, currentRow, col++, item.IsAbsent ? "1FINJ" : "0", true);
             SetCell(worksheet, currentRow, col++, item.WorkedOnRestDay ? "1DFT" : "0", true);
             SetCell(worksheet, currentRow, col++, item.LateMinutes > 0 ? "1RET" : "0", true);
+            SetCell(worksheet, currentRow, col++, item.AttendanceNote ?? "");
 
             currentRow++;
         }
@@ -121,13 +118,13 @@ public class ReportExportService : IReportExportService
         foreach (var group in grouped)
         {
             var emp = group.First();
-            var totalWorkedTicks = group.Sum(x => (x.ActualCheckOut - x.ActualCheckIn)?.Ticks ?? 0);
-            var totalWorked = TimeSpan.FromTicks(totalWorkedTicks);
+            var totalWorked = TimeSpan.FromMinutes(group.Sum(x => x.TotalWorkedMinutes));
             var totalOvertimeMinutes = group.Sum(x => x.RoundedOvertimeMinutes);
             var totalAbsences = group.Count(x => x.IsAbsent);
-            var totalRestWorked = group.Any(x => x.WorkedOnRestDay) ? "1DFT" : "";
+            var totalRestWorked = group.Count(x => x.WorkedOnRestDay);
             var totalLates = group.Count(x => x.LateMinutes > 0);
-            var sundayPremium = group.Count(x => x.Date.DayOfWeek == DayOfWeek.Sunday && x.ActualCheckIn.HasValue && x.ActualCheckOut.HasValue);
+            // Prima dominical: todo domingo con al menos un marcaje, aunque le falte alguno.
+            var sundayPremium = group.Count(x => x.Date.DayOfWeek == DayOfWeek.Sunday && x.HasPunches);
 
             var schedIn = group.FirstOrDefault(x => x.ScheduledCheckIn.HasValue)?.ScheduledCheckIn;
             var schedOut = group.FirstOrDefault(x => x.ScheduledCheckOut.HasValue)?.ScheduledCheckOut;
@@ -139,7 +136,7 @@ public class ReportExportService : IReportExportService
             SetCell(worksheet, currentRow, 5, FormatTimespan(totalWorked));
             SetCell(worksheet, currentRow, 6, FormatMinutes(totalOvertimeMinutes));
             SetCell(worksheet, currentRow, 7, totalAbsences);
-            SetCell(worksheet, currentRow, 8, totalRestWorked, true);
+            SetCell(worksheet, currentRow, 8, totalRestWorked);
             SetCell(worksheet, currentRow, 9, totalLates);
             SetCell(worksheet, currentRow, 10, sundayPremium);
 
@@ -233,9 +230,7 @@ public class ReportExportService : IReportExportService
             {
                 if (dict.TryGetValue(date.Date, out var item))
                 {
-                    var worked = item.TotalWorkedMinutes > 0
-                        ? TimeSpan.FromMinutes(item.TotalWorkedMinutes)
-                        : ((item.ActualCheckOut - item.ActualCheckIn) ?? TimeSpan.Zero);
+                    var worked = TimeSpan.FromMinutes(item.TotalWorkedMinutes);
 
                     SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckIn, date, "--"));
                     SetCell(worksheet, currentRow, col++, FormatDateTime(item.ActualCheckOut, date, "--"));
@@ -253,9 +248,7 @@ public class ReportExportService : IReportExportService
             }
 
             // Summary Data
-            var totalWorkedTicks = group.Sum(x => x.TotalWorkedMinutes > 0
-                ? TimeSpan.FromMinutes(x.TotalWorkedMinutes).Ticks
-                : ((x.ActualCheckOut - x.ActualCheckIn)?.Ticks ?? 0));
+            var totalWorkedTicks = TimeSpan.FromMinutes(group.Sum(x => x.TotalWorkedMinutes)).Ticks;
             var totalOvertime = group.Sum(x => x.RoundedOvertimeMinutes);
             var totalAbsences = group.Count(x => x.IsAbsent);
             var totalLates = group.Sum(x => x.LateMinutes); // "La suma de todos los retardos" - Prompt said "Total Retardos (La suma de todos los retardos)". Could be minutes or count. Previously "numero de retardos". I'll format as minutes if it's "suma", or count.
@@ -454,11 +447,7 @@ public class ReportExportService : IReportExportService
 
                                var overtimeStr = CalculateOvertimeString(item);
 
-                               TimeSpan worked = TimeSpan.Zero;
-                               if (item.ActualCheckIn.HasValue && item.ActualCheckOut.HasValue)
-                               {
-                                   worked = item.ActualCheckOut.Value - item.ActualCheckIn.Value;
-                               }
+                               var worked = TimeSpan.FromMinutes(item.TotalWorkedMinutes);
 
                                var workedStr = worked == TimeSpan.Zero ? "" : $"{(int)worked.TotalHours:00}:{worked.Minutes:00}";
                                var bgColor = (i % 2 == 0) ? Colors.White : Colors.Grey.Lighten4;

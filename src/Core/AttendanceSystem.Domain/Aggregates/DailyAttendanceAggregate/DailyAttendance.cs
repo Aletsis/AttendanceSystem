@@ -58,6 +58,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public DateTime? CivilBlock1CheckOut => ActualBlock1CheckOut.HasValue ? ToCivil(ActualBlock1CheckOut.Value) : null;
     public DateTime? CivilBlock2CheckIn => ActualBlock2CheckIn.HasValue ? ToCivil(ActualBlock2CheckIn.Value) : null;
 
+    /// <summary>La jornada tiene al menos un marcaje en alguna posición (asistió aunque le falte alguno).</summary>
+    public bool HasPunches => ActualCheckIn.HasValue || ActualCheckOut.HasValue || ActualBlock1CheckOut.HasValue || ActualBlock2CheckIn.HasValue;
+
     // Calculated Status
     public bool IsAbsent { get; private set; }
     public int LateMinutes { get; private set; }
@@ -141,38 +144,44 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     }
 
     /// <summary>
-    /// Texto dinámico para mostrar en reportes y exportaciones.
-    /// Devuelve null si el día no tiene incidencias de salida temporal ni turno autodetectado.
+    /// Notas de la jornada para todos los reportes (única fuente): salida anticipada, salida temporal, comida,
+    /// turno autodetectado e incidencias de cálculo. Los estados (falta, retardo, marcajes faltantes, descanso
+    /// trabajado) no son notas: se leen de sus propias banderas.
     /// </summary>
-    public string? AttendanceNote
+    public IReadOnlyList<string> Notes
     {
         get
         {
-            var parts = new[]
+            var notes = new List<string>();
+            if (EarlyDepartureMinutes > 0) notes.Add($"Salida anticipada de {EarlyDepartureMinutes} min");
+            if (TemporaryExitSummary is { } temporary) notes.Add(temporary);
+            if (LunchNote is { } lunch) notes.Add(lunch);
+            if (IsAutoDetectedShift) notes.Add("Turno detectado automáticamente por proximidad de marcaje");
+            if (!string.IsNullOrWhiteSpace(CalculationIssue))
             {
-                BaseAttendanceNote,
-                LunchNote,
-                string.IsNullOrWhiteSpace(CalculationIssue) ? null : $"⚠️ {CalculationIssue}"
-            }.Where(p => p != null).ToList();
-            return parts.Count == 0 ? null : string.Join(" ", parts);
+                notes.AddRange(CalculationIssue.Split(" | ", StringSplitOptions.RemoveEmptyEntries).Select(i => $"Incidencia: {i}"));
+            }
+            return notes;
         }
     }
 
-    private string? LunchNote => LunchExcessMinutes <= 0
-        ? null
-        : LunchExcessForgiven
-            ? $"🍽️ Comida de {LunchMinutesTaken} min — exceso de {LunchExcessMinutes} min perdonado"
-            : $"🍽️ Comida de {LunchMinutesTaken} min — {LunchExcessMinutes} min de exceso descontados";
+    /// <summary>Las notas en una sola línea (exportaciones).</summary>
+    public string? AttendanceNote => Notes.Count == 0 ? null : string.Join(" | ", Notes);
 
-    private string? BaseAttendanceNote => (HasTemporaryExits, TemporaryExitStatus, IsAutoDetectedShift) switch
+    private string? LunchNote => LunchMinutesTaken <= 0
+        ? null
+        : LunchExcessMinutes <= 0
+            ? $"Comida de {LunchMinutesTaken} min — sin descuento"
+            : LunchExcessForgiven
+                ? $"Comida de {LunchMinutesTaken} min — descuento perdonado por RH"
+                : $"Comida de {LunchMinutesTaken} min — {LunchExcessMinutes} min descontados";
+
+    private string? TemporaryExitSummary => !HasTemporaryExits ? null : TemporaryExitStatus switch
     {
-        (true, TemporaryExitStatus.Pending, true) => $"🔍 Turno autodetectado. ⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
-        (true, TemporaryExitStatus.Pending, false) => $"⚠️ Salida temporal de {TemporaryExitMinutes} min — pendiente de clasificar",
-        (true, TemporaryExitStatus.ApprovedPaid, _) => $"✅ Permiso con goce — {TemporaryExitNote}",
-        (true, TemporaryExitStatus.ApprovedUnpaid, _) => $"✂️ Permiso sin goce — {TemporaryExitMinutes} min descontados",
-        (true, TemporaryExitStatus.Dismissed, _) => $"ℹ️ Error de checada — ignorado",
-        (false, _, true) => "🔍 Turno detectado automáticamente por proximidad de marcaje",
-        _ => null
+        TemporaryExitStatus.Pending => $"Salida temporal de {TemporaryExitMinutes} min — descontados, pendiente de clasificar",
+        TemporaryExitStatus.ApprovedPaid => $"Salida temporal de {TemporaryExitMinutes} min — permiso con goce",
+        TemporaryExitStatus.ApprovedUnpaid => $"Salida temporal de {TemporaryExitMinutes} min — permiso sin goce, descontados",
+        _ => $"Salida temporal de {TemporaryExitMinutes} min — error de checada, ignorada"
     };
 
     private DailyAttendance() { }
@@ -607,11 +616,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         MissingCheckOut = false;
         WorkedOnRestDay = false;
         DynamicScheduledCheckOut = null;
+        // Sin intervalos precalculados (multi-marcaje), el tiempo trabajado se deriva aquí de las posiciones actuales.
+        if (IntervalsData == null) TotalWorkedMinutes = 0;
 
         // If Rest Day
         if (IsRestDay)
         {
-            if (ActualCheckIn.HasValue || ActualCheckOut.HasValue || ActualBlock1CheckOut.HasValue || ActualBlock2CheckIn.HasValue)
+            if (HasPunches)
             {
                 WorkedOnRestDay = true;
             }
@@ -781,9 +792,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             // Fallback for missing schedule details but working normal day
             if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {
-                var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes;
+                var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes - LunchBreakMinutesApplied;
+                if (IsTemporaryExitDeducted)
+                    totalMinutes -= TemporaryExitMinutes;
+                TotalWorkedMinutes = (int)Math.Max(0, totalMinutes);
 
-                // Jornada base estándar de 8 horas (480 min)
+                // Jornada base estándar de 8 horas (480 min) de trabajo efectivo.
                 int goal = 480;
 
                 SetOvertimeFromSurplus(totalMinutes - goal);

@@ -18,6 +18,7 @@ public sealed record AttendanceReportViewDto
     public DateTime? ActualCheckIn { get; init; }
     public DateTime? ActualCheckOut { get; init; }
     public int LateMinutes { get; init; }
+    public int EarlyDepartureMinutes { get; init; }
     public int OvertimeMinutes { get; init; }
 
     public bool IsAbsent { get; init; }
@@ -25,6 +26,8 @@ public sealed record AttendanceReportViewDto
     public bool WorkedOnRestDay { get; init; }
     public bool MissingCheckIn { get; init; }
     public bool MissingCheckOut { get; init; }
+    /// <summary>Al menos un marcaje en la jornada (<c>DailyAttendance.HasPunches</c>).</summary>
+    public bool HasPunches { get; init; }
 
     // --- Turnos Partidos / Doble Turno ---
     public ShiftType? ShiftType { get; init; }
@@ -40,7 +43,15 @@ public sealed record AttendanceReportViewDto
     public int TemporaryExitMinutes { get; init; }
     /// <summary>0=Pending, 1=ApprovedPaid, 2=ApprovedUnpaid, 3=Dismissed</summary>
     public int TemporaryExitStatus { get; init; }
+    /// <summary>Notas de la jornada tal como las define <c>DailyAttendance.Notes</c>.</summary>
+    public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
     public string? AttendanceNote { get; init; }
+
+    // --- Comida (decisión de RH) ---
+    public int LunchMinutesTaken { get; init; }
+    /// <summary>Minutos de comida sujetos a descuento (0 si el descuento está desactivado).</summary>
+    public int LunchDeductibleMinutes { get; init; }
+    public bool LunchForgiven { get; init; }
 
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; init; }
     public int TotalWorkedMinutes { get; init; }

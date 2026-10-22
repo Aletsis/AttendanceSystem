@@ -8,6 +8,9 @@
 @using AttendanceSystem.Application.Features.Employees
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 @using AttendanceSystem.Domain.Enumerations
+@using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate
+@using AttendanceSystem.Application.Features.Attendance.Decisions
+@using AttendanceSystem.Application.Common
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IReportExportService ExportService
@@ -148,8 +151,7 @@
             <CellTemplate>
                 <div class="d-flex gap-1 flex-wrap">
                 @if (context.Item.IsAbsent) { <MudChip Color="Color.Error" Size="Size.Small">Falta</MudChip> }
-                @if (context.Item.IsRestDay) { <MudChip Color="Color.Info" Size="Size.Small">Descanso</MudChip> }
-                @if (context.Item.WorkedOnRestDay) { <MudChip Color="Color.Success" Size="Size.Small">Trabajo en Descanso</MudChip> }
+                @if (context.Item.LateMinutes > 0) { <MudChip Color="Color.Warning" Size="Size.Small">Retardo</MudChip> }
                 @if (context.Item.ShiftType == ShiftType.Partido)
                 {
                     @if (context.Item.MissingCheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Ent B1</MudChip> }
@@ -162,32 +164,44 @@
                     @if (context.Item.MissingCheckIn) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Entrada</MudChip> }
                     @if (context.Item.MissingCheckOut) { <MudChip Color="Color.Warning" Size="Size.Small">Sin Salida</MudChip> }
                 }
-                @if (context.Item.LateMinutes > 0) { <MudChip Color="Color.Warning" Size="Size.Small">Tarde</MudChip> }
-                @if (context.Item.HasTemporaryExits && context.Item.TemporaryExitStatus == 0)
-                {
-                    <MudTooltip Text="@context.Item.AttendanceNote">
-                        <MudChip Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.Warning">Permiso Pend.</MudChip>
-                    </MudTooltip>
-                }
+                @if (context.Item.WorkedOnRestDay) { <MudChip Color="Color.Success" Size="Size.Small">Trabajo en Descanso</MudChip> }
+                else if (context.Item.IsRestDay) { <MudChip Color="Color.Info" Size="Size.Small">Descanso</MudChip> }
                 </div>
             </CellTemplate>
         </TemplateColumn>
         <TemplateColumn Title="Notas" Sortable="false">
             <CellTemplate>
-                @if (context.Item.HasTemporaryExits)
+                @foreach (var note in context.Item.Notes)
                 {
-                    var (color, icon) = context.Item.TemporaryExitStatus switch
-                    {
-                        0 => (Color.Warning,  Icons.Material.Filled.HourglassEmpty),  // Pending
-                        1 => (Color.Success,  Icons.Material.Filled.CheckCircle),      // ApprovedPaid
-                        2 => (Color.Error,    Icons.Material.Filled.MoneyOff),          // ApprovedUnpaid
-                        _ => (Color.Default,  Icons.Material.Filled.Info)              // Dismissed
-                    };
-                    <MudTooltip Text="@context.Item.AttendanceNote" Placement="Placement.Left">
-                        <MudChip Color="@color" Size="Size.Small" Icon="@icon">
-                            @($"{context.Item.TemporaryExitMinutes} min")
-                        </MudChip>
-                    </MudTooltip>
+                    <MudText Typo="Typo.caption" Style="display: block; line-height: 1.3;">@note</MudText>
+                }
+                @if (context.Item.HasTemporaryExits || context.Item.LunchDeductibleMinutes > 0)
+                {
+                    var item = context.Item;
+                    <AuthorizeView Roles="Administrador" Context="auth">
+                        <Authorized>
+                            <div class="d-flex flex-wrap gap-1 mt-1">
+                                @if (item.HasTemporaryExits)
+                                {
+                                    <MudMenu Label="Salida temporal" Size="Size.Small" Dense="true" Variant="Variant.Outlined" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
+                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, TemporaryExitStatus.ApprovedPaid))">Permiso con goce</MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, TemporaryExitStatus.ApprovedUnpaid))">Permiso sin goce (descontar)</MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, TemporaryExitStatus.Dismissed))">Error de checada</MudMenuItem>
+                                        @if (item.TemporaryExitStatus != (int)TemporaryExitStatus.Pending)
+                                        {
+                                            <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, null))">Quitar clasificación</MudMenuItem>
+                                        }
+                                    </MudMenu>
+                                }
+                                @if (item.LunchDeductibleMinutes > 0)
+                                {
+                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => SetLunchForgiven(item, !item.LunchForgiven))">
+                                        @(item.LunchForgiven ? "Descontar comida" : "Perdonar comida")
+                                    </MudButton>
+                                }
+                            </div>
+                        </Authorized>
+                    </AuthorizeView>
                 }
             </CellTemplate>
         </TemplateColumn>
@@ -256,6 +270,31 @@
         );
         
         return Task.FromResult(result);
+    }
+
+    private async Task ClassifyTemporaryExit(AttendanceReportViewDto item, TemporaryExitStatus? status)
+    {
+        var result = await Mediator.Send(new ClassifyTemporaryExitCommand(
+            item.EmployeeId, DateOnly.FromDateTime(item.Date), status,
+            status == null ? null : "Clasificado desde el reporte de asistencia"));
+        await ShowDecisionAsync(result);
+    }
+
+    private async Task SetLunchForgiven(AttendanceReportViewDto item, bool forgiven)
+    {
+        var result = await Mediator.Send(new SetLunchExcessForgivenCommand(
+            item.EmployeeId, DateOnly.FromDateTime(item.Date), forgiven,
+            forgiven ? "Comida perdonada desde el reporte de asistencia" : "Comida descontada desde el reporte de asistencia"));
+        await ShowDecisionAsync(result);
+    }
+
+    private async Task ShowDecisionAsync(Result<AttendanceDecisionOutcome> result)
+    {
+        if (result.IsSuccess)
+            Snackbar.Add(result.Value.UserMessage, result.Value.Consolidated ? Severity.Success : Severity.Info);
+        else
+            Snackbar.Add(result.Error, Severity.Error);
+        await LoadData();
     }
 
     private async Task LoadData()

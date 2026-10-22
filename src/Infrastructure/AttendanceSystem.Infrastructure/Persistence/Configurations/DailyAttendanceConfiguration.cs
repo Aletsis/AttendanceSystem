@@ -168,6 +168,8 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
 
         // AttendanceNote es una propiedad calculada en memoria — no persistir
         builder.Ignore(x => x.AttendanceNote);
+        builder.Ignore(x => x.Notes);
+        builder.Ignore(x => x.HasPunches);
 
         builder.Ignore(x => x.DomainEvents);
 
