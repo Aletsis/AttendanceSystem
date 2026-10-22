@@ -454,42 +454,62 @@ public class Phase05ManualDecisionTests
 
     #region Captura manual
 
-    private sealed class ManualAssignSender : ISender
-    {
-        private readonly AttendanceRecalculationHarness _h;
-        public ManualAssignSender(AttendanceRecalculationHarness h) => _h = h;
+    private static RegisterManualAttendanceCommandHandler ManualCapture(AttendanceRecalculationHarness h) =>
+        new(h.AttendanceRepository, h.UnitOfWork, AttendanceSystem.Application.Abstractions.DefaultTimeNormalizer.Instance);
 
-        public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
-            request is ManuallyAssignAttendanceCommand c
-                ? (TResponse)(object)await _h.ManualAssign().Handle(c, cancellationToken)
-                : throw new NotSupportedException(request.GetType().Name);
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
+    private static Task<Result> CaptureAsync(AttendanceRecalculationHarness h, DateTime civil) =>
+        ManualCapture(h).Handle(new RegisterManualAttendanceCommand(Emp.Value, civil, AttendanceRegressionFixtures.TimeZoneMexicoCity), CancellationToken.None);
 
     [Fact]
-    public async Task ManualCapture_IsInsertedOnce_AndAssignedAsAPersistentDecision()
+    public async Task ManualCapture_OnCalculatedDay_IsPlacedByNormalRules_WithoutManualDecision()
     {
         var h = RegularWeek(out _);
         await h.RecalculateAsync(Tuesday, Tuesday);
-        var handler = new RegisterManualAttendanceCommandHandler(h.AttendanceRepository, h.DailyRepository, h.UnitOfWork,
-            AttendanceSystem.Application.Abstractions.DefaultTimeNormalizer.Instance,
-            new ManualAssignSender(h));
 
-        var civilExit = Tuesday.AddHours(18);
-        var first = await handler.Handle(new RegisterManualAttendanceCommand(Emp.Value, civilExit, "Salida", AttendanceRegressionFixtures.TimeZoneMexicoCity), CancellationToken.None);
-        var again = await handler.Handle(new RegisterManualAttendanceCommand(Emp.Value, civilExit, "Salida", AttendanceRegressionFixtures.TimeZoneMexicoCity), CancellationToken.None);
+        var result = await CaptureAsync(h, Tuesday.AddHours(18).AddMinutes(30));
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+        await h.RecalculateAsync(Tuesday, Tuesday);
 
-        first.IsSuccess.Should().BeTrue(first.IsSuccess ? string.Empty : first.Error);
-        again.IsSuccess.Should().BeTrue("la captura repetida reutiliza el marcaje y reafirma la decisión");
         var manual = h.Store.Records.Where(r => r.EmployeeId == Emp && r.Source == "Manual").Should().ContainSingle().Subject;
+        h.Daily(Emp, Tuesday)!.CheckOutRecordId.Should().Be(manual.Id, "la jornada ya calculada no impide considerar el marcaje");
+        h.Store.Adjustments.Should().BeEmpty("la captura no fuerza ninguna posición");
+    }
 
-        await RecalculateAroundAsync(h, Tuesday);
-        h.Daily(Emp, Tuesday)!.CheckOutRecordId.Should().Be(manual.Id);
-        h.Store.Adjustments.Single().CheckOutOverride.Should().Be(PositionOverrideKind.Assigned);
+    [Fact]
+    public async Task ManualCapture_IsRejected_WhenAPunchExistsInTheSameMinute()
+    {
+        var h = RegularWeek(out _);
+
+        var duplicate = await CaptureAsync(h, Tuesday.AddHours(16).AddMinutes(5).AddSeconds(40));
+        var repeated = await CaptureAsync(h, Tuesday.AddHours(10));
+        var again = await CaptureAsync(h, Tuesday.AddHours(10));
+
+        duplicate.IsSuccess.Should().BeFalse("ya existe el marcaje de dispositivo de las 16:05");
+        repeated.IsSuccess.Should().BeTrue();
+        again.IsSuccess.Should().BeFalse();
+        h.Store.Records.Where(r => r.EmployeeId == Emp && r.Source == "Manual").Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ManualCapture_AfterMidnight_BelongsToThePreviousNightJornada()
+    {
+        var h = new AttendanceRecalculationHarness();
+        var night = AttendanceRegressionFixtures.CreateNightShift();
+        h.Store.Shifts.Add(night);
+        h.Store.Employees.Add(CreateEmployee(Emp, night));
+        var checkIn = Punch(h, Emp, Monday.AddHours(21).AddMinutes(55));
+        await h.RecalculateAsync(Monday, Tuesday);
+
+        // Salida olvidada: se captura con la fecha civil del marcaje (martes) y se recalcula ese día, como la UI.
+        var result = await CaptureAsync(h, Tuesday.AddHours(6).AddMinutes(10));
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+        await h.RecalculateAsync(Tuesday, Tuesday);
+
+        var manual = h.Store.Records.Single(r => r.Source == "Manual");
+        var monday = h.Daily(Emp, Monday)!;
+        monday.CheckInRecordId.Should().Be(checkIn.Id);
+        monday.CheckOutRecordId.Should().Be(manual.Id, "el recálculo del martes incluye la jornada nocturna del lunes que alcanza el marcaje");
+        h.Daily(Emp, Tuesday)?.CheckInRecordId.Should().NotBe(manual.Id);
     }
 
     #endregion

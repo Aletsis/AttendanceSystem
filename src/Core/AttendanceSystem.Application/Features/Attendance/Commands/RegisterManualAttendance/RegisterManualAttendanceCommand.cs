@@ -1,7 +1,6 @@
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
-using AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance;
 using AttendanceSystem.Application.Features.Attendance.Services;
 using MediatR;
 using AttendanceSystem.Domain.ValueObjects;
@@ -10,71 +9,71 @@ using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance;
 
+/// <param name="CheckTime">Fecha y hora civil del marcaje en la zona horaria del empleado (no la fecha de la jornada).</param>
 public sealed record RegisterManualAttendanceCommand(
     string EmployeeId,
     DateTime CheckTime,
-    string Type,
     string? TimeZoneId = null) : IRequest<Result>;
 
 /// <summary>
-/// Captura manual de un marcaje (F03-03 / F03-05):
-/// 1. Inserta el marcaje con la identidad única (empleado, instante); si ya existe se reutiliza.
-/// 2. Si la jornada ya está calculada, lo asigna como decisión manual con <see cref="ManuallyAssignAttendanceCommand"/>,
-///    que valida pertenencia, mantiene las filas de asignación y se coordina con el recálculo mediante el bloqueo del empleado.
-/// Si la jornada no existe, el recálculo posterior (consolidación del evento de marcaje) lo considerará.
+/// Captura manual de un marcaje (F03-03 / F03-05). El marcaje se trata igual que uno de dispositivo:
+/// <list type="number">
+/// <item>No lleva tipo: el recálculo decide su posición con las reglas normales, incluso si la jornada ya está calculada.</item>
+/// <item>Se rechaza si el empleado ya tiene un marcaje en el mismo minuto.</item>
+/// <item>La jornada a la que pertenece (incluida la previa cuando el turno cruza la medianoche) la decide el
+/// recálculo a partir del instante civil, no la fecha capturada.</item>
+/// </list>
+/// El llamador recalcula la fecha civil del marcaje; el recálculo incluye por sí mismo la jornada previa que lo alcance.
 /// </summary>
 public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<RegisterManualAttendanceCommand, Result>
 {
     private readonly IAttendanceRepository _attendanceRepo;
-    private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ITimeNormalizer _timeNormalizer;
-    private readonly ISender _sender;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly IPersistenceFailureClassifier _failureClassifier;
 
     public RegisterManualAttendanceCommandHandler(
         IAttendanceRepository attendanceRepo,
-        IDailyAttendanceRepository dailyRepo,
         IUnitOfWork unitOfWork,
         ITimeNormalizer timeNormalizer,
-        ISender sender,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         IPersistenceFailureClassifier? failureClassifier = null)
     {
         _attendanceRepo = attendanceRepo;
-        _dailyRepo = dailyRepo;
         _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
-        _sender = sender;
         _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
         _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
     }
 
     public async Task<Result> Handle(RegisterManualAttendanceCommand request, CancellationToken cancellationToken)
     {
-        if (request.Type != "Entrada" && request.Type != "Salida")
-        {
-            return Result.Failure("Tipo de marcaje manual inválido. Use 'Entrada' o 'Salida'.");
-        }
-
         var employeeId = EmployeeId.From(request.EmployeeId);
         var authoritativeTimeZone = !string.IsNullOrWhiteSpace(request.TimeZoneId)
             ? request.TimeZoneId
             : await _timeZoneResolver.ResolveForEmployeeAsync(employeeId, cancellationToken);
 
-        var utcCheckTime = _timeNormalizer.ToUtc(request.CheckTime, authoritativeTimeZone);
+        var civilCheckTime = TruncateToMinute(request.CheckTime);
+        var utcCheckTime = _timeNormalizer.ToUtc(civilCheckTime, authoritativeTimeZone);
         var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, authoritativeTimeZone);
-        var date = workDate.ToDateTime(TimeOnly.MinValue);
 
+        // Única restricción de captura: no puede existir otro marcaje del empleado en el mismo minuto.
+        var nearby = await _attendanceRepo.GetByDateRangeAsync(workDate.AddDays(-1), workDate.AddDays(1), employeeId, cancellationToken);
+        if (nearby.Any(r => TruncateToMinute(r.CheckTime) == utcCheckTime))
+        {
+            return Result.Failure($"El empleado {employeeId.Value} ya tiene un marcaje el {civilCheckTime:dd/MM/yyyy} a las {civilCheckTime:HH:mm}.");
+        }
+
+        // El tipo es sólo un valor inicial: el recálculo infiere la posición (SetInferredType).
         var record = AttendanceRecord.Create(
             employeeId,
             DeviceId.From("MANUAL"),
             utcCheckTime,
             VerifyMethod.Manual,
-            request.Type == "Entrada" ? CheckType.CheckIn : CheckType.CheckOut,
+            CheckType.CheckIn,
             workDate: workDate,
-            originalCheckTime: request.CheckTime,
+            originalCheckTime: civilCheckTime,
             timeZoneId: authoritativeTimeZone,
             source: "Manual");
 
@@ -84,19 +83,15 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         {
             return Result.Failure($"No se pudo registrar el marcaje manual ({outcome.Failure!.Kind}): {outcome.Failure.Message}");
         }
-
-        var recordId = outcome.IdFor(employeeId, utcCheckTime)!;
-
-        var daily = await _dailyRepo.GetByEmployeeAndDateAsync(employeeId, date, cancellationToken);
-        if (daily == null)
+        if (outcome.Inserted.Count == 0)
         {
-            return Result.Success();
+            // Otro proceso insertó el mismo instante entre la verificación y el guardado.
+            return Result.Failure($"El empleado {employeeId.Value} ya tiene un marcaje el {civilCheckTime:dd/MM/yyyy} a las {civilCheckTime:HH:mm}.");
         }
 
-        return await _sender.Send(new ManuallyAssignAttendanceCommand(
-            employeeId.Value,
-            workDate,
-            recordId.Value.ToString(),
-            request.Type), cancellationToken);
+        return Result.Success();
     }
+
+    private static DateTime TruncateToMinute(DateTime value) =>
+        new(value.Ticks - value.Ticks % TimeSpan.TicksPerMinute, value.Kind);
 }

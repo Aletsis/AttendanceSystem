@@ -90,7 +90,6 @@ public class ImportService : IImportService
                         }
                     }
 
-                    var type = row.Cell(4).GetValue<string>();
                     var dateTime = date.Date + time;
 
                     if (string.IsNullOrWhiteSpace(empId))
@@ -99,7 +98,7 @@ public class ImportService : IImportService
                         continue;
                     }
 
-                    result.ValidEntries.Add(new ImportedLogEntryDto(empId, dateTime, type));
+                    result.ValidEntries.Add(new ImportedLogEntryDto(empId, dateTime));
                 }
                 catch (Exception ex)
                 {
@@ -127,7 +126,7 @@ public class ImportService : IImportService
                 if (lineNumber == 1) continue;
 
                 var parts = line.Split(',');
-                if (parts.Length < 4) continue;
+                if (parts.Length < 3) continue;
 
                 try
                 {
@@ -142,8 +141,6 @@ public class ImportService : IImportService
                         result.Errors.Add($"Fila {lineNumber}: Hora inválida.");
                         continue;
                     }
-                    var type = parts[3].Trim();
-
                     var dateTime = date.Date + time;
 
                     if (string.IsNullOrWhiteSpace(empId))
@@ -152,7 +149,7 @@ public class ImportService : IImportService
                         continue;
                     }
 
-                    result.ValidEntries.Add(new ImportedLogEntryDto(empId, dateTime, type));
+                    result.ValidEntries.Add(new ImportedLogEntryDto(empId, dateTime));
                 }
                 catch (Exception ex)
                 {
@@ -366,13 +363,11 @@ public class ImportService : IImportService
         ws.Cell(1, 1).Value = "ID Empleado";
         ws.Cell(1, 2).Value = "Fecha";
         ws.Cell(1, 3).Value = "Hora";
-        ws.Cell(1, 4).Value = "Tipo";
 
         // Add sample data for clarity
         ws.Cell(2, 1).Value = "1001";
         ws.Cell(2, 2).Value = DateTime.Today.ToString("yyyy-MM-dd");
         ws.Cell(2, 3).Value = "08:00:00";
-        ws.Cell(2, 4).Value = "Entrada";
 
         ws.Columns().AdjustToContents();
         using var ms = new MemoryStream();

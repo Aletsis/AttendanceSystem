@@ -26,12 +26,14 @@
             <MudItem xs="12" sm="6">
                 <MudDateRangePicker Label="Rango de Fechas" @bind-DateRange="_dateRange" />
             </MudItem>
-            <MudItem xs="12" sm="6" Class="d-flex gap-4">
-                <MudTimePicker Label="Hora" @bind-Time="_time" />
-                <MudSelect T="string" Label="Tipo" @bind-Value="_type" AnchorOrigin="Origin.BottomCenter">
-                    <MudSelectItem Value="@("Entrada")">Entrada</MudSelectItem>
-                    <MudSelectItem Value="@("Salida")">Salida</MudSelectItem>
-                </MudSelect>
+            <MudItem xs="12" sm="6">
+                <MudTimePicker Label="Hora" @bind-Time="_time" AmPm="false" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudText Typo="Typo.caption">
+                    Se registra un marcaje por día y empleado con la fecha y hora reales. El sistema decide si es entrada, salida o comida
+                    y a qué jornada pertenece (p. ej. la salida de las 06:00 de un turno nocturno se captura con la fecha del día siguiente).
+                </MudText>
             </MudItem>
 
             <MudItem xs="12" sm="6">
@@ -73,7 +75,8 @@
     
     <MudTabPanel Text="Importar Archivo (Excel/CSV)">
         <MudText Typo="Typo.body1" Class="mb-4">
-            Suba un archivo Excel (.xlsx) con las columnas: <b>EmployeeId</b>, <b>Date</b> (dd/MM/yyyy), <b>Time</b> (HH:mm), <b>Type</b> (Entrada/Salida).
+            Suba un archivo Excel (.xlsx) o CSV con las columnas: <b>EmployeeId</b>, <b>Date</b> (dd/MM/yyyy), <b>Time</b> (HH:mm).
+            El sistema decide si cada marcaje es entrada, salida o comida y a qué jornada pertenece.
         </MudText>
         
         <div class="d-flex align-center gap-4">
@@ -101,7 +104,6 @@
 @code {
     private DateRange _dateRange = new DateRange(DateTime.Today, DateTime.Today);
     private TimeSpan? _time = new TimeSpan(8, 0, 0); // Default 8:00 AM
-    private string _type = "Entrada";
     private Guid? _selectedBranchId;
     private IReadOnlyCollection<string> _selectedEmployeeIds = new HashSet<string>();
     
@@ -191,7 +193,7 @@
                 {
                     try
                     {
-                        var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, _type));
+                        var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime));
                         if (result.IsSuccess)
                         {
                             successCount++;
@@ -302,7 +304,7 @@
 
             foreach (var entry in importResult.ValidEntries)
             {
-                 var result = await Mediator.Send(new RegisterManualAttendanceCommand(entry.EmployeeId, entry.DateTime, entry.Type));
+                 var result = await Mediator.Send(new RegisterManualAttendanceCommand(entry.EmployeeId, entry.DateTime));
                  if (result.IsSuccess)
                  {
                      successCount++;

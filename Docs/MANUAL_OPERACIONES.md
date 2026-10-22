@@ -273,18 +273,18 @@ Permite ejecutar descargas manuales de asistencias y consultar el historial comp
 ### 5.5 Registros Manuales de Asistencia
 Ubicación: **Dispositivos y descargas $\rightarrow$ Registros manuales** (`/attendance/manual-logs`) *(Solo Administrador)*
 
-Permite capturar o corregir checadas olvidadas por colaboradores:
+Permite capturar checadas olvidadas por colaboradores. Hay tres formas de hacerlo:
 
-1. Haga clic en **+ Nuevo Registro Manual**.
-2. Seleccione el **Empleado**.
-3. Indique la **Fecha y Hora Exacta** de la checada.
-4. Seleccione el **Tipo de Marcación**: `Entrada` o `Salida`.
-5. Ingrese una **Observación / Motivo** justificando el registro manual.
-6. Presione **Guardar**.
+* **Individual** (desde **Bitácora de Asistencia**, botón **Agregar Manual**): seleccione el empleado, indique la **fecha y hora reales** de la checada y presione **Guardar**.
+* **Asignación masiva**: seleccione el rango de fechas, la hora y los empleados. Se registra una checada por cada día y empleado.
+* **Importar archivo** (.xlsx o .csv): columnas `EmployeeId`, `Date` y `Time`.
 
 > [!NOTE]
-> **Comportamiento inteligente de sobreescritura:**
-> Si ya existía una entrada o salida previa en esa fecha, el sistema desasignará automáticamente el registro anterior (regresándolo a estado pendiente) y asignará el nuevo registro manual, recalculando inmediatamente las métricas del día (retardo, salida anticipada y horas extra) sin generar duplicidades.
+> **El sistema decide el tipo de checada:**
+> No se indica si la checada es entrada o salida. Al guardar, la asistencia se recalcula con las reglas normales tomando en cuenta la nueva checada, aunque el día ya estuviera calculado. Por ejemplo, si el empleado ya tenía entrada a las 09:00 y salida a las 17:00, una checada a las 18:30 pasa a ser la nueva salida. La única restricción es que no exista otra checada del mismo empleado en el mismo minuto.
+
+> [!IMPORTANT]
+> **Turnos que cruzan la medianoche:** capture siempre la fecha del calendario en que ocurrió la checada, no la fecha de inicio de la jornada. Por ejemplo, la salida de las 06:00 de un turno nocturno que inició el lunes a las 22:00 se captura como **martes 06:00**. El sistema la asigna a la jornada del lunes.
 
 ---
 
