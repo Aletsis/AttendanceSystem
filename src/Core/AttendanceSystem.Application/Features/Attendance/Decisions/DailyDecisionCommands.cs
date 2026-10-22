@@ -40,8 +40,8 @@ public sealed class ClassifyTemporaryExitCommandHandler : IRequestHandler<Classi
 }
 
 /// <summary>
-/// F06-05: el exceso de comida (minutos sobre los con goce) se descuenta por defecto; RH puede perdonarlo
-/// (<c>Forgiven</c> = true) o volver a descontarlo (false).
+/// F06-05: con el descuento de comida activado, la comida se descuenta completa; RH puede perdonarla
+/// (<c>Forgiven</c> = true) o volver a descontarla (false).
 /// </summary>
 public sealed record SetLunchExcessForgivenCommand(
     string EmployeeId,
@@ -66,7 +66,7 @@ public sealed class SetLunchExcessForgivenCommandHandler : IRequestHandler<SetLu
             (context, adjustment) =>
             {
                 if (adjustment.LunchExcessForgiven == request.Forgiven)
-                    return Task.FromResult(Result.Failure(request.Forgiven ? "El exceso de comida ya está perdonado." : "El exceso de comida ya se descuenta."));
+                    return Task.FromResult(Result.Failure(request.Forgiven ? "La comida ya está perdonada." : "La comida ya se descuenta."));
                 adjustment.SetLunchExcessForgiven(request.Forgiven, context.Author, request.Reason);
                 return Task.FromResult(Result.Success());
             },

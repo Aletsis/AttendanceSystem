@@ -91,8 +91,11 @@
                         <MudItem xs="12">
                             <MudText Typo="Typo.subtitle1" Class="mt-2">Comida</MudText>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Una ausencia marcada que inicia dentro de la ventana cuenta como comida; los minutos con goce no se descuentan y el exceso sí. Las ausencias fuera de la ventana son salidas temporales.
+                                Una ausencia marcada que inicia dentro de la ventana cuenta como comida (si hay varias, la de duración más cercana a la de referencia). Con el descuento activado se descuenta la comida completa y RH puede perdonarla por día; desactivado no se descuenta. Las ausencias fuera de la ventana son salidas temporales.
                             </MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudSwitch T="bool" @bind-Value="_deductLunch" Color="Color.Primary" Label="Descontar el tiempo de comida" />
                         </MudItem>
                         <MudItem xs="12" sm="4">
                             <MudTimePicker Label="Inicio ventana de comida" @bind-Time="_lunchWindowStart" Variant="Variant.Outlined" Editable="true" />
@@ -101,7 +104,7 @@
                             <MudTimePicker Label="Fin ventana de comida" @bind-Time="_lunchWindowEnd" Variant="Variant.Outlined" Editable="true" />
                         </MudItem>
                         <MudItem xs="12" sm="4">
-                            <MudNumericField Label="Minutos de comida con goce" @bind-Value="_paidLunchMinutes" Min="0" Max="240" Variant="Variant.Outlined" />
+                            <MudNumericField Label="Duración de referencia de la comida (min)" @bind-Value="_paidLunchMinutes" Min="0" Max="240" Variant="Variant.Outlined" />
                         </MudItem>
                         <MudItem xs="12" sm="4">
                             <MudTimePicker Label="Inicio ventana de comida nocturna" @bind-Time="_nightLunchWindowStart" Variant="Variant.Outlined" Editable="true" />
@@ -401,6 +404,7 @@
     private TimeSpan? _lunchWindowStart = new(12, 30, 0);
     private TimeSpan? _lunchWindowEnd = new(15, 0, 0);
     private int _paidLunchMinutes = 30;
+    private bool _deductLunch;
     private TimeSpan? _nightLunchWindowStart = new(23, 0, 0);
     private TimeSpan? _nightLunchWindowEnd = new(4, 0, 0);
 
@@ -492,6 +496,7 @@
                 _lunchWindowStart = config.LunchWindowStart ?? _lunchWindowStart;
                 _lunchWindowEnd = config.LunchWindowEnd ?? _lunchWindowEnd;
                 _paidLunchMinutes = config.PaidLunchMinutes;
+                _deductLunch = config.DeductLunch;
                 _nightLunchWindowStart = config.NightLunchWindowStart ?? _nightLunchWindowStart;
                 _nightLunchWindowEnd = config.NightLunchWindowEnd ?? _nightLunchWindowEnd;
 
@@ -557,7 +562,8 @@
                 _lunchWindowEnd,
                 _paidLunchMinutes,
                 _nightLunchWindowStart,
-                _nightLunchWindowEnd
+                _nightLunchWindowEnd,
+                _deductLunch
             );
 
             var result = await Mediator.Send(command);

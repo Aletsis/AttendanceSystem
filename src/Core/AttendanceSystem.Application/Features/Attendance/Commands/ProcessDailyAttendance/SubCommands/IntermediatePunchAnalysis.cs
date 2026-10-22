@@ -45,6 +45,6 @@ internal static class IntermediatePunchAnalysis
             }
         }
 
-        return (result.LunchMinutes, result.LunchExcessMinutes, result.HasTemporaryExits, result.TemporaryExitMinutes, orphans);
+        return (result.LunchMinutes, result.LunchDeductibleMinutes, result.HasTemporaryExits, result.TemporaryExitMinutes, orphans);
     }
 }

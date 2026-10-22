@@ -34,7 +34,7 @@ public class LunchPolicyTests
 
         result.Kinds.Should().Equal(IntermediateKind.DoubleTap, IntermediateKind.Lunch, IntermediateKind.TemporaryExit, IntermediateKind.Orphan);
         result.LunchMinutes.Should().Be(35);
-        result.LunchExcessMinutes.Should().Be(5);
+        result.LunchDeductibleMinutes.Should().Be(0, "el descuento está desactivado por defecto");
         result.TemporaryExitMinutes.Should().Be(20);
         result.HasTemporaryExits.Should().BeTrue();
     }
@@ -62,5 +62,18 @@ public class LunchPolicyTests
         var act = () => config.UpdateLunchSettings(new TimeSpan(15, 0, 0), new TimeSpan(12, 0, 0), 30);
         act.Should().Throw<DomainException>();
         config.LunchPolicy.Should().Be(LunchPolicy.Default);
+    }
+    [Fact]
+    public void Classify_WithDeductionEnabled_DeductsTheWholeLunch()
+    {
+        var config = SystemConfiguration.CreateDefault();
+        config.SetLunchDeduction(true);
+
+        var result = config.LunchPolicy.Classify(new[] { Pair(13, 0, 14, 30) });
+
+        result.Kinds[0].Should().Be(IntermediateKind.Lunch);
+        result.LunchMinutes.Should().Be(90);
+        result.LunchDeductibleMinutes.Should().Be(90);
+        config.NightLunchPolicy.DeductLunch.Should().BeTrue();
     }
 }

@@ -161,11 +161,12 @@ public class DailyAttendanceTests
         da.ClassifyTemporaryExit(TemporaryExitStatus.ApprovedUnpaid, "Supervisor");
 
         // Assert
-        // Total worked = 600 - 60 (exceso de comida) - 30 (unpaid) = 510 min.
-        // Overtime = 510 - 480 (scheduled) = 30 min.
+        // Total worked = 600 - 60 (comida) - 30 (sin goce) = 510 min.
+        // Overtime = 510 - 480 (scheduled) = 30 min: la comida se repone, no reduce lo programado.
+        da.TotalWorkedMinutes.Should().Be(510);
         da.OvertimeMinutes.Should().Be(30);
         da.TemporaryExitStatus.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
-        da.AttendanceNote.Should().Contain("Permiso sin goce");
+        da.AttendanceNote.Should().Contain("permiso sin goce");
     }
 
     [Fact]

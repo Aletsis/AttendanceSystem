@@ -65,6 +65,7 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             config.LunchWindowEnd,
             config.PaidLunchMinutes,
             config.NightLunchWindowStart,
-            config.NightLunchWindowEnd));
+            config.NightLunchWindowEnd,
+            config.DeductLunch));
     }
 }

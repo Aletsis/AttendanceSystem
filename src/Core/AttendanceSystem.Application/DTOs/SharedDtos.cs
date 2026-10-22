@@ -199,7 +199,8 @@ public sealed record SystemConfigurationDto(
     TimeSpan? LunchWindowEnd = null,
     int PaidLunchMinutes = 30,
     TimeSpan? NightLunchWindowStart = null,
-    TimeSpan? NightLunchWindowEnd = null)
+    TimeSpan? NightLunchWindowEnd = null,
+    bool DeductLunch = false)
 {
     public SystemConfigurationDto() : this(string.Empty, null, TimeSpan.Zero, TimeSpan.Zero, false, false, null, false) { }
 }

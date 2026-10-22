@@ -8,11 +8,11 @@ namespace AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 /// <summary>Estado de clasificación de las salidas temporales detectadas por el sistema.</summary>
 public enum TemporaryExitStatus
 {
-    /// <summary>Detectada automáticamente, pendiente de revisión del administrador.</summary>
+    /// <summary>Detectada automáticamente, pendiente de revisión del administrador. Se descuenta mientras tanto.</summary>
     Pending = 0,
     /// <summary>Clasificada como permiso con goce de sueldo. Sin deducción.</summary>
     ApprovedPaid = 1,
-    /// <summary>Clasificada como permiso sin goce. Se deduce <see cref="DailyAttendance.TemporaryExitMinutes"/> del tiempo laborado.</summary>
+    /// <summary>Clasificada como permiso sin goce. Se deduce <see cref="DailyAttendance.TemporaryExitMinutes"/> del tiempo laborado (igual que pendiente).</summary>
     ApprovedUnpaid = 2,
     /// <summary>Clasificada como error de doble checada. Se ignora sin deducción.</summary>
     Dismissed = 3
@@ -89,13 +89,16 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public TemporaryExitStatus TemporaryExitStatus { get; private set; } = TemporaryExitStatus.Pending;
     /// <summary>Nota de auditoría: quién clasificó y cuándo.</summary>
     public string? TemporaryExitNote { get; private set; }
-    /// <summary>Minutos de comida deducidos automáticamente al calcular la jornada.</summary>
-    /// <summary>Minutos de comida descontados del tiempo trabajado: el exceso no perdonado (F06-05).</summary>
+    /// <summary>Minutos de comida descontados del tiempo trabajado: la comida a descontar que RH no perdonó.</summary>
     public int LunchBreakMinutesApplied { get; private set; }
     /// <summary>Duración real de la comida marcada (0 si no hubo).</summary>
     public int LunchMinutesTaken { get; private set; }
-    /// <summary>Minutos de comida por encima de los con goce.</summary>
+    /// <summary>
+    /// Minutos de comida sujetos a descuento: la comida completa con el descuento activado, 0 si está desactivado.
+    /// (Nombre heredado de cuando sólo se descontaba el exceso sobre los minutos con goce.)
+    /// </summary>
     public int LunchExcessMinutes { get; private set; }
+    /// <summary>RH perdonó el descuento de la comida de esta jornada.</summary>
     public bool LunchExcessForgiven { get; private set; }
     /// <summary>Indica si el turno fue detectado automáticamente por proximidad de marcaje.</summary>
     public bool IsAutoDetectedShift { get; private set; }
@@ -113,6 +116,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public bool RequiresReview =>
         !string.IsNullOrWhiteSpace(CalculationIssue) ||
         (HasTemporaryExits && TemporaryExitStatus == TemporaryExitStatus.Pending);
+
+    /// <summary>
+    /// Las salidas temporales se descuentan salvo que RH las clasifique como permiso con goce o error de checada.
+    /// </summary>
+    public bool IsTemporaryExitDeducted =>
+        HasTemporaryExits && TemporaryExitStatus is TemporaryExitStatus.Pending or TemporaryExitStatus.ApprovedUnpaid;
 
     /// <summary>MultiInterval con un intervalo sin salida: se muestra como salida faltante (F06-02).</summary>
     public bool HasOpenInterval { get; private set; }
@@ -754,7 +763,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
             double totalWorked = workedMinutesBlock1 + workedMinutesBlock2;
 
-            if (TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid && TemporaryExitMinutes > 0)
+            if (IsTemporaryExitDeducted && TemporaryExitMinutes > 0)
             {
                 totalWorked = Math.Max(0, totalWorked - TemporaryExitMinutes);
             }
@@ -903,7 +912,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
                     var worked = (referenceExit - referenceEntry).TotalMinutes;
                     worked -= LunchBreakMinutesApplied;
-                    if (TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
+                    if (IsTemporaryExitDeducted)
                         worked -= TemporaryExitMinutes;
 
                     TotalWorkedMinutes = (int)Math.Max(0, worked);
@@ -946,9 +955,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
                 }
 
-                if (checkOutCivil.HasValue && checkOutCivil.Value < scheduledOutDateTime)
+                // La duración del turno es trabajo efectivo: la comida descontada se repone al final de la jornada
+                // (turno 09:00–18:00 con 1 h de comida descontada termina a las 19:00).
+                var jornadaEnd = scheduledOutDateTime.AddMinutes(LunchBreakMinutesApplied);
+                if (checkOutCivil.HasValue && checkOutCivil.Value < jornadaEnd)
                 {
-                    EarlyDepartureMinutes = (int)(scheduledOutDateTime - checkOutCivil.Value).TotalMinutes;
+                    EarlyDepartureMinutes = (int)(jornadaEnd - checkOutCivil.Value).TotalMinutes;
                 }
 
                 if (checkInCivil.HasValue && checkOutCivil.HasValue)
@@ -959,7 +971,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
                     var totalWorkedMinutes = (referenceExit - referenceEntry).TotalMinutes;
                     totalWorkedMinutes -= LunchBreakMinutesApplied;
-                    if (TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
+                    if (IsTemporaryExitDeducted)
                         totalWorkedMinutes -= TemporaryExitMinutes;
 
                     if (totalWorkedMinutes < 0) totalWorkedMinutes = 0;

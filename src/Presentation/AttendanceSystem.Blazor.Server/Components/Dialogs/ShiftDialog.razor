@@ -146,8 +146,8 @@
             <MudTimePicker @bind-Time="_startTime" Label="Hora de Inicio" Required="true" Editable="true" />
             <MudTimePicker @bind-Time="_endTime" Label="Hora de Fin" Required="true" Editable="true" />
         }
-        <MudNumericField T="int?" @bind-Value="_paidLunchMinutes" Label="Minutos de comida con goce" Min="0" Max="240" Clearable="true" Class="mt-4"
-                         HelperText="Vacío = valor global de Configuración. La comida se detecta en la ventana global; el exceso se descuenta." />
+        <MudNumericField T="int?" @bind-Value="_paidLunchMinutes" Label="Duración de referencia de la comida (min)" Min="0" Max="240" Clearable="true" Class="mt-4"
+                         HelperText="Vacío = valor global de Configuración. Sirve para identificar cuál ausencia en la ventana global es la comida." />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancelar</MudButton>

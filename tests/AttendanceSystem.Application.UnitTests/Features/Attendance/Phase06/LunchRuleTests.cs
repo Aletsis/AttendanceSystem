@@ -18,9 +18,9 @@ using Xunit;
 namespace AttendanceSystem.Application.UnitTests.Features.Attendance.Phase06;
 
 /// <summary>
-/// Regla de comida (F06-05) con el orquestador real: ventana global 12:30–15:00 y 30 min con goce.
-/// Casos acordados: comida sin hora fija, comida de 30 min no descontada, salida temporal sin comida,
-/// comida de 40 min (10 de exceso descontados), salida temporal y comida el mismo día.
+/// Regla de comida (F06-05) con el orquestador real: ventana global 12:30–15:00 y 30 min de referencia.
+/// Con el descuento desactivado (por defecto) la comida se identifica sin descontarse; activado, se descuenta
+/// completa y RH puede perdonarla.
 /// </summary>
 public class LunchRuleTests
 {
@@ -38,6 +38,13 @@ public class LunchRuleTests
         return h;
     }
 
+    private static void EnableLunchDeduction(AttendanceRecalculationHarness h)
+    {
+        var config = SystemConfiguration.CreateDefault();
+        config.SetLunchDeduction(true);
+        h.Configuration = config;
+    }
+
     private static void Punches(AttendanceRecalculationHarness h, params (int H, int M)[] times)
     {
         foreach (var (hour, minute) in times)
@@ -53,14 +60,15 @@ public class LunchRuleTests
     }
 
     [Fact]
-    public async Task Lunch_OfThirtyMinutes_IsPaid_AndNotDeducted()
+    public async Task Lunch_WithDeductionDisabled_IsIdentified_AndNotDeducted()
     {
         var h = Harness();
-        Punches(h, (8, 0), (13, 10), (13, 40), (16, 0));
+        Punches(h, (8, 0), (13, 10), (13, 50), (16, 0));
 
         var day = await CalculateAsync(h);
 
-        day.LunchMinutesTaken.Should().Be(30);
+        day.LunchMinutesTaken.Should().Be(40);
+        day.AttendanceNote.Should().Contain("Comida de 40 min — sin descuento");
         day.LunchExcessMinutes.Should().Be(0);
         day.LunchBreakMinutesApplied.Should().Be(0);
         day.HasTemporaryExits.Should().BeFalse("la comida no es una salida temporal");
@@ -68,17 +76,50 @@ public class LunchRuleTests
     }
 
     [Fact]
-    public async Task Lunch_OfFortyMinutes_DeductsTheExcessByDefault()
+    public async Task Lunch_WithDeductionEnabled_DeductsTheWholeLunch()
     {
         var h = Harness();
+        EnableLunchDeduction(h);
         Punches(h, (8, 0), (13, 0), (13, 40), (16, 0));
 
         var day = await CalculateAsync(h);
 
         day.LunchMinutesTaken.Should().Be(40);
-        day.LunchExcessMinutes.Should().Be(10);
-        day.TotalWorkedMinutes.Should().Be(470);
-        day.AttendanceNote.Should().Contain("10 min de exceso descontados");
+        day.LunchExcessMinutes.Should().Be(40);
+        day.TotalWorkedMinutes.Should().Be(440);
+        day.AttendanceNote.Should().Contain("Comida de 40 min — 40 min descontados");
+    }
+
+    [Theory]
+    [InlineData(16, 420, 60, 0)]  // Sale a su hora programada: le falta reponer la hora de comida.
+    [InlineData(17, 480, 0, 0)]   // Repone la comida: jornada completa.
+    [InlineData(18, 540, 0, 60)]  // Una hora después de completar la jornada: 1 h extra.
+    public async Task DeductedLunch_IsMadeUpAtTheEndOfTheJornada(int exitHour, int worked, int early, int overtime)
+    {
+        var h = Harness(); // 08:00–16:00
+        EnableLunchDeduction(h);
+        Punches(h, (8, 0), (13, 0), (14, 0), (exitHour, 0));
+
+        var day = await CalculateAsync(h);
+
+        day.LunchBreakMinutesApplied.Should().Be(60);
+        day.TotalWorkedMinutes.Should().Be(worked);
+        day.EarlyDepartureMinutes.Should().Be(early);
+        day.RawOvertimeMinutes.Should().Be(overtime);
+    }
+
+    [Fact]
+    public async Task WithoutLunch_TheJornadaEndsAtTheScheduledExit()
+    {
+        var h = Harness();
+        EnableLunchDeduction(h);
+        Punches(h, (8, 0), (17, 0));
+
+        var day = await CalculateAsync(h);
+
+        day.TotalWorkedMinutes.Should().Be(540);
+        day.EarlyDepartureMinutes.Should().Be(0);
+        day.RawOvertimeMinutes.Should().Be(60);
     }
 
     [Fact]
@@ -93,7 +134,26 @@ public class LunchRuleTests
         day.HasTemporaryExits.Should().BeTrue();
         day.TemporaryExitMinutes.Should().Be(30);
         day.TemporaryExitStatus.Should().Be(TemporaryExitStatus.Pending);
-        day.TotalWorkedMinutes.Should().Be(480, "la salida temporal pendiente no se descuenta hasta que RH la clasifique");
+        day.TotalWorkedMinutes.Should().Be(450, "la salida temporal se descuenta hasta que RH la marque con goce");
+    }
+
+    [Theory]
+    [InlineData(TemporaryExitStatus.ApprovedPaid, 480)]
+    [InlineData(TemporaryExitStatus.Dismissed, 480)]
+    [InlineData(TemporaryExitStatus.ApprovedUnpaid, 450)]
+    public async Task TemporaryExit_ClassifiedByHR_IsDeductedOnlyWithoutPay(TemporaryExitStatus status, int worked)
+    {
+        var h = Harness();
+        Punches(h, (8, 0), (10, 0), (10, 30), (16, 0));
+        await CalculateAsync(h);
+
+        var outcome = await new ClassifyTemporaryExitCommandHandler(h.Decisions())
+            .Handle(new ClassifyTemporaryExitCommand(Emp.Value, DateOnly.FromDateTime(Monday), status, "rh"), CancellationToken.None);
+        outcome.IsSuccess.Should().BeTrue(outcome.IsSuccess ? string.Empty : outcome.Error);
+
+        var day = await CalculateAsync(h);
+        day.TemporaryExitStatus.Should().Be(status);
+        day.TotalWorkedMinutes.Should().Be(worked);
     }
 
     [Fact]
@@ -110,15 +170,14 @@ public class LunchRuleTests
     }
 
     [Fact]
-    public async Task TwoAbsencesInTheWindow_TheClosestToThePaidDurationIsLunch()
+    public async Task TwoAbsencesInTheWindow_TheClosestToTheReferenceDurationIsLunch()
     {
         var h = Harness();
         Punches(h, (8, 0), (13, 0), (13, 20), (14, 0), (14, 32), (16, 0));
 
         var day = await CalculateAsync(h);
 
-        day.LunchMinutesTaken.Should().Be(32, "32 min está más cerca de los 30 con goce que 20 min");
-        day.LunchExcessMinutes.Should().Be(2);
+        day.LunchMinutesTaken.Should().Be(32, "32 min está más cerca de los 30 de referencia que 20 min");
         day.TemporaryExitMinutes.Should().Be(20);
     }
 
@@ -136,17 +195,17 @@ public class LunchRuleTests
     }
 
     [Fact]
-    public async Task ShiftPaidMinutes_OverrideTheGlobalValue()
+    public async Task ShiftReferenceDuration_OverridesTheGlobalValue()
     {
         var shift = AttendanceRegressionFixtures.CreateRegularShift();
         shift.SetPaidLunchMinutes(60);
         var h = Harness(shift);
-        Punches(h, (8, 0), (13, 0), (14, 0), (16, 0));
+        Punches(h, (8, 0), (13, 0), (13, 30), (14, 0), (15, 0), (16, 0));
 
         var day = await CalculateAsync(h);
 
-        day.LunchMinutesTaken.Should().Be(60);
-        day.LunchExcessMinutes.Should().Be(0, "el turno concede 60 min con goce");
+        day.LunchMinutesTaken.Should().Be(60, "el turno toma 60 min como referencia de la comida");
+        day.TemporaryExitMinutes.Should().Be(30);
     }
 
     [Fact]
@@ -169,19 +228,21 @@ public class LunchRuleTests
     {
         var shift = Shift.Create("Flexible 8h", new TimeSpan(8, 0, 0), 15, TimeSpan.FromHours(8), ShiftType.Flexible);
         var h = Harness(shift);
+        EnableLunchDeduction(h);
         Punches(h, (8, 0), (13, 0), (13, 45), (17, 0));
 
         var day = await CalculateAsync(h);
 
         day.LunchMinutesTaken.Should().Be(45);
-        day.LunchExcessMinutes.Should().Be(15);
-        day.TotalWorkedMinutes.Should().Be(525);
+        day.LunchExcessMinutes.Should().Be(45);
+        day.TotalWorkedMinutes.Should().Be(495);
     }
 
     [Fact]
-    public async Task ForgivingTheExcess_IsAuditedAndSurvivesRecalculation()
+    public async Task ForgivingTheLunch_IsAuditedAndSurvivesRecalculation()
     {
         var h = Harness();
+        EnableLunchDeduction(h);
         Punches(h, (8, 0), (13, 0), (13, 40), (16, 0));
         await CalculateAsync(h);
 

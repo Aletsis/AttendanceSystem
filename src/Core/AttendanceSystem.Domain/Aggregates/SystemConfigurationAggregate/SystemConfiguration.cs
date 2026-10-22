@@ -45,12 +45,14 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public TimeSpan LunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultWindowStart;
     public TimeSpan LunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultWindowEnd;
     public int PaidLunchMinutes { get; private set; } = Services.LunchPolicy.DefaultPaidMinutes;
+    // Activado: la comida completa se descuenta (RH puede perdonarla por día). Desactivado: no se descuenta.
+    public bool DeductLunch { get; private set; }
     // Ventana de comida de turnos nocturnos; puede cruzar medianoche.
     public TimeSpan NightLunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultNightWindowStart;
     public TimeSpan NightLunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultNightWindowEnd;
 
-    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes);
-    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes);
+    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes, DeductLunch);
+    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes, DeductLunch);
 
     // Alert Settings
     public bool AreAlertsEnabled { get; private set; }
@@ -186,6 +188,11 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         LunchWindowStart = windowStart;
         LunchWindowEnd = windowEnd;
         PaidLunchMinutes = paidLunchMinutes;
+    }
+
+    public void SetLunchDeduction(bool deduct)
+    {
+        DeductLunch = deduct;
     }
 
     public void UpdateNightLunchWindow(TimeSpan windowStart, TimeSpan windowEnd)

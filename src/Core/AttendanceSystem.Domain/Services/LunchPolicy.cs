@@ -5,15 +5,14 @@ namespace AttendanceSystem.Domain.Services;
 /// <list type="bullet">
 /// <item>La comida no tiene hora fija por turno: es una ausencia marcada cuya salida cae dentro de la ventana global
 /// de comida.</item>
-/// <item>Los minutos de comida con goce (globales, o los del turno si los define) no se descuentan.</item>
-/// <item>Si hay varias ausencias en la ventana, la comida es la de duración más cercana a los minutos con goce
-/// (empate: la primera); las demás son salidas temporales.</item>
-/// <item>El exceso sobre los minutos con goce se descuenta por defecto; RH puede perdonarlo.</item>
+/// <item>Con el descuento activado se descuenta la comida completa y RH puede perdonarla; desactivado no se descuenta.</item>
+/// <item>Si hay varias ausencias en la ventana, la comida es la de duración más cercana a la de referencia
+/// (<see cref="PaidMinutes"/>: global, o la del turno si la define; empate: la primera); las demás son salidas temporales.</item>
 /// <item>Una ausencia de hasta 15 min es doble toque; fuera de la ventana, salida temporal.</item>
 /// <item>Un marcaje intermedio sin pareja no es salida temporal ni se descuenta: es una incidencia para revisión.</item>
 /// </list>
 /// </summary>
-public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int PaidMinutes)
+public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int PaidMinutes, bool DeductLunch = false)
 {
     public static readonly TimeSpan DefaultWindowStart = new(12, 30, 0);
     public static readonly TimeSpan DefaultWindowEnd = new(15, 0, 0);
@@ -86,7 +85,7 @@ public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int P
             }
         }
 
-        return new IntermediateClassification(kinds, lunchMinutes, Math.Max(0, lunchMinutes - PaidMinutes), hasTemporary, temporaryMinutes);
+        return new IntermediateClassification(kinds, lunchMinutes, DeductLunch ? lunchMinutes : 0, hasTemporary, temporaryMinutes);
     }
 }
 
@@ -100,10 +99,10 @@ public enum IntermediateKind
 
 /// <param name="Kinds">Clasificación de cada par, en el orden recibido.</param>
 /// <param name="LunchMinutes">Duración real de la comida (0 si no hubo).</param>
-/// <param name="LunchExcessMinutes">Minutos de comida por encima de los con goce; se descuentan por defecto.</param>
+/// <param name="LunchDeductibleMinutes">Minutos de comida a descontar: la comida completa, o 0 si el descuento está desactivado.</param>
 public sealed record IntermediateClassification(
     IReadOnlyList<IntermediateKind> Kinds,
     int LunchMinutes,
-    int LunchExcessMinutes,
+    int LunchDeductibleMinutes,
     bool HasTemporaryExits,
     int TemporaryExitMinutes);

@@ -466,6 +466,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
                 context.SystemConfigurations.Add(config);
             }
             config.UpdateLunchSettings(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40);
+            config.SetLunchDeduction(true);
             config.UpdateNightLunchWindow(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0));
             context.Shifts.Add(shift);
             context.DailyAttendances.Add(daily);
@@ -475,8 +476,8 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
 
         await using var verify = _fixture.CreateDbContext();
         var storedConfig = await verify.SystemConfigurations.FirstAsync();
-        storedConfig.LunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40));
-        storedConfig.NightLunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0), 40));
+        storedConfig.LunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40, DeductLunch: true));
+        storedConfig.NightLunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0), 40, DeductLunch: true));
         (await verify.Shifts.SingleAsync(s => s.Id == shift.Id)).PaidLunchMinutes.Should().Be(45);
         var storedDaily = await verify.DailyAttendances.SingleAsync(d => d.Id == daily.Id);
         storedDaily.LunchMinutesTaken.Should().Be(55);

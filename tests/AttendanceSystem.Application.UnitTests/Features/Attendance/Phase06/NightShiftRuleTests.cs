@@ -64,16 +64,19 @@ public class NightShiftRuleTests
     }
 
     [Fact]
-    public async Task LunchCrossingMidnight_IsRecognized_AndItsExcessDeducted()
+    public async Task LunchCrossingMidnight_IsRecognized_AndDeducted()
     {
         var h = Harness();
+        var config = SystemConfiguration.CreateDefault();
+        config.SetLunchDeduction(true);
+        h.Configuration = config;
         Punches(h, 22, 23 + 50 / 60.0, 24.5, 30); // 23:50 → 00:30 = 40 min
 
         var day = await CalculateAsync(h);
 
         day.LunchMinutesTaken.Should().Be(40);
-        day.LunchExcessMinutes.Should().Be(10);
-        day.LunchBreakMinutesApplied.Should().Be(10);
+        day.LunchExcessMinutes.Should().Be(40);
+        day.LunchBreakMinutesApplied.Should().Be(40);
     }
 
     [Fact]
