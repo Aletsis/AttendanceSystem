@@ -302,7 +302,7 @@ public class Phase05ManualDecisionTests
         var shift = Regular();
         h.Store.Shifts.Add(shift);
         h.Store.Employees.Add(CreateEmployee(Emp, shift));
-        var only = Punch(h, Emp, Tuesday.AddHours(15).AddMinutes(50));
+        var only = Punch(h, Emp, Tuesday.AddHours(9).AddMinutes(50));
         await h.RecalculateAsync(Tuesday, Tuesday);
         h.Daily(Emp, Tuesday)!.CheckInRecordId.Should().Be(only.Id, "precondición: el único marcaje se tomó como entrada");
 
