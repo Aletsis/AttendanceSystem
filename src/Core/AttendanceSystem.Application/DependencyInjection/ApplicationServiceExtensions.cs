@@ -24,6 +24,7 @@ public static class ApplicationServiceExtensions
         // Servicios de Dominio y Validación
         services.AddScoped<AttendanceDeduplicationService>();
         services.AddScoped<AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService>();
+        services.AddScoped<AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService>();
         services.AddScoped<AttendanceValidationService>();
         services.AddScoped<AttendanceSystem.Application.Abstractions.IHistoricalAttendanceDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.HistoricalAttendanceTimeDiagnosticService>();
         services.AddScoped<AttendanceSystem.Application.Abstractions.IPunchAssignmentDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.PunchAssignmentDiagnosticService>();

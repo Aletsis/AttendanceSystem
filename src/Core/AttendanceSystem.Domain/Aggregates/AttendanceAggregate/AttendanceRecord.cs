@@ -124,6 +124,20 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
         }
     }
 
+    /// <summary>
+    /// Corrige la hora del marcaje (sólo desde <see cref="PunchTimeCorrection"/>, que conserva los valores anteriores):
+    /// nuevo instante, hora civil, fecha laboral y zona. Su jornada se recalcula después.
+    /// </summary>
+    internal void CorrectTime(DateTime checkTimeUtc, DateTime civilTime, DateOnly workDate, string timeZoneId)
+    {
+        if (checkTimeUtc.Kind != DateTimeKind.Utc) throw new DomainException("El instante corregido debe estar en UTC");
+        CheckTime = checkTimeUtc;
+        OriginalCheckTime = DateTime.SpecifyKind(civilTime, DateTimeKind.Unspecified);
+        WorkDate = workDate;
+        TimeZoneId = timeZoneId;
+        ResetStatus();
+    }
+
     public DateTime GetCivilTime(string? fallbackTimeZoneId = null)
     {
         if (OriginalCheckTime.HasValue)

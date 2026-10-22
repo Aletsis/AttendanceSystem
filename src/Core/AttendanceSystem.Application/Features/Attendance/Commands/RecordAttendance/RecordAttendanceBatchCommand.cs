@@ -25,7 +25,8 @@ public sealed record RecordAttendanceBatchCommand(
     string DeviceId,
     List<AttendanceLogDto> Logs,
     string? TimeZoneId = null,
-    string? Source = null
+    string? Source = null,
+    Guid? DownloadLogId = null
 ) : IRequest<Result<int>>;
 
 // Handler
@@ -38,6 +39,7 @@ public sealed class RecordAttendanceBatchCommandHandler
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ILogger<RecordAttendanceBatchCommandHandler> _logger;
     private readonly IPersistenceFailureClassifier _failureClassifier;
+    private readonly AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? _quarantine;
 
     public RecordAttendanceBatchCommandHandler(
         IAttendanceRepository attendanceRepository,
@@ -54,8 +56,10 @@ public sealed class RecordAttendanceBatchCommandHandler
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver? timeZoneResolver,
         ILogger<RecordAttendanceBatchCommandHandler>? logger = null,
-        IPersistenceFailureClassifier? failureClassifier = null)
+        IPersistenceFailureClassifier? failureClassifier = null,
+        AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? quarantine = null)
     {
+        _quarantine = quarantine;
         _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _attendanceRepository = attendanceRepository;
         _unitOfWork = unitOfWork;
@@ -100,9 +104,25 @@ public sealed class RecordAttendanceBatchCommandHandler
                 normalizedLogs.Add((log, utcTime, workDate, tz));
             }
 
+            // Marcajes con hora imposible (reloj sin fecha o adelantado): a cuarentena, no al cálculo. Cuentan como
+            // recibidos para que el reloj no los reenvíe.
+            int quarantined = 0;
+            if (_quarantine != null && normalizedLogs.Count > 0)
+            {
+                var punches = normalizedLogs.Select(n => new AttendanceSystem.Application.Features.Devices.Quarantine.PunchCandidate(
+                    n.Original.EmployeeId, CivilOf(n.Original, n.ResolvedTz), n.ResolvedTz, n.Original.VerifyMethodCode, n.Original.CheckTypeCode,
+                    n.Original.Source ?? command.Source ?? "ADMS")).ToList();
+                var impossible = await _quarantine.QuarantineImpossibleAsync(deviceId, command.DeviceId, punches, cancellationToken);
+                if (impossible.Count > 0)
+                {
+                    quarantined = impossible.Count;
+                    normalizedLogs = normalizedLogs.Where((_, i) => !impossible.Contains(i)).ToList();
+                }
+            }
+
             if (normalizedLogs.Count == 0)
             {
-                return Result<int>.Success(0);
+                return Result<int>.Success(quarantined);
             }
 
             var candidates = new List<AttendanceRecord>();
@@ -112,9 +132,9 @@ public sealed class RecordAttendanceBatchCommandHandler
                 var verifyMethod = VerifyMethod.FromValue(log.VerifyMethodCode);
                 var checkType = CheckType.FromValue(log.CheckTypeCode);
 
-                var origCheckTime = log.OriginalCheckTime ?? (log.CheckTime.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(log.CheckTime, recordTz) : log.CheckTime);
+                var origCheckTime = CivilOf(log, recordTz);
 
-                candidates.Add(AttendanceRecord.Create(
+                var record = AttendanceRecord.Create(
                     employeeId,
                     deviceId,
                     utcTime,
@@ -123,7 +143,14 @@ public sealed class RecordAttendanceBatchCommandHandler
                     workDate: workDate,
                     originalCheckTime: origCheckTime,
                     timeZoneId: recordTz,
-                    source: log.Source ?? command.Source ?? "ADMS"));
+                    source: log.Source ?? command.Source ?? "ADMS");
+
+                if (command.DownloadLogId.HasValue)
+                {
+                    record.DownloadLogId = new AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLogId(command.DownloadLogId.Value);
+                }
+
+                candidates.Add(record);
             }
 
             // F03-01 / F03-05 / H04: identidad (empleado, instante) sin importar dispositivo; colisiones
@@ -144,11 +171,15 @@ public sealed class RecordAttendanceBatchCommandHandler
                                   "Agregados: {AddedCount}, Duplicados omitidos: {SkippedCount}",
                                   command.DeviceId, outcome.Inserted.Count, skippedDuplicates);
 
-            return Result<int>.Success(outcome.Inserted.Count);
+            return Result<int>.Success(outcome.Inserted.Count + quarantined);
         }
         catch (DomainException ex)
         {
             return Result<int>.Failure(ex.Message);
         }
     }
+
+    /// <summary>Hora civil que marcó el reloj.</summary>
+    private DateTime CivilOf(AttendanceLogDto log, string timeZoneId) =>
+        log.OriginalCheckTime ?? (log.CheckTime.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(log.CheckTime, timeZoneId) : log.CheckTime);
 }

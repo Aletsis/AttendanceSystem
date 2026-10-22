@@ -15,6 +15,7 @@
     <MudNavGroup Title="Dispositivos y descargas" Expanded="false" Icon="@Icons.Material.Filled.Devices" >
         <AuthorizeView Roles="Administrador">
         <MudNavLink Href="/devices" Icon="@Icons.Material.Filled.DeviceHub">Dispositivos</MudNavLink>
+        <MudNavLink Href="/devices/clock-time" Icon="@Icons.Material.Filled.AccessTime">Hora de relojes</MudNavLink>
         </AuthorizeView>
         <MudNavLink Href="/attendance/download" Icon="@Icons.Material.Filled.Download">Descargas e Historial</MudNavLink>
         <AuthorizeView Roles="Administrador">

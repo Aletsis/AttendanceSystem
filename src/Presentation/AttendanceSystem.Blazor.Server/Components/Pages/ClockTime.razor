@@ -1,0 +1,361 @@
+@page "/devices/clock-time"
+@using MediatR
+@using AttendanceSystem.Application.Common
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Devices.Queries.GetAllDevices
+@using AttendanceSystem.Application.Features.Devices.Quarantine
+@using AttendanceSystem.Domain.Aggregates.AttendanceAggregate
+@using AttendanceSystem.Domain.Enumerations
+@using Microsoft.AspNetCore.Authorization
+@attribute [Authorize(Roles = "Administrador")]
+@inject ISender Sender
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<MudText Typo="Typo.h5" Class="mb-1">Hora de relojes</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Alertas de relojes desfasados, marcajes con hora imposible en cuarentena y corrección de la hora de los marcajes de un reloj.
+</MudText>
+
+<MudTabs Elevation="1" Rounded="true" PanelClass="pa-4" @bind-ActivePanelIndex="_tab">
+    <MudTabPanel Text="@($"Alertas ({_alerts.Count})")" Icon="@Icons.Material.Filled.NotificationsActive">
+        @if (_alerts.Count == 0)
+        {
+            <MudAlert Severity="Severity.Success">No hay alertas de reloj pendientes.</MudAlert>
+        }
+        else
+        {
+            <MudTable Items="_alerts" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Fecha</MudTh>
+                    <MudTh>Reloj</MudTh>
+                    <MudTh>Tipo</MudTh>
+                    <MudTh>Detalle</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.TimestampUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                    <MudTd>@context.DeviceName</MudTd>
+                    <MudTd>
+                        @if (context.Type == AlertType.DeviceClockDrift)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Warning">Hora desfasada</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Error">Cuarentena</MudChip>
+                        }
+                    </MudTd>
+                    <MudTd>@context.Message</MudTd>
+                    <MudTd><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => ResolveAlert(context))">Atendida</MudButton></MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="@($"Cuarentena ({_pendingCount})")" Icon="@Icons.Material.Filled.GppMaybe">
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Marcajes que el reloj envió con una fecha anterior al año 2000 o con una hora posterior a la actual de su zona.
+            No cuentan en ninguna jornada hasta que se liberan con la hora corregida o se descartan.
+        </MudText>
+        <MudSelect T="QuarantineStatus?" Value="_statusFilter" ValueChanged="OnStatusFilterChanged" Label="Mostrar" Dense="true" Class="mb-3" Style="max-width: 240px">
+            <MudSelectItem T="QuarantineStatus?" Value="@((QuarantineStatus?)QuarantineStatus.Pending)">Pendientes</MudSelectItem>
+            <MudSelectItem T="QuarantineStatus?" Value="@((QuarantineStatus?)QuarantineStatus.Released)">Liberados</MudSelectItem>
+            <MudSelectItem T="QuarantineStatus?" Value="@((QuarantineStatus?)QuarantineStatus.Discarded)">Descartados</MudSelectItem>
+            <MudSelectItem T="QuarantineStatus?" Value="@((QuarantineStatus?)null)">Todos</MudSelectItem>
+        </MudSelect>
+
+        <MudTable Items="_quarantine" Dense="true" Hover="true" T="QuarantinedPunchDto" OnRowClick="@(e => SelectPunch(e.Item))"
+                  RowClassFunc="@((p, _) => p.Id == _selected?.Id ? "mud-selected-item" : string.Empty)">
+            <HeaderContent>
+                <MudTh>Empleado</MudTh>
+                <MudTh>Reloj</MudTh>
+                <MudTh>Hora reportada</MudTh>
+                <MudTh>Motivo</MudTh>
+                <MudTh>Estado</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.EmployeeId – @context.EmployeeName</MudTd>
+                <MudTd>@context.DeviceName</MudTd>
+                <MudTd>@context.ReportedTime.ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
+                <MudTd>@context.Reason</MudTd>
+                <MudTd>
+                    @switch (context.Status)
+                    {
+                        case QuarantineStatus.Pending: <MudChip T="string" Size="Size.Small" Color="Color.Warning">Pendiente</MudChip> break;
+                        case QuarantineStatus.Released: <MudChip T="string" Size="Size.Small" Color="Color.Success">Liberado @context.ReleasedTime?.ToString("dd/MM HH:mm")</MudChip> break;
+                        default: <MudChip T="string" Size="Size.Small">Descartado</MudChip> break;
+                    }
+                </MudTd>
+            </RowTemplate>
+            <NoRecordsContent><MudText>No hay marcajes en cuarentena.</MudText></NoRecordsContent>
+        </MudTable>
+
+        @if (_selected is { Status: QuarantineStatus.Pending } punch)
+        {
+            <MudPaper Class="pa-4 mt-4" Outlined="true">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">@punch.EmployeeName — reportado @punch.ReportedTime.ToString("dd/MM/yyyy HH:mm:ss") (@TimeZoneCatalog.Describe(punch.TimeZoneId))</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_releaseDays" Label="Desfase: días" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_releaseHours" Label="Horas" /></MudItem>
+                    <MudItem xs="6" sm="3"><MudNumericField @bind-Value="_releaseMinutes" Label="Minutos" /></MudItem>
+                    <MudItem xs="12" sm="3" Class="d-flex align-center">
+                        <MudText Typo="Typo.body2">Hora corregida: <b>@punch.ReportedTime.AddMinutes(ReleaseOffset).ToString("dd/MM/yyyy HH:mm:ss")</b></MudText>
+                    </MudItem>
+                    <MudItem xs="12"><MudTextField @bind-Value="_note" Label="Motivo de la decisión" Required="true" /></MudItem>
+                    <MudItem xs="12" Class="d-flex gap-2 justify-end">
+                        <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="DiscardSelected" Disabled="_busy">Descartar</MudButton>
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ReleaseSelected" Disabled="_busy">Liberar con esta hora</MudButton>
+                    </MudItem>
+                </MudGrid>
+            </MudPaper>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Corregir marcajes de un reloj" Icon="@Icons.Material.Filled.ManageHistory">
+        <MudText Typo="Typo.body2" Class="mb-3">
+            Use <b>zona correcta</b> si el reloj marcaba bien su hora pero se interpretó en otra zona (p. ej. se movió de sucursal antes de cambiar su zona).
+            Use <b>desfase</b> si el reloj marcaba una hora equivocada (p. ej. quedó con la hora de otra zona o se desconfiguró).
+            Primero revise la vista previa; la corrección queda registrada y las jornadas afectadas se recalculan.
+        </MudText>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" @bind-Value="_deviceId" Label="Reloj" Required="true">
+                    @foreach (var device in _devices)
+                    {
+                        <MudSelectItem Value="@device.DeviceId">@device.Name</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudDateRangePicker @bind-DateRange="_range" Label="Fechas laborales" AutoClose="true" />
+            </MudItem>
+            <MudItem xs="12" md="4">
+                <MudSelect T="string" @bind-Value="_zone" Label="Zona correcta (opcional)" Clearable="true">
+                    @foreach (var zone in TimeZoneCatalog.Common)
+                    {
+                        <MudSelectItem Value="@zone.Id">@TimeZoneCatalog.Describe(zone.Id)</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="4" md="2"><MudNumericField @bind-Value="_fixDays" Label="Desfase: días" /></MudItem>
+            <MudItem xs="4" md="2"><MudNumericField @bind-Value="_fixHours" Label="Horas" /></MudItem>
+            <MudItem xs="4" md="2"><MudNumericField @bind-Value="_fixMinutes" Label="Minutos" /></MudItem>
+            <MudItem xs="12" md="6"><MudTextField @bind-Value="_reason" Label="Motivo" /></MudItem>
+            <MudItem xs="12" Class="d-flex gap-2 justify-end">
+                <MudButton Variant="Variant.Outlined" Color="Color.Primary" OnClick="Preview" Disabled="_busy">Vista previa</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Warning" OnClick="ApplyCorrection" Disabled="@(_busy || _preview == null || _preview.Corrected == 0)">Aplicar corrección</MudButton>
+            </MudItem>
+        </MudGrid>
+
+        @if (_preview != null)
+        {
+            <MudAlert Severity="@(_preview.Applied ? Severity.Success : Severity.Info)" Class="mt-4">
+                @(_preview.Applied ? "Corrección aplicada" : "Vista previa"): @_preview.Corrected marcaje(s) cambian, @_preview.Skipped se omiten.
+            </MudAlert>
+            <MudTable Items="_preview.Rows" Dense="true" Hover="true" Class="mt-2" Height="420px" FixedHeader="true">
+                <HeaderContent>
+                    <MudTh>Empleado</MudTh>
+                    <MudTh>Hora anterior</MudTh>
+                    <MudTh>Hora corregida</MudTh>
+                    <MudTh>Jornada</MudTh>
+                    <MudTh>Zona</MudTh>
+                    <MudTh>Estado</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.EmployeeId</MudTd>
+                    <MudTd>@context.OldCivil.ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
+                    <MudTd>@context.NewCivil.ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
+                    <MudTd>@context.OldWorkDate.ToString("dd/MM") @(context.NewWorkDate != context.OldWorkDate ? $"→ {context.NewWorkDate:dd/MM}" : "")</MudTd>
+                    <MudTd>@context.NewTimeZone</MudTd>
+                    <MudTd>
+                        @if (context.SkipReason == null)
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Primary">Cambia</MudChip>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small">@context.SkipReason</MudChip>
+                        }
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudTabPanel>
+
+    <MudTabPanel Text="Historial de correcciones" Icon="@Icons.Material.Filled.History">
+        <MudTable Items="_history" Dense="true" Hover="true">
+            <HeaderContent>
+                <MudTh>Aplicada</MudTh>
+                <MudTh>Reloj</MudTh>
+                <MudTh>Fechas</MudTh>
+                <MudTh>Zona</MudTh>
+                <MudTh>Desfase</MudTh>
+                <MudTh>Marcajes</MudTh>
+                <MudTh>Usuario</MudTh>
+                <MudTh>Motivo</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.AppliedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                <MudTd>@context.DeviceName</MudTd>
+                <MudTd>@context.FromDate.ToString("dd/MM/yyyy") – @context.ToDate.ToString("dd/MM/yyyy")</MudTd>
+                <MudTd>@(context.TimeZoneId ?? "Sin cambio")</MudTd>
+                <MudTd>@FormatOffset(context.OffsetMinutes)</MudTd>
+                <MudTd>@context.CorrectedCount (@context.SkippedCount omitidos)</MudTd>
+                <MudTd>@context.AppliedBy</MudTd>
+                <MudTd>@context.Reason</MudTd>
+            </RowTemplate>
+            <NoRecordsContent><MudText>Aún no se han aplicado correcciones.</MudText></NoRecordsContent>
+        </MudTable>
+    </MudTabPanel>
+</MudTabs>
+
+@code {
+    private int _tab;
+    private bool _busy;
+
+    private List<ClockAlertDto> _alerts = new();
+    private List<QuarantinedPunchDto> _quarantine = new();
+    private int _pendingCount;
+    private QuarantineStatus? _statusFilter = QuarantineStatus.Pending;
+    private QuarantinedPunchDto? _selected;
+    private int _releaseDays, _releaseHours, _releaseMinutes;
+    private string _note = string.Empty;
+
+    private List<DeviceDto> _devices = new();
+    private string? _deviceId;
+    private DateRange? _range;
+    private string? _zone;
+    private int _fixDays, _fixHours, _fixMinutes;
+    private string _reason = string.Empty;
+    private PunchCorrectionResultDto? _preview;
+
+    private List<PunchTimeCorrectionDto> _history = new();
+
+    private int ReleaseOffset => (_releaseDays * 24 + _releaseHours) * 60 + _releaseMinutes;
+    private int FixOffset => (_fixDays * 24 + _fixHours) * 60 + _fixMinutes;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var devices = await Sender.Send(new GetAllDevicesQuery());
+        if (devices.IsSuccess) _devices = devices.Value.OrderBy(d => d.Name).ToList();
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _alerts = (await Sender.Send(new GetClockAlertsQuery())).ToList();
+        _quarantine = (await Sender.Send(new GetQuarantinedPunchesQuery(_statusFilter))).ToList();
+        _pendingCount = _statusFilter == QuarantineStatus.Pending
+            ? _quarantine.Count
+            : (await Sender.Send(new GetQuarantinedPunchesQuery(QuarantineStatus.Pending))).Count;
+        _history = (await Sender.Send(new GetPunchTimeCorrectionsQuery())).ToList();
+        if (_selected != null) _selected = _quarantine.FirstOrDefault(q => q.Id == _selected.Id);
+    }
+
+    private async Task OnStatusFilterChanged(QuarantineStatus? status)
+    {
+        _statusFilter = status;
+        _selected = null;
+        await LoadAsync();
+    }
+
+    private void SelectPunch(QuarantinedPunchDto punch)
+    {
+        _selected = punch;
+        _releaseDays = _releaseHours = _releaseMinutes = 0;
+        _note = string.Empty;
+    }
+
+    private async Task ResolveAlert(ClockAlertDto alert)
+    {
+        var result = await Sender.Send(new ResolveClockAlertCommand(alert.Id));
+        if (result.IsFailure) Snackbar.Add(result.Error, Severity.Warning);
+        await LoadAsync();
+    }
+
+    private async Task ReleaseSelected()
+    {
+        if (_selected == null) return;
+        _busy = true;
+        var result = await Sender.Send(new ReleaseQuarantinedPunchCommand(_selected.Id, ReleaseOffset, _note));
+        _busy = false;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add(result.Value, Severity.Success);
+            _selected = null;
+            await LoadAsync();
+        }
+        else Snackbar.Add(result.Error, Severity.Error);
+    }
+
+    private async Task DiscardSelected()
+    {
+        if (_selected == null) return;
+        _busy = true;
+        var result = await Sender.Send(new DiscardQuarantinedPunchCommand(_selected.Id, _note));
+        _busy = false;
+        if (result.IsSuccess)
+        {
+            Snackbar.Add("Marcaje descartado.", Severity.Success);
+            _selected = null;
+            await LoadAsync();
+        }
+        else Snackbar.Add(result.Error, Severity.Error);
+    }
+
+    private CorrectDevicePunchTimesCommand? BuildCorrection(bool apply)
+    {
+        if (string.IsNullOrEmpty(_deviceId) || _range?.Start == null || _range.End == null)
+        {
+            Snackbar.Add("Seleccione el reloj y el rango de fechas.", Severity.Warning);
+            return null;
+        }
+        return new CorrectDevicePunchTimesCommand(_deviceId, DateOnly.FromDateTime(_range.Start.Value), DateOnly.FromDateTime(_range.End.Value),
+            _zone, FixOffset, _reason, apply);
+    }
+
+    private async Task Preview()
+    {
+        var command = BuildCorrection(apply: false);
+        if (command == null) return;
+        _busy = true;
+        var result = await Sender.Send(command);
+        _busy = false;
+        if (result.IsSuccess) _preview = result.Value;
+        else
+        {
+            _preview = null;
+            Snackbar.Add(result.Error, Severity.Error);
+        }
+    }
+
+    private async Task ApplyCorrection()
+    {
+        var command = BuildCorrection(apply: true);
+        if (command == null || _preview == null) return;
+        var confirm = await DialogService.ShowMessageBoxAsync("Aplicar corrección",
+            $"Se cambiará la hora de {_preview.Corrected} marcaje(s) y se recalcularán sus jornadas. La corrección queda registrada con su motivo. ¿Continuar?",
+            yesText: "Aplicar", cancelText: "Cancelar");
+        if (confirm != true) return;
+
+        _busy = true;
+        var result = await Sender.Send(command);
+        _busy = false;
+        if (result.IsSuccess)
+        {
+            _preview = result.Value;
+            Snackbar.Add($"Corrección aplicada a {result.Value.Corrected} marcaje(s); las jornadas se están recalculando.", Severity.Success);
+            await LoadAsync();
+        }
+        else Snackbar.Add(result.Error, Severity.Error);
+    }
+
+    private static string FormatOffset(int minutes)
+    {
+        if (minutes == 0) return "—";
+        var span = TimeSpan.FromMinutes(Math.Abs(minutes));
+        var text = span.Days > 0 ? $"{span.Days} d {span.Hours} h {span.Minutes} min" : $"{span.Hours} h {span.Minutes:00} min";
+        return (minutes < 0 ? "−" : "+") + text;
+    }
+}

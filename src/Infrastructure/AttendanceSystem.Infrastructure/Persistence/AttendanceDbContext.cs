@@ -43,6 +43,8 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<AttendanceConsolidationRequest> AttendanceConsolidationRequests => Set<AttendanceConsolidationRequest>();
     public DbSet<PunchAssignment> PunchAssignments => Set<PunchAssignment>();
     public DbSet<AttendanceAdjustmentHistory> AttendanceAdjustmentHistory => Set<AttendanceAdjustmentHistory>();
+    public DbSet<QuarantinedPunch> QuarantinedPunches => Set<QuarantinedPunch>();
+    public DbSet<PunchTimeCorrection> PunchTimeCorrections => Set<PunchTimeCorrection>();
 
     private readonly ICurrentUserService? _currentUserService;
 

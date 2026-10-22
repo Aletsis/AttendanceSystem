@@ -47,6 +47,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly IPersistenceFailureClassifier _failureClassifier;
     private readonly AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService _clock;
+    private readonly AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? _quarantine;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -67,8 +68,10 @@ public sealed class DownloadFromDeviceCommandHandler
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         IPersistenceFailureClassifier? failureClassifier = null,
-        AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService? clock = null)
+        AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService? clock = null,
+        AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? quarantine = null)
     {
+        _quarantine = quarantine;
         _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -264,7 +267,7 @@ public sealed class DownloadFromDeviceCommandHandler
             // con la de esa zona; si se desvió, se resincroniza y queda una alerta (los marcajes ya capturados con la
             // hora equivocada no se alteran aquí).
             var authoritativeTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
-            await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken);
+            await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken, deviceIdValue);
 
             // 5. Descargar registros mediante contrato explícito de resultados
             // La ventana se expresa en la hora civil del reloj (el SDK compara con la hora que marca).
@@ -381,6 +384,18 @@ public sealed class DownloadFromDeviceCommandHandler
                         timeZoneId: authoritativeTimeZone,
                         source: deviceBrand.ToString()
                     ));
+                }
+            }
+
+            // Marcajes con hora imposible: a cuarentena (guardada antes de que el reloj pueda borrarse), no al cálculo.
+            if (_quarantine != null && domainRecords.Count > 0)
+            {
+                var punches = domainRecords.Select(r => new AttendanceSystem.Application.Features.Devices.Quarantine.PunchCandidate(
+                    r.EmployeeId.Value, r.OriginalCheckTime ?? r.CheckTime, authoritativeTimeZone, r.VerifyMethod.Id, r.CheckType.Id, r.Source ?? deviceBrand.ToString())).ToList();
+                var impossible = await _quarantine.QuarantineImpossibleAsync(deviceId, deviceName, punches, cancellationToken);
+                if (impossible.Count > 0)
+                {
+                    domainRecords = domainRecords.Where((_, i) => !impossible.Contains(i)).ToList();
                 }
             }
 

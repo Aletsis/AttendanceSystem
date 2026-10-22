@@ -16,5 +16,12 @@ public interface IAdmsCommandService
 
     // Métodos para Device Info y sincronización en tiempo real
     Task<DeviceInfoDto?> WaitForDeviceInfoAsync(string serialNumber, TimeSpan timeout, CancellationToken cancellationToken = default);
-    void NotifyDeviceInfoReceived(string serialNumber, DeviceInfoDto deviceInfo);
+    void NotifyDeviceInfoReceived(string serialNumber, DeviceInfoDto deviceInfo, string? commandId = null);
+
+    // Rastreo de sesiones y métricas de descarga ADMS
+    Guid? GetActiveDownloadLogId(string serialNumber, string? commandId = null);
+    void RecordDownloadProgress(string serialNumber, string? commandId, int totalReceived, int newInserted);
+    (int TotalReceived, int NewInserted) GetAndCompleteDownloadSession(string serialNumber, string commandId);
+    void NotifyDownloadCompleted(string serialNumber, Guid downloadLogId, bool isSuccess, int totalDownloaded, int newRecords, string? errorMessage = null);
+    event Action<string, Guid, bool, int, int, string?>? OnDownloadStatusChanged;
 }

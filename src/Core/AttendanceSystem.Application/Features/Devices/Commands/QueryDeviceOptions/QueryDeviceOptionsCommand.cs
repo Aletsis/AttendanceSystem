@@ -43,10 +43,9 @@ public class QueryDeviceOptionsHandler : IRequestHandler<QueryDeviceOptionsComma
                     return Result.Failure("El dispositivo ADMS no tiene número de serie registrado.");
                 }
 
-                _logger.LogInformation("ADMS: Encolando consulta de opciones (INFO y DATA QUERY tablename=options) para SN: {SerialNumber}", sn);
+                _logger.LogInformation("ADMS: Encolando consulta de información técnica INFO para SN: {SerialNumber}", sn);
 
                 _admsCommandService.EnqueueCommand(sn, "INFO");
-                _admsCommandService.EnqueueCommand(sn, "DATA QUERY tablename=options");
 
                 return Result.Success();
             }
