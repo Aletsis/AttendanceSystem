@@ -163,57 +163,37 @@ public sealed class DownloadFromDeviceCommandHandler
                 var isAccess = device.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true;
                 var admsTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
 
-                if (command.ForceFullSync || !filterDate.HasValue)
+                // Consultar sólo marcajes. CHECK/LOG y los cambios de stamp disparaban
+                // reenvíos generales, fuera de la ventana histórica solicitada.
+                var table = isAccess ? "Transaction" : "ATTLOG";
+                string query;
+                if (command.ForceFullSync || (!filterDate.HasValue && !command.ToDate.HasValue))
                 {
-                    // Forzar sincronización completa: Resetear stamp en BD para que el próximo push entregue todo desde el inicio (Stamp=0)
-                    await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                    _logger.LogInformation("ADMS: Sincronización completa forzada (CHECK + DATA QUERY + LOG + Stamp=0) para SN:{SerialNumber} (Modo: {Mode})",
-                        sn, isAccess ? "acc" : "att");
-
-                    // 1. CHECK actualiza opciones y stamps en el dispositivo (reinicio a Stamp=0 / TransStamp=0)
-                    _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
-
-                    // 2. DATA QUERY para forzar lectura de logs históricos en dispositivos Visible Light / SpeedFace
-                    if (isAccess)
-                    {
-                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=Transaction,fields=*");
-                    }
-                    else
-                    {
-                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=ATTLOG,fields=*");
-                    }
-
-                    // 3. LOG fuerza la subida inmediata de buffer
-                    _admsCommandService.EnqueueCommand(sn!, "LOG");
+                    query = $"DATA QUERY tablename={table},fields=*";
                 }
                 else
                 {
-                    // El reloj filtra con su hora civil: la ventana se expresa en su zona, no en la del servidor.
-                    var fromCivil = ToDeviceCivil(filterDate.Value, admsTimeZone);
-                    var fromStr = fromCivil.ToString("yyyy-MM-dd HH:mm:ss");
-                    var toStr = (command.ToDate.HasValue ? ToDeviceCivil(command.ToDate.Value, admsTimeZone) : _clock.ExpectedCivilNow(admsTimeZone)).ToString("yyyy-MM-dd HH:mm:ss");
-
-                    // Actualizar stamp para que /push responda con la fecha requerida (el stamp es hora del reloj)
-                    await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, fromCivil, cancellationToken);
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                    _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} hasta {ToDate} para SN:{SerialNumber} (CHECK + DATA QUERY + LOG)",
-                        fromStr, toStr, sn);
-                    _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
-
-                    if (isAccess)
+                    // Las fechas de la consulta se expresan en la hora civil del reloj.
+                    // Sin Hasta, cerrar la ventana en el momento de esta solicitud.
+                    var fromCivil = filterDate.HasValue
+                        ? ToDeviceCivil(filterDate.Value, admsTimeZone)
+                        : new DateTime(1970, 1, 1);
+                    var toCivil = ToDeviceCivil(requestToDate, admsTimeZone);
+                    if (fromCivil > toCivil)
                     {
-                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=Transaction,starttime={fromStr},endtime={toStr}");
-                    }
-                    else
-                    {
-                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=ATTLOG,starttime={fromStr},endtime={toStr}");
+                        const string error = "La fecha inicial de descarga no puede ser posterior a la fecha final.";
+                        downloadLog.MarkAsFailed(error);
+                        await _downloadLogRepository.UpdateAsync(downloadLog, cancellationToken);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                        return Result<DownloadResultDto>.Failure(error);
                     }
 
-                    _admsCommandService.EnqueueCommand(sn!, "LOG");
+                    query = FormattableString.Invariant($"DATA QUERY tablename={table},starttime={fromCivil:yyyy-MM-dd HH:mm:ss},endtime={toCivil:yyyy-MM-dd HH:mm:ss}");
                 }
+
+                // El resultado registrado debe corresponder a la consulta de marcajes.
+                _admsCommandService.EnqueueCommand(sn!, query, downloadLogId.Value);
+                _logger.LogInformation("ADMS: Consulta de marcajes encolada para SN:{SerialNumber}: {Query}", sn, query);
 
                 _logger.LogInformation("✅ ADMS: Comandos de sincronización encolados para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",
                     sn!, downloadLogId.Value);

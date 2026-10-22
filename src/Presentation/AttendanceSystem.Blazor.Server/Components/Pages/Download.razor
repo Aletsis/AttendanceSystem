@@ -237,7 +237,7 @@
         {
             bool? confirmed = await DialogService.ShowMessageBoxAsync(
                 "Confirmar Sincronización Completa",
-                "¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de todos los dispositivos? Esta acción reiniciará el stamp de sincronización. Los registros duplicados se omitirán automáticamente.",
+                "¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de todos los dispositivos? Los registros duplicados se omitirán automáticamente.",
                 yesText: "Sí, Sincronizar Todo", cancelText: "Cancelar");
 
             if (confirmed != true) return;
@@ -286,7 +286,7 @@
             var devName = GetDeviceName(deviceId);
             bool? confirmed = await DialogService.ShowMessageBoxAsync(
                 "Confirmar Sincronización Completa",
-                $"¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de '{devName}'? Esta acción reiniciará el stamp de sincronización en el reloj. Los registros duplicados se omitirán automáticamente.",
+                $"¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de '{devName}'? Los registros duplicados se omitirán automáticamente.",
                 yesText: "Sí, Sincronizar Todo", cancelText: "Cancelar");
 
             if (confirmed != true) return;
