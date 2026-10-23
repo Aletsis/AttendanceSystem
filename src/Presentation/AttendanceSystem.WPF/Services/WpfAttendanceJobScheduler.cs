@@ -49,6 +49,11 @@ namespace AttendanceSystem.WPF.Services
             // No-op for WPF Client
         }
 
+        public void ScheduleScheduleIntegrityCheck()
+        {
+            // No-op for WPF Client - Handled by server
+        }
+
         public void EnqueueBiometricSync(string deviceId, string employeeId)
         {
             // No-op for WPF Client - Handled by server

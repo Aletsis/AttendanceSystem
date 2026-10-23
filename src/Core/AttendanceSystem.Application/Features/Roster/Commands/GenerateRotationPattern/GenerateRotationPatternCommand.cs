@@ -31,6 +31,7 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAttendanceConsolidationRepository? _consolidations;
     private readonly IConsolidationWakeup? _wakeup;
+    private readonly IRotationPatternRepository? _patternRepository;
 
     public GenerateRotationPatternCommandHandler(
         IShiftRosterRepository rosterRepository,
@@ -53,7 +54,19 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         IUnitOfWork unitOfWork,
         IAttendanceConsolidationRepository? consolidations,
         IConsolidationWakeup? wakeup)
+        : this(rosterRepository, employeeRepository, unitOfWork, consolidations, wakeup, null)
     {
+    }
+
+    public GenerateRotationPatternCommandHandler(
+        IShiftRosterRepository rosterRepository,
+        IEmployeeRepository? employeeRepository,
+        IUnitOfWork unitOfWork,
+        IAttendanceConsolidationRepository? consolidations,
+        IConsolidationWakeup? wakeup,
+        IRotationPatternRepository? patternRepository)
+    {
+        _patternRepository = patternRepository;
         _rosterRepository = rosterRepository;
         _employeeRepository = employeeRepository;
         _unitOfWork = unitOfWork;
@@ -72,6 +85,10 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
 
         if (effectiveEndDate < request.StartDate.Date)
             throw new ArgumentException("La fecha final no puede ser anterior a la fecha inicial.");
+
+        // Caso 10: un patrón sin turnos generaría puros descansos.
+        if (RotationPatternDefinition.From(request).MissingShiftsError() is { } missingShifts)
+            throw new ArgumentException(missingShifts);
 
         int totalGenerated = 0;
         var totalDays = (effectiveEndDate - request.StartDate.Date).Days + 1;
@@ -124,6 +141,18 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
             {
                 await _rosterRepository.AddRangeAsync(newRosters, cancellationToken);
             }
+
+            // Se guarda el patrón para que un esquema indefinido se siga extendiendo (ExtendRotationPatterns).
+            if (_patternRepository != null)
+            {
+                var definition = RotationPatternDefinition.From(request).Serialize();
+                DateTime? patternEnd = request.IsIndefinite ? null : effectiveEndDate;
+                var pattern = await _patternRepository.GetByEmployeeAsync(empId, cancellationToken);
+                if (pattern == null)
+                    await _patternRepository.AddAsync(RotationPattern.Create(empId, request.StartDate, patternEnd, definition, effectiveEndDate), cancellationToken);
+                else
+                    pattern.Replace(request.StartDate, patternEnd, definition, effectiveEndDate);
+            }
         }
 
         // Un patrón que empieza en el pasado cambia jornadas ya calculadas: se recalculan hasta hoy.
@@ -139,7 +168,7 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         return totalGenerated;
     }
 
-    private static (ShiftId? shiftId, bool isRestDay, string notes) DetermineSlot(
+    internal static (ShiftId? shiftId, bool isRestDay, string notes) DetermineSlot(
         GenerateRotationPatternCommand request,
         int dayOffset,
         DateTime currentDate,

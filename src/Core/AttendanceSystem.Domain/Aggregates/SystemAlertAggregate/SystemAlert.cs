@@ -30,4 +30,10 @@ public sealed class SystemAlert : AggregateRoot<SystemAlertId>
     {
         IsResolved = true;
     }
+
+    /// <summary>Actualiza el texto de una alerta vigente cuyo detalle cambió (p. ej. la fecha en que termina un roster).</summary>
+    public void UpdateMessage(string message)
+    {
+        Message = message;
+    }
 }

@@ -106,6 +106,16 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
             "*/5 * * * *");
     }
 
+    public void ScheduleScheduleIntegrityCheck()
+    {
+        // Every hour, and once now so a fresh start reports at once
+        _recurringJobManager.AddOrUpdate<AttendanceJobs>(
+            "schedule-integrity-check",
+            jobs => jobs.CheckScheduleIntegrity(),
+            "0 * * * *");
+        _backgroundJobClient.Enqueue<AttendanceJobs>(jobs => jobs.CheckScheduleIntegrity());
+    }
+
     public void EnqueueBiometricSync(string deviceId, string employeeId)
     {
         _backgroundJobClient.Enqueue<AttendanceJobs>(
@@ -149,6 +159,18 @@ public class AttendanceJobs
         {
             throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
                 "Check for Critical Position Absences", result.Error);
+        }
+    }
+
+    [JobDisplayName("Extend Rotation Rosters and Check Schedules")]
+    public async Task CheckScheduleIntegrity()
+    {
+        await _mediator.Send(new AttendanceSystem.Application.Features.Roster.Commands.ExtendRotationPatterns.ExtendRotationPatternsCommand());
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Shifts.Commands.CheckScheduleIntegrity.CheckScheduleIntegrityCommand());
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Extend Rotation Rosters and Check Schedules", result.Error);
         }
     }
 

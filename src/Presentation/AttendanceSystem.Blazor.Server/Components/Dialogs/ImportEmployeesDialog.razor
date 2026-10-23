@@ -21,7 +21,7 @@
         <MudText Typo="Typo.body1" Class="mb-4">
             Suba un archivo Excel (.xlsx) con los datos de los empleados.
             <br />
-            <b>Columnas requeridas:</b> ID, Nombre, Apellido, Email, Sucursal(Nombre), Departamento(Nombre), Puesto(Nombre), Fecha Contratación, Genero (M/F).
+            <b>Columnas requeridas:</b> ID, Nombre, Apellido, Email, Sucursal(Nombre), Departamento(Nombre), Puesto(Nombre), Fecha Contratación, Genero (M/F), Horario (Nombre).
         </MudText>
 
         <div class="d-flex align-center gap-4 mb-4">
@@ -70,7 +70,7 @@
     private Dictionary<string, Guid> _branches = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, Guid> _departments = new(StringComparer.OrdinalIgnoreCase);
     private Dictionary<string, Guid> _positions = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<string, Guid> _shifts = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ShiftDto> _shifts = new(StringComparer.OrdinalIgnoreCase);
 
     protected override async Task OnInitializedAsync()
     {
@@ -96,7 +96,7 @@
         var shiftsResult = await Mediator.Send(new GetShiftsQuery());
         if (shiftsResult.IsSuccess)
         {
-            foreach (var s in shiftsResult.Value) _shifts[s.Name] = s.Id;
+            foreach (var s in shiftsResult.Value) _shifts[s.Name.Trim()] = s;
         }
     }
 
@@ -184,10 +184,16 @@
                  if (!_departments.TryGetValue(dto.DepartmentName, out var deptId)) throw new Exception($"Departamento '{dto.DepartmentName}' no encontrado.");
                  if (!_positions.TryGetValue(dto.PositionName, out var posId)) throw new Exception($"Puesto '{dto.PositionName}' no encontrado.");
 
+                 // Caso 10: el turno es el del horario indicado.
+                 if (string.IsNullOrWhiteSpace(dto.ScheduleName) || !_shifts.TryGetValue(dto.ScheduleName, out var schedule))
+                     throw new Exception($"Horario '{dto.ScheduleName}' no encontrado.");
+                 if (schedule.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Rotativo)
+                     throw new Exception($"El horario '{schedule.Name}' es rotativo: configure su esquema desde el empleado.");
+
                  // Defaults
                  string telefono = string.Empty;
-                 AttendanceSystem.Domain.Enumerations.ShiftType? shiftType = AttendanceSystem.Domain.Enumerations.ShiftType.Matutino; 
-                 string? scheduleId = null;
+                 AttendanceSystem.Domain.Enumerations.ShiftType? shiftType = schedule.ShiftType;
+                 string? scheduleId = schedule.Id.ToString();
                  int? restDay = null;
 
                  commands.Add(new CreateEmployeeCommand(

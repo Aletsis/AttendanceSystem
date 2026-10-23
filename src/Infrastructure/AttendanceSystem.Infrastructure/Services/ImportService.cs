@@ -335,11 +335,18 @@ public class ImportService : IImportService
                         }
 
                         var gender = row.Cell(9).GetValue<string>();
+                        // Caso 10: todo empleado entra con horario.
+                        var scheduleName = row.Cell(10).GetValue<string>();
+                        if (string.IsNullOrWhiteSpace(scheduleName))
+                        {
+                            result.Errors.Add($"Fila {row.RowNumber()}: falta el horario del empleado {id}.");
+                            continue;
+                        }
 
                         result.ValidEntries.Add(new ImportEmployeeDto(
                             id, firstName, lastName, email,
                             branchName, deptName, posName,
-                            gender, hireDate
+                            gender, hireDate, scheduleName.Trim()
                         ));
                     }
                     catch (Exception ex)
@@ -431,6 +438,7 @@ public class ImportService : IImportService
         ws.Cell(1, 7).Value = "Puesto";
         ws.Cell(1, 8).Value = "Fecha Contratación";
         ws.Cell(1, 9).Value = "Género";
+        ws.Cell(1, 10).Value = "Horario";
 
         ws.Columns().AdjustToContents();
         using var ms = new MemoryStream();

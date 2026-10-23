@@ -11,6 +11,8 @@ public interface IShiftRosterRepository
     Task<IReadOnlyList<ShiftRoster>> GetByEmployeeAsync(EmployeeId employeeId, DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ShiftRoster>> GetAllAsync(CancellationToken cancellationToken = default);
     Task<IReadOnlyList<EmployeeId>> GetEmployeeIdsWithRosterAsync(CancellationToken cancellationToken = default);
+    /// <summary>Días del roster que usan el horario (impide borrarlo).</summary>
+    Task<int> CountByShiftAsync(ShiftId shiftId, CancellationToken cancellationToken = default);
     Task AddAsync(ShiftRoster roster, CancellationToken cancellationToken = default);
     Task AddRangeAsync(IEnumerable<ShiftRoster> rosters, CancellationToken cancellationToken = default);
     Task UpdateAsync(ShiftRoster roster, CancellationToken cancellationToken = default);

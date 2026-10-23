@@ -30,5 +30,6 @@ public sealed record ImportEmployeeDto(
     string DepartmentName,
     string PositionName,
     string Gender,
-    DateTime HireDate
+    DateTime HireDate,
+    string? ScheduleName = null
 );

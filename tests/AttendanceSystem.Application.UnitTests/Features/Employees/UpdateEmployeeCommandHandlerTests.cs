@@ -385,7 +385,7 @@ public class UpdateEmployeeCommandHandlerTests
         SetupLookups();
         _sampleEmployee.Terminate(DateTime.Today.AddDays(-10));
 
-        var result = await _handler.Handle(ValidCommand(DateTime.Today.AddDays(-12)), CancellationToken.None);
+        var result = await _handler.Handle(ValidCommand(DateTime.Today.AddDays(-12), scheduleId: _sampleShift.Id.Value.ToString()), CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Contain("posterior a la última baja");

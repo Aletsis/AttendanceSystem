@@ -112,6 +112,11 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 return Result<EmployeeDto>.Failure($"El puesto '{position.Name}' no pertenece al departamento '{department.Name}'");
             }
 
+            if (EmployeeScheduleRules.Validate(request.ShiftType, request.ScheduleId) is { } scheduleError)
+            {
+                return Result<EmployeeDto>.Failure(scheduleError);
+            }
+
             ShiftId? scheduleId = null;
             Shift? schedule = null;
             if (!string.IsNullOrWhiteSpace(request.ScheduleId))

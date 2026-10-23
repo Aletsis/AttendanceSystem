@@ -155,6 +155,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         get
         {
             var notes = new List<string>();
+            if (IsWithoutShift) notes.Add("Sin turno asignado: asígnele un horario");
             if (EarlyDepartureMinutes > 0) notes.Add($"Salida anticipada de {EarlyDepartureMinutes} min");
             if (WeeklyShortfallMinutes > 0) notes.Add($"Faltaron {WeeklyShortfallMinutes} min para la meta semanal");
             if (TemporaryExitSummary is { } temporary) notes.Add(temporary);
@@ -167,6 +168,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             return notes;
         }
     }
+
+    /// <summary>
+    /// Caso 10: se calculó sin turno (un hueco de configuración que la revisión de horarios reporta). Un descanso sin
+    /// marcajes no lo es.
+    /// </summary>
+    public bool IsWithoutShift => ShiftId == null && !(IsRestDay && !HasPunches);
 
     /// <summary>Las notas en una sola línea (exportaciones).</summary>
     public string? AttendanceNote => Notes.Count == 0 ? null : string.Join(" | ", Notes);
@@ -766,18 +773,14 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                 return;
             }
 
-            // Fallback for missing schedule details but working normal day
+            // Caso 10: sin turno sólo se registra el tiempo entre el primer y el último marcaje; no hay meta contra la
+            // cual calcular extras hasta que RH asigne un horario.
             if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {
                 var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes - LunchBreakMinutesApplied;
                 if (IsTemporaryExitDeducted)
                     totalMinutes -= TemporaryExitMinutes;
                 TotalWorkedMinutes = (int)Math.Max(0, totalMinutes);
-
-                // Jornada base estándar de 8 horas (480 min) de trabajo efectivo.
-                int goal = 480;
-
-                SetOvertimeFromSurplus(totalMinutes - goal);
             }
             return;
         }

@@ -40,6 +40,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private string? _selectedBranchId;
         private string? _selectedShiftId; // ScheduleId
         private ShiftType _selectedShiftType = ShiftType.Matutino;
+        private ShiftType? _originalShiftType;
         private int? _selectedRestDay; // 0=Sunday, etc.
 
         // Overtime configuration
@@ -295,6 +296,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     SelectedPositionId = emp.PositionId.ToString();
                     SelectedBranchId = emp.BranchId.ToString();
 
+                    _originalShiftType = emp.ShiftType;
                     SelectedShiftType = emp.ShiftType ?? ShiftType.Matutino;
                     // Filter Shifts triggers here
 
@@ -449,7 +451,20 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 return false;
             }
 
-            if (!string.IsNullOrEmpty(SelectedShiftId) && !VisibleShifts.Any(s => s.Id.ToString() == SelectedShiftId))
+            // Caso 10: ningún empleado queda sin turno. El esquema rotativo (su roster) sólo se genera en la versión web.
+            if (SelectedShiftType == ShiftType.Rotativo)
+            {
+                if (_originalShiftType != ShiftType.Rotativo)
+                {
+                    _messageService.ShowErrorAsync("El turno rotativo se asigna desde la versión web, donde se genera su esquema de turnos.");
+                    return false;
+                }
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(SelectedShiftId)) { _messageService.ShowErrorAsync("El horario es requerido."); return false; }
+
+            if (!VisibleShifts.Any(s => s.Id.ToString() == SelectedShiftId))
             {
                 _messageService.ShowErrorAsync("El horario seleccionado no corresponde al turno seleccionado.");
                 return false;
@@ -466,6 +481,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private void ClearForm()
         {
             Id = string.Empty;
+            _originalShiftType = null;
             FirstName = string.Empty;
             LastName = string.Empty;
             Email = string.Empty;

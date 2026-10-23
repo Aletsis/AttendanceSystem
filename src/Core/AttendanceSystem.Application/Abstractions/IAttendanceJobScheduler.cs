@@ -11,5 +11,7 @@ public interface IAttendanceJobScheduler
     void DisableAutoReport();
     void ScheduleDeviceHeartbeat();
     void ScheduleCloudSync();
+    /// <summary>Caso 10: extiende los rosters indefinidos y revisa que ningún día quede sin turno (cada hora y al iniciar).</summary>
+    void ScheduleScheduleIntegrityCheck();
     void EnqueueBiometricSync(string deviceId, string employeeId);
 }

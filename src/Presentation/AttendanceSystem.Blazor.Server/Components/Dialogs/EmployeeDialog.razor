@@ -124,7 +124,7 @@
                     }
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="ShiftTypeEnum?" Value="_selectedShiftType" ValueChanged="OnShiftTypeChanged" Label="Turno" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                            <MudSelect T="ShiftTypeEnum?" Value="_selectedShiftType" ValueChanged="OnShiftTypeChanged" Label="Turno" Required="@(!IsSelectedBranchExternal)" RequiredError="El turno es requerido" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var type in AvailableShiftTypes)
                                 {
                                     <MudSelectItem T="ShiftTypeEnum?" Value="@type">@GetShiftTypeName(type)</MudSelectItem>
@@ -191,7 +191,7 @@
                         else
                         {
                             <MudItem xs="12" sm="6">
-                                <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll || IsSelectedBranchExternal)">
+                                <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Required="@(!IsSelectedBranchExternal)" RequiredError="El horario es requerido" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll || IsSelectedBranchExternal)">
                                     @foreach (var shift in FilteredSchedules)
                                     {
                                         <MudSelectItem T="Guid?" Value="@shift.Id">@shift.Name</MudSelectItem>
@@ -613,9 +613,29 @@
                 return;
             }
 
+            // Caso 10: ningún empleado queda sin turno.
+            if (!_selectedShiftType.HasValue)
+            {
+                Snackbar.Add("Seleccione el turno del empleado", Severity.Warning);
+                return;
+            }
+
             // Validar turno rotativo vs fijo
             if (_selectedShiftType == ShiftTypeEnum.Rotativo)
             {
+                bool hasRoster = _existingRoster != null && _existingRoster.HasRoster;
+                if (!hasRoster && !_applyRotationScheme)
+                {
+                    Snackbar.Add("Un empleado rotativo necesita su esquema: marque la opción para generar la proyección de turnos", Severity.Warning);
+                    return;
+                }
+
+                // Quien pasa a ser rotativo sigue su roster desde la vigencia del cambio: el esquema empieza ese día.
+                if (_originalShiftType != ShiftTypeEnum.Rotativo && HasDatedChange && _effectiveFrom.HasValue)
+                {
+                    _rotationModel.StartDate = _effectiveFrom.Value.Date;
+                }
+
                 if (_applyRotationScheme)
                 {
                     var validation = _rotationModel.Validate();
@@ -628,6 +648,12 @@
             }
             else
             {
+                if (!ScheduleId.HasValue)
+                {
+                    Snackbar.Add("Seleccione el horario del empleado", Severity.Warning);
+                    return;
+                }
+
                 if (ScheduleId.HasValue && _selectedShiftType.HasValue)
                 {
                     var selectedSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);

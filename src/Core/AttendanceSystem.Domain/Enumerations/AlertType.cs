@@ -7,5 +7,6 @@ public enum AlertType
     DeviceMemoryFull = 3,
     DeviceClockDrift = 4,
     PunchQuarantined = 5,
+    ScheduleIntegrity = 6,
     SystemError = 99
 }

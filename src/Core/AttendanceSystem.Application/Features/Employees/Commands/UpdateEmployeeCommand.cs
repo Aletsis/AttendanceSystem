@@ -54,6 +54,7 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
     private readonly IAttendanceConsolidationRepository _consolidations;
     private readonly IConsolidationWakeup _wakeup;
     private readonly IShiftRosterRepository _rosterRepository;
+    private readonly IRotationPatternRepository? _patternRepository;
     private readonly ILogger<UpdateEmployeeCommandHandler> _logger;
 
     public UpdateEmployeeCommandHandler(
@@ -67,8 +68,10 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
         IAttendanceConsolidationRepository consolidations,
         IConsolidationWakeup wakeup,
         IShiftRosterRepository rosterRepository,
-        ILogger<UpdateEmployeeCommandHandler> logger)
+        ILogger<UpdateEmployeeCommandHandler> logger,
+        IRotationPatternRepository? patternRepository = null)
     {
+        _patternRepository = patternRepository;
         _rosterRepository = rosterRepository;
         _lockService = lockService;
         _consolidations = consolidations;
@@ -124,6 +127,13 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             if (!department.Positions.Any(p => p.Id == positionId))
             {
                 return Result<EmployeeDto>.Failure($"El puesto '{position.Name}' no pertenece al departamento '{department.Name}'");
+            }
+
+            // Dar de baja no exige horario: después de la baja no hay jornadas.
+            if (request.Status != EmployeeStatus.Baja &&
+                EmployeeScheduleRules.Validate(request.ShiftType, request.ScheduleId) is { } scheduleError)
+            {
+                return Result<EmployeeDto>.Failure(scheduleError);
             }
 
             ShiftId? scheduleId = null;
@@ -182,6 +192,12 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 {
                     var obsolete = await _rosterRepository.GetByEmployeeAsync(employee.Id, effectiveFrom, DateTime.MaxValue.Date, cancellationToken);
                     if (obsolete.Count > 0) _rosterRepository.RemoveRange(obsolete);
+                    // Su patrón tampoco se sigue extendiendo.
+                    if (_patternRepository != null &&
+                        await _patternRepository.GetByEmployeeAsync(employee.Id, cancellationToken) is { } pattern)
+                    {
+                        pattern.EndBefore(effectiveFrom);
+                    }
                 }
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);

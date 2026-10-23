@@ -239,9 +239,9 @@ public class DailyAttendanceTests
     }
 
     [Fact]
-    public void Create_WhenWorkingOnRestDayWithoutShift_ShouldUse8HourGoal()
+    public void Create_WhenWorkingOnRestDayWithoutShift_HasNoOvertimeAndIsFlagged()
     {
-        // Arrange: No shift assigned, worked 9 hours (540 min) -> 60 min OT over 8h (480 min) base
+        // Caso 10: sin turno sólo se registra el tiempo trabajado; no hay meta para calcular extras.
         var checkIn = _date.AddHours(8);
         var checkOut = _date.AddHours(17);
 
@@ -258,7 +258,9 @@ public class DailyAttendanceTests
         // Assert
         da.WorkedOnRestDay.Should().BeTrue();
         da.IsRestDay.Should().BeTrue();
-        da.OvertimeMinutes.Should().Be(60);
+        da.TotalWorkedMinutes.Should().Be(540);
+        da.OvertimeMinutes.Should().Be(0);
+        da.Notes.Should().Contain("Sin turno asignado: asígnele un horario");
     }
 
     [Fact]

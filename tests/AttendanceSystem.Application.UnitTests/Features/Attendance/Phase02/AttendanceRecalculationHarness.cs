@@ -216,6 +216,9 @@ internal sealed class InMemoryAdjustmentRepository : IAttendanceAdjustmentReposi
             .Where(a => employeeId == null || a.EmployeeId == employeeId)
             .ToList());
 
+    public Task<int> CountByShiftOverrideAsync(ShiftId shiftId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_store.Adjustments.Count(a => a.ShiftIdOverride == shiftId));
+
     public Task AddAsync(AttendanceAdjustment adjustment, CancellationToken cancellationToken = default) { _store.PendingAdjustmentAdds.Add(adjustment); return Task.CompletedTask; }
     public void Update(AttendanceAdjustment adjustment) { }
     public void Remove(AttendanceAdjustment adjustment) => _store.Adjustments.Remove(adjustment);

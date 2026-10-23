@@ -68,7 +68,7 @@ public class EmployeeRepository : IEmployeeRepository
     public async Task<bool> IsShiftInUseAsync(ShiftId shiftId, CancellationToken cancellationToken = default)
     {
         return await _dbContext.Set<Employee>()
-            .AnyAsync(e => e.ScheduleId == shiftId, cancellationToken);
+            .AnyAsync(e => e.ScheduleId == shiftId || e.ScheduleAssignments.Any(a => a.ScheduleId == shiftId), cancellationToken);
     }
 
     public async Task<bool> IsDepartmentInUseAsync(DepartmentId departmentId, CancellationToken cancellationToken = default)

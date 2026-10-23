@@ -62,6 +62,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IShiftRepository, ShiftRepository>();
         services.AddScoped<IShiftRosterRepository, ShiftRosterRepository>();
+        services.AddScoped<IRotationPatternRepository, RotationPatternRepository>();
         services.AddScoped<IBranchRepository, BranchRepository>();
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IPositionRepository, PositionRepository>();

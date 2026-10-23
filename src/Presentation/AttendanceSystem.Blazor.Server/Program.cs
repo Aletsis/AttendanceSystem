@@ -230,6 +230,7 @@ try
         scheduler.ScheduleCriticalAbsenceCheck();
         scheduler.ScheduleDeviceHeartbeat();
         scheduler.ScheduleCloudSync();
+        scheduler.ScheduleScheduleIntegrityCheck();
     }
 
     app.UseAntiforgery();

@@ -86,6 +86,11 @@ public class ShiftRosterRepository : IShiftRosterRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<int> CountByShiftAsync(ShiftId shiftId, CancellationToken cancellationToken = default)
+    {
+        return await _context.Set<ShiftRoster>().CountAsync(r => r.ShiftId == shiftId, cancellationToken);
+    }
+
     public async Task AddAsync(ShiftRoster roster, CancellationToken cancellationToken = default)
     {
         await _context.Set<ShiftRoster>().AddAsync(roster, cancellationToken);
