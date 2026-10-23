@@ -53,6 +53,7 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
     private readonly IAttendanceCalculationLockService _lockService;
     private readonly IAttendanceConsolidationRepository _consolidations;
     private readonly IConsolidationWakeup _wakeup;
+    private readonly IShiftRosterRepository _rosterRepository;
     private readonly ILogger<UpdateEmployeeCommandHandler> _logger;
 
     public UpdateEmployeeCommandHandler(
@@ -65,8 +66,10 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
         IAttendanceCalculationLockService lockService,
         IAttendanceConsolidationRepository consolidations,
         IConsolidationWakeup wakeup,
+        IShiftRosterRepository rosterRepository,
         ILogger<UpdateEmployeeCommandHandler> logger)
     {
+        _rosterRepository = rosterRepository;
         _lockService = lockService;
         _consolidations = consolidations;
         _wakeup = wakeup;
@@ -172,6 +175,15 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                     request.EffectiveFrom);
 
                 _employeeRepository.Update(employee);
+
+                // El roster sólo rige a los rotativos: al dejar de serlo, se borra desde la fecha de vigencia.
+                var effectiveFrom = (request.EffectiveFrom ?? DateTime.Today).Date;
+                if (employee.AssignmentOn(effectiveFrom).ShiftType != ShiftType.Rotativo)
+                {
+                    var obsolete = await _rosterRepository.GetByEmployeeAsync(employee.Id, effectiveFrom, DateTime.MaxValue.Date, cancellationToken);
+                    if (obsolete.Count > 0) _rosterRepository.RemoveRange(obsolete);
+                }
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 // F06-08: un cambio con vigencia pasada recalcula de forma durable las jornadas afectadas.

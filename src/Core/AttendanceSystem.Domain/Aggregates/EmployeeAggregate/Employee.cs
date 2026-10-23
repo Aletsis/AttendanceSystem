@@ -124,7 +124,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         };
 
         employee._employmentPeriods.Add(new EmploymentPeriod(hireDate));
-        employee._scheduleAssignments.Add(new ScheduleAssignment(hireDate, scheduleId, shiftType, branchId));
+        employee._scheduleAssignments.Add(new ScheduleAssignment(hireDate, scheduleId, shiftType, branchId, employee.GetEffectiveRestDays()));
         return employee;
     }
 
@@ -194,9 +194,11 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         // Sin fecha explícita rige hoy, o el ingreso si aún no ocurre.
         var from = (effectiveFrom ?? (DateTime.Today < hireDate.Date ? hireDate : DateTime.Today)).Date;
 
-        // F06-08: los cambios de horario, tipo o sucursal y de alta/baja quedan como vigencias desde la fecha indicada.
+        // F06-08: los cambios de horario, tipo, sucursal, días de descanso y de alta/baja quedan como vigencias desde
+        // la fecha indicada.
+        var newRestDays = ResolveRestDays(restDays, restDay);
         DateTime? recalculateFrom = null;
-        if (RecordAssignment(from, scheduleId, shiftType, branchId)) recalculateFrom = from;
+        if (RecordAssignment(from, scheduleId, shiftType, branchId, newRestDays)) recalculateFrom = from;
         if (HireDate.Date != hireDate.Date)
         {
             var earliest = hireDate.Date < HireDate.Date ? hireDate.Date : HireDate.Date;
@@ -218,27 +220,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
         }
 
-        var configuredRestDays = restDays?.Distinct().ToList();
-        if (configuredRestDays != null && configuredRestDays.Any())
-        {
-            RestDays = configuredRestDays;
-            RestDay = configuredRestDays.FirstOrDefault();
-        }
-        else if (restDays != null)
-        {
-            RestDays = new List<WeekDay>();
-            RestDay = restDay;
-        }
-        else if (restDay.HasValue)
-        {
-            RestDays = new List<WeekDay> { restDay.Value };
-            RestDay = restDay;
-        }
-        else
-        {
-            RestDays = new List<WeekDay>();
-            RestDay = null;
-        }
+        RestDays = newRestDays;
+        RestDay = newRestDays.Count > 0 ? newRestDays[0] : null;
 
         FirstName = firstName;
         LastName = lastName;
@@ -263,6 +246,20 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         DevicePrivilege = devicePrivilege;
         return recalculateFrom;
     }
+
+    /// <summary>Días de descanso efectivos de una actualización: la lista, o el día principal heredado si viene vacía.</summary>
+    private static List<WeekDay> ResolveRestDays(IEnumerable<WeekDay>? restDays, WeekDay? restDay)
+    {
+        var configured = restDays?.Distinct().ToList();
+        if (configured is { Count: > 0 }) return configured;
+        return restDay.HasValue ? new List<WeekDay> { restDay.Value } : new List<WeekDay>();
+    }
+
+    /// <summary>Descanso según los días vigentes en <paramref name="date"/> (no los actuales).</summary>
+    public bool IsRestDayOn(DateTime date) => RestDaysOn(date).Contains((WeekDay)(int)date.DayOfWeek);
+
+    /// <summary>Días de descanso vigentes en una fecha; los actuales si la vigencia es anterior a que se fecharan.</summary>
+    public IReadOnlyList<WeekDay> RestDaysOn(DateTime date) => EffectiveAssignment(date)?.RestDays ?? GetEffectiveRestDays();
 
     public bool IsRestDay(DayOfWeek dayOfWeek)
     {
@@ -375,33 +372,52 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     /// <summary>F06-08: horario, tipo y sucursal vigentes en una fecha (la asignación actual si no hay historia).</summary>
     public (ShiftId? ScheduleId, ShiftType? ShiftType, BranchId BranchId) AssignmentOn(DateTime date)
     {
-        var effective = _scheduleAssignments
-            .Where(a => a.EffectiveFrom <= date.Date)
-            .OrderByDescending(a => a.EffectiveFrom)
-            .FirstOrDefault()
-            ?? _scheduleAssignments.OrderBy(a => a.EffectiveFrom).FirstOrDefault();
-
+        var effective = EffectiveAssignment(date);
         return effective == null
             ? (ScheduleId, ShiftType, BranchId)
             : (effective.ScheduleId, effective.ShiftType, effective.BranchId);
     }
 
-    /// <summary>Registra una asignación vigente desde <paramref name="effectiveFrom"/>; devuelve si cambió algo.</summary>
-    public bool RecordAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId)
+    private ScheduleAssignment? EffectiveAssignment(DateTime date) =>
+        _scheduleAssignments
+            .Where(a => a.EffectiveFrom <= date.Date)
+            .OrderByDescending(a => a.EffectiveFrom)
+            .FirstOrDefault()
+        ?? _scheduleAssignments.OrderBy(a => a.EffectiveFrom).FirstOrDefault();
+
+    /// <summary>
+    /// Registra una asignación vigente desde <paramref name="effectiveFrom"/>; devuelve si cambió algo. Las
+    /// vigencias posteriores se conservan: el cambio rige hasta la siguiente. Sin <paramref name="restDays"/> se
+    /// conservan los días de descanso vigentes en esa fecha.
+    /// </summary>
+    public bool RecordAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId, IEnumerable<WeekDay>? restDays = null)
     {
         if (_scheduleAssignments.Count == 0)
         {
             // Sin historia previa: la configuración actual rige desde el ingreso (límite documentado).
-            _scheduleAssignments.Add(new ScheduleAssignment(HireDate, ScheduleId, ShiftType, BranchId));
+            _scheduleAssignments.Add(new ScheduleAssignment(HireDate, ScheduleId, ShiftType, BranchId, GetEffectiveRestDays()));
         }
 
-        var current = AssignmentOn(effectiveFrom);
-        if (current.ScheduleId == scheduleId && current.ShiftType == shiftType && current.BranchId == branchId) return false;
+        var current = EffectiveAssignment(effectiveFrom)!;
+        restDays ??= current.RestDays ?? GetEffectiveRestDays();
+        if (current.SameAs(scheduleId, shiftType, branchId, restDays)) return false;
 
         var sameDay = _scheduleAssignments.FirstOrDefault(a => a.EffectiveFrom == effectiveFrom.Date);
-        if (sameDay != null) sameDay.Replace(scheduleId, shiftType, branchId);
-        else _scheduleAssignments.Add(new ScheduleAssignment(effectiveFrom, scheduleId, shiftType, branchId));
+        if (sameDay != null) sameDay.Replace(scheduleId, shiftType, branchId, restDays);
+        else _scheduleAssignments.Add(new ScheduleAssignment(effectiveFrom, scheduleId, shiftType, branchId, restDays));
         return true;
+    }
+
+    /// <summary>
+    /// El empleado pasa a turno rotativo desde <paramref name="effectiveFrom"/> (al generarle un roster); conserva
+    /// horario, sucursal y descansos. Devuelve si cambió algo.
+    /// </summary>
+    public bool BecomeRotating(DateTime effectiveFrom)
+    {
+        var (scheduleId, _, branchId) = AssignmentOn(effectiveFrom);
+        var changed = RecordAssignment(effectiveFrom, scheduleId, Enumerations.ShiftType.Rotativo, branchId);
+        if (effectiveFrom.Date <= DateTime.Today) ShiftType = Enumerations.ShiftType.Rotativo;
+        return changed;
     }
 
     private void MoveHireDate(DateTime hireDate)
@@ -412,18 +428,14 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         if (firstAssignment != null && _scheduleAssignments.Count == 1)
         {
             _scheduleAssignments.Clear();
-            _scheduleAssignments.Add(new ScheduleAssignment(hireDate, firstAssignment.ScheduleId, firstAssignment.ShiftType, firstAssignment.BranchId));
+            _scheduleAssignments.Add(new ScheduleAssignment(hireDate, firstAssignment.ScheduleId, firstAssignment.ShiftType, firstAssignment.BranchId,
+                firstAssignment.RestDays ?? GetEffectiveRestDays().ToList()));
         }
     }
 
     public void SetStatus(EmployeeStatus status)
     {
         Status = status;
-    }
-
-    public void SetShiftType(ShiftType? shiftType)
-    {
-        ShiftType = shiftType;
     }
 
     public void SetCreatedAudit(DateTime createdAt, string? createdBy)

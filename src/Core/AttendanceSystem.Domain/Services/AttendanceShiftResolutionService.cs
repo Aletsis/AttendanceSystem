@@ -18,13 +18,18 @@ public sealed record ShiftResolutionResult(
 /// <summary>
 /// Servicio de dominio que centraliza la resolución de turno y descanso diario,
 /// garantizando consistencia estricta entre el cálculo automático y las modificaciones manuales.
-/// Precedencia:
-/// 1. Ajuste manual explícito del día (AttendanceAdjustment)
-/// 2. Calendario / Roster planificado (ShiftRoster)
-/// 3. Reglas base del empleado (RestDays con fallback a RestDay, horario fijo o autodetección)
+/// Precedencia (con la asignación vigente en la fecha, F06-08):
+/// 1. Ajuste manual explícito del día (AttendanceAdjustment): turno y/o descanso.
+/// 2. Horario fijo del empleado; el roster no aplica. Descanso: los días de descanso vigentes del empleado.
+/// 3. Empleado rotativo: el roster del día (turno y descanso); sin roster ese día, autodetección y sus días de descanso.
+/// 4. Sin horario: autodetección entre turnos matutinos, vespertinos y nocturnos; sus días de descanso.
 /// </summary>
 public static class AttendanceShiftResolutionService
 {
+    /// <summary>Tipos de turno candidatos de la autodetección.</summary>
+    public static readonly IReadOnlySet<ShiftType> AutoDetectableTypes =
+        new HashSet<ShiftType> { ShiftType.Matutino, ShiftType.Vespertino, ShiftType.Nocturno };
+
     public static ShiftResolutionResult Resolve(
         Employee employee,
         DateTime date,
@@ -39,7 +44,7 @@ public static class AttendanceShiftResolutionService
         bool isAutoDetected = false;
         Shift? shift = null;
 
-        // 1. Precedencia 1: Ajuste manual explícito del día (RH)
+        // 1. Ajuste manual explícito del día (RH)
         if (adjustment != null)
         {
             if (adjustment.IsRestDayOverride.HasValue)
@@ -56,59 +61,39 @@ public static class AttendanceShiftResolutionService
             }
         }
 
-        // Si ya hay override explícito de descanso y turno, no requiere consultar niveles inferiores
-        if (isRestDayOverridden && shift != null)
-        {
-            return new ShiftResolutionResult(shift, isRestDay, isAutoDetected, isRestDayOverridden, isShiftOverridden);
-        }
-
-        // 2. Precedencia 2: Asignación en Roster / Calendario de turnos
-        if (roster != null)
-        {
-            if (!isRestDayOverridden)
-            {
-                isRestDay = roster.IsRestDay;
-            }
-
-            if (shift == null && roster.ShiftId != null &&
-                availableShifts.TryGetValue(roster.ShiftId, out var rShift))
-            {
-                shift = rShift;
-            }
-        }
-        else if (!isRestDayOverridden)
-        {
-            // Determinar día(s) de descanso predeterminados del empleado (evaluando RestDays múltiples con fallback a RestDay)
-            if (employee.IsRestDay(date.DayOfWeek))
-            {
-                isRestDay = true;
-            }
-        }
-
-        // 3. Precedencia 3: Detección automática para turno rotativo o sin horario fijo, con la asignación
-        //    vigente en la fecha calculada (F06-08), no la configuración actual del empleado.
         var assignment = employee.AssignmentOn(date);
+        bool isRotating = assignment.ShiftType == ShiftType.Rotativo;
+        // El roster sólo rige a quien es rotativo en esa fecha (un horario fijo posterior lo deja sin efecto).
+        var rosterEntry = isRotating ? roster : null;
+
+        if (!isRestDayOverridden)
+        {
+            isRestDay = rosterEntry?.IsRestDay ?? employee.IsRestDayOn(date);
+        }
+
         if (shift == null)
         {
-            if (assignment.ShiftType == ShiftType.Rotativo || assignment.ScheduleId == null)
+            if (isRotating)
             {
-                // F06-03 / H10: sólo hay candidato si existe un marcaje real (los del día ya excluyen los que
-                // pertenecen a jornadas previas). FirstOrDefault sobre DateTime devolvía MinValue y autodetectaba.
-                DateTime? firstPunch = dayPunches?.OrderBy(p => p).Select(p => (DateTime?)p).FirstOrDefault();
-                if (firstPunch.HasValue)
+                // 3. Rotativo: turno del roster; sin roster ese día, autodetección; en último caso su horario.
+                if (rosterEntry?.ShiftId != null && availableShifts.TryGetValue(rosterEntry.ShiftId, out var rShift))
                 {
-                    // Un turno mixto es una plantilla semanal, no un horario candidato.
-                    var autoShift = ShiftDetectionService.FindClosestShift(firstPunch.Value,
-                        availableShifts.Values.Where(s => s.ShiftType != ShiftType.Mixto));
-                    if (autoShift != null)
-                    {
-                        shift = autoShift;
-                        isAutoDetected = true;
-                    }
+                    shift = rShift;
+                }
+                else
+                {
+                    shift = AutoDetect(dayPunches, availableShifts);
+                    isAutoDetected = shift != null;
                 }
             }
+            else if (assignment.ScheduleId == null)
+            {
+                // 4. Sin horario: autodetección.
+                shift = AutoDetect(dayPunches, availableShifts);
+                isAutoDetected = shift != null;
+            }
 
-            // 4. Precedencia 4: Turno fijo del empleado (ScheduleId)
+            // 2. Horario fijo (y respaldo del rotativo sin roster ni turno cercano).
             if (shift == null && assignment.ScheduleId != null &&
                 availableShifts.TryGetValue(assignment.ScheduleId, out var empShift))
             {
@@ -149,6 +134,18 @@ public static class AttendanceShiftResolutionService
         }
 
         return new ShiftResolutionResult(shift, isRestDay, isAutoDetected, isRestDayOverridden, isShiftOverridden, issue);
+    }
+
+    /// <summary>
+    /// F06-03 / H10: sólo hay candidato si existe un marcaje real (los del día ya excluyen los que pertenecen a
+    /// jornadas previas). Se busca el turno matutino, vespertino o nocturno con el inicio más cercano al primero.
+    /// </summary>
+    private static Shift? AutoDetect(IEnumerable<DateTime>? dayPunches, IReadOnlyDictionary<ShiftId, Shift> availableShifts)
+    {
+        DateTime? firstPunch = dayPunches?.OrderBy(p => p).Select(p => (DateTime?)p).FirstOrDefault();
+        if (!firstPunch.HasValue) return null;
+        return ShiftDetectionService.FindClosestShift(firstPunch.Value,
+            availableShifts.Values.Where(s => AutoDetectableTypes.Contains(s.ShiftType)));
     }
 
     private static string DayName(DayOfWeek day) => day switch

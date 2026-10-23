@@ -201,6 +201,19 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
             ab.Property(a => a.BranchId)
                 .HasConversion(id => id.Value, value => BranchId.From(value))
                 .IsRequired();
+            // Días de descanso vigentes, con el mismo formato que Employees.RestDays; null = vigencia sin fechar.
+            ab.Property(a => a.RestDays)
+                .HasConversion(
+                    days => days == null ? null : string.Join(",", days.Select(d => (int)d)),
+                    str => str == null
+                        ? null
+                        : str.Split(',', StringSplitOptions.RemoveEmptyEntries).Select(v => (WeekDay)int.Parse(v)).ToList(),
+                    new ValueComparer<List<WeekDay>?>(
+                        (c1, c2) => (c1 == null && c2 == null) || (c1 != null && c2 != null && c1.SequenceEqual(c2)),
+                        c => c == null ? 0 : c.Aggregate(0, (h, v) => HashCode.Combine(h, v.GetHashCode())),
+                        c => c == null ? null : c.ToList()))
+                .HasMaxLength(50)
+                .IsRequired(false);
         });
         builder.Navigation(e => e.ScheduleAssignments).UsePropertyAccessMode(PropertyAccessMode.Field);
     }

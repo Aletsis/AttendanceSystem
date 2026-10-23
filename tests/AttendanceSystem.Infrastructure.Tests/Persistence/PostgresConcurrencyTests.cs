@@ -412,7 +412,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         var afternoon = Shift.Create("Vespertino historia", new TimeSpan(14, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Vespertino);
         var employee = Employee.Create(EmployeeId.From("EMP-PG-H01"), "Empleado", "Historia", null, null, new DateTime(2024, 1, 1), Gender.Male,
             branch.Id, department.Id, position.Id, ShiftType.Matutino, morning.Id, restDays: Array.Empty<WeekDay>());
-        employee.RecordAssignment(new DateTime(2026, 6, 10), afternoon.Id, ShiftType.Vespertino, branch.Id);
+        employee.RecordAssignment(new DateTime(2026, 6, 10), afternoon.Id, ShiftType.Vespertino, branch.Id, new[] { WeekDay.Sabado, WeekDay.Domingo });
         employee.Terminate(new DateTime(2026, 6, 20));
         employee.Rehire(new DateTime(2026, 7, 1));
 
@@ -437,6 +437,8 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         loaded.IsActiveOn(new DateTime(2026, 7, 2)).Should().BeTrue();
         loaded.AssignmentOn(new DateTime(2026, 6, 9)).ScheduleId.Should().Be(morning.Id);
         loaded.AssignmentOn(new DateTime(2026, 6, 10)).ScheduleId.Should().Be(afternoon.Id);
+        loaded.RestDaysOn(new DateTime(2026, 6, 9)).Should().BeEmpty("los descansos fechados persisten por vigencia");
+        loaded.RestDaysOn(new DateTime(2026, 6, 10)).Should().Equal(WeekDay.Domingo, WeekDay.Sabado);
 
         var storedDaily = await verify.DailyAttendances.SingleAsync(d => d.Id == daily.Id);
         storedDaily.HasOpenInterval.Should().BeTrue();

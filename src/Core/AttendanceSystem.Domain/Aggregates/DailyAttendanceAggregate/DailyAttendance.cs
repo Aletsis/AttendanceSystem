@@ -789,6 +789,13 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         // Normal Day Logic
         if (ScheduledCheckIn == null || ScheduledCheckOut == null)
         {
+            // Sin turno ni marcajes en un día que no es de descanso: no se presentó.
+            if (!HasPunches)
+            {
+                IsAbsent = true;
+                return;
+            }
+
             // Fallback for missing schedule details but working normal day
             if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {

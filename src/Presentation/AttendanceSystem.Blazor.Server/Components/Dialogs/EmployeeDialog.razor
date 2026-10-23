@@ -319,16 +319,17 @@
     private ShiftTypeEnum? _originalShiftType;
     private Guid? _originalScheduleId;
     private StatusEnum _originalStatus;
+    private HashSet<WeekDayEnum> _originalRestDays = new();
 
     private bool _originalsCaptured;
 
     private bool HasDatedChange => _isEditing && _originalsCaptured &&
         (BranchId != _originalBranchId || _selectedShiftType != _originalShiftType ||
-         ScheduleId != _originalScheduleId || Status != _originalStatus);
+         ScheduleId != _originalScheduleId || Status != _originalStatus || !_originalRestDays.SetEquals(_selectedRestDays));
 
     private string EffectiveFromTitle => Status != _originalStatus
         ? (Status == StatusEnum.Baja ? "Fecha de la baja" : "Fecha del reingreso")
-        : "Vigencia del cambio de horario, turno o sucursal";
+        : "Vigencia del cambio de horario, turno, sucursal o días de descanso";
 
     private string EffectiveFromLabel => Status != _originalStatus && Status == StatusEnum.Baja
         ? "Último día laborado"
@@ -424,6 +425,7 @@
         _originalShiftType = _selectedShiftType;
         _originalScheduleId = ScheduleId;
         _originalStatus = Status;
+        _originalRestDays = _selectedRestDays.ToHashSet();
         _originalsCaptured = true;
     }
 

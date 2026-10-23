@@ -95,7 +95,7 @@ public class UpdateDailyShiftRosterTests
     }
 
     [Fact]
-    public void AttendanceShiftResolutionService_PrecedenceOrder_AdjustmentBeatsRosterBeatsContract()
+    public void AttendanceShiftResolutionService_PrecedenceOrder_AdjustmentBeatsFixedSchedule_RosterOnlyForRotating()
     {
         // Arrange (H28 Centralized resolution)
         var date = new DateTime(2026, 10, 14); // Miércoles (Descanso en contrato)
@@ -119,7 +119,7 @@ public class UpdateDailyShiftRosterTests
         res1.IsRestDay.Should().BeTrue();
         res1.Shift!.Id.Should().Be(_oldShift.Id);
 
-        // Escenario 2: Con Roster activo -> Roster gana sobre contrato (isRestDay: false, Turno: rosterShift)
+        // Escenario 2: con horario fijo el roster no aplica (turno y descanso del contrato)
         var rosterEntry = ShiftRoster.Create(_employeeWithMultipleRestDays.Id, date, rosterShift.Id, isRestDay: false);
         var res2 = AttendanceShiftResolutionService.Resolve(
             _employeeWithMultipleRestDays,
@@ -127,10 +127,19 @@ public class UpdateDailyShiftRosterTests
             rosterEntry,
             null,
             allShifts);
-        res2.IsRestDay.Should().BeFalse();
-        res2.Shift!.Id.Should().Be(rosterShift.Id);
+        res2.IsRestDay.Should().BeTrue();
+        res2.Shift!.Id.Should().Be(_oldShift.Id);
 
-        // Escenario 3: Con Ajuste manual de RH -> Ajuste gana sobre Roster y sobre Contrato
+        // Escenario 2b: un rotativo sigue su roster (turno y descanso del roster)
+        var rotating = Employee.Create(EmployeeId.From("EMP-ROST-2"), "Rotativo", "Tester", null, null, new DateTime(2025, 1, 1), Gender.Male,
+            BranchId.CreateNew(), DepartmentId.CreateNew(), PositionId.CreateNew(), ShiftType.Rotativo, _oldShift.Id,
+            restDays: new[] { WeekDay.Miercoles });
+        var rotatingRoster = ShiftRoster.Create(rotating.Id, date, rosterShift.Id, isRestDay: false);
+        var res2b = AttendanceShiftResolutionService.Resolve(rotating, date, rotatingRoster, null, allShifts);
+        res2b.IsRestDay.Should().BeFalse();
+        res2b.Shift!.Id.Should().Be(rosterShift.Id);
+
+        // Escenario 3: Con Ajuste manual de RH -> Ajuste gana sobre el horario fijo
         var adjustment = AttendanceAdjustment.Create(_employeeWithMultipleRestDays.Id, date, "Ajuste de Gerencia");
         adjustment.SetShiftOverride(adjustmentShift.Id, "AdminRH", "Override de emergencia");
         adjustment.SetRestDayOverride(false, "AdminRH", "Trabajo en descanso");

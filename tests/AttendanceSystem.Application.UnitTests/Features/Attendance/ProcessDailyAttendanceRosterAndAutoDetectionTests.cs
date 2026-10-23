@@ -71,7 +71,7 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
             _loggerMock.Object);
 
     [Fact]
-    public async Task Handle_WhenRosterExistsForEmployee_ShouldUseRosterShiftInsteadOfDefaultSchedule()
+    public async Task Handle_WhenEmployeeHasFixedSchedule_ShouldIgnoreTheRoster()
     {
         // Arrange
         var emp = Employee.Create(
@@ -86,6 +86,48 @@ public class ProcessDailyAttendanceRosterAndAutoDetectionTests
             departmentId: DepartmentId.CreateNew(),
             positionId: PositionId.CreateNew(),
             shiftType: ShiftType.Matutino,
+            scheduleId: _morningShift.Id); // Default is Morning
+
+        _employeeRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<Employee> { emp });
+
+        // But Roster assigns Afternoon shift for Oct 5
+        var roster = ShiftRoster.Create(emp.Id, _date, _afternoonShift.Id, isRestDay: false, "Rotación semanal");
+        _rosterRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ShiftRoster> { roster });
+
+        _attendanceRepoMock.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord>());
+
+        var handler = CreateHandler();
+
+        var command = new ProcessDailyAttendanceCommand(_date, _date, EmployeeId: emp.Id);
+
+        // Act
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        // Assert
+        result.Should().Be(1);
+        // Con horario fijo el roster no aplica: se calcula con el turno matutino del empleado.
+        _senderMock.Verify(s => s.Send(It.Is<ProcessRegularAttendanceCommand>(c => c.Shift.Id == _morningShift.Id), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WhenRotatingEmployeeHasRoster_ShouldUseRosterShift()
+    {
+        // Arrange
+        var emp = Employee.Create(
+            id: EmployeeId.From("EMP-001"),
+            firstName: "Carlos",
+            lastName: "Gomez",
+            email: "carlos@emp.com",
+            phoneNumber: null,
+            hireDate: new DateTime(2025, 1, 1),
+            gender: Gender.Male,
+            branchId: BranchId.CreateNew(),
+            departmentId: DepartmentId.CreateNew(),
+            positionId: PositionId.CreateNew(),
+            shiftType: ShiftType.Rotativo,
             scheduleId: _morningShift.Id); // Default is Morning
 
         _employeeRepoMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
