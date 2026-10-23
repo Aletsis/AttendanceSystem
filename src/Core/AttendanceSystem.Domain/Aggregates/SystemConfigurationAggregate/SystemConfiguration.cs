@@ -45,14 +45,15 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public TimeSpan LunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultWindowStart;
     public TimeSpan LunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultWindowEnd;
     public int PaidLunchMinutes { get; private set; } = Services.LunchPolicy.DefaultPaidMinutes;
-    // Activado: la comida completa se descuenta (RH puede perdonarla por día). Desactivado: no se descuenta.
-    public bool DeductLunch { get; private set; }
+    // Caso 11: activa, la primera ausencia que se traslapa con la ventana es comida (se descuenta sólo el excedente
+    // sobre los minutos con goce); apagada, toda ausencia es salida temporal que RH clasifica.
+    public bool LunchWindowEnabled { get; private set; } = true;
     // Ventana de comida de turnos nocturnos; puede cruzar medianoche.
     public TimeSpan NightLunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultNightWindowStart;
     public TimeSpan NightLunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultNightWindowEnd;
 
-    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes, DeductLunch);
-    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes, DeductLunch);
+    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled);
+    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled);
 
     // Alert Settings
     public bool AreAlertsEnabled { get; private set; }
@@ -190,9 +191,9 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         PaidLunchMinutes = paidLunchMinutes;
     }
 
-    public void SetLunchDeduction(bool deduct)
+    public void SetLunchWindowEnabled(bool enabled)
     {
-        DeductLunch = deduct;
+        LunchWindowEnabled = enabled;
     }
 
     public void UpdateNightLunchWindow(TimeSpan windowStart, TimeSpan windowEnd)

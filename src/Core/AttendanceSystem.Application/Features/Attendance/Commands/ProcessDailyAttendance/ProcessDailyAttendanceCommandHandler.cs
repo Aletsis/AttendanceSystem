@@ -778,7 +778,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         else if (shift.ShiftType == ShiftType.Partido)
         {
             await _sender.Send(new ProcessSplitAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, EarlyEntryStart: plan.EarlyEntryStart), cancellationToken);
+                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, EarlyEntryStart: plan.EarlyEntryStart, Lunch: ws.Lunch), cancellationToken);
         }
         else if (shift.ShiftType == ShiftType.Nocturno || (plan.DayEndTime <= plan.DayStartTime && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
         {

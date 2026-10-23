@@ -15,7 +15,9 @@ public enum TemporaryExitStatus
     /// <summary>Clasificada como permiso sin goce. Se deduce <see cref="DailyAttendance.TemporaryExitMinutes"/> del tiempo laborado (igual que pendiente).</summary>
     ApprovedUnpaid = 2,
     /// <summary>Clasificada como error de doble checada. Se ignora sin deducción.</summary>
-    Dismissed = 3
+    Dismissed = 3,
+    /// <summary>Caso 11: comida. Sólo se descuenta el excedente sobre los minutos de comida con goce.</summary>
+    Lunch = 4
 }
 
 public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
@@ -85,26 +87,27 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public bool CalculateOvertimeBeforeEntry { get; private set; }
     public bool OvertimeAuthorized { get; private set; }
 
-    // --- Salidas Temporales Detectadas ---
-    /// <summary>Indica si se detectaron salidas intermedias que requieren clasificación.</summary>
+    // --- Salidas Temporales Detectadas (caso 11) ---
+    /// <summary>Salidas de la jornada (JSON de <see cref="TemporaryExit"/>); null en jornadas calculadas antes del caso 11.</summary>
+    public string? TemporaryExitsData { get; private set; }
+    /// <summary>Minutos de comida con goce vigentes al calcular la jornada (global o del turno).</summary>
+    public int PaidLunchMinutes { get; private set; }
+    /// <summary>Indica si hay salidas que no son comida.</summary>
     public bool HasTemporaryExits { get; private set; }
-    /// <summary>Minutos totales de ausencias intermedias no clasificadas como comida formal.</summary>
+    /// <summary>Minutos totales de las salidas que no son comida.</summary>
     public int TemporaryExitMinutes { get; private set; }
-    /// <summary>Estado de clasificación de las salidas temporales detectadas.</summary>
+    /// <summary>Minutos de salidas que se descuentan completos: pendientes de clasificar y permisos sin goce.</summary>
+    public int DeductedExitMinutes { get; private set; }
+    /// <summary>Resumen de la clasificación de las salidas que no son comida: pendiente si alguna lo está.</summary>
     public TemporaryExitStatus TemporaryExitStatus { get; private set; } = TemporaryExitStatus.Pending;
     /// <summary>Nota de auditoría: quién clasificó y cuándo.</summary>
     public string? TemporaryExitNote { get; private set; }
-    /// <summary>Minutos de comida descontados del tiempo trabajado: la comida a descontar que RH no perdonó.</summary>
+    /// <summary>Minutos de comida descontados del tiempo trabajado: el excedente sobre los minutos con goce.</summary>
     public int LunchBreakMinutesApplied { get; private set; }
-    /// <summary>Duración real de la comida marcada (0 si no hubo).</summary>
+    /// <summary>Duración de las salidas clasificadas como comida (0 si no hubo).</summary>
     public int LunchMinutesTaken { get; private set; }
-    /// <summary>
-    /// Minutos de comida sujetos a descuento: la comida completa con el descuento activado, 0 si está desactivado.
-    /// (Nombre heredado de cuando sólo se descontaba el exceso sobre los minutos con goce.)
-    /// </summary>
+    /// <summary>Excedente de comida sobre los minutos con goce: lo que se descuenta.</summary>
     public int LunchExcessMinutes { get; private set; }
-    /// <summary>RH perdonó el descuento de la comida de esta jornada.</summary>
-    public bool LunchExcessForgiven { get; private set; }
     /// <summary>Indica si el turno fue detectado automáticamente por proximidad de marcaje.</summary>
     public bool IsAutoDetectedShift { get; private set; }
 
@@ -122,11 +125,16 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         !string.IsNullOrWhiteSpace(CalculationIssue) ||
         (HasTemporaryExits && TemporaryExitStatus == TemporaryExitStatus.Pending);
 
+    /// <summary>Caso 11: salidas de la jornada con su clasificación.</summary>
+    public IReadOnlyList<TemporaryExit> TemporaryExits => TemporaryExitsData == null
+        ? Array.Empty<TemporaryExit>()
+        : System.Text.Json.JsonSerializer.Deserialize<List<TemporaryExit>>(TemporaryExitsData) ?? new List<TemporaryExit>();
+
     /// <summary>
-    /// Las salidas temporales se descuentan salvo que RH las clasifique como permiso con goce o error de checada.
+    /// Todo lo descontado (salidas pendientes o sin goce y el excedente de comida) se repone al final: recorre la
+    /// salida requerida de la jornada.
     /// </summary>
-    public bool IsTemporaryExitDeducted =>
-        HasTemporaryExits && TemporaryExitStatus is TemporaryExitStatus.Pending or TemporaryExitStatus.ApprovedUnpaid;
+    private int DeductedMinutes => LunchBreakMinutesApplied + DeductedExitMinutes;
 
     /// <summary>MultiInterval con un intervalo sin salida: se muestra como salida faltante (F06-02).</summary>
     public bool HasOpenInterval { get; private set; }
@@ -158,8 +166,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             if (IsWithoutShift) notes.Add("Sin turno asignado: asígnele un horario");
             if (EarlyDepartureMinutes > 0) notes.Add($"Salida anticipada de {EarlyDepartureMinutes} min");
             if (WeeklyShortfallMinutes > 0) notes.Add($"Faltaron {WeeklyShortfallMinutes} min para la meta semanal");
-            if (TemporaryExitSummary is { } temporary) notes.Add(temporary);
-            if (LunchNote is { } lunch) notes.Add(lunch);
+            if (TemporaryExitsData != null) notes.AddRange(ExitNotes());
+            else
+            {
+                if (TemporaryExitSummary is { } temporary) notes.Add(temporary);
+                if (LunchNote is { } lunch) notes.Add(lunch);
+            }
             if (IsAutoDetectedShift) notes.Add("Turno detectado automáticamente por proximidad de marcaje");
             if (!string.IsNullOrWhiteSpace(CalculationIssue))
             {
@@ -178,13 +190,35 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     /// <summary>Las notas en una sola línea (exportaciones).</summary>
     public string? AttendanceNote => Notes.Count == 0 ? null : string.Join(" | ", Notes);
 
+    /// <summary>Una nota por salida, en orden; el excedente de comida al final de las comidas.</summary>
+    private IEnumerable<string> ExitNotes()
+    {
+        foreach (var exit in TemporaryExits)
+        {
+            var span = $"{exit.ExitTime:HH:mm}–{exit.ReturnTime:HH:mm} ({exit.Minutes} min)";
+            yield return exit.Status switch
+            {
+                TemporaryExitStatus.Lunch => $"Comida {span}",
+                TemporaryExitStatus.Pending => $"Salida temporal {span} — descontada, pendiente de clasificar",
+                TemporaryExitStatus.ApprovedPaid => $"Salida temporal {span} — permiso con goce",
+                TemporaryExitStatus.ApprovedUnpaid => $"Salida temporal {span} — permiso sin goce, descontada",
+                _ => $"Salida temporal {span} — error de checada, ignorada"
+            };
+        }
+        if (LunchMinutesTaken > 0)
+        {
+            yield return LunchExcessMinutes > 0
+                ? $"Comida de {LunchMinutesTaken} min — {LunchExcessMinutes} min de excedente descontados"
+                : $"Comida de {LunchMinutesTaken} min — sin descuento";
+        }
+    }
+
+    /// <summary>Jornadas anteriores al caso 11 (sin detalle por salida).</summary>
     private string? LunchNote => LunchMinutesTaken <= 0
         ? null
-        : LunchExcessMinutes <= 0
+        : LunchExcessMinutes <= 0 || LunchBreakMinutesApplied == 0
             ? $"Comida de {LunchMinutesTaken} min — sin descuento"
-            : LunchExcessForgiven
-                ? $"Comida de {LunchMinutesTaken} min — descuento perdonado por RH"
-                : $"Comida de {LunchMinutesTaken} min — {LunchExcessMinutes} min descontados";
+            : $"Comida de {LunchMinutesTaken} min — {LunchBreakMinutesApplied} min descontados";
 
     private string? TemporaryExitSummary => !HasTemporaryExits ? null : TemporaryExitStatus switch
     {
@@ -503,14 +537,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             SetPositionValue(position, time.Value, recordId);
         }
 
-        if (adjustment.TemporaryExitStatus.HasValue)
-        {
-            TemporaryExitStatus = adjustment.TemporaryExitStatus.Value;
-            if (!string.IsNullOrWhiteSpace(adjustment.TemporaryExitNote))
-            {
-                TemporaryExitNote = adjustment.TemporaryExitNote;
-            }
-        }
+        ApplyExitClassifications(adjustment);
 
         if (adjustment.OvertimeAuthorizedOverride.HasValue)
         {
@@ -520,12 +547,6 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         if (adjustment.CalculateOvertimeBeforeEntryOverride.HasValue)
         {
             CalculateOvertimeBeforeEntry = adjustment.CalculateOvertimeBeforeEntryOverride.Value;
-        }
-
-        if (adjustment.LunchExcessForgiven)
-        {
-            LunchExcessForgiven = true;
-            LunchBreakMinutesApplied = 0;
         }
 
         HasManualAdjustments = true;
@@ -570,38 +591,66 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     }
 
     /// <summary>
-    /// Aplica los resultados del análisis de registros intermedios realizado por
-    /// <c>ProcessDailyAttendanceCommandHandler</c> y recalcula el estado del día.
+    /// Caso 11: las salidas detectadas en la jornada (comida automática o pendientes) y los minutos de comida con goce
+    /// vigentes. Recalcula el estado del día.
     /// </summary>
-    public void ApplyIntermediateAnalysis(
-        int lunchMinutesTaken,
-        int lunchExcessMinutes,
-        bool hasTemporaryExits,
-        int temporaryExitMinutes)
+    public void ApplyIntermediateAnalysis(IReadOnlyList<TemporaryExit> exits, int paidLunchMinutes)
     {
-        LunchMinutesTaken = Math.Max(0, lunchMinutesTaken);
-        LunchExcessMinutes = Math.Max(0, lunchExcessMinutes);
-        LunchBreakMinutesApplied = LunchExcessForgiven ? 0 : LunchExcessMinutes;
-        HasTemporaryExits = hasTemporaryExits;
-        TemporaryExitMinutes = temporaryExitMinutes < 0 ? 0 : temporaryExitMinutes;
-        // Si hay salidas temporales nuevas, forzar estado Pending
-        if (hasTemporaryExits)
-            TemporaryExitStatus = TemporaryExitStatus.Pending;
+        PaidLunchMinutes = Math.Max(0, paidLunchMinutes);
+        SetExits(exits.Select(e => e with { Status = e.AutomaticStatus }).ToList());
         CalculateStatus();
     }
 
     /// <summary>
-    /// El administrador clasifica manualmente las salidas temporales detectadas.
-    /// Si se clasifica como <see cref="TemporaryExitStatus.ApprovedUnpaid"/>,
-    /// los minutos de la salida se descuentan automáticamente del tiempo laborado.
+    /// Clasificación de RH por salida (por el marcaje de salida). Sin decisión por salida, una clasificación anterior
+    /// de todo el día aplica a las salidas que no son comida, y "comida perdonada" vuelve con goce a la comida.
     /// </summary>
-    public void ClassifyTemporaryExit(TemporaryExitStatus status, string classifiedByUserName)
+    private void ApplyExitClassifications(AttendanceAdjustment adjustment)
     {
-        TemporaryExitStatus = status;
-        TemporaryExitNote = status == TemporaryExitStatus.Dismissed
-            ? $"Ignorado por {classifiedByUserName} el {DateTime.Now:dd/MM/yyyy HH:mm}"
-            : $"Autorizado por {classifiedByUserName} el {DateTime.Now:dd/MM/yyyy HH:mm}";
-        CalculateStatus();
+        if (!string.IsNullOrWhiteSpace(adjustment.TemporaryExitNote))
+        {
+            TemporaryExitNote = adjustment.TemporaryExitNote;
+        }
+
+        if (TemporaryExitsData == null)
+        {
+            // Jornada sin detalle por salida (calculada antes del caso 11): sólo el resumen del día.
+            if (adjustment.TemporaryExitStatus is { } dayStatus && HasTemporaryExits)
+            {
+                TemporaryExitStatus = dayStatus;
+                DeductedExitMinutes = dayStatus is TemporaryExitStatus.Pending or TemporaryExitStatus.ApprovedUnpaid ? TemporaryExitMinutes : 0;
+            }
+            return;
+        }
+
+        var exits = TemporaryExits.Select(exit =>
+        {
+            var status = exit.AutomaticStatus;
+            if (adjustment.ExitClassifications.TryGetValue(exit.ExitRecordId, out var decided)) status = decided;
+            else if (exit.IsAutomaticLunch && adjustment.LunchExcessForgiven) status = TemporaryExitStatus.ApprovedPaid;
+            else if (!exit.IsAutomaticLunch && adjustment.TemporaryExitStatus is { } legacy) status = legacy;
+            return exit with { Status = status };
+        }).ToList();
+        SetExits(exits);
+    }
+
+    /// <summary>Guarda las salidas y sus resúmenes (comida, descuentos y estado de revisión).</summary>
+    private void SetExits(IReadOnlyList<TemporaryExit> exits)
+    {
+        TemporaryExitsData = exits.Count == 0 ? null : System.Text.Json.JsonSerializer.Serialize(exits);
+        LunchMinutesTaken = exits.Where(e => e.Status == TemporaryExitStatus.Lunch).Sum(e => e.Minutes);
+        LunchExcessMinutes = Math.Max(0, LunchMinutesTaken - PaidLunchMinutes);
+        LunchBreakMinutesApplied = LunchExcessMinutes;
+
+        var others = exits.Where(e => e.Status != TemporaryExitStatus.Lunch).ToList();
+        HasTemporaryExits = others.Count > 0;
+        TemporaryExitMinutes = others.Sum(e => e.Minutes);
+        DeductedExitMinutes = others.Where(e => e.IsDeducted).Sum(e => e.Minutes);
+        TemporaryExitStatus =
+            others.Any(e => e.Status == TemporaryExitStatus.Pending) || others.Count == 0 ? TemporaryExitStatus.Pending
+            : others.Any(e => e.Status == TemporaryExitStatus.ApprovedUnpaid) ? TemporaryExitStatus.ApprovedUnpaid
+            : others.Any(e => e.Status == TemporaryExitStatus.ApprovedPaid) ? TemporaryExitStatus.ApprovedPaid
+            : TemporaryExitStatus.Dismissed;
     }
 
     private void CalculateStatus()
@@ -722,9 +771,11 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             // Salida anticipada Bloque 2
             if (b2OutCivil.HasValue)
             {
-                if (b2OutCivil.Value < schedB2Out)
+                // Caso 11.b: las salidas descontadas se reponen al final del bloque 2.
+                var requiredB2Out = schedB2Out.AddMinutes(DeductedMinutes);
+                if (b2OutCivil.Value < requiredB2Out)
                 {
-                    totalEarly += (int)(schedB2Out - b2OutCivil.Value).TotalMinutes;
+                    totalEarly += (int)(requiredB2Out - b2OutCivil.Value).TotalMinutes;
                 }
             }
             EarlyDepartureMinutes = totalEarly;
@@ -749,9 +800,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
             double totalWorked = workedMinutesBlock1 + workedMinutesBlock2;
 
-            if (IsTemporaryExitDeducted && TemporaryExitMinutes > 0)
+            if (DeductedMinutes > 0)
             {
-                totalWorked = Math.Max(0, totalWorked - TemporaryExitMinutes);
+                totalWorked = Math.Max(0, totalWorked - DeductedMinutes);
             }
 
             TotalWorkedMinutes = (int)totalWorked;
@@ -777,9 +828,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             // cual calcular extras hasta que RH asigne un horario.
             if (ActualCheckIn.HasValue && ActualCheckOut.HasValue)
             {
-                var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes - LunchBreakMinutesApplied;
-                if (IsTemporaryExitDeducted)
-                    totalMinutes -= TemporaryExitMinutes;
+                var totalMinutes = (ActualCheckOut.Value - ActualCheckIn.Value).TotalMinutes - DeductedMinutes;
                 TotalWorkedMinutes = (int)Math.Max(0, totalMinutes);
             }
             return;
@@ -869,7 +918,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero && PunchTrackingMode == PunchTrackingMode.SingleInterval)
             {
                 DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
-                DynamicScheduledCheckOut = referenceEntry.Add(WorkHours.Value).AddMinutes(LunchBreakMinutesApplied);
+                DynamicScheduledCheckOut = referenceEntry.Add(WorkHours.Value).AddMinutes(DeductedMinutes);
             }
             else
             {
@@ -890,9 +939,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     DateTime referenceExit = GetReferenceExit() ?? ToCivil(ActualCheckOut.Value);
 
                     var worked = (referenceExit - referenceEntry).TotalMinutes;
-                    worked -= LunchBreakMinutesApplied;
-                    if (IsTemporaryExitDeducted)
-                        worked -= TemporaryExitMinutes;
+                    worked -= DeductedMinutes;
 
                     TotalWorkedMinutes = (int)Math.Max(0, worked);
                 }
@@ -934,9 +981,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     scheduledOutDateTime = scheduledOutDateTime.AddDays(1);
                 }
 
-                // La duración del turno es trabajo efectivo: la comida descontada se repone al final de la jornada
-                // (turno 09:00–18:00 con 1 h de comida descontada termina a las 19:00).
-                var jornadaEnd = scheduledOutDateTime.AddMinutes(LunchBreakMinutesApplied);
+                // La duración del turno es trabajo efectivo: lo descontado (excedente de comida, salidas pendientes o
+                // sin goce) se repone al final; si no se repone es salida anticipada (caso 11.b).
+                var jornadaEnd = scheduledOutDateTime.AddMinutes(DeductedMinutes);
                 if (checkOutCivil.HasValue && checkOutCivil.Value < jornadaEnd)
                 {
                     EarlyDepartureMinutes = (int)(jornadaEnd - checkOutCivil.Value).TotalMinutes;
@@ -949,9 +996,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
                     DateTime referenceExit = GetReferenceExit() ?? checkOutCivil.Value;
 
                     var totalWorkedMinutes = (referenceExit - referenceEntry).TotalMinutes;
-                    totalWorkedMinutes -= LunchBreakMinutesApplied;
-                    if (IsTemporaryExitDeducted)
-                        totalWorkedMinutes -= TemporaryExitMinutes;
+                    totalWorkedMinutes -= DeductedMinutes;
 
                     if (totalWorkedMinutes < 0) totalWorkedMinutes = 0;
                     TotalWorkedMinutes = (int)totalWorkedMinutes;

@@ -453,9 +453,11 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         var shift = Shift.Create("Matutino comida", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Matutino);
         shift.SetPaidLunchMinutes(45);
         var daily = DailyAttendance.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), shift, null, null, false);
-        daily.ApplyIntermediateAnalysis(lunchMinutesTaken: 55, lunchExcessMinutes: 10, hasTemporaryExits: false, temporaryExitMinutes: 0);
+        var lunch = new TemporaryExit(Guid.NewGuid(), new DateTime(2026, 6, 15, 13, 0, 0), new DateTime(2026, 6, 15, 13, 55, 0), 55, TemporaryExitStatus.Lunch, true);
+        var leave = new TemporaryExit(Guid.NewGuid(), new DateTime(2026, 6, 15, 10, 0, 0), new DateTime(2026, 6, 15, 10, 30, 0), 30, TemporaryExitStatus.Pending);
+        daily.ApplyIntermediateAnalysis(new[] { lunch, leave }, paidLunchMinutes: 45);
         var adjustment = AttendanceAdjustment.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), "rh");
-        adjustment.SetLunchExcessForgiven(true, "rh");
+        adjustment.ClassifyExit(leave.ExitRecordId, TemporaryExitStatus.ApprovedUnpaid, "rh");
         var excluded = AttendanceRecordId.CreateNew();
         adjustment.ExcludePunch(excluded, "rh");
 
@@ -468,7 +470,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
                 context.SystemConfigurations.Add(config);
             }
             config.UpdateLunchSettings(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40);
-            config.SetLunchDeduction(true);
+            config.SetLunchWindowEnabled(false);
             config.UpdateNightLunchWindow(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0));
             context.Shifts.Add(shift);
             context.DailyAttendances.Add(daily);
@@ -478,15 +480,18 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
 
         await using var verify = _fixture.CreateDbContext();
         var storedConfig = await verify.SystemConfigurations.FirstAsync();
-        storedConfig.LunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40, DeductLunch: true));
-        storedConfig.NightLunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0), 40, DeductLunch: true));
+        storedConfig.LunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40, WindowEnabled: false));
+        storedConfig.NightLunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0), 40, WindowEnabled: false));
         (await verify.Shifts.SingleAsync(s => s.Id == shift.Id)).PaidLunchMinutes.Should().Be(45);
         var storedDaily = await verify.DailyAttendances.SingleAsync(d => d.Id == daily.Id);
         storedDaily.LunchMinutesTaken.Should().Be(55);
         storedDaily.LunchExcessMinutes.Should().Be(10);
         storedDaily.LunchBreakMinutesApplied.Should().Be(10);
+        storedDaily.PaidLunchMinutes.Should().Be(45);
+        storedDaily.DeductedExitMinutes.Should().Be(30);
+        storedDaily.TemporaryExits.Should().Equal(lunch, leave);
         var storedAdjustment = await verify.AttendanceAdjustments.SingleAsync(a => a.Id == adjustment.Id);
-        storedAdjustment.LunchExcessForgiven.Should().BeTrue();
+        storedAdjustment.ExitClassifications.Should().ContainKey(leave.ExitRecordId).WhoseValue.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
         storedAdjustment.ExcludedRecordIds().Should().ContainSingle().Which.Should().Be(excluded);
     }
 

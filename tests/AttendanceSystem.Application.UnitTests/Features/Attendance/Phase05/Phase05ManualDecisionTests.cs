@@ -96,11 +96,14 @@ public class Phase05ManualDecisionTests
         var h = RegularWeek(out _);
         await h.RecalculateAsync(Monday, Wednesday);
         var late = h.Punch(Emp, Tuesday.AddHours(8).AddMinutes(20));
+        var leave = AttendanceRegressionFixtures.CreatePunch(Emp, Tuesday.AddHours(10), CheckType.CheckIn);
+        h.Store.Records.Add(leave);
+        h.Store.Records.Add(AttendanceRegressionFixtures.CreatePunch(Emp, Tuesday.AddHours(10).AddMinutes(40), CheckType.CheckIn));
         var decisions = h.Decisions();
         var tuesday = DateOnly.FromDateTime(Tuesday);
 
         (await Assign(h, late, Tuesday, "Entrada")).IsSuccess.Should().BeTrue();
-        (await new ClassifyTemporaryExitCommandHandler(decisions).Handle(new ClassifyTemporaryExitCommand(Emp.Value, tuesday, TemporaryExitStatus.ApprovedPaid, "Cita médica"), CancellationToken.None)).IsSuccess.Should().BeTrue();
+        (await new ClassifyTemporaryExitCommandHandler(decisions).Handle(new ClassifyTemporaryExitCommand(Emp.Value, tuesday, leave.Id.Value, TemporaryExitStatus.ApprovedPaid, "Cita médica"), CancellationToken.None)).IsSuccess.Should().BeTrue();
         (await new SetDailyOvertimeAuthorizationCommandHandler(decisions).Handle(new SetDailyOvertimeAuthorizationCommand(Emp.Value, tuesday, false, false, "Sin autorización"), CancellationToken.None)).IsSuccess.Should().BeTrue();
         var daily = h.Daily(Emp, Tuesday)!;
         (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(daily.Id.Value, true), CancellationToken.None)).Should().BeTrue();

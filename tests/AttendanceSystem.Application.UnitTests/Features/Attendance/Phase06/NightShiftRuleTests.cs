@@ -69,7 +69,7 @@ public class NightShiftRuleTests
     {
         var h = Harness();
         var config = SystemConfiguration.CreateDefault();
-        config.SetLunchDeduction(true);
+        config.UpdateLunchSettings(new TimeSpan(12, 30, 0), new TimeSpan(15, 0, 0), 0); // sin minutos con goce
         h.Configuration = config;
         Punches(h, 22, 23 + 50 / 60.0, 24.5, 30); // 23:50 → 00:30 = 40 min
 

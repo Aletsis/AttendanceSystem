@@ -141,32 +141,33 @@ public class DailyAttendanceTests
     }
 
     [Fact]
-    public void ApplyIntermediateAnalysis_WhenUnpaidPermission_ShouldDeductFromWorkedTime()
+    public void ApplyIntermediateAnalysis_LunchExcessAndUnpaidExit_AreDeducted()
     {
         // Arrange (8:00 to 18:00 = 10 hrs = 600 min, Scheduled = 8 hrs = 480 min)
-        var checkIn = _date.AddHours(8);
-        var checkOut = _date.AddHours(18);
-
         var da = DailyAttendance.Create(
             employeeId: _employeeId,
             date: _date,
             shift: _standardShift,
-            checkIn: checkIn,
-            checkOut: checkOut,
+            checkIn: _date.AddHours(8),
+            checkOut: _date.AddHours(18),
             isRestDay: false,
             overtimeAuthorized: true);
+        var lunch = new TemporaryExit(Guid.NewGuid(), _date.AddHours(13), _date.AddHours(14).AddMinutes(30), 90, TemporaryExitStatus.Lunch, IsAutomaticLunch: true);
+        var exit = new TemporaryExit(Guid.NewGuid(), _date.AddHours(10), _date.AddHours(10).AddMinutes(30), 30, TemporaryExitStatus.Pending);
 
-        // Act (60 min de comida descontados; 30 min de salida temporal)
-        da.ApplyIntermediateAnalysis(lunchMinutesTaken: 90, lunchExcessMinutes: 60, hasTemporaryExits: true, temporaryExitMinutes: 30);
-        da.ClassifyTemporaryExit(TemporaryExitStatus.ApprovedUnpaid, "Supervisor");
+        // Act: comida de 90 con 30 con goce; la salida RH la clasifica sin goce.
+        da.ApplyIntermediateAnalysis(new[] { lunch, exit }, paidLunchMinutes: 30);
+        var adjustment = AttendanceAdjustment.Create(_employeeId, _date, "rh");
+        adjustment.ClassifyExit(exit.ExitRecordId, TemporaryExitStatus.ApprovedUnpaid, "rh");
+        da.ApplyAdjustment(adjustment);
 
-        // Assert
-        // Total worked = 600 - 60 (comida) - 30 (sin goce) = 510 min.
-        // Overtime = 510 - 480 (scheduled) = 30 min: la comida se repone, no reduce lo programado.
+        // Total worked = 600 - 60 (excedente de comida) - 30 (sin goce) = 510; lo descontado se repone al final.
         da.TotalWorkedMinutes.Should().Be(510);
         da.OvertimeMinutes.Should().Be(30);
+        da.LunchExcessMinutes.Should().Be(60);
         da.TemporaryExitStatus.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
-        da.AttendanceNote.Should().Contain("permiso sin goce");
+        da.Notes.Should().Contain("Salida temporal 10:00–10:30 (30 min) — permiso sin goce, descontada");
+        da.Notes.Should().Contain("Comida de 90 min — 60 min de excedente descontados");
     }
 
     [Fact]

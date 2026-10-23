@@ -20,7 +20,8 @@ public record ProcessSplitAttendanceCommand(
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
-    DateTime? EarlyEntryStart = null) : IRequest;
+    DateTime? EarlyEntryStart = null,
+    LunchPolicy? Lunch = null) : IRequest;
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
@@ -169,8 +170,9 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
 
         // Caso 8 (c): los marcajes a mitad de un bloque siguen la regla del turno fijo (salidas temporales, dobles
         // toques e incidencias), sin comida: el descanso entre bloques hace de comida.
-        var hasTemporaryExits = false;
-        var temporaryExitMinutes = 0;
+        // Sin ventana: ninguna ausencia es comida automática, pero RH puede clasificarla como comida (minutos con goce).
+        var lunch = (request.Lunch ?? LunchPolicy.Default).ForShift(request.Shift.PaidLunchMinutes) with { WindowEnabled = false };
+        var exits = new List<TemporaryExit>();
         var orphans = new List<DateTime>();
         foreach (var (middle, blockIn, blockOut) in new[] { (middleB1, b1InRecord, b1OutRecord), (middleB2, b2InRecord, b2OutRecord) })
         {
@@ -182,9 +184,8 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             foreach (var doubleTap in doubleTaps) request.Draft?.DoubleTap(doubleTap);
 
             var analysis = IntermediatePunchAnalysis.Analyze(
-                PunchAssignmentPolicy.Chronological(middle.Except(doubleTaps)).ToList(), LunchPolicy.None, request.TimeZoneId, request.Draft);
-            hasTemporaryExits |= analysis.HasTempExits;
-            temporaryExitMinutes += analysis.TempMinutes;
+                PunchAssignmentPolicy.Chronological(middle.Except(doubleTaps)).ToList(), lunch, request.TimeZoneId, request.Draft);
+            exits.AddRange(analysis.Exits);
             orphans.AddRange(analysis.Orphans);
 
             foreach (var record in middle)
@@ -193,12 +194,12 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
                 await _attendanceRepo.UpdateAsync(record, cancellationToken);
             }
         }
-        if (hasTemporaryExits || orphans.Count > 0)
+        if (exits.Count > 0 || orphans.Count > 0)
         {
-            dailyAttendance.ApplyIntermediateAnalysis(0, 0, hasTemporaryExits, temporaryExitMinutes);
+            dailyAttendance.ApplyIntermediateAnalysis(exits, lunch.PaidMinutes);
             foreach (var orphan in orphans)
             {
-                dailyAttendance.AddCalculationIssue($"Marcaje intermedio sin pareja a las {orphan:HH:mm}: revisar.");
+                dailyAttendance.AddCalculationIssue(IntermediatePunchAnalysis.OrphanIssue(orphan));
             }
         }
 

@@ -175,29 +175,27 @@
                 {
                     <MudText Typo="Typo.caption" Style="display: block; line-height: 1.3;">@note</MudText>
                 }
-                @if (context.Item.HasTemporaryExits || context.Item.LunchDeductibleMinutes > 0)
+                @if (context.Item.TemporaryExits.Any())
                 {
                     var item = context.Item;
                     <AuthorizeView Roles="Administrador" Context="auth">
                         <Authorized>
+                            @* Caso 11: cada salida se clasifica por separado. *@
                             <div class="d-flex flex-wrap gap-1 mt-1">
-                                @if (item.HasTemporaryExits)
+                                @foreach (var exit in item.TemporaryExits)
                                 {
-                                    <MudMenu Label="Salida temporal" Size="Size.Small" Dense="true" Variant="Variant.Outlined" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
-                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, TemporaryExitStatus.ApprovedPaid))">Permiso con goce</MudMenuItem>
-                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, TemporaryExitStatus.ApprovedUnpaid))">Permiso sin goce (descontar)</MudMenuItem>
-                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, TemporaryExitStatus.Dismissed))">Error de checada</MudMenuItem>
-                                        @if (item.TemporaryExitStatus != (int)TemporaryExitStatus.Pending)
+                                    <MudMenu Label="@ExitLabel(exit)" Size="Size.Small" Dense="true" Variant="Variant.Outlined"
+                                             Color="@(exit.Status == TemporaryExitStatus.Pending ? Color.Warning : Color.Default)"
+                                             EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
+                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, exit, TemporaryExitStatus.Lunch))">Comida</MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, exit, TemporaryExitStatus.ApprovedPaid))">Permiso con goce</MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, exit, TemporaryExitStatus.ApprovedUnpaid))">Permiso sin goce (descontar)</MudMenuItem>
+                                        <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, exit, TemporaryExitStatus.Dismissed))">Error de checada</MudMenuItem>
+                                        @if (exit.Status != (exit.IsAutomaticLunch ? TemporaryExitStatus.Lunch : TemporaryExitStatus.Pending))
                                         {
-                                            <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, null))">Quitar clasificación</MudMenuItem>
+                                            <MudMenuItem OnClick="@(() => ClassifyTemporaryExit(item, exit, null))">Quitar clasificación</MudMenuItem>
                                         }
                                     </MudMenu>
-                                }
-                                @if (item.LunchDeductibleMinutes > 0)
-                                {
-                                    <MudButton Size="Size.Small" Variant="Variant.Outlined" OnClick="@(() => SetLunchForgiven(item, !item.LunchForgiven))">
-                                        @(item.LunchForgiven ? "Descontar comida" : "Perdonar comida")
-                                    </MudButton>
                                 }
                             </div>
                         </Authorized>
@@ -272,19 +270,21 @@
         return Task.FromResult(result);
     }
 
-    private async Task ClassifyTemporaryExit(AttendanceReportViewDto item, TemporaryExitStatus? status)
+    private static string ExitLabel(TemporaryExitDto exit) =>
+        $"{exit.ExitTime:HH:mm}–{exit.ReturnTime:HH:mm} · " + exit.Status switch
+        {
+            TemporaryExitStatus.Lunch => "Comida",
+            TemporaryExitStatus.ApprovedPaid => "Con goce",
+            TemporaryExitStatus.ApprovedUnpaid => "Sin goce",
+            TemporaryExitStatus.Dismissed => "Error",
+            _ => "Pendiente"
+        };
+
+    private async Task ClassifyTemporaryExit(AttendanceReportViewDto item, TemporaryExitDto exit, TemporaryExitStatus? status)
     {
         var result = await Mediator.Send(new ClassifyTemporaryExitCommand(
-            item.EmployeeId, DateOnly.FromDateTime(item.Date), status,
+            item.EmployeeId, DateOnly.FromDateTime(item.Date), exit.ExitRecordId, status,
             status == null ? null : "Clasificado desde el reporte de asistencia"));
-        await ShowDecisionAsync(result);
-    }
-
-    private async Task SetLunchForgiven(AttendanceReportViewDto item, bool forgiven)
-    {
-        var result = await Mediator.Send(new SetLunchExcessForgivenCommand(
-            item.EmployeeId, DateOnly.FromDateTime(item.Date), forgiven,
-            forgiven ? "Comida perdonada desde el reporte de asistencia" : "Comida descontada desde el reporte de asistencia"));
         await ShowDecisionAsync(result);
     }
 

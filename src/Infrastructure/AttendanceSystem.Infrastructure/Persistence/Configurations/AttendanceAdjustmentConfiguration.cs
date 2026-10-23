@@ -78,6 +78,21 @@ public class AttendanceAdjustmentConfiguration : IEntityTypeConfiguration<Attend
 
         builder.Property(x => x.LunchExcessForgiven).IsRequired().HasDefaultValue(false);
 
+        // Caso 11: clasificación por salida, como JSON {marcaje de salida: estado}.
+        builder.Property(x => x.ExitClassifications)
+            .HasColumnType("text")
+            .HasConversion(
+                map => System.Text.Json.JsonSerializer.Serialize(map, (System.Text.Json.JsonSerializerOptions?)null),
+                json => string.IsNullOrEmpty(json)
+                    ? new Dictionary<Guid, TemporaryExitStatus>()
+                    : System.Text.Json.JsonSerializer.Deserialize<Dictionary<Guid, TemporaryExitStatus>>(json, (System.Text.Json.JsonSerializerOptions?)null)
+                      ?? new Dictionary<Guid, TemporaryExitStatus>(),
+                new Microsoft.EntityFrameworkCore.ChangeTracking.ValueComparer<Dictionary<Guid, TemporaryExitStatus>>(
+                    (a, b) => a != null && b != null && a.Count == b.Count && !a.Except(b).Any(),
+                    map => map.Aggregate(0, (hash, entry) => HashCode.Combine(hash, entry.Key, entry.Value)),
+                    map => new Dictionary<Guid, TemporaryExitStatus>(map)))
+            .IsRequired();
+
         builder.PrimitiveCollection(x => x.ExcludedPunches).IsRequired();
 
         builder.Property(x => x.Reason)

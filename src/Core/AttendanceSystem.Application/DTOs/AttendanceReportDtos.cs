@@ -1,5 +1,6 @@
 using System;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
 namespace AttendanceSystem.Application.DTOs;
 
@@ -41,17 +42,18 @@ public sealed record AttendanceReportViewDto
     // --- Salidas Temporales Detectadas ---
     public bool HasTemporaryExits { get; init; }
     public int TemporaryExitMinutes { get; init; }
-    /// <summary>0=Pending, 1=ApprovedPaid, 2=ApprovedUnpaid, 3=Dismissed</summary>
+    /// <summary>Resumen: 0=Pending, 1=ApprovedPaid, 2=ApprovedUnpaid, 3=Dismissed (pendiente si alguna salida lo está).</summary>
     public int TemporaryExitStatus { get; init; }
+    /// <summary>Caso 11: cada salida (incluidas las comidas) para clasificarla por separado.</summary>
+    public IReadOnlyList<TemporaryExitDto> TemporaryExits { get; init; } = Array.Empty<TemporaryExitDto>();
     /// <summary>Notas de la jornada tal como las define <c>DailyAttendance.Notes</c>.</summary>
     public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
     public string? AttendanceNote { get; init; }
 
-    // --- Comida (decisión de RH) ---
+    // --- Comida ---
     public int LunchMinutesTaken { get; init; }
-    /// <summary>Minutos de comida sujetos a descuento (0 si el descuento está desactivado).</summary>
+    /// <summary>Excedente de comida sobre los minutos con goce: lo que se descuenta.</summary>
     public int LunchDeductibleMinutes { get; init; }
-    public bool LunchForgiven { get; init; }
 
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; init; }
     public int TotalWorkedMinutes { get; init; }
@@ -64,3 +66,6 @@ public sealed record AttendanceReportViewDto
     /// </summary>
     public int RoundedOvertimeMinutes => Math.Max(0, OvertimeMinutes);
 }
+
+/// <summary>Una salida de la jornada (hora civil) con su clasificación (caso 11).</summary>
+public sealed record TemporaryExitDto(Guid ExitRecordId, DateTime ExitTime, DateTime ReturnTime, int Minutes, TemporaryExitStatus Status, bool IsAutomaticLunch);

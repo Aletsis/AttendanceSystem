@@ -135,7 +135,7 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
 
         // Decisión 4b: marcajes entre la entrada y la salida (o el inicio de la ventana de salida si falta)
         // con la misma regla que de día y la ventana de comida nocturna.
-        (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
+        (IReadOnlyList<TemporaryExit> Exits, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
         if (checkInRecord != null)
         {
             var upper = checkOutRecord?.CheckTime;
@@ -203,13 +203,11 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         if (intermediateAnalysis.HasValue)
         {
             dailyAttendance.ApplyIntermediateAnalysis(
-                intermediateAnalysis.Value.LunchMinutes,
-                intermediateAnalysis.Value.LunchExcess,
-                intermediateAnalysis.Value.HasTempExits,
-                intermediateAnalysis.Value.TempMinutes);
+                intermediateAnalysis.Value.Exits,
+                (request.Lunch ?? LunchPolicy.DefaultNight).ForShift(request.Shift.PaidLunchMinutes).PaidMinutes);
             foreach (var orphan in intermediateAnalysis.Value.Orphans)
             {
-                dailyAttendance.AddCalculationIssue($"Marcaje intermedio sin pareja a las {orphan:HH:mm}: revisar.");
+                dailyAttendance.AddCalculationIssue(IntermediatePunchAnalysis.OrphanIssue(orphan));
             }
         }
         if (request.Adjustment != null)

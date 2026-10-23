@@ -47,7 +47,7 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
         DateTime? checkOut = null;
         AttendanceRecord? checkInRecord = null;
         AttendanceRecord? checkOutRecord = null;
-        (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
+        (IReadOnlyList<TemporaryExit> Exits, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
 
         var targetDateOnly = DateOnly.FromDateTime(request.Date);
         var pendingDayRecords = PunchAssignmentPolicy.Chronological(request.Records
@@ -172,14 +172,12 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
         if (intermediateAnalysis.HasValue)
         {
             dailyAttendance.ApplyIntermediateAnalysis(
-                intermediateAnalysis.Value.LunchMinutes,
-                intermediateAnalysis.Value.LunchExcess,
-                intermediateAnalysis.Value.HasTempExits,
-                intermediateAnalysis.Value.TempMinutes);
+                intermediateAnalysis.Value.Exits,
+                (request.Lunch ?? LunchPolicy.Default).ForShift(request.Shift.PaidLunchMinutes).PaidMinutes);
             // F06-05 (4a): marcaje intermedio sin pareja: incidencia visible para revisión, sin descuento.
             foreach (var orphan in intermediateAnalysis.Value.Orphans)
             {
-                dailyAttendance.AddCalculationIssue($"Marcaje intermedio sin pareja a las {orphan:HH:mm}: revisar.");
+                dailyAttendance.AddCalculationIssue(IntermediatePunchAnalysis.OrphanIssue(orphan));
             }
         }
 

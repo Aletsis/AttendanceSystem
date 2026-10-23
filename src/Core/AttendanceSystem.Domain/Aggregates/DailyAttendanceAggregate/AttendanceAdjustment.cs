@@ -53,8 +53,12 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     public DateTime? Block2CheckInTimeOverride { get; private set; }
 
     // Clasificación manual de salidas temporales e incidencias
+    /// <summary>Clasificación anterior al caso 11, de todas las salidas del día; la de cada salida tiene prioridad.</summary>
     public TemporaryExitStatus? TemporaryExitStatus { get; private set; }
     public string? TemporaryExitNote { get; private set; }
+
+    /// <summary>Caso 11: clasificación de RH de cada salida, por el marcaje de salida.</summary>
+    public Dictionary<Guid, TemporaryExitStatus> ExitClassifications { get; private set; } = new();
 
     // Overrides de configuración de horas extras
     public bool? OvertimeAuthorizedOverride { get; private set; }
@@ -66,7 +70,10 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     /// </summary>
     public List<Guid> ExcludedPunches { get; private set; } = new();
 
-    /// <summary>F06-05: RH perdona el exceso de comida (no se descuenta).</summary>
+    /// <summary>
+    /// Decisión anterior al caso 11 (RH perdonó la comida). Se conserva para las jornadas que la tenían: equivale a
+    /// clasificar la comida automática como permiso con goce.
+    /// </summary>
     public bool LunchExcessForgiven { get; private set; }
 
     // Auditoría
@@ -271,6 +278,7 @@ public sealed class AttendanceAdjustment : Entity<Guid>
             $"descanso={(IsRestDayOverride?.ToString() ?? "auto")}",
             $"turno={(ShiftIdOverride?.Value.ToString() ?? "auto")}",
             $"salidaTemporal={(TemporaryExitStatus?.ToString() ?? "auto")}",
+            $"salidas=[{string.Join(",", ExitClassifications.OrderBy(c => c.Key).Select(c => $"{c.Key}:{c.Value}"))}]",
             $"extrasAutorizadas={(OvertimeAuthorizedOverride?.ToString() ?? "auto")}",
             $"extrasAntesEntrada={(CalculateOvertimeBeforeEntryOverride?.ToString() ?? "auto")}",
             $"excesoComidaPerdonado={LunchExcessForgiven}",
@@ -306,10 +314,13 @@ public sealed class AttendanceAdjustment : Entity<Guid>
         Touch(updatedBy, "Actualización de configuración de horas extras");
     }
 
-    public void SetLunchExcessForgiven(bool forgiven, string updatedBy, string? reason = null)
+    /// <summary>Caso 11: clasifica una salida (por su marcaje de salida); null retira la decisión.</summary>
+    public void ClassifyExit(Guid exitRecordId, TemporaryExitStatus? status, string updatedBy, string? note = null)
     {
-        LunchExcessForgiven = forgiven;
-        Touch(updatedBy, reason ?? (forgiven ? "Exceso de comida perdonado" : "Exceso de comida descontado"));
+        if (status is { } value) ExitClassifications[exitRecordId] = value;
+        else ExitClassifications.Remove(exitRecordId);
+        if (!string.IsNullOrWhiteSpace(note)) TemporaryExitNote = note;
+        Touch(updatedBy, status is { } s ? $"Clasificación de salida temporal a {s}" : "Clasificación de salida retirada");
     }
 
     private void Touch(string updatedBy, string? reason)

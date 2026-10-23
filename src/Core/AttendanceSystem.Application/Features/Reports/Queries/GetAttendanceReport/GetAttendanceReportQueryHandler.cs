@@ -144,7 +144,9 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     AttendanceNote = att.AttendanceNote,
                     LunchMinutesTaken = att.LunchMinutesTaken,
                     LunchDeductibleMinutes = att.LunchExcessMinutes,
-                    LunchForgiven = att.LunchExcessForgiven,
+                    TemporaryExits = att.TemporaryExits
+                        .Select(e => new TemporaryExitDto(e.ExitRecordId, e.ExitTime, e.ReturnTime, e.Minutes, e.Status, e.IsAutomaticLunch))
+                        .ToList(),
                     TotalWorkedMinutes = att.TotalWorkedMinutes,
                     PunchTrackingMode = att.PunchTrackingMode,
                     IntervalsData = att.IntervalsData

@@ -163,7 +163,11 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
             .HasDefaultValue(0);
         builder.Property(x => x.LunchMinutesTaken).IsRequired().HasDefaultValue(0);
         builder.Property(x => x.LunchExcessMinutes).IsRequired().HasDefaultValue(0);
-        builder.Property(x => x.LunchExcessForgiven).IsRequired().HasDefaultValue(false);
+        // Caso 11: detalle por salida, minutos de comida con goce y minutos de salidas descontados.
+        builder.Property(x => x.TemporaryExitsData).HasColumnType("text").IsRequired(false);
+        builder.Property(x => x.PaidLunchMinutes).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.DeductedExitMinutes).IsRequired().HasDefaultValue(0);
+        builder.Ignore(x => x.TemporaryExits);
 
         builder.Property(x => x.TimeZoneId)
             .HasMaxLength(100)
