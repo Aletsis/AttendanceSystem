@@ -54,20 +54,15 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         // las 00:00 termina el mismo día (cierre F06-01).
         if (request.DayEndTime <= request.DayStartTime) scheduledOut = scheduledOut.AddDays(1);
 
-        // Entrada: la más cercana a la programada (±4 h). Salida (decisión 4b): el último marcaje desde 2 h antes
-        // de la salida programada hasta 7 h después; un regreso de comida no se toma como salida.
-        const double maxInDistanceMinutes = 240;  // ±4 horas
+        // Caso 4: ventanas contiguas. Entrada: la más cercana a la programada desde 4 h antes hasta el inicio de la
+        // ventana de salida. Salida (decisión 4b): el último marcaje desde 2 h antes de la salida programada hasta 7 h
+        // después. Así ningún marcaje de la jornada queda fuera de ambas ventanas.
+        const double entryEarlyAllowanceHours = 4;
         const double exitEarlyAllowanceHours = 2;
         const double exitLateAllowanceHours = 7;
+        const int doubleTapThresholdMinutes = 15;
 
-        var entryWindowStart = scheduledIn.AddHours(-4);
-        var entryWindowEnd = scheduledIn.AddHours(4);
-
-        var entryRecords = request.Records.Where(r =>
-            r.GetCivilTime(request.TimeZoneId) >= entryWindowStart &&
-            r.GetCivilTime(request.TimeZoneId) <= entryWindowEnd &&
-            r.Status == AttendanceStatus.Pending);
-
+        var entryWindowStart = scheduledIn.AddHours(-entryEarlyAllowanceHours);
         var exitWindowStart = scheduledOut.AddHours(-exitEarlyAllowanceHours);
         var exitWindowEnd = scheduledOut.AddHours(exitLateAllowanceHours);
         // Como en flexible y continuo (F06-01): no consumir la entrada de la jornada siguiente, sin recortar
@@ -77,76 +72,70 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
             exitWindowEnd = nextEntry.AddTicks(-1) > scheduledOut ? nextEntry.AddTicks(-1) : scheduledOut;
         }
 
-        // F02-05: la salida también debe estar libre; un marcaje ya consumido por otra jornada no se reutiliza.
-        var exitRecords = request.Records.Where(r =>
-            r.GetCivilTime(request.TimeZoneId) >= exitWindowStart &&
-            r.GetCivilTime(request.TimeZoneId) <= exitWindowEnd &&
-            r.Status == AttendanceStatus.Pending);
+        // F02-05: sólo marcajes libres; uno ya consumido por otra jornada no se reutiliza.
+        var jornadaRecords = PunchAssignmentPolicy.Chronological(request.Records.Where(r =>
+                r.Status == AttendanceStatus.Pending &&
+                r.GetCivilTime(request.TimeZoneId) >= entryWindowStart &&
+                r.GetCivilTime(request.TimeZoneId) <= exitWindowEnd))
+            .ToList();
 
-        var matchIn = entryRecords
-            .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime(request.TimeZoneId) - scheduledIn).TotalMinutes) })
-            .Where(x => x.Diff <= maxInDistanceMinutes)
-            .OrderBy(x => x.Diff)
-            .ThenBy(x => x.Record.CheckTime)
-            .ThenBy(x => x.Record.Id.Value)
-            .FirstOrDefault();
-
-        if (matchIn != null)
+        // Como en turno fijo: marcajes a no más de 15 min del primero son dobles toques de un solo marcaje útil.
+        if (jornadaRecords.Count >= 2 &&
+            (jornadaRecords.Last().CheckTime - jornadaRecords.First().CheckTime).TotalMinutes <= doubleTapThresholdMinutes)
         {
-            checkInRecord = matchIn.Record;
-            checkIn = matchIn.Record.CheckTime;
+            var kept = IsNearerToScheduledExit(jornadaRecords.First()) ? jornadaRecords.Last() : jornadaRecords.First();
+            foreach (var doubleTap in jornadaRecords.Where(r => r != kept))
+            {
+                request.Draft?.DoubleTap(doubleTap);
+                doubleTap.MarkAsProcessed();
+                await _attendanceRepo.UpdateAsync(doubleTap, cancellationToken);
+            }
+            jornadaRecords = new List<AttendanceRecord> { kept };
         }
 
-        var matchOut = exitRecords
-            .Select(r => new { Record = r, Diff = Math.Abs((r.GetCivilTime(request.TimeZoneId) - scheduledOut).TotalMinutes) })
-            .OrderByDescending(x => x.Record.CheckTime)
-            .ThenBy(x => x.Record.Id.Value)
-            .FirstOrDefault();
-
-        if (matchOut != null)
+        if (jornadaRecords.Count == 1)
         {
-            if (checkInRecord != null && matchOut.Record.Id == checkInRecord.Id)
+            // Caso 4 (b1), como en turno fijo: un solo marcaje es la entrada o la salida según cuál de las dos
+            // programadas tenga más cerca (empate: salida).
+            var single = jornadaRecords[0];
+            if (IsNearerToScheduledExit(single))
             {
-                if (matchOut.Diff < matchIn!.Diff)
-                {
-                    checkOutRecord = matchOut.Record;
-                    checkOut = matchOut.Record.CheckTime;
-                    checkIn = null;
-                    checkInRecord = null;
-                }
+                checkOutRecord = single;
+                checkOut = single.CheckTime;
             }
             else
             {
-                checkOutRecord = matchOut.Record;
-                checkOut = matchOut.Record.CheckTime;
+                checkInRecord = single;
+                checkIn = single.CheckTime;
             }
         }
-
-        // Sanity check: salida después de entrada
-        if (checkIn.HasValue && checkOut.HasValue && checkOut.Value <= checkIn.Value)
+        else if (jornadaRecords.Count >= 2)
         {
-            var scheduledIn2 = request.Date.Add(request.DayStartTime);
-            var scheduledOut2 = request.Date.Add(request.DayEndTime).AddDays(1);
-            var civilIn = checkInRecord?.GetCivilTime(request.TimeZoneId) ?? checkIn.Value;
-            var civilOut = checkOutRecord?.GetCivilTime(request.TimeZoneId) ?? checkOut.Value;
-            double diffIn = Math.Abs((civilIn - scheduledIn2).TotalMinutes);
-            double diffOut = Math.Abs((civilOut - scheduledOut2).TotalMinutes);
-            if (diffIn <= diffOut)
+            checkInRecord = jornadaRecords
+                .Where(r => r.GetCivilTime(request.TimeZoneId) < exitWindowStart)
+                .OrderBy(r => Math.Abs((r.GetCivilTime(request.TimeZoneId) - scheduledIn).TotalMinutes))
+                .ThenBy(r => r.CheckTime)
+                .ThenBy(r => r.Id.Value)
+                .FirstOrDefault();
+
+            checkOutRecord = jornadaRecords.LastOrDefault(r => r.GetCivilTime(request.TimeZoneId) >= exitWindowStart);
+
+            // Caso 4 (b2), como en turno fijo: sin marcaje en la ventana de salida, el último después de la entrada
+            // (que no sea un doble toque de ella) es la salida y el día queda con salida anticipada.
+            if (checkOutRecord == null && checkInRecord != null)
             {
-                checkOut = null;
-                checkOutRecord = null;
+                var entryTime = checkInRecord.CheckTime;
+                checkOutRecord = jornadaRecords.LastOrDefault(r =>
+                    (r.CheckTime - entryTime).TotalMinutes > doubleTapThresholdMinutes);
             }
-            else
-            {
-                checkIn = null;
-                checkInRecord = null;
-            }
+
+            checkIn = checkInRecord?.CheckTime;
+            checkOut = checkOutRecord?.CheckTime;
         }
 
         // Decisión 4b: marcajes entre la entrada y la salida (o el inicio de la ventana de salida si falta)
         // con la misma regla que de día y la ventana de comida nocturna.
         (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
-        string? earlyExitIssue = null;
         if (checkInRecord != null)
         {
             var upper = checkOutRecord?.CheckTime;
@@ -159,7 +148,6 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
 
             if (middleRecords.Any())
             {
-                const int doubleTapThresholdMinutes = 15;
                 var doubleTaps = middleRecords
                     .Where(r => (r.CheckTime - checkInRecord.CheckTime).TotalMinutes <= doubleTapThresholdMinutes ||
                                 (upper.HasValue && (upper.Value - r.CheckTime).TotalMinutes <= doubleTapThresholdMinutes))
@@ -175,11 +163,6 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
                     (request.Lunch ?? LunchPolicy.DefaultNight).ForShift(request.Shift.PaidLunchMinutes),
                     request.TimeZoneId,
                     request.Draft);
-
-                if (checkOutRecord == null && recordsToAnalyze.Any())
-                {
-                    earlyExitIssue = $"Sin salida desde las {exitWindowStart:HH:mm}; último marcaje a las {recordsToAnalyze.Last().GetCivilTime(request.TimeZoneId):HH:mm}: posible salida anticipada, revisar.";
-                }
 
                 foreach (var middle in middleRecords)
                 {
@@ -229,11 +212,6 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
                 dailyAttendance.AddCalculationIssue($"Marcaje intermedio sin pareja a las {orphan:HH:mm}: revisar.");
             }
         }
-        if (earlyExitIssue != null)
-        {
-            dailyAttendance.AddCalculationIssue(earlyExitIssue);
-        }
-
         if (request.Adjustment != null)
         {
             dailyAttendance.ApplyAdjustment(request.Adjustment);
@@ -241,5 +219,11 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
 
         _dailyRepo.Add(dailyAttendance);
         request.Draft?.Complete(dailyAttendance);
+
+        bool IsNearerToScheduledExit(AttendanceRecord record)
+        {
+            var civil = record.GetCivilTime(request.TimeZoneId);
+            return Math.Abs((civil - scheduledOut).TotalMinutes) <= Math.Abs((civil - scheduledIn).TotalMinutes);
+        }
     }
 }

@@ -16,7 +16,8 @@ namespace AttendanceSystem.Application.UnitTests.Features.Attendance.Phase06;
 
 /// <summary>
 /// Decisión 4b: marcajes intermedios del turno nocturno 22:00–06:00 con la ventana de comida nocturna global
-/// (por defecto 23:00–04:00, cruza medianoche) y salida aceptada desde 2 h antes de la programada.
+/// (por defecto 23:00–04:00, cruza medianoche) y salida aceptada desde 2 h antes de la programada. Caso 4: la entrada
+/// se busca hasta el inicio de la ventana de salida; un marcaje solo y la salida anticipada siguen la regla del turno fijo.
 /// </summary>
 public class NightShiftRuleTests
 {
@@ -106,29 +107,94 @@ public class NightShiftRuleTests
     }
 
     [Fact]
-    public async Task MissingExit_TheLunchReturnIsNotTakenAsExit()
+    public async Task ExitBeforeTheWindow_AfterALunch_IsAnEarlyDeparture()
     {
         var h = Harness();
-        Punches(h, 22, 26, 26.5);
+        var p = Punches(h, 22, 26, 26.5);
 
         var day = await CalculateAsync(h);
 
-        day.CheckOutRecordId.Should().BeNull("el regreso de comida de las 02:30 es anterior a la ventana de salida (04:00)");
-        day.MissingCheckOut.Should().BeTrue();
-        day.LunchMinutesTaken.Should().Be(30);
+        day.CheckOutRecordId.Should().Be(p[2].Id, "como en turno fijo, el último marcaje después de la entrada es la salida");
+        day.EarlyDepartureMinutes.Should().Be(210);
+        day.CalculationIssue.Should().Contain("sin pareja a las 02:00");
     }
 
     [Fact]
-    public async Task EarlyExitBeforeTheWindow_IsReportedForReview()
+    public async Task ExitBeforeTheWindow_IsAnEarlyDeparture()
     {
         var h = Harness();
-        Punches(h, 22, 27); // sale a las 03:00
+        var p = Punches(h, 22, 27); // sale a las 03:00
 
         var day = await CalculateAsync(h);
 
-        day.CheckOutRecordId.Should().BeNull();
-        day.CalculationIssue.Should().Contain("posible salida anticipada");
-        day.RequiresReview.Should().BeTrue();
+        day.CheckInRecordId.Should().Be(p[0].Id);
+        day.CheckOutRecordId.Should().Be(p[1].Id);
+        day.MissingCheckOut.Should().BeFalse();
+        day.EarlyDepartureMinutes.Should().Be(180);
+        day.TotalWorkedMinutes.Should().Be(300);
+    }
+
+    [Fact]
+    public async Task LateArrival_UpToTheExitWindow_IsTheEntry()
+    {
+        var h = Harness();
+        var p = Punches(h, 26.5, 30); // entra 02:30, sale 06:00
+
+        var day = await CalculateAsync(h);
+
+        day.CheckInRecordId.Should().Be(p[0].Id, "la ventana de entrada llega hasta el inicio de la de salida (04:00)");
+        day.CheckOutRecordId.Should().Be(p[1].Id);
+        day.LateMinutes.Should().BeGreaterThan(0);
+        day.MissingCheckIn.Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(27, false)]   // 03:00: más cerca de las 06:00 → salida
+    [InlineData(25.5, true)]  // 01:30: más cerca de las 22:00 → entrada
+    [InlineData(26, false)]   // 02:00: empate → salida
+    public async Task LonePunch_GoesToTheNearestScheduledBoundary(double hour, bool isEntry)
+    {
+        var h = Harness();
+        var p = Punches(h, hour);
+
+        var day = await CalculateAsync(h);
+
+        day.IsAbsent.Should().BeFalse();
+        if (isEntry)
+        {
+            day.CheckInRecordId.Should().Be(p[0].Id);
+            day.MissingCheckOut.Should().BeTrue();
+        }
+        else
+        {
+            day.CheckOutRecordId.Should().Be(p[0].Id);
+            day.MissingCheckIn.Should().BeTrue();
+        }
+    }
+
+    [Fact]
+    public async Task DoubleTapNearTheExit_CountsAsTheExit()
+    {
+        var h = Harness();
+        var p = Punches(h, 27, 27.1); // 03:00 y 03:06
+
+        var day = await CalculateAsync(h);
+
+        day.CheckInRecordId.Should().BeNull();
+        day.CheckOutRecordId.Should().Be(p[1].Id);
+    }
+
+    [Fact]
+    public async Task LateExtraPunch_NextMorning_IsTheExit_AndTheRealExitIsAReviewNote()
+    {
+        var h = Harness();
+        var p = Punches(h, 22, 30, 36); // sale 06:00 y vuelve a marcar a las 12:00
+
+        var day = await CalculateAsync(h);
+
+        day.CheckOutRecordId.Should().Be(p[2].Id);
+        day.CalculationIssue.Should().Contain("sin pareja a las 06:00");
+        day.Notes.Should().Contain(n => n.Contains("sin pareja a las 06:00"));
     }
 
     [Fact]
