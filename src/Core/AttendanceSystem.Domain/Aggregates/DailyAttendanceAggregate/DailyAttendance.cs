@@ -68,6 +68,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public int OvertimeMinutes { get; private set; } // Based on shift end or simple work hours?
     public int RawOvertimeMinutes { get; private set; }
     public int TotalWorkedMinutes { get; private set; }
+    /// <summary>Caso 6 (f): minutos que faltaron para la meta de la bolsa semanal (sólo en el último día con bolsa).</summary>
+    public int WeeklyShortfallMinutes { get; private set; }
     public string? IntervalsData { get; private set; }
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; private set; } = OvertimeCalculationMethod.NoRounding;
 
@@ -154,6 +156,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         {
             var notes = new List<string>();
             if (EarlyDepartureMinutes > 0) notes.Add($"Salida anticipada de {EarlyDepartureMinutes} min");
+            if (WeeklyShortfallMinutes > 0) notes.Add($"Faltaron {WeeklyShortfallMinutes} min para la meta semanal");
             if (TemporaryExitSummary is { } temporary) notes.Add(temporary);
             if (LunchNote is { } lunch) notes.Add(lunch);
             if (IsAutoDetectedShift) notes.Add("Turno detectado automáticamente por proximidad de marcaje");
@@ -390,11 +393,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         OvertimeMinutes = Math.Max(0, overtimeMinutes);
     }
 
-    /// <summary>F06-06: resultado del motor de extras (bruto y efectivo) para la jornada.</summary>
-    public void SetCalculatedOvertime(int rawOvertimeMinutes, int effectiveOvertimeMinutes)
+    /// <summary>F06-06: resultado del motor de extras (bruto, efectivo y faltante semanal) para la jornada.</summary>
+    public void SetCalculatedOvertime(int rawOvertimeMinutes, int effectiveOvertimeMinutes, int weeklyShortfallMinutes = 0)
     {
         RawOvertimeMinutes = Math.Max(0, rawOvertimeMinutes);
         OvertimeMinutes = Math.Max(0, effectiveOvertimeMinutes);
+        WeeklyShortfallMinutes = Math.Max(0, weeklyShortfallMinutes);
     }
 
     public void UpdateShift(Shift shift, bool isAutoDetectedShift = false)

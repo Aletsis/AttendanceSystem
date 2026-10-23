@@ -105,6 +105,9 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.TotalWorkedMinutes)
             .IsRequired()
             .HasDefaultValue(0);
+        builder.Property(x => x.WeeklyShortfallMinutes)
+            .IsRequired()
+            .HasDefaultValue(0);
         builder.Property(x => x.IntervalsData)
             .IsRequired(false);
         builder.Property(x => x.OvertimeCalculationMethod)

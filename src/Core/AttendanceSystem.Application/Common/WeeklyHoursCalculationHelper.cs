@@ -5,8 +5,11 @@ using AttendanceSystem.Domain.ValueObjects;
 
 namespace AttendanceSystem.Application.Common;
 
-/// <summary>Extras de una jornada: excedente bruto y efectivo (autorizado, redondeado y con topes).</summary>
-public readonly record struct OvertimeResult(int Raw, int Effective);
+/// <summary>
+/// Extras de una jornada: excedente bruto y efectivo (autorizado, redondeado y con topes), y el faltante de la meta
+/// semanal que se reporta en el último día con bolsa de una semana terminada (caso 6 f).
+/// </summary>
+public readonly record struct OvertimeResult(int Raw, int Effective, int WeeklyShortfall = 0);
 
 /// <summary>
 /// Cómo se esperaba un día sin jornada calculada (futuro de la semana o fuera del período de empleo):
@@ -72,7 +75,7 @@ public static class WeeklyHoursCalculationHelper
         var sorted = attendances.OrderBy(a => a.Date).ThenBy(a => a.Id.Value).ToList();
         periodStartOf ??= date => GetWeekStart(date, weeklyStartDay);
 
-        var rawById = WeeklyRaw(sorted, weeklyStartDay, expectedDay);
+        var rawById = WeeklyRaw(sorted, weeklyStartDay, expectedDay, out var shortfallById);
         var accumulatedByPeriod = new Dictionary<DateTime, double>();
 
         foreach (var att in sorted)
@@ -98,7 +101,7 @@ public static class WeeklyHoursCalculationHelper
                 }
             }
 
-            result[att.Id] = new OvertimeResult((int)raw, (int)effective);
+            result[att.Id] = new OvertimeResult((int)raw, (int)effective, shortfallById.GetValueOrDefault(att.Id));
         }
 
         return result;
@@ -110,9 +113,11 @@ public static class WeeklyHoursCalculationHelper
     private static Dictionary<DailyAttendanceId, double> WeeklyRaw(
         IReadOnlyList<DailyAttendance> sorted,
         DayOfWeek weeklyStartDay,
-        Func<DateTime, ExpectedDay>? expectedDay)
+        Func<DateTime, ExpectedDay>? expectedDay,
+        out Dictionary<DailyAttendanceId, int> shortfall)
     {
         var raw = new Dictionary<DailyAttendanceId, double>();
+        shortfall = new Dictionary<DailyAttendanceId, int>();
         foreach (var week in sorted.GroupBy(a => GetWeekStart(a.Date, weeklyStartDay)))
         {
             var days = week.ToList();
@@ -166,6 +171,15 @@ public static class WeeklyHoursCalculationHelper
                 var prior = cumulative;
                 cumulative += worked;
                 raw[att.Id] = prior >= goal ? worked : Math.Max(0, prior + worked - goal);
+            }
+
+            // Caso 6 (f): en una semana sólo de bolsa ya terminada (calculada hasta su último día), lo que faltó para
+            // la meta se reporta en su último día con bolsa. Las semanas partidas ya reportan el faltante diario.
+            var weekEnd = week.Key.AddDays(6);
+            var lastBagDay = days.LastOrDefault(IsWeeklyBag);
+            if (!mixed && lastBagDay != null && days.Any(a => a.Date.Date == weekEnd) && cumulative < goal)
+            {
+                shortfall[lastBagDay.Id] = (int)Math.Round(goal - cumulative);
             }
         }
         return raw;

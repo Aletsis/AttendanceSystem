@@ -325,9 +325,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             var overtime = WeeklyHoursCalculationHelper.Calculate(empAttendances, ws.Employee, weeklyStartDay, periodStartOf, date => ExpectedDayOf(ws, date, shifts));
             foreach (var att in empAttendances)
             {
-                if (overtime.TryGetValue(att.Id, out var ot) && (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw))
+                if (overtime.TryGetValue(att.Id, out var ot) &&
+                    (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw || att.WeeklyShortfallMinutes != ot.WeeklyShortfall))
                 {
-                    att.SetCalculatedOvertime(ot.Raw, ot.Effective);
+                    att.SetCalculatedOvertime(ot.Raw, ot.Effective, ot.WeeklyShortfall);
                     _dailyRepo.Update(att);
                     hasSubsequentUpdates = true;
                 }
@@ -666,9 +667,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         if (effectiveType == ShiftType.Flexible)
         {
-            if (shift.PunchTrackingMode == PunchTrackingMode.MultiInterval) return null;
-
-            // Caso 6 (a): la salida es el último marcaje de la ventana, anclada en el primer marcaje del día.
+            // Caso 6 (a, h): en tiempo corrido la salida es el último marcaje de la ventana y en multi-marcaje el
+            // tramo abierto busca su salida en ella; ambas ventanas se anclan en el primer marcaje del día.
             var unavailable = ws.Unavailable(DateOnly.FromDateTime(date), includeOwnManual: true);
             var ownDay = PunchAssignmentPolicy.Chronological(ws.Records.Values
                 .Where(r => ws.WorkDateOf(r) == plan.SearchStartDate && !unavailable.ContainsKey(r.Id)))
@@ -695,7 +695,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         if (!ws.Employee.IsActiveOn(next) || next > ws.LoadedThrough) return null;
 
         var plan = ResolvePlan(ws, next, shifts);
-        if (plan.Resolution.Shift == null || plan.Resolution.IsRestDay) return null;
+        if (plan.Resolution.Shift is not { } nextShift || plan.Resolution.IsRestDay) return null;
+        // Caso 6 (b): un flexible sin ventana de llegada no tiene hora de entrada (su inicio de 00:00 es nominal) ni
+        // entrada anticipada; su jornada empieza en su propio día y no aparta los marcajes de la noche anterior.
+        if (nextShift.ShiftType == ShiftType.Flexible && !nextShift.HasEntryWindow) return next.Date;
         return JornadaWindowPolicy.EntryWindowStart(next.Date.Add(plan.DayStartTime));
     }
 
