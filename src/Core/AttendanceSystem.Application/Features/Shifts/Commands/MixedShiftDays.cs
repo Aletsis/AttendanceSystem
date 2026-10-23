@@ -9,7 +9,7 @@ namespace AttendanceSystem.Application.Features.Shifts.Commands;
 
 /// <summary>
 /// Decisión 5: los días de un turno mixto se configuran eligiendo un horario existente por día (no mixto ni
-/// rotativo); los días sin horario son descanso. Un turno no mixto no lleva días.
+/// rotativo). Caso 9: los 7 días llevan horario; los descansos son los del empleado. Un turno no mixto no lleva días.
 /// </summary>
 internal static class MixedShiftDays
 {
@@ -27,7 +27,7 @@ internal static class MixedShiftDays
         {
             if (day.DayShiftId is not { } dayShiftGuid)
             {
-                return Result<List<ShiftDay>?>.Failure($"Seleccione el horario del {DayName(day.DayOfWeek)} o márquelo como descanso.");
+                return Result<List<ShiftDay>?>.Failure($"Seleccione el horario del {DayName(day.DayOfWeek)}.");
             }
 
             var dayShiftId = ShiftId.From(dayShiftGuid);
@@ -49,21 +49,17 @@ internal static class MixedShiftDays
             result.Add(ShiftDay.ForShift(day.DayOfWeek, dayShift));
         }
 
-        if (result.Count == 0)
+        if (result.GroupBy(d => d.DayOfWeek).Any(g => g.Count() > 1))
         {
-            return Result<List<ShiftDay>?>.Failure("Un turno mixto debe tener al menos un día con horario.");
+            return Result<List<ShiftDay>?>.Failure("Cada día de la semana sólo puede tener un horario en el turno mixto.");
+        }
+        var missing = MixedShiftSchedule.MissingDays(result.Select(d => d.DayOfWeek));
+        if (missing.Count > 0)
+        {
+            return Result<List<ShiftDay>?>.Failure(MixedShiftSchedule.MissingDaysMessage(missing));
         }
         return Result<List<ShiftDay>?>.Success(result);
     }
 
-    public static string DayName(DayOfWeek day) => day switch
-    {
-        DayOfWeek.Monday => "lunes",
-        DayOfWeek.Tuesday => "martes",
-        DayOfWeek.Wednesday => "miércoles",
-        DayOfWeek.Thursday => "jueves",
-        DayOfWeek.Friday => "viernes",
-        DayOfWeek.Saturday => "sábado",
-        _ => "domingo"
-    };
+    public static string DayName(DayOfWeek day) => MixedShiftSchedule.DayName(day);
 }

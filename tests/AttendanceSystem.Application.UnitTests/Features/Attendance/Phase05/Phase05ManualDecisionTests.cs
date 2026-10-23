@@ -348,7 +348,7 @@ public class Phase05ManualDecisionTests
         var second = Punch(h, Emp, Saturday.AddHours(10));
         var last = Punch(h, Emp, Saturday.AddHours(14));
         await h.RecalculateAsync(Saturday, Saturday);
-        h.Daily(Emp, Saturday)!.IsRestDay.Should().BeTrue("sábado sin configuración: descanso por defecto");
+        h.Daily(Emp, Saturday)!.CalculationIssue.Should().Contain("no tiene horario para el sábado", "caso 9: un día vacío de la plantilla se reporta");
 
         var decisions = h.Decisions();
         await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(h.Daily(Emp, Saturday)!.Id.Value, false), CancellationToken.None);
@@ -356,7 +356,7 @@ public class Phase05ManualDecisionTests
         await RecalculateAroundAsync(h, Saturday);
 
         var daily = h.Daily(Emp, Saturday)!;
-        daily.IsRestDay.Should().BeFalse("la decisión manual prevalece sobre el descanso por falta de configuración");
+        daily.IsRestDay.Should().BeFalse("la decisión manual se conserva");
         daily.CheckInRecordId.Should().Be(second.Id);
         daily.CheckOutRecordId.Should().Be(last.Id);
         _ = first;

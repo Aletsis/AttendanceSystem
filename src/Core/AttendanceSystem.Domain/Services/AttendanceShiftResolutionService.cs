@@ -109,9 +109,10 @@ public static class AttendanceShiftResolutionService
             var day = mixed.Days.FirstOrDefault(d => d.DayOfWeek == date.DayOfWeek);
             if (day == null)
             {
-                // Día sin horario en la plantilla: descanso salvo decisión manual explícita (C-05).
+                // Caso 9: la plantilla debe tener los 7 días; el descanso sólo sale de los días de descanso del
+                // empleado. Una plantilla anterior con un día vacío se calcula sin turno y se reporta.
                 shift = null;
-                if (!isRestDayOverridden) isRestDay = true;
+                if (!isRestDay) issue = $"El turno mixto '{mixed.Name}' no tiene horario para el {DayName(date.DayOfWeek)}: asígnele uno.";
             }
             else if (day.DayShiftId is { } dayShiftId)
             {

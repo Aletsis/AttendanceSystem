@@ -282,16 +282,18 @@ public class AttendanceFindingsReproductionTests
         var shifts = new Dictionary<ShiftId, Shift> { [mixedShift.Id] = mixedShift };
 
         // LÍNEA BASE (F00-05): la delegación omitía el ajuste del supervisor.
-        // CORREGIDO (F05-04 y decisión 5): el mixto se resuelve al horario del día antes de calcular; sin horario
-        // es descanso, salvo decisión manual explícita, que prevalece.
+        // CORREGIDO (F05-04 y decisión 5): el mixto se resuelve al horario del día antes de calcular. Caso 9: un día
+        // sin horario en una plantilla anterior no es descanso (el descanso es del empleado) y se reporta; la
+        // decisión manual explícita prevalece.
         var withoutDecision = AttendanceShiftResolutionService.Resolve(employee, dateSabado, null, null, shifts, Array.Empty<DateTime>());
         withoutDecision.Shift.Should().BeNull();
-        withoutDecision.IsRestDay.Should().BeTrue("sin horario en la plantilla el día es descanso");
+        withoutDecision.IsRestDay.Should().BeFalse("el sábado no es descanso del empleado");
+        withoutDecision.Issue.Should().Contain("no tiene horario para el sábado");
 
         var adjustment = AttendanceAdjustment.Create(employee.Id, dateSabado, "Supervisor RH", "Autorizado");
-        adjustment.SetRestDayOverride(false, "Supervisor RH");
+        adjustment.SetRestDayOverride(true, "Supervisor RH");
         var withDecision = AttendanceShiftResolutionService.Resolve(employee, dateSabado, null, adjustment, shifts, Array.Empty<DateTime>());
-        withDecision.IsRestDay.Should().BeFalse("la decisión manual de laborable prevalece");
+        withDecision.IsRestDay.Should().BeTrue("la decisión manual de descanso prevalece");
     }
 
     #endregion

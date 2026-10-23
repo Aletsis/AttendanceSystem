@@ -123,10 +123,11 @@
 
                     <!-- Mixto Shift -->
                     <StackPanel Visibility="{Binding IsMixedShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                        <TextBlock Text="Horario por Día (un día sin horario es descanso)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,8"/>
+                        <TextBlock Text="Horario por Día (todos los días; los descansos son los del empleado)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,8"/>
                         <Border BorderThickness="1" BorderBrush="#EAECF4" CornerRadius="8" Padding="10">
                             <ItemsControl ItemsSource="{Binding Days}" ItemTemplate="{StaticResource DayConfigTemplate}"/>
                         </Border>
+                        <TextBlock Text="{Binding MixedScheduleMessage}" TextWrapping="Wrap" Foreground="#C05621" FontSize="11" Margin="0,8,0,0"/>
                     </StackPanel>
 
                     <!-- Flexible Shift -->

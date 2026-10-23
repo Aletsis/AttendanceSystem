@@ -94,16 +94,35 @@ public class MixedShiftTemplateTests
     }
 
     [Fact]
-    public async Task DayWithoutSchedule_IsRest()
+    public async Task DayMissingFromAnOldTemplate_IsNotRest_AndIsReported()
     {
+        // Caso 9: el descanso sólo sale de los días de descanso del empleado; una plantilla anterior con un día
+        // vacío no lo vuelve descanso.
         var (h, _) = Scenario();
         var wednesday = Monday.AddDays(2);
 
         await h.RecalculateAsync(wednesday, wednesday);
 
         var day = Day(h, wednesday)!;
-        day.IsRestDay.Should().BeTrue();
-        day.IsAbsent.Should().BeFalse("un día de descanso de la plantilla no es falta");
+        day.IsRestDay.Should().BeFalse();
+        day.IsAbsent.Should().BeTrue();
+        day.CalculationIssue.Should().Contain("no tiene horario para el miércoles");
+    }
+
+    [Fact]
+    public async Task RestDays_ComeFromTheEmployee()
+    {
+        var (h, mixed) = Scenario();
+        h.Store.Employees.Clear();
+        h.Store.Employees.Add(Employee.Create(Emp, "Empleado", "Mixto", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
+            ShiftType.Mixto, mixed.Id, restDays: new[] { WeekDay.Lunes, WeekDay.Miercoles }));
+
+        await h.RecalculateAsync(Monday, Monday.AddDays(2));
+
+        Day(h, Monday)!.IsRestDay.Should().BeTrue("el lunes tiene horario en la plantilla, pero es descanso del empleado");
+        Day(h, Monday.AddDays(2))!.IsRestDay.Should().BeTrue();
+        Day(h, Monday.AddDays(2))!.CalculationIssue.Should().BeNullOrEmpty("en su descanso no importa que la plantilla no tenga horario");
     }
 
     [Fact]
@@ -145,10 +164,16 @@ public class MixedShiftTemplateTests
         withoutSchedule.IsFailure.Should().BeTrue();
         withoutSchedule.Error.Should().Contain("Seleccione el horario del lunes");
 
-        var valid = await handler.Handle(new CreateShiftCommand("Mixto", TimeSpan.Zero, 0, TimeSpan.FromHours(8), ShiftType.Mixto,
+        var incomplete = await handler.Handle(new CreateShiftCommand("Mixto", TimeSpan.Zero, 0, TimeSpan.FromHours(8), ShiftType.Mixto,
             new[] { new ShiftDayDto(DayOfWeek.Monday, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, ShiftType.Matutino, Morning.Id.Value) }), CancellationToken.None);
+        incomplete.IsFailure.Should().BeTrue("caso 9: los 7 días llevan horario");
+        incomplete.Error.Should().Contain("falta: martes, miércoles, jueves, viernes, sábado, domingo");
+
+        var valid = await handler.Handle(new CreateShiftCommand("Mixto", TimeSpan.Zero, 0, TimeSpan.FromHours(8), ShiftType.Mixto,
+            Enum.GetValues<DayOfWeek>().Select(d => new ShiftDayDto(d, TimeSpan.Zero, TimeSpan.Zero, TimeSpan.Zero, ShiftType.Matutino, Morning.Id.Value)).ToArray()),
+            CancellationToken.None);
         valid.IsSuccess.Should().BeTrue(valid.IsSuccess ? string.Empty : valid.Error);
-        repo.Verify(r => r.AddAsync(It.Is<Shift>(s => s.Days.Single().DayShiftId == Morning.Id), It.IsAny<CancellationToken>()), Times.Once);
+        repo.Verify(r => r.AddAsync(It.Is<Shift>(s => s.Days.Count == 7 && s.Days.All(d => d.DayShiftId == Morning.Id)), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]

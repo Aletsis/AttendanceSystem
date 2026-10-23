@@ -27,7 +27,7 @@ public record ShiftDay
     public static ShiftDay ForShift(DayOfWeek dayOfWeek, Shift dayShift)
     {
         if (dayShift.ShiftType is ShiftType.Mixto or ShiftType.Rotativo)
-            throw new DomainException($"El horario '{dayShift.Name}' es {dayShift.ShiftType}; un día de un turno mixto sólo admite horarios fijos, flexibles, continuos o partidos.");
+            throw new DomainException($"El horario '{dayShift.Name}' es {dayShift.ShiftType}; un día de un turno mixto sólo admite horarios matutinos, vespertinos, nocturnos, flexibles o partidos.");
 
         return new ShiftDay
         {
