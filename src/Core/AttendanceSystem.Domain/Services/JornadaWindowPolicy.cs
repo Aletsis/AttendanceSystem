@@ -9,7 +9,8 @@ namespace AttendanceSystem.Domain.Services;
 /// <item>La ventana se ancla en la entrada programada, o en la real si llegó tarde: llegar antes no la acorta.</item>
 /// <item>Fin = ancla + duración del turno + 4 h. Sin duración definida, ancla + 24 h (C-03).</item>
 /// <item>La ventana termina antes de la ventana de entrada de la jornada siguiente cuando ésta es laborable, sin
-/// recortar la duración programada del turno.</item>
+/// recortar la duración programada del turno. Sin duración definida (bolsa semanal) no hay duración que respetar y
+/// la jornada siguiente siempre la corta.</item>
 /// </list>
 /// </summary>
 public static class JornadaWindowPolicy
@@ -35,7 +36,8 @@ public static class JornadaWindowPolicy
 
         if (nextJornadaEntryStart is { } next && next.AddTicks(-1) < end)
         {
-            var scheduledEnd = anchor + (workHours > TimeSpan.Zero ? workHours : MaxJornadaDuration);
+            if (workHours <= TimeSpan.Zero) return next.AddTicks(-1);
+            var scheduledEnd = anchor + workHours;
             end = next.AddTicks(-1) > scheduledEnd ? next.AddTicks(-1) : scheduledEnd;
         }
         return end;

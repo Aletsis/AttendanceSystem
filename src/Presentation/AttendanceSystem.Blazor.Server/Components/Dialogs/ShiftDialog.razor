@@ -244,7 +244,6 @@
         ShiftType.Matutino,
         ShiftType.Vespertino,
         ShiftType.Nocturno,
-        ShiftType.Continuo,
         ShiftType.Flexible,
         ShiftType.Partido
     ];
@@ -255,12 +254,7 @@
         _startTime = StartTime ?? new TimeSpan(9, 0, 0); // Default 9 AM
         _toleranceMinutes = ToleranceMinutes;
         _shiftType = ShiftType;
-        if (_shiftType == ShiftType.Continuo)
-        {
-            _shiftType = ShiftType.Flexible;
-            _hasEntryWindow = false;
-        }
-        else if (_shiftType == ShiftType.Rotativo)
+        if (_shiftType == ShiftType.Rotativo)
         {
             _shiftType = ShiftType.Matutino;
         }
@@ -487,7 +481,6 @@
         ShiftType.Vespertino => "Vespertino",
         ShiftType.Nocturno => "Nocturno",
         ShiftType.Mixto => "Mixto",
-        ShiftType.Continuo => "Continuo",
         ShiftType.Flexible => "Flexible",
         ShiftType.Partido => "Partido / Doble Turno",
         ShiftType.Rotativo => "Rotativo",

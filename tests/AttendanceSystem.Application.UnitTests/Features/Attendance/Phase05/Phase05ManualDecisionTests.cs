@@ -400,7 +400,6 @@ public class Phase05ManualDecisionTests
         new object[] { "Nocturno", 22 },
         new object[] { "Flexible", 8 },
         new object[] { "MultiInterval", 8 },
-        new object[] { "Continuo", 8 },
         new object[] { "Partido", 9 },
         new object[] { "Mixto", 8 },
         new object[] { "SinTurno", 8 }
@@ -412,7 +411,6 @@ public class Phase05ManualDecisionTests
         "Nocturno" => AttendanceRegressionFixtures.CreateNightShift(),
         "Flexible" => Shift.Create("Flexible 8h", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Flexible),
         "MultiInterval" => AttendanceRegressionFixtures.CreateMultiIntervalShift(),
-        "Continuo" => AttendanceRegressionFixtures.CreateContinuous24hShift(),
         "Partido" => Shift.Create("Partido 9-13 y 15-19", new TimeSpan(9, 0, 0), 10, TimeSpan.FromHours(4), ShiftType.Partido,
             secondBlockStartTime: new TimeSpan(15, 0, 0), secondBlockEndTime: new TimeSpan(19, 0, 0)),
         "Mixto" => AttendanceRegressionFixtures.CreateMixedShift(),

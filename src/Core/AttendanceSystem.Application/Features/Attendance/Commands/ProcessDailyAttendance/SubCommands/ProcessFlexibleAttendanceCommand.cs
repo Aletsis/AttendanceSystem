@@ -21,7 +21,6 @@ public record ProcessFlexibleAttendanceCommand(
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
     DateTime? NextJornadaEntryStart = null,
-    bool Continuous = false,
     LunchPolicy? Lunch = null,
     DateTime? EarlyEntryStart = null) : IRequest;
 
@@ -184,18 +183,9 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
                             (JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart) || r.GetCivilTime(request.TimeZoneId) <= windowEnd))
                 .ToList();
 
-            if (request.Continuous)
-            {
-                // Continuo: la salida es el último marcaje de la ventana; los anteriores son intermedios.
-                checkOutRecord = exitCandidates.LastOrDefault();
-            }
-            else
-            {
-                // Flexible: la salida es el último marcaje del mismo día; si no lo hay, el primero del día
-                // siguiente dentro de la ventana (jornada que cruza medianoche).
-                checkOutRecord = exitCandidates.LastOrDefault(r => JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart))
-                    ?? exitCandidates.FirstOrDefault();
-            }
+            // Caso 6 (a): la salida es el último marcaje de la ventana, aunque caiga al día siguiente (guardias y
+            // jornadas que cruzan medianoche); los anteriores son intermedios.
+            checkOutRecord = exitCandidates.LastOrDefault();
 
             if (checkOutRecord != null)
             {

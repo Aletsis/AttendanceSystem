@@ -249,7 +249,7 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         var yesterday = request.Date.AddDays(-1);
         var yesterdayDA = await _dailyRepo.GetByEmployeeAndDateAsync(employeeId, yesterday.ToDateTime(TimeOnly.MinValue), cancellationToken);
         if (yesterdayDA?.ActualCheckIn is { } yesterdayIn &&
-            (yesterdayDA.ShiftType == ShiftType.Continuo ||
+            (yesterdayDA.ShiftType == ShiftType.Flexible ||
              (yesterdayDA.ScheduledCheckOut.HasValue && yesterdayDA.ScheduledCheckOut < yesterdayDA.ScheduledCheckIn)))
         {
             var diffHours = (record.CheckTime - yesterdayIn).TotalHours;

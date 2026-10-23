@@ -57,28 +57,11 @@ public class Phase06RulesTests
     #region F06-01 ventanas
 
     [Fact]
-    public async Task Continuous24h_TakesTheLastPunchInsideTheWindow_AsExit()
-    {
-        var shift = AttendanceRegressionFixtures.CreateContinuous24hShift();
-        var h = Harness(shift, CreateEmployee(shift));
-        var entry = Punch(h, Monday.AddHours(8));
-        Punch(h, Monday.AddHours(14));
-        Punch(h, Monday.AddHours(22));
-        var exit = Punch(h, Tuesday.AddHours(7).AddMinutes(50));
-
-        await h.RecalculateAsync(Monday, Monday);
-
-        var day = Day(h, Monday)!;
-        day.CheckInRecordId.Should().Be(entry.Id);
-        day.CheckOutRecordId.Should().Be(exit.Id, "continuo: la salida es el último marcaje de la ventana, no el primero del día siguiente");
-    }
-
-    [Fact]
-    public async Task Continuous_MissingExit_DoesNotConsumeTheNextJornadaEntry()
+    public async Task Flexible20h_MissingExit_DoesNotConsumeTheNextJornadaEntry()
     {
         // 20 h desde las 06:00: la ventana llegaría a las 06:00 del martes, pero la entrada del martes se
         // acepta desde las 04:00 (2 h de anticipación); el marcaje de las 05:30 pertenece al martes.
-        var shift = Shift.Create("Continuo 20h", new TimeSpan(6, 0, 0), 15, TimeSpan.FromHours(20), ShiftType.Continuo);
+        var shift = Shift.Create("Flexible 20h", new TimeSpan(6, 0, 0), 15, TimeSpan.FromHours(20), ShiftType.Flexible);
         var h = Harness(shift, CreateEmployee(shift));
         Punch(h, Monday.AddHours(6));
         var tuesdayEntry = Punch(h, Tuesday.AddHours(5).AddMinutes(30));
@@ -110,7 +93,7 @@ public class Phase06RulesTests
     public async Task Guard24h_EarlyEntry_AndLateExit_IsACompleteJornada()
     {
         // Guardia 24x24: martes de descanso, la salida de 20 min extra pertenece al lunes.
-        var shift = AttendanceRegressionFixtures.CreateContinuous24hShift();
+        var shift = AttendanceRegressionFixtures.CreateGuard24hShift();
         var employee = Employee.Create(Emp, "Empleado", "Sintetico", null, null, new DateTime(2024, 1, 1), Gender.Male,
             AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
             shift.ShiftType, shift.Id, restDays: new[] { WeekDay.Martes }, overtimeAuthorized: true);
@@ -128,7 +111,6 @@ public class Phase06RulesTests
 
     [Theory]
     [InlineData(ShiftType.Flexible)]
-    [InlineData(ShiftType.Continuo)]
     public async Task EightHourShift_WithSixHoursOvertime_KeepsTheRealExit_AndLunchAsIntermediate(ShiftType type)
     {
         var shift = Shift.Create($"{type} 8h", new TimeSpan(8, 0, 0), 15, TimeSpan.FromHours(8), type);
@@ -145,7 +127,6 @@ public class Phase06RulesTests
 
     [Theory]
     [InlineData(ShiftType.Flexible)]
-    [InlineData(ShiftType.Continuo)]
     public async Task SingleInterval_WorkedMinutes_UseCivilTimeOnBothEnds(ShiftType type)
     {
         // Antes la salida quedaba en UTC y la entrada en hora civil: en UTC-6 sumaba 6 h trabajadas.
@@ -243,11 +224,11 @@ public class Phase06RulesTests
     }
 
     [Fact]
-    public async Task Mixed_ContinuousDay_UsesTheDailyDurationForItsExitWindow()
+    public async Task Mixed_FlexibleDay_UsesTheDailyDurationForItsExitWindow()
     {
-        // Turno base de 8 h (ventana 12 h); el lunes es continuo de 12 h (ventana 16 h).
-        var days = new[] { new ShiftDay(DayOfWeek.Monday, new TimeSpan(6, 0, 0), TimeSpan.FromHours(12), ShiftType.Continuo) };
-        var shift = Shift.Create("Mixto continuo", new TimeSpan(6, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Mixto, days);
+        // Turno base de 8 h (ventana 12 h); el lunes es flexible de 12 h (ventana 16 h).
+        var days = new[] { new ShiftDay(DayOfWeek.Monday, new TimeSpan(6, 0, 0), TimeSpan.FromHours(12), ShiftType.Flexible) };
+        var shift = Shift.Create("Mixto flexible", new TimeSpan(6, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Mixto, days);
         var h = Harness(shift, CreateEmployee(shift));
         Punch(h, Monday.AddHours(6));
         Punch(h, Monday.AddHours(17));

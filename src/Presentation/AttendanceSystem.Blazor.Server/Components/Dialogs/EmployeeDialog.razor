@@ -404,14 +404,14 @@
         
         if (ShiftType.HasValue)
         {
-            _selectedShiftType = ShiftType.Value == ShiftTypeEnum.Continuo ? ShiftTypeEnum.Flexible : ShiftType;
+            _selectedShiftType = ShiftType;
         }
         else if (ScheduleId.HasValue)
         {
             var currentSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
             if (currentSchedule != null)
             {
-                _selectedShiftType = currentSchedule.ShiftType == ShiftTypeEnum.Continuo ? ShiftTypeEnum.Flexible : currentSchedule.ShiftType;
+                _selectedShiftType = currentSchedule.ShiftType;
             }
         }
 

@@ -838,9 +838,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         // Rule: Only late after tolerance. Truncate seconds so that clocking in during the tolerance minute is within tolerance.
         if (checkInCivil.HasValue)
         {
-            if (ShiftType == Enumerations.ShiftType.Continuo || ScheduledCheckIn == null)
+            if (ScheduledCheckIn == null)
             {
-                // In Continuo or No-Shift mode, there are no lates.
+                // In No-Shift mode, there are no lates.
                 LateMinutes = 0;
             }
             else if (ShiftType == Enumerations.ShiftType.Flexible)
@@ -890,23 +890,8 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
         }
 
-        // Calcular salida esperada dinámica para turnos flexibles o continuos (solo en tiempo corrido)
-        if (ShiftType == Enumerations.ShiftType.Continuo && ActualCheckIn.HasValue)
-        {
-            if (PunchTrackingMode == PunchTrackingMode.SingleInterval)
-            {
-                DateTime referenceEntry = GetReferenceEntry() ?? ActualCheckIn.Value;
-                var targetWorkHours = WorkHours ?? (ScheduledCheckOut.HasValue && ScheduledCheckIn.HasValue
-                    ? (ScheduledCheckOut.Value >= ScheduledCheckIn.Value ? ScheduledCheckOut.Value - ScheduledCheckIn.Value : ScheduledCheckOut.Value.Add(TimeSpan.FromDays(1)) - ScheduledCheckIn.Value)
-                    : TimeSpan.FromHours(8));
-                DynamicScheduledCheckOut = referenceEntry.Add(targetWorkHours).AddMinutes(LunchBreakMinutesApplied);
-            }
-            else
-            {
-                DynamicScheduledCheckOut = null;
-            }
-        }
-        else if (ShiftType == Enumerations.ShiftType.Flexible && ActualCheckIn.HasValue)
+        // Calcular salida esperada dinámica para turnos flexibles (solo en tiempo corrido)
+        if (ShiftType == Enumerations.ShiftType.Flexible && ActualCheckIn.HasValue)
         {
             if (WorkHours.HasValue && WorkHours.Value > TimeSpan.Zero && PunchTrackingMode == PunchTrackingMode.SingleInterval)
             {
@@ -922,7 +907,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         // EARLY DEPARTURE & OVERTIME
         if (ActualCheckOut.HasValue || (PunchTrackingMode == PunchTrackingMode.MultiInterval && TotalWorkedMinutes > 0))
         {
-            if (ShiftType == Enumerations.ShiftType.Flexible || ShiftType == Enumerations.ShiftType.Continuo)
+            if (ShiftType == Enumerations.ShiftType.Flexible)
             {
                 // Si es SingleInterval y TotalWorkedMinutes no fue precalculado por intervalos:
                 if (PunchTrackingMode == PunchTrackingMode.SingleInterval && ActualCheckIn.HasValue && ActualCheckOut.HasValue)
@@ -1061,7 +1046,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     {
         if (!ActualCheckIn.HasValue) return null;
         var checkInCivil = ToCivil(ActualCheckIn.Value);
-        if (ShiftType == Enumerations.ShiftType.Continuo || ShiftType == Enumerations.ShiftType.Flexible)
+        if (ShiftType == Enumerations.ShiftType.Flexible)
         {
             if (RoundingsEnabled && RoundingInterval > 0)
             {
@@ -1094,7 +1079,7 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     {
         if (!ActualCheckOut.HasValue) return null;
         var checkOutCivil = ToCivil(ActualCheckOut.Value);
-        if (ShiftType == Enumerations.ShiftType.Continuo || ShiftType == Enumerations.ShiftType.Flexible)
+        if (ShiftType == Enumerations.ShiftType.Flexible)
         {
             // Salida real para cómputo de horas laboradas y sobrante
             return checkOutCivil;

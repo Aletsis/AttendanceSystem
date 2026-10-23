@@ -562,7 +562,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
             // Decisión 5: un turno mixto ya llega resuelto al horario del día (AttendanceShiftResolutionService).
             if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) ||
-                     shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo ||
+                     shift.ShiftType == ShiftType.Nocturno ||
                      shift.ShiftType == ShiftType.Flexible || shift.ShiftType == ShiftType.Partido)
             {
                 isCrossDay = true;
@@ -641,7 +641,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         bool routesToNightly = effectiveType == ShiftType.Nocturno ||
             (plan.DayEndTime <= plan.DayStartTime &&
-             effectiveType != ShiftType.Continuo && effectiveType != ShiftType.Flexible && effectiveType != ShiftType.Partido);
+             effectiveType != ShiftType.Flexible && effectiveType != ShiftType.Partido);
 
         if (routesToNightly)
         {
@@ -664,18 +664,16 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 : maxB2EndBySched;
         }
 
-        if (effectiveType == ShiftType.Continuo || effectiveType == ShiftType.Flexible)
+        if (effectiveType == ShiftType.Flexible)
         {
             if (shift.PunchTrackingMode == PunchTrackingMode.MultiInterval) return null;
 
-            // F06-01: continuo toma el último marcaje de su ventana; flexible sólo busca en el día siguiente
-            // cuando la entrada es el único marcaje libre de su día. Ambos con el tope de la política de ventanas.
+            // Caso 6 (a): la salida es el último marcaje de la ventana, anclada en el primer marcaje del día.
             var unavailable = ws.Unavailable(DateOnly.FromDateTime(date), includeOwnManual: true);
             var ownDay = PunchAssignmentPolicy.Chronological(ws.Records.Values
                 .Where(r => ws.WorkDateOf(r) == plan.SearchStartDate && !unavailable.ContainsKey(r.Id)))
                 .ToList();
             if (ownDay.Count == 0) return null;
-            if (effectiveType == ShiftType.Flexible && ownDay.Count != 1) return null;
             return JornadaWindowPolicy.ExitWindowEnd(
                 ownDay[0].GetCivilTime(ws.TimeZoneId),
                 JornadaWindowPolicy.ScheduledStart(date, shift.StartTime, shift.HasEntryWindow),
@@ -769,11 +767,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             await _sender.Send(new ProcessNoShiftAttendanceCommand(
                 employee, date, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
         }
-        else if (shift.ShiftType == ShiftType.Continuo)
-        {
-            await _sender.Send(new ProcessContinuousAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch, EarlyEntryStart: plan.EarlyEntryStart), cancellationToken);
-        }
         else if (shift.ShiftType == ShiftType.Flexible)
         {
             await _sender.Send(new ProcessFlexibleAttendanceCommand(
@@ -784,7 +777,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             await _sender.Send(new ProcessSplitAttendanceCommand(
                 employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, EarlyEntryStart: plan.EarlyEntryStart), cancellationToken);
         }
-        else if (shift.ShiftType == ShiftType.Nocturno || (plan.DayEndTime <= plan.DayStartTime && shift.ShiftType != ShiftType.Continuo && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
+        else if (shift.ShiftType == ShiftType.Nocturno || (plan.DayEndTime <= plan.DayStartTime && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
         {
             await _sender.Send(new ProcessNightlyAttendanceCommand(
                 employee, date, shift, records, isRestDay, plan.DayStartTime, plan.DayEndTime, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, Lunch: ws.NightLunch, NextJornadaEntryStart: nextEntryStart), cancellationToken);

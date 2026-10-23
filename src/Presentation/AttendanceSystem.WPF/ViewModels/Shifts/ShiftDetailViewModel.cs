@@ -51,7 +51,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Vespertino, "Vespertino" },
             { ShiftType.Nocturno, "Nocturno" },
             { ShiftType.Mixto, "Mixto" },
-            { ShiftType.Continuo, "Continuo" },
             { ShiftType.Flexible, "Flexible" },
             { ShiftType.Partido, "Partido / Doble Turno" },
             { ShiftType.Rotativo, "Rotativo" }
@@ -64,7 +63,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             new(ShiftType.Matutino, "Matutino"),
             new(ShiftType.Vespertino, "Vespertino"),
             new(ShiftType.Nocturno, "Nocturno"),
-            new(ShiftType.Continuo, "Continuo"),
             new(ShiftType.Flexible, "Flexible"),
             new(ShiftType.Partido, "Partido / Doble Turno")
         };
@@ -87,7 +85,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 if (SetProperty(ref _selectedShiftType, value))
                 {
                     RaisePropertyChanged(nameof(IsStandardShift));
-                    RaisePropertyChanged(nameof(IsContinuousShift));
                     RaisePropertyChanged(nameof(IsMixedShift));
                     RaisePropertyChanged(nameof(IsFlexibleShift));
                     RaisePropertyChanged(nameof(IsSplitShift));
@@ -230,8 +227,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             set => SetProperty(ref _secondBlockToleranceMinutes, value);
         }
 
-        public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Continuo && SelectedShiftType.Key != ShiftType.Flexible && SelectedShiftType.Key != ShiftType.Partido;
-        public bool IsContinuousShift => SelectedShiftType.Key == ShiftType.Continuo;
+        public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Flexible && SelectedShiftType.Key != ShiftType.Partido;
         public bool IsMixedShift => SelectedShiftType.Key == ShiftType.Mixto;
         public bool IsFlexibleShift => SelectedShiftType.Key == ShiftType.Flexible;
         public bool IsSplitShift => SelectedShiftType.Key == ShiftType.Partido;
@@ -286,12 +282,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             TimeSpan endTime = EndDateTime?.TimeOfDay ?? TimeSpan.Zero;
             TimeSpan? flexEnd = null;
 
-            if (SelectedShiftType.Key == ShiftType.Continuo)
-            {
-                startTime = TimeSpan.Zero;
-                endTime = TimeSpan.FromHours(TargetHours);
-            }
-            else if (SelectedShiftType.Key == ShiftType.Flexible)
+            if (SelectedShiftType.Key == ShiftType.Flexible)
             {
                 if (HasEntryWindow)
                 {
@@ -363,9 +354,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 }
             }
 
-            bool effectiveHasEntryWindow = SelectedShiftType.Key == ShiftType.Continuo
-                ? false
-                : (SelectedShiftType.Key == ShiftType.Flexible ? HasEntryWindow : true);
+            bool effectiveHasEntryWindow = SelectedShiftType.Key == ShiftType.Flexible ? HasEntryWindow : true;
 
             var parameters = new DialogParameters
             {
@@ -435,11 +424,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     EndDateTime = DateTime.Today.Add(end);
                 }
 
-                if (type == ShiftType.Continuo)
-                {
-                    TargetHours = (int)workHours.TotalHours;
-                }
-                else if (type == ShiftType.Flexible)
+                if (type == ShiftType.Flexible)
                 {
                     if (parameters.ContainsKey("WeeklyWorkHours"))
                     {

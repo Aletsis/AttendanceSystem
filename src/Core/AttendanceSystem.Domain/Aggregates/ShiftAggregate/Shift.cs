@@ -132,20 +132,6 @@ public class Shift : AggregateRoot<ShiftId>
             secondBlockEndTime = null;
             secondBlockToleranceMinutes = null;
         }
-        else if (shiftType == ShiftType.Continuo)
-        {
-            hasEntryWindow = false;
-            flexWindowEndTime = null;
-            weeklyWorkHours = null;
-            secondBlockStartTime = null;
-            secondBlockEndTime = null;
-            secondBlockToleranceMinutes = null;
-
-            if (workHours <= TimeSpan.Zero)
-                throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
-
-            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
-        }
         else if (shiftType == ShiftType.Partido)
         {
             if (!secondBlockStartTime.HasValue)
@@ -209,7 +195,7 @@ public class Shift : AggregateRoot<ShiftId>
             SecondBlockEndTime = secondBlockEndTime,
             SecondBlockToleranceMinutes = secondBlockToleranceMinutes,
             PunchTrackingMode = punchTrackingMode,
-            HasEntryWindow = (shiftType == ShiftType.Continuo) ? false : hasEntryWindow
+            HasEntryWindow = hasEntryWindow
         };
 
         if (days != null && days.Any())
@@ -287,20 +273,6 @@ public class Shift : AggregateRoot<ShiftId>
             secondBlockEndTime = null;
             secondBlockToleranceMinutes = null;
         }
-        else if (shiftType == ShiftType.Continuo)
-        {
-            hasEntryWindow = false;
-            flexWindowEndTime = null;
-            weeklyWorkHours = null;
-            secondBlockStartTime = null;
-            secondBlockEndTime = null;
-            secondBlockToleranceMinutes = null;
-
-            if (workHours <= TimeSpan.Zero)
-                throw new DomainException("Las horas de trabajo diarias deben ser mayores a cero.");
-
-            calculatedEndTime = NormalizeTime(startTime.Add(workHours));
-        }
         else if (shiftType == ShiftType.Partido)
         {
             if (!secondBlockStartTime.HasValue)
@@ -361,7 +333,7 @@ public class Shift : AggregateRoot<ShiftId>
         SecondBlockEndTime = secondBlockEndTime;
         SecondBlockToleranceMinutes = secondBlockToleranceMinutes;
         PunchTrackingMode = punchTrackingMode;
-        HasEntryWindow = (shiftType == ShiftType.Continuo) ? false : hasEntryWindow;
+        HasEntryWindow = hasEntryWindow;
 
         _days.Clear();
         if (days != null && days.Any())
