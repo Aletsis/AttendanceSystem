@@ -135,6 +135,8 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.WorkedOnRestDay);
         builder.Property(x => x.CalculateOvertimeBeforeEntry);
         builder.Property(x => x.OvertimeAuthorized);
+        builder.Property(x => x.AuthorizedOvertimeMinutes);
+        builder.Property(x => x.AuthorizedOvertimeForRawMinutes);
         builder.Property(x => x.IsAutoDetectedShift)
             .IsRequired()
             .HasDefaultValue(false);

@@ -209,11 +209,15 @@
                         }
 
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
+                            <MudCheckBox T="bool" Value="OvertimeAuthorized" ValueChanged="OnOvertimeAuthorizedChanged" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
                         </MudItem>
+                        @* Caso 12: el horario flexible ya define desde cuándo cuenta el tiempo. *@
+                        @if (AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.AllowsOvertimeBeforeEntry(_selectedShiftType))
+                        {
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
                             <MudCheckBox @bind-Value="CalculateOvertimeBeforeEntry" Label="Calcular Tiempo Extra Antes de Entrada" Color="Color.Secondary" Disabled="@(!OvertimeAuthorized || !_canEditAll || IsSelectedBranchExternal)" />
                         </MudItem>
+                        }
                         <MudItem xs="12" sm="6">
                             <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized || !_canEditAll || IsSelectedBranchExternal)">
                                 @foreach (var method in Enum.GetValues<OvertimeEnum>())
@@ -429,9 +433,21 @@
         _originalsCaptured = true;
     }
 
+    /// <summary>Caso 12: sin extras autorizadas no se configuran redondeo, topes ni extras antes de la entrada.</summary>
+    private void OnOvertimeAuthorizedChanged(bool authorized)
+    {
+        OvertimeAuthorized = authorized;
+        if (authorized) return;
+        CalculateOvertimeBeforeEntry = false;
+        OvertimeCalculationMethod = OvertimeEnum.NoRounding;
+        OvertimeCapType = OvertimeCapEnum.None;
+        OvertimeCapMinutes = null;
+    }
+
     private void OnShiftTypeChanged(ShiftTypeEnum? newType)
     {
         _selectedShiftType = newType;
+        if (!AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.AllowsOvertimeBeforeEntry(newType)) CalculateOvertimeBeforeEntry = false;
         if (_selectedShiftType == ShiftTypeEnum.Rotativo)
         {
             _applyRotationScheme = true;

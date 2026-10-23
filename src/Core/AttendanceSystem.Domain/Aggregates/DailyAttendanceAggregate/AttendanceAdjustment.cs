@@ -63,6 +63,12 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     // Overrides de configuración de horas extras
     public bool? OvertimeAuthorizedOverride { get; private set; }
     public bool? CalculateOvertimeBeforeEntryOverride { get; private set; }
+    /// <summary>
+    /// Caso 12: minutos que RH autorizó (el excedente completo o bloques de 30 min) para el excedente
+    /// <see cref="AuthorizedOvertimeForRawMinutes"/>; si el excedente cambia al recalcular, la autorización ya no aplica.
+    /// </summary>
+    public int? AuthorizedOvertimeMinutes { get; private set; }
+    public int? AuthorizedOvertimeForRawMinutes { get; private set; }
 
     /// <summary>
     /// F06-05 (4a): marcajes intermedios excluidos por RH (sin posición). Quedan reservados por la jornada como
@@ -281,6 +287,7 @@ public sealed class AttendanceAdjustment : Entity<Guid>
             $"salidas=[{string.Join(",", ExitClassifications.OrderBy(c => c.Key).Select(c => $"{c.Key}:{c.Value}"))}]",
             $"extrasAutorizadas={(OvertimeAuthorizedOverride?.ToString() ?? "auto")}",
             $"extrasAntesEntrada={(CalculateOvertimeBeforeEntryOverride?.ToString() ?? "auto")}",
+            $"extrasMinutos={(AuthorizedOvertimeMinutes is { } m ? $"{m}/{AuthorizedOvertimeForRawMinutes}" : "auto")}",
             $"excesoComidaPerdonado={LunchExcessForgiven}",
             $"excluidos=[{string.Join(",", ExcludedPunches.OrderBy(g => g))}]"
         }));
@@ -304,13 +311,21 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     {
         OvertimeAuthorizedOverride = null;
         CalculateOvertimeBeforeEntryOverride = null;
+        AuthorizedOvertimeMinutes = null;
+        AuthorizedOvertimeForRawMinutes = null;
         Touch(updatedBy, reason);
     }
 
-    public void SetOvertimeConfiguration(bool overtimeAuthorized, bool calculateOvertimeBeforeEntry, string updatedBy)
+    public void SetOvertimeConfiguration(bool overtimeAuthorized, bool calculateOvertimeBeforeEntry, string updatedBy,
+        int? authorizedMinutes = null, int? forRawMinutes = null)
     {
+        if (authorizedMinutes.HasValue != forRawMinutes.HasValue ||
+            (authorizedMinutes is { } minutes && (!overtimeAuthorized || !DailyAttendance.IsValidOvertimeAuthorization(minutes, forRawMinutes!.Value))))
+            throw new DomainException(DailyAttendance.InvalidOvertimeAuthorizationMessage);
         OvertimeAuthorizedOverride = overtimeAuthorized;
         CalculateOvertimeBeforeEntryOverride = calculateOvertimeBeforeEntry;
+        AuthorizedOvertimeMinutes = authorizedMinutes;
+        AuthorizedOvertimeForRawMinutes = forRawMinutes;
         Touch(updatedBy, "Actualización de configuración de horas extras");
     }
 

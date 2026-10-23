@@ -21,6 +21,17 @@ public sealed record AttendanceReportViewDto
     public int LateMinutes { get; init; }
     public int EarlyDepartureMinutes { get; init; }
     public int OvertimeMinutes { get; init; }
+    /// <summary>Caso 12: excedente sobre la jornada antes de autorización, redondeo y topes.</summary>
+    public int RawOvertimeMinutes { get; init; }
+    /// <summary>Autorización de extras de la jornada (incluye la decisión diaria de RH).</summary>
+    public bool OvertimeAuthorized { get; init; }
+    public bool CalculateOvertimeBeforeEntry { get; init; }
+    /// <summary>Caso 12: lo que RH autorizó del día; null = sin cantidad.</summary>
+    public int? AuthorizedOvertimeMinutes { get; init; }
+    /// <summary>Caso 12: el excedente cambió desde la autorización de RH; hay que autorizarlo de nuevo.</summary>
+    public bool OvertimeAuthorizationOutdated { get; init; }
+    /// <summary>Autorización general del empleado: la decisión por día sólo se ofrece a quien no la tiene.</summary>
+    public bool EmployeeOvertimeAuthorized { get; init; }
 
     public bool IsAbsent { get; init; }
     public bool IsRestDay { get; init; }

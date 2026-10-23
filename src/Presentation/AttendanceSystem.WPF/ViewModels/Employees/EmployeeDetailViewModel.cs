@@ -132,12 +132,29 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 if (SetProperty(ref _selectedShiftType, value))
                 {
                     FilterShifts();
+                    // Caso 12: el horario flexible no admite extras antes de la entrada.
+                    if (!AllowsOvertimeBeforeEntry) CalculateOvertimeBeforeEntry = false;
+                    RaisePropertyChanged(nameof(AllowsOvertimeBeforeEntry));
                 }
             }
         }
 
+        public bool AllowsOvertimeBeforeEntry => AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.AllowsOvertimeBeforeEntry(SelectedShiftType);
+
         public int? SelectedRestDay { get => _selectedRestDay; set => SetProperty(ref _selectedRestDay, value); }
-        public bool OvertimeAuthorized { get => _overtimeAuthorized; set => SetProperty(ref _overtimeAuthorized, value); }
+        public bool OvertimeAuthorized
+        {
+            get => _overtimeAuthorized;
+            set
+            {
+                if (!SetProperty(ref _overtimeAuthorized, value) || value) return;
+                // Caso 12: sin extras autorizadas no se configuran redondeo, topes ni extras antes de la entrada.
+                CalculateOvertimeBeforeEntry = false;
+                SelectedOvertimeCalculationMethod = OvertimeCalculationMethod.NoRounding;
+                SelectedOvertimeCapType = OvertimeCapType.None;
+                OvertimeCapMinutes = null;
+            }
+        }
         public OvertimeCalculationMethod SelectedOvertimeCalculationMethod { get => _overtimeCalculationMethod; set => SetProperty(ref _overtimeCalculationMethod, value); }
         public OvertimeCapType SelectedOvertimeCapType { get => _overtimeCapType; set => SetProperty(ref _overtimeCapType, value); }
         public double? OvertimeCapMinutes { get => _overtimeCapMinutes; set => SetProperty(ref _overtimeCapMinutes, value); }

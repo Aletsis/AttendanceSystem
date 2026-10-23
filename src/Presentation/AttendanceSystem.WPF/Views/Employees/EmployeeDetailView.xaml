@@ -236,7 +236,7 @@
                                 <TextBlock Text="Configuración de Tiempo Extra" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
                                 
                                 <CheckBox IsChecked="{Binding OvertimeAuthorized}" Content="Autorizar Tiempo Extra" Margin="0,0,0,10" FontWeight="SemiBold" Foreground="#4E5D78"/>
-                                <CheckBox IsChecked="{Binding CalculateOvertimeBeforeEntry}" Content="Calcular antes de la entrada" Margin="0,0,0,20" IsEnabled="{Binding OvertimeAuthorized}" Foreground="#858796"/>
+                                <CheckBox IsChecked="{Binding CalculateOvertimeBeforeEntry}" Content="Calcular antes de la entrada" Margin="0,0,0,20" IsEnabled="{Binding OvertimeAuthorized}" Visibility="{Binding AllowsOvertimeBeforeEntry, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="#858796"/>
 
                                 <StackPanel IsEnabled="{Binding OvertimeAuthorized}">
                                     <TextBlock Text="Método de Redondeo" Style="{StaticResource FieldLabelStyle}"/>

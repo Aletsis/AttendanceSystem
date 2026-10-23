@@ -458,6 +458,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         daily.ApplyIntermediateAnalysis(new[] { lunch, leave }, paidLunchMinutes: 45);
         var adjustment = AttendanceAdjustment.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), "rh");
         adjustment.ClassifyExit(leave.ExitRecordId, TemporaryExitStatus.ApprovedUnpaid, "rh");
+        adjustment.SetOvertimeConfiguration(true, false, "rh", authorizedMinutes: 60, forRawMinutes: 80);
         var excluded = AttendanceRecordId.CreateNew();
         adjustment.ExcludePunch(excluded, "rh");
 
@@ -493,6 +494,8 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         var storedAdjustment = await verify.AttendanceAdjustments.SingleAsync(a => a.Id == adjustment.Id);
         storedAdjustment.ExitClassifications.Should().ContainKey(leave.ExitRecordId).WhoseValue.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
         storedAdjustment.ExcludedRecordIds().Should().ContainSingle().Which.Should().Be(excluded);
+        storedAdjustment.AuthorizedOvertimeMinutes.Should().Be(60);
+        storedAdjustment.AuthorizedOvertimeForRawMinutes.Should().Be(80);
     }
 
     [Fact]

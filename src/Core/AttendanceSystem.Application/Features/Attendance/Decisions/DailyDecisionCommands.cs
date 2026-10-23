@@ -47,7 +47,9 @@ public sealed class ClassifyTemporaryExitCommandHandler : IRequestHandler<Classi
 
 /// <summary>
 /// Autorización de horas extras de una jornada. Ambos valores nulos retiran la decisión y vuelven a la
-/// configuración del empleado.
+/// configuración del empleado. Caso 12: <paramref name="AuthorizedMinutes"/> es lo que RH autoriza (el excedente
+/// completo o bloques de 30 min) del excedente <paramref name="ForRawMinutes"/> que vio; si al recalcular cambia, la
+/// autorización deja de aplicar.
 /// </summary>
 public sealed record SetDailyOvertimeAuthorizationCommand(
     string EmployeeId,
@@ -55,7 +57,9 @@ public sealed record SetDailyOvertimeAuthorizationCommand(
     bool? OvertimeAuthorized,
     bool? CalculateOvertimeBeforeEntry,
     string? Reason = null,
-    int? ExpectedRevision = null) : IRequest<Result<AttendanceDecisionOutcome>>;
+    int? ExpectedRevision = null,
+    int? AuthorizedMinutes = null,
+    int? ForRawMinutes = null) : IRequest<Result<AttendanceDecisionOutcome>>;
 
 public sealed class SetDailyOvertimeAuthorizationCommandHandler : IRequestHandler<SetDailyOvertimeAuthorizationCommand, Result<AttendanceDecisionOutcome>>
 {
@@ -69,6 +73,12 @@ public sealed class SetDailyOvertimeAuthorizationCommandHandler : IRequestHandle
         {
             return Task.FromResult(Result<AttendanceDecisionOutcome>.Failure("Indique ambos valores de horas extras o ninguno para retirar la decisión."));
         }
+        if (request.AuthorizedMinutes.HasValue != request.ForRawMinutes.HasValue ||
+            (request.AuthorizedMinutes is { } minutes &&
+             (request.OvertimeAuthorized != true || !DailyAttendance.IsValidOvertimeAuthorization(minutes, request.ForRawMinutes!.Value))))
+        {
+            return Task.FromResult(Result<AttendanceDecisionOutcome>.Failure(DailyAttendance.InvalidOvertimeAuthorizationMessage));
+        }
 
         return _decisions.DecideAsync(
             EmployeeId.From(request.EmployeeId),
@@ -79,7 +89,7 @@ public sealed class SetDailyOvertimeAuthorizationCommandHandler : IRequestHandle
             (context, adjustment) =>
             {
                 if (request.OvertimeAuthorized is { } authorized)
-                    adjustment.SetOvertimeConfiguration(authorized, request.CalculateOvertimeBeforeEntry!.Value, context.Author);
+                    adjustment.SetOvertimeConfiguration(authorized, request.CalculateOvertimeBeforeEntry!.Value, context.Author, request.AuthorizedMinutes, request.ForRawMinutes);
                 else
                     adjustment.ClearOvertimeConfiguration(context.Author, "Autorización de extras retirada");
                 return Task.FromResult(Result.Success());

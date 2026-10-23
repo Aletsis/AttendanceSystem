@@ -30,7 +30,8 @@ public readonly record struct ExpectedDay(bool Workable, bool Employed, bool Wee
 /// los descansos trabajados conservan su propio excedente.</item>
 /// <item>Autorización: la de cada jornada (<see cref="DailyAttendance.OvertimeAuthorized"/>, que ya incluye los overrides
 /// manuales), no la bandera global del empleado.</item>
-/// <item>Redondeo: una sola vez, sobre el bruto, con el método del empleado.</item>
+/// <item>Redondeo: una sola vez, sobre el bruto, con el método del empleado; una parte autorizada por RH (caso 12)
+/// sustituye al redondeo.</item>
 /// <item>Tope diario: por jornada. Tope de período: acumulado dentro del período contable que contiene la jornada
 /// (<c>periodStartOf</c>), en orden cronológico; no depende del rango solicitado si se le entregan todas las jornadas
 /// del período.</item>
@@ -85,7 +86,7 @@ public static class WeeklyHoursCalculationHelper
             double effective = 0;
             if (raw > 0 && att.OvertimeAuthorized)
             {
-                effective = DailyAttendance.ApplyOvertimeRounding(raw, employee.OvertimeCalculationMethod);
+                effective = att.AuthorizedOvertime(raw, employee.OvertimeCalculationMethod);
 
                 if (employee.OvertimeCapType == OvertimeCapType.Daily && employee.OvertimeCapMinutes.HasValue)
                 {

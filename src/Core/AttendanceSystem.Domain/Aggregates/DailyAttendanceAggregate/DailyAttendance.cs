@@ -86,6 +86,23 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public bool WorkedOnRestDay { get; private set; }
     public bool CalculateOvertimeBeforeEntry { get; private set; }
     public bool OvertimeAuthorized { get; private set; }
+    /// <summary>
+    /// Caso 12: minutos que RH autorizó para el día (el excedente completo o bloques de 30 min) y el excedente que tenía
+    /// el día al autorizarlos. Null = autorización sin cantidad (la del empleado o una decisión anterior al caso 12).
+    /// </summary>
+    public int? AuthorizedOvertimeMinutes { get; private set; }
+    public int? AuthorizedOvertimeForRawMinutes { get; private set; }
+    public const int OvertimeAuthorizationBlockMinutes = 30;
+    public const string InvalidOvertimeAuthorizationMessage =
+        "Autorice el tiempo extra completo o en bloques de 30 min sin pasar del excedente.";
+
+    /// <summary>Caso 12: se autoriza el excedente completo o bloques de 30 min que no lo excedan.</summary>
+    public static bool IsValidOvertimeAuthorization(int minutes, int rawMinutes) =>
+        minutes > 0 && minutes <= rawMinutes && (minutes == rawMinutes || minutes % OvertimeAuthorizationBlockMinutes == 0);
+
+    /// <summary>Caso 12: RH autorizó una cantidad para otro excedente; al cambiar, hay que autorizarlo de nuevo.</summary>
+    public bool IsOvertimeAuthorizationOutdated =>
+        OvertimeAuthorized && AuthorizedOvertimeForRawMinutes is { } authorizedFor && authorizedFor != RawOvertimeMinutes;
 
     // --- Salidas Temporales Detectadas (caso 11) ---
     /// <summary>Salidas de la jornada (JSON de <see cref="TemporaryExit"/>); null en jornadas calculadas antes del caso 11.</summary>
@@ -166,6 +183,12 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             if (IsWithoutShift) notes.Add("Sin turno asignado: asígnele un horario");
             if (EarlyDepartureMinutes > 0) notes.Add($"Salida anticipada de {EarlyDepartureMinutes} min");
             if (WeeklyShortfallMinutes > 0) notes.Add($"Faltaron {WeeklyShortfallMinutes} min para la meta semanal");
+            // Caso 12: el excedente sin autorización no se paga; RH puede autorizar el día.
+            if (IsOvertimeAuthorizationOutdated)
+                notes.Add($"El tiempo extra cambió de {AuthorizedOvertimeForRawMinutes} a {RawOvertimeMinutes} min: autorícelo nuevamente");
+            else if (HasUnauthorizedOvertime) notes.Add($"Tiempo extra no autorizado: {RawOvertimeMinutes} min");
+            else if (OvertimeAuthorized && AuthorizedOvertimeMinutes is { } part && part < RawOvertimeMinutes)
+                notes.Add($"Tiempo extra autorizado: {part} de {RawOvertimeMinutes} min");
             if (TemporaryExitsData != null) notes.AddRange(ExitNotes());
             else
             {
@@ -186,6 +209,10 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     /// marcajes no lo es.
     /// </summary>
     public bool IsWithoutShift => ShiftId == null && !(IsRestDay && !HasPunches);
+
+    /// <summary>Caso 12: hubo excedente sobre la jornada pero la jornada no tiene las extras autorizadas.</summary>
+    public bool HasUnauthorizedOvertime =>
+        RawOvertimeMinutes > 0 && !IsWithoutShift && (!OvertimeAuthorized || IsOvertimeAuthorizationOutdated);
 
     /// <summary>Las notas en una sola línea (exportaciones).</summary>
     public string? AttendanceNote => Notes.Count == 0 ? null : string.Join(" | ", Notes);
@@ -543,6 +570,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
         {
             OvertimeAuthorized = adjustment.OvertimeAuthorizedOverride.Value;
         }
+        var authorizedAmount = adjustment.OvertimeAuthorizedOverride == true && adjustment.AuthorizedOvertimeMinutes.HasValue;
+        AuthorizedOvertimeMinutes = authorizedAmount ? adjustment.AuthorizedOvertimeMinutes : null;
+        AuthorizedOvertimeForRawMinutes = authorizedAmount ? adjustment.AuthorizedOvertimeForRawMinutes : null;
 
         if (adjustment.CalculateOvertimeBeforeEntryOverride.HasValue)
         {
@@ -1016,8 +1046,19 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     {
         RawOvertimeMinutes = (int)Math.Max(0, surplus);
         OvertimeMinutes = OvertimeAuthorized && surplus > 0
-            ? (int)ApplyOvertimeRounding(surplus, OvertimeCalculationMethod)
+            ? (int)AuthorizedOvertime(surplus, OvertimeCalculationMethod)
             : 0;
+    }
+
+    /// <summary>
+    /// Caso 12: extras autorizadas antes de topes. Sin cantidad, el excedente se redondea con el método del empleado.
+    /// Con una cantidad de RH (completo o bloques de 30 min, sin redondeo) se paga sólo si el excedente sigue siendo el
+    /// que se autorizó; si cambió, queda en 0 hasta que RH lo autorice de nuevo.
+    /// </summary>
+    public double AuthorizedOvertime(double raw, OvertimeCalculationMethod method)
+    {
+        if (AuthorizedOvertimeMinutes is not { } part) return ApplyOvertimeRounding(raw, method);
+        return AuthorizedOvertimeForRawMinutes == (int)Math.Max(0, raw) ? part : 0;
     }
 
     public static double ApplyOvertimeRounding(double minutes, OvertimeCalculationMethod method)

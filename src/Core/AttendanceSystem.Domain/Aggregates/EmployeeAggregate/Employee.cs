@@ -111,10 +111,11 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             RestDay = primaryRestDay,
             RestDays = configuredRestDays,
             OvertimeAuthorized = overtimeAuthorized,
-            OvertimeCalculationMethod = overtimeCalculationMethod,
-            OvertimeCapType = overtimeCapType,
-            OvertimeCapMinutes = overtimeCapMinutes,
-            CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
+            // Caso 12: sin extras autorizadas no hay redondeo, topes ni extras antes de la entrada; RH decide por día.
+            OvertimeCalculationMethod = overtimeAuthorized ? overtimeCalculationMethod : OvertimeCalculationMethod.NoRounding,
+            OvertimeCapType = overtimeAuthorized ? overtimeCapType : OvertimeCapType.None,
+            OvertimeCapMinutes = overtimeAuthorized ? overtimeCapMinutes : null,
+            CalculateOvertimeBeforeEntry = overtimeAuthorized && AllowsOvertimeBeforeEntry(shiftType) && calculateOvertimeBeforeEntry,
             CardNumber = cardNumber,
             DevicePassword = devicePassword,
             Photo = photo,
@@ -236,10 +237,11 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         ShiftType = shiftType;
         ScheduleId = scheduleId;
         OvertimeAuthorized = overtimeAuthorized;
-        OvertimeCalculationMethod = overtimeCalculationMethod;
-        OvertimeCapType = overtimeCapType;
-        OvertimeCapMinutes = overtimeCapMinutes;
-        CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry;
+        // Caso 12: sin extras autorizadas no hay redondeo, topes ni extras antes de la entrada; RH decide por día.
+        OvertimeCalculationMethod = overtimeAuthorized ? overtimeCalculationMethod : OvertimeCalculationMethod.NoRounding;
+        OvertimeCapType = overtimeAuthorized ? overtimeCapType : OvertimeCapType.None;
+        OvertimeCapMinutes = overtimeAuthorized ? overtimeCapMinutes : null;
+        CalculateOvertimeBeforeEntry = overtimeAuthorized && AllowsOvertimeBeforeEntry(shiftType) && calculateOvertimeBeforeEntry;
         CardNumber = cardNumber;
         DevicePassword = devicePassword;
         Photo = photo ?? Photo;
@@ -451,6 +453,12 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     }
 
     public string GetFullName() => $"{FirstName} {LastName}";
+
+    /// <summary>
+    /// Caso 12: el horario flexible ya define desde cuándo cuenta el tiempo (ventana de entrada), así que no admite
+    /// extras antes de la entrada.
+    /// </summary>
+    public static bool AllowsOvertimeBeforeEntry(ShiftType? shiftType) => shiftType != Enumerations.ShiftType.Flexible;
 
     private static void ValidateName(string name, string paramName)
     {
