@@ -722,58 +722,22 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
             }
             EarlyDepartureMinutes = totalEarly;
 
-            // Cómputo de horas laboradas y horas extras
+            // Cómputo de horas laboradas (caso 8): cada bloque cuenta desde su entrada de referencia, igual que el
+            // turno fijo (bloques de 30 min tras la tolerancia); un bloque incompleto cuenta 0.
             double workedMinutesBlock1 = 0;
-            double otB1 = 0;
             var schedB1Duration = (schedB1Out - schedB1In).TotalMinutes;
             if (b1InCivil.HasValue && block1OutCivil.HasValue && block1OutCivil.Value > b1InCivil.Value)
             {
-                var checkInB1NoSeconds = TruncateSeconds(b1InCivil.Value);
-                var delayB1 = (checkInB1NoSeconds - schedB1In).TotalMinutes;
-                DateTime refInB1;
-                if (delayB1 <= ToleranceMinutes)
-                {
-                    refInB1 = (CalculateOvertimeBeforeEntry && b1InCivil.Value < schedB1In)
-                        ? b1InCivil.Value
-                        : schedB1In;
-                }
-                else
-                {
-                    refInB1 = b1InCivil.Value;
-                }
-
+                var refInB1 = BlockReferenceEntry(b1InCivil.Value, schedB1In, ToleranceMinutes);
                 workedMinutesBlock1 = Math.Max(0, (block1OutCivil.Value - refInB1).TotalMinutes);
-                if (workedMinutesBlock1 > schedB1Duration)
-                {
-                    otB1 = workedMinutesBlock1 - schedB1Duration;
-                }
             }
 
             double workedMinutesBlock2 = 0;
-            double otB2 = 0;
             var schedB2Duration = (schedB2Out - schedB2In).TotalMinutes;
             if (block2InCivil.HasValue && b2OutCivil.HasValue && b2OutCivil.Value > block2InCivil.Value)
             {
-                var checkInB2NoSeconds = TruncateSeconds(block2InCivil.Value);
-                var delayB2 = (checkInB2NoSeconds - schedB2In).TotalMinutes;
-                int tol2 = SecondBlockToleranceMinutes ?? ToleranceMinutes;
-                DateTime refInB2;
-                if (delayB2 <= tol2)
-                {
-                    refInB2 = (CalculateOvertimeBeforeEntry && block2InCivil.Value < schedB2In)
-                        ? block2InCivil.Value
-                        : schedB2In;
-                }
-                else
-                {
-                    refInB2 = block2InCivil.Value;
-                }
-
+                var refInB2 = BlockReferenceEntry(block2InCivil.Value, schedB2In, SecondBlockToleranceMinutes ?? ToleranceMinutes);
                 workedMinutesBlock2 = Math.Max(0, (b2OutCivil.Value - refInB2).TotalMinutes);
-                if (workedMinutesBlock2 > schedB2Duration)
-                {
-                    otB2 = workedMinutesBlock2 - schedB2Duration;
-                }
             }
 
             double totalWorked = workedMinutesBlock1 + workedMinutesBlock2;
@@ -785,7 +749,9 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
 
             TotalWorkedMinutes = (int)totalWorked;
 
-            SetOvertimeFromSurplus(otB1 + otB2);
+            // Caso 8 (8.7): el excedente de un bloque se compensa con lo que falte en el otro (retardo, salida
+            // anticipada, salidas temporales o un bloque incompleto): sólo es extra lo que pase de la jornada.
+            SetOvertimeFromSurplus(totalWorked - schedB1Duration - schedB2Duration);
 
             return;
         }
@@ -1044,6 +1010,22 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     {
         if (roundingIntervalMinutes <= 0) return checkOut;
         return new DateTime(checkOut.Year, checkOut.Month, checkOut.Day, checkOut.Hour, (checkOut.Minute / roundingIntervalMinutes) * roundingIntervalMinutes, 0, checkOut.Kind);
+    }
+
+    /// <summary>
+    /// Caso 8: entrada de referencia de un bloque del turno partido con la regla del turno fijo. Dentro de la tolerancia
+    /// cuenta desde la hora programada (o desde la llegada anticipada si se calculan extras antes de la entrada); después,
+    /// en bloques de 30 min que repiten la tolerancia (llega 09:12 con 10 min → 09:30).
+    /// </summary>
+    private DateTime BlockReferenceEntry(DateTime checkInCivil, DateTime scheduledIn, int toleranceMinutes)
+    {
+        var delayMinutes = (TruncateSeconds(checkInCivil) - scheduledIn).TotalMinutes;
+        if (delayMinutes <= toleranceMinutes)
+        {
+            return CalculateOvertimeBeforeEntry && checkInCivil < scheduledIn ? checkInCivil : scheduledIn;
+        }
+        var k = (int)Math.Ceiling((delayMinutes - toleranceMinutes) / 30.0);
+        return scheduledIn.AddMinutes(k * 30);
     }
 
     public DateTime? GetReferenceEntry()

@@ -24,6 +24,11 @@ public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int P
 
     public static LunchPolicy Default { get; } = new(DefaultWindowStart, DefaultWindowEnd, DefaultPaidMinutes);
     public static LunchPolicy DefaultNight { get; } = new(DefaultNightWindowStart, DefaultNightWindowEnd, DefaultPaidMinutes);
+    /// <summary>Sin comida (turno partido, caso 8): el descanso entre bloques hace de comida; toda ausencia es salida temporal.</summary>
+    public static LunchPolicy None { get; } = new(TimeSpan.Zero, TimeSpan.Zero, 0) { HasWindow = false };
+
+    /// <summary>False: ninguna ausencia es comida.</summary>
+    public bool HasWindow { get; init; } = true;
 
     /// <summary>Política efectiva de una jornada: los minutos con goce del turno sustituyen a los globales.</summary>
     public LunchPolicy ForShift(int? shiftPaidMinutes) =>
@@ -32,6 +37,7 @@ public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int P
     /// <summary>Una ventana con inicio posterior al fin cruza medianoche (p. ej. 23:00–04:00).</summary>
     public bool InWindow(DateTime exitCivil)
     {
+        if (!HasWindow) return false;
         var time = exitCivil.TimeOfDay;
         return WindowStart <= WindowEnd
             ? time >= WindowStart && time <= WindowEnd
