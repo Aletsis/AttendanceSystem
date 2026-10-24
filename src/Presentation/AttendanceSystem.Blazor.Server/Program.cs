@@ -246,6 +246,7 @@ try
         scheduler.ScheduleDeviceHeartbeat();
         scheduler.ScheduleCloudSync();
         scheduler.ScheduleScheduleIntegrityCheck();
+        scheduler.ScheduleDailyCalculation();
     }
 
     app.UseAntiforgery();

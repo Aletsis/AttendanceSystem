@@ -13,6 +13,7 @@
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IEmailService EmailService
+@inject IDialogService DialogService
 
 <PageTitle>Configuración del Sistema</PageTitle>
 
@@ -505,6 +506,7 @@
                 _lunchWindowEnabled = config.LunchWindowEnabled;
                 _nightLunchWindowStart = config.NightLunchWindowStart ?? _nightLunchWindowStart;
                 _nightLunchWindowEnd = config.NightLunchWindowEnd ?? _nightLunchWindowEnd;
+                _loadedCalculationSettings = CalculationSettings();
 
                 // Cloud Sync
                 _isCloudSyncEnabled = config.IsCloudSyncEnabled;
@@ -525,8 +527,24 @@
         }
     }
 
+    // Caso 15: los ajustes que cambian el cálculo; si cambian se pregunta desde qué fecha aplican.
+    private string? _loadedCalculationSettings;
+
+    private string CalculationSettings() => string.Join("|", _workPeriodMode, _weeklyStartDay, _fortnightFirstDay, _fortnightSecondDay,
+        _monthlyStartDay, _lunchWindowStart, _lunchWindowEnd, _paidLunchMinutes, _doubleTapMinutes, _lunchWindowEnabled,
+        _nightLunchWindowStart, _nightLunchWindowEnd);
+
     private async Task SaveSettings()
     {
+        DateTime? recalculateFrom = null;
+        if (_loadedCalculationSettings != null && CalculationSettings() != _loadedCalculationSettings)
+        {
+            recalculateFrom = await EffectiveDateDialog.AskAsync(DialogService, "Aplicar cambios del cálculo",
+                "Cambió la comida, el toque doble o los periodos. ¿Desde qué fecha aplican?",
+                date => Mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.GetConfigurationRecalculationImpactQuery(date)));
+            if (recalculateFrom == null) return;
+        }
+
         _isSaving = true;
         try
         {
@@ -570,7 +588,8 @@
                 _nightLunchWindowStart,
                 _nightLunchWindowEnd,
                 _lunchWindowEnabled,
-                _doubleTapMinutes
+                _doubleTapMinutes,
+                recalculateFrom
             );
 
             var result = await Mediator.Send(command);
@@ -578,6 +597,7 @@
             if (result.IsSuccess)
             {
                 Snackbar.Add("Configuración guardada correctamente", Severity.Success);
+                _loadedCalculationSettings = CalculationSettings();
             }
             else
             {

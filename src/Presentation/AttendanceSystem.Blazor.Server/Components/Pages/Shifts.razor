@@ -168,8 +168,14 @@
         var dialog = await DialogService.ShowAsync<ShiftDialog>("Editar Turno", parameters, options);
         var result = await dialog.Result;
 
-        if (result != null && !result.Canceled && result.Data is UpdateShiftCommand command)
+        if (result != null && !result.Canceled && result.Data is UpdateShiftCommand edited)
         {
+             // Caso 15: el cambio aplica desde una fecha; hoy o pasada recalcula los días de quienes usan el horario.
+             var from = await EffectiveDateDialog.AskAsync(DialogService, "Aplicar cambio del horario",
+                 $"¿Desde qué fecha aplica el cambio de \"{edited.Name}\"?",
+                 date => Sender.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.GetShiftRecalculationImpactQuery(edited.Id, date)));
+             if (from == null) return;
+             var command = edited with { RecalculateFrom = from };
              var updateResult = await Sender.Send(command);
              if (updateResult.IsSuccess)
              {

@@ -18,13 +18,27 @@ public class AssignShiftRosterCommandHandler : IRequestHandler<AssignShiftRoster
 {
     private readonly IShiftRosterRepository _rosterRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAttendanceConsolidationRepository? _consolidations;
+    private readonly IConsolidationWakeup? _wakeup;
 
     public AssignShiftRosterCommandHandler(
         IShiftRosterRepository rosterRepository,
-        IUnitOfWork unitOfWork)
+        IUnitOfWork unitOfWork,
+        IAttendanceConsolidationRepository? consolidations = null,
+        IConsolidationWakeup? wakeup = null)
     {
         _rosterRepository = rosterRepository;
         _unitOfWork = unitOfWork;
+        _consolidations = consolidations;
+        _wakeup = wakeup;
+    }
+
+    /// <summary>Caso 15: cambiar el roster de un día ya transcurrido (o de hoy) recalcula ese día.</summary>
+    private async Task RecalculateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken)
+    {
+        if (_consolidations == null || date.Date > DateTime.Today) return;
+        await _consolidations.RequestAsync(employeeId, date.Date, date.Date, cancellationToken);
+        _wakeup?.Signal();
     }
 
     public async Task<Guid> Handle(AssignShiftRosterCommand request, CancellationToken cancellationToken)
@@ -38,6 +52,7 @@ public class AssignShiftRosterCommandHandler : IRequestHandler<AssignShiftRoster
             existing.Update(shiftId, request.IsRestDay, request.Notes);
             await _rosterRepository.UpdateAsync(existing, cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await RecalculateAsync(empId, request.Date, cancellationToken);
             return existing.Id.Value;
         }
 
@@ -50,6 +65,7 @@ public class AssignShiftRosterCommandHandler : IRequestHandler<AssignShiftRoster
 
         await _rosterRepository.AddAsync(roster, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await RecalculateAsync(empId, request.Date, cancellationToken);
         return roster.Id.Value;
     }
 }

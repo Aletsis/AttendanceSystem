@@ -116,6 +116,16 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         _backgroundJobClient.Enqueue<AttendanceJobs>(jobs => jobs.CheckScheduleIntegrity());
     }
 
+    public void ScheduleDailyCalculation()
+    {
+        // 00:05 hora local del servidor: el día anterior ya terminó.
+        _recurringJobManager.AddOrUpdate<AttendanceJobs>(
+            "daily-attendance-calculation",
+            jobs => jobs.CalculatePreviousDay(),
+            "5 0 * * *",
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+    }
+
     public void EnqueueBiometricSync(string deviceId, string employeeId)
     {
         _backgroundJobClient.Enqueue<AttendanceJobs>(
@@ -152,6 +162,11 @@ public class AttendanceJobs
     }
 
     [JobDisplayName("Check for Critical Position Absences")]
+    public async Task CalculatePreviousDay()
+    {
+        await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.CalculatePreviousDayCommand());
+    }
+
     public async Task CheckCriticalAbsences()
     {
         var result = await _mediator.Send(new CheckCriticalAbsencesCommand());

@@ -118,6 +118,7 @@ public class WpfCompositionTests
         public void ScheduleDeviceHeartbeat() { }
         public void ScheduleCloudSync() { }
         public void ScheduleScheduleIntegrityCheck() { }
+        public void ScheduleDailyCalculation() { }
         public void EnqueueBiometricSync(string deviceId, string employeeId) { }
         public void EnqueueAttendanceProcessing(DateTime startDate, DateTime endDate, string? employeeId = null) { }
     }

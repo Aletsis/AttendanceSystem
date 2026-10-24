@@ -28,17 +28,23 @@ public sealed record UpdateShiftCommand(
     PunchTrackingMode PunchTrackingMode = PunchTrackingMode.SingleInterval,
     bool HasEntryWindow = true,
     int? PaidLunchMinutes = null,
-    bool UpdatePaidLunchMinutes = false) : IRequest<Result>;
+    bool UpdatePaidLunchMinutes = false,
+    DateTime? RecalculateFrom = null) : IRequest<Result>;
 
 public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftCommand, Result>
 {
     private readonly IShiftRepository _shiftRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation? _recalculation;
 
-    public UpdateShiftCommandHandler(IShiftRepository shiftRepository, IUnitOfWork unitOfWork)
+    public UpdateShiftCommandHandler(
+        IShiftRepository shiftRepository,
+        IUnitOfWork unitOfWork,
+        AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation? recalculation = null)
     {
         _shiftRepository = shiftRepository;
         _unitOfWork = unitOfWork;
+        _recalculation = recalculation;
     }
 
     public async Task<Result> Handle(UpdateShiftCommand request, CancellationToken cancellationToken)
@@ -87,6 +93,12 @@ public sealed class UpdateShiftCommandHandler : IRequestHandler<UpdateShiftComma
 
             _shiftRepository.Update(shift);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            // Caso 15: con vigencia de hoy o pasada se recalculan los días de quienes usan la plantilla.
+            if (request.RecalculateFrom is { } from && _recalculation != null)
+            {
+                await _recalculation.RequestForShiftAsync(shiftId, from, cancellationToken);
+            }
 
             return Result.Success();
         }
