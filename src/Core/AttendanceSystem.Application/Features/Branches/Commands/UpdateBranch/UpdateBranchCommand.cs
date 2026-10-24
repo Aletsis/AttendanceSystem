@@ -7,6 +7,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Branches.Commands.UpdateBranch;
 
+[RequiresPermission(Permissions.BranchesManage)]
 public sealed record UpdateBranchCommand(
     Guid Id,
     string Code,

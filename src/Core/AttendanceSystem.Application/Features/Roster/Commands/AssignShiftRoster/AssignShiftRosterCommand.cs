@@ -6,6 +6,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Roster.Commands.AssignShiftRoster;
 
+[RequiresPermission(Permissions.RosterManage)]
 public record AssignShiftRosterCommand(
     string EmployeeId,
     DateTime Date,

@@ -1,4 +1,5 @@
 @page "/attendance/calculation"
+@attribute [Authorize(Policy = Permissions.AttendanceCalculate)]
 @using MediatR
 @using AttendanceSystem.Application.Common
 @using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance

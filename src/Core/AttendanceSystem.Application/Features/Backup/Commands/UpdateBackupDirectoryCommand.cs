@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Backup.Commands;
 
+[RequiresPermission(Permissions.BackupsManage)]
 public sealed record UpdateBackupDirectoryCommand(string BackupDirectory) : IRequest<Result<string>>;
 
 public sealed class UpdateBackupDirectoryCommandHandler : IRequestHandler<UpdateBackupDirectoryCommand, Result<string>>

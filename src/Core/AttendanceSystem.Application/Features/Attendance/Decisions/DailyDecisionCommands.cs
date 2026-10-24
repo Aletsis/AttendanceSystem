@@ -9,6 +9,7 @@ namespace AttendanceSystem.Application.Features.Attendance.Decisions;
 /// goce, permiso sin goce o error de checada. <c>Status</c> nulo retira la decisión y vuelve a la clasificación
 /// automática (comida si la ventana la detectó, si no pendiente).
 /// </summary>
+[RequiresPermission(Permissions.AttendanceAdjust)]
 public sealed record ClassifyTemporaryExitCommand(
     string EmployeeId,
     DateOnly Date,
@@ -51,6 +52,7 @@ public sealed class ClassifyTemporaryExitCommandHandler : IRequestHandler<Classi
 /// completo o bloques de 30 min) del excedente <paramref name="ForRawMinutes"/> que vio; si al recalcular cambia, la
 /// autorización deja de aplicar.
 /// </summary>
+[RequiresPermission(Permissions.AttendanceAdjust)]
 public sealed record SetDailyOvertimeAuthorizationCommand(
     string EmployeeId,
     DateOnly Date,

@@ -344,7 +344,8 @@ public class AttendanceFindingsReproductionTests
             EmployeeId: AttendanceRegressionFixtures.EmployeeFixedId.Value, // EMP-FIX-001
             Date: DateOnly.FromDateTime(new DateTime(2026, 8, 28)),
             RecordId: foreignPunch.Id.Value.ToString(),
-            AssignmentType: "Entrada");
+            AssignmentType: "Entrada",
+            Reason: "Prueba");
 
         // ACT:
         var result = await handler.Handle(command, CancellationToken.None);

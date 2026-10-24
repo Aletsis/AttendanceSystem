@@ -62,6 +62,11 @@ public class AttendanceRepository : IAttendanceRepository
         _context.Entry(record).State = EntityState.Detached;
     }
 
+    public void Remove(AttendanceRecord record)
+    {
+        _context.AttendanceRecords.Remove(record);
+    }
+
     private static DateTime ToUtc(DateTime value) =>
         value.Kind == DateTimeKind.Utc
             ? value

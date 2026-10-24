@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.ImportUsersFromDevice;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record ImportUsersFromDeviceCommand(string DeviceId) : IRequest<Result<int>>;
 
 public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFromDeviceCommand, Result<int>>

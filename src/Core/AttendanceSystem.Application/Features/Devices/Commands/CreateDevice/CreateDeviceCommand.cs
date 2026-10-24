@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.CreateDevice;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record CreateDeviceCommand(
     string Name,
     string IpAddress,

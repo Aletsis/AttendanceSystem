@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Employees.Commands;
 
+[RequiresPermission(Permissions.EmployeesDevicePrivilege)]
 public sealed record UpdateEmployeeDevicePrivilegeCommand(string EmployeeId, DevicePrivilege DevicePrivilege) : IRequest<Result>;
 
 public sealed class UpdateEmployeeDevicePrivilegeCommandHandler : IRequestHandler<UpdateEmployeeDevicePrivilegeCommand, Result>

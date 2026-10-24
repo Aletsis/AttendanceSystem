@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.QueryDeviceOptions;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public record QueryDeviceOptionsCommand(string DeviceId) : IRequest<Result>;
 
 public class QueryDeviceOptionsHandler : IRequestHandler<QueryDeviceOptionsCommand, Result>

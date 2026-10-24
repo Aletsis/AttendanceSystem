@@ -169,7 +169,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         {
             await using var context = _fixture.CreateDbContext();
             var handler = CreateManualAssign(context);
-            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), realExit.Id.Value.ToString(), "Salida"), CancellationToken.None);
+            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), realExit.Id.Value.ToString(), "Salida", Reason: "Prueba"), CancellationToken.None);
         });
 
         await WaitForAdvisoryWaitersAsync(1);
@@ -345,7 +345,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
             await using var context = _fixture.CreateDbContext();
             var handler = CreateManualAssign(context);
             await barrier.SignalAndWaitAsync();
-            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), record.Id.Value.ToString(), "Entrada", ExpectedRevision: 0), CancellationToken.None);
+            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), record.Id.Value.ToString(), "Entrada", ExpectedRevision: 0, Reason: "Prueba"), CancellationToken.None);
         }
 
         var results = await Task.WhenAll(DecideAsync(early), DecideAsync(late));
@@ -380,7 +380,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         await using (var context = _fixture.CreateDbContext())
         {
             var result = await CreateManualAssign(context).Handle(
-                new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), exit.Id.Value.ToString(), ManuallyAssignAttendanceCommandHandler.Unassign),
+                new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), exit.Id.Value.ToString(), ManuallyAssignAttendanceCommandHandler.Unassign, Reason: "Prueba"),
                 CancellationToken.None);
             result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
         }
@@ -496,6 +496,37 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         storedAdjustment.ExcludedRecordIds().Should().ContainSingle().Which.Should().Be(excluded);
         storedAdjustment.AuthorizedOvertimeMinutes.Should().Be(60);
         storedAdjustment.AuthorizedOvertimeForRawMinutes.Should().Be(80);
+    }
+
+    [Fact]
+    public async Task ManualPunchAudit_AndHistoryEvents_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var employeeId = EmployeeId.From("EMP-PG-M13");
+        var registeredAt = new DateTime(2026, 6, 16, 18, 5, 0, DateTimeKind.Utc);
+        var record = AttendanceRecord.Create(employeeId, DeviceId.From("MANUAL"), new DateTime(2026, 6, 16, 15, 0, 0, DateTimeKind.Utc),
+            VerifyMethod.Manual, CheckType.CheckIn, source: AttendanceRecord.ManualSource);
+        record.RecordManualCapture("ana.rh", "Olvidó checar", registeredAt);
+        var entry = AttendanceAdjustmentHistory.Event(employeeId, new DateTime(2026, 6, 16), "MarcajeManual", "", "marcaje manual 16/06/2026 09:00",
+            "Olvidó checar", "ana.rh", registeredAt);
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            context.AttendanceRecords.Add(record);
+            context.AttendanceAdjustmentHistory.Add(entry);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var stored = await verify.AttendanceRecords.SingleAsync(r => r.Id == record.Id);
+        stored.IsManual.Should().BeTrue();
+        stored.RegisteredBy.Should().Be("ana.rh");
+        stored.Reason.Should().Be("Olvidó checar");
+        stored.RegisteredAt.Should().Be(registeredAt);
+        var storedEntry = await verify.AttendanceAdjustmentHistory.SingleAsync(h => h.Id == entry.Id);
+        storedEntry.AdjustmentId.Should().Be(Guid.Empty);
+        storedEntry.Reason.Should().Be("Olvidó checar");
     }
 
     [Fact]
@@ -681,6 +712,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         }
 
         public void Detach(AttendanceRecord record) => _inner.Detach(record);
+        public void Remove(AttendanceRecord record) => _inner.Remove(record);
         public Task<AttendanceRecord?> GetByIdAsync(AttendanceRecordId id, CancellationToken cancellationToken = default) => _inner.GetByIdAsync(id, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetByDateRangeAsync(DateOnly startDate, DateOnly endDate, EmployeeId? employeeId = null, CancellationToken cancellationToken = default) => _inner.GetByDateRangeAsync(startDate, endDate, employeeId, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetByDeviceAndDateRangeAsync(DeviceId deviceId, DateTime startDateTime, DateTime endDateTime, CancellationToken cancellationToken = default) => _inner.GetByDeviceAndDateRangeAsync(deviceId, startDateTime, endDateTime, cancellationToken);

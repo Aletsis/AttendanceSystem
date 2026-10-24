@@ -7,6 +7,7 @@ using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration;
 
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record UpdateSystemConfigurationCommand(
     string CompanyName,
     byte[]? CompanyLogo,

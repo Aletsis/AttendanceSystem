@@ -20,6 +20,7 @@ namespace AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssi
 /// </summary>
 /// <param name="ExpectedRevision">Revisión del ajuste que vio el operador; si cambió, la operación se rechaza.</param>
 /// <param name="MoveFromOtherJornada">Reasignación explícita de un marcaje que hoy pertenece a otra jornada.</param>
+[RequiresPermission(Permissions.AttendanceAdjust)]
 public sealed record ManuallyAssignAttendanceCommand(
     string EmployeeId,
     DateOnly Date,
@@ -66,6 +67,14 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         if (position == null && request.AssignmentType != Unassign && request.AssignmentType != Restore)
         {
             return Result<AttendanceDecisionOutcome>.Failure("Tipo de asignación inválido. Use 'Entrada', 'Salida B1', 'Entrada B2', 'Salida', 'None' o 'Restaurar'.");
+        }
+
+        var adjustment = position != null ? AdjustmentReasons.AssignPunch
+            : request.AssignmentType == Unassign ? AdjustmentReasons.UnassignPunch
+            : request.AssignmentType;
+        if (AdjustmentReasons.Validate(adjustment, request.Reason) is { } missingReason)
+        {
+            return Result<AttendanceDecisionOutcome>.Failure(missingReason);
         }
 
         var employeeId = EmployeeId.From(request.EmployeeId);

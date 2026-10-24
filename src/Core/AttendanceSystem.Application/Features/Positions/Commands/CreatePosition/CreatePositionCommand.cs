@@ -6,6 +6,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Positions.Commands.CreatePosition;
 
+[RequiresPermission(Permissions.PositionsManage)]
 public sealed record CreatePositionCommand(
     string Name,
     string? Description,

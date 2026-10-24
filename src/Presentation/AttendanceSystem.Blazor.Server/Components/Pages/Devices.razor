@@ -8,7 +8,7 @@
 @using AttendanceSystem.Application.Features.Devices.Commands.ImportUsersFromDevice
 @using AttendanceSystem.Domain.Enumerations
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Roles = "Administrador")]
+@attribute [Authorize(Policy = Permissions.DevicesManage)]
 @implements IAsyncDisposable
 @inject ISender Sender
 @inject IDialogService DialogService

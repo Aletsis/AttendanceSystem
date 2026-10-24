@@ -13,6 +13,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.CheckCriticalAbsences;
 
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record CheckCriticalAbsencesCommand() : IRequest<Result<int>>;
 
 public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckCriticalAbsencesCommand, Result<int>>

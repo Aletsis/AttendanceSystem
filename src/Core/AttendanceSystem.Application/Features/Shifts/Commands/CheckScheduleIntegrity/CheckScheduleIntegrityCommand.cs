@@ -14,6 +14,7 @@ namespace AttendanceSystem.Application.Features.Shifts.Commands.CheckScheduleInt
 /// Caso 10 (6): revisa que ningún día pueda quedar sin turno y lo reporta como alertas de sistema, que se resuelven
 /// solas cuando RH corrige la configuración. Devuelve cuántos problemas quedan.
 /// </summary>
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record CheckScheduleIntegrityCommand(DateTime? Today = null) : IRequest<Result<int>>;
 
 public sealed record ScheduleAlertDto(Guid Id, DateTime TimestampUtc, string Message);

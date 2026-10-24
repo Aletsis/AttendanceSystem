@@ -13,5 +13,7 @@
 @using Microsoft.AspNetCore.Components.Authorization
 @using Microsoft.AspNetCore.Authorization
 @using AttendanceSystem.Application.Abstractions
+@using AttendanceSystem.Application.Authorization
 @using AttendanceSystem.Infrastructure.Services
+@inject AttendanceSystem.Blazor.Server.Services.UiPermissions UiPermissions
 @attribute [Authorize]

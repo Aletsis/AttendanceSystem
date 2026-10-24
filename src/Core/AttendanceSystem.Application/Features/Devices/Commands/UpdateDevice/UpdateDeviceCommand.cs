@@ -5,6 +5,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.UpdateDevice;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record UpdateDeviceCommand(
     Guid Id,
     string Name,

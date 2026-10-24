@@ -33,7 +33,7 @@ public static class IdentityDataSeeder
             }
 
             // Crear roles si no existen
-            string[] roles = { "Administrador", "Usuario" };
+            var roles = AttendanceSystem.Application.Authorization.AppRoles.All;
             foreach (var roleName in roles)
             {
                 if (!await roleManager.RoleExistsAsync(roleName))

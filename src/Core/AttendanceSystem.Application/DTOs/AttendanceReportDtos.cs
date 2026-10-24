@@ -30,6 +30,8 @@ public sealed record AttendanceReportViewDto
     public int? AuthorizedOvertimeMinutes { get; init; }
     /// <summary>Caso 12: el excedente cambió desde la autorización de RH; hay que autorizarlo de nuevo.</summary>
     public bool OvertimeAuthorizationOutdated { get; init; }
+    /// <summary>Caso 13: revisión de la decisión de la jornada que se mostró (0 sin decisión).</summary>
+    public int AdjustmentRevision { get; init; }
     /// <summary>Autorización general del empleado: la decisión por día sólo se ofrece a quien no la tiene.</summary>
     public bool EmployeeOvertimeAuthorized { get; init; }
 

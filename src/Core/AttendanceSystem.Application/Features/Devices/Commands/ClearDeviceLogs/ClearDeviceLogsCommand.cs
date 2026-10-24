@@ -5,6 +5,7 @@ using AttendanceSystem.Application.Common;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.ClearDeviceLogs;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public record ClearDeviceLogsCommand(string DeviceId, DateTime? FromDate = null, DateTime? ToDate = null) : IRequest<Result>;
 
 public class ClearDeviceLogsHandler : IRequestHandler<ClearDeviceLogsCommand, Result>

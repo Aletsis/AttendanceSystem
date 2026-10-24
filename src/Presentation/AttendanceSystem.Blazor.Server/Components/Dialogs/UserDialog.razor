@@ -23,8 +23,9 @@
             <MudSwitch @bind-Value="model.IsActive" Label="Activo" Color="Color.Primary" />
             
             <MudSelect T="string" Label="Rol" @bind-Value="model.Role" Required="true" RequiredError="El rol es requerido">
-                <MudSelectItem Value="@("Usuario")">Usuario</MudSelectItem>
-                <MudSelectItem Value="@("Administrador")">Administrador</MudSelectItem>
+                <MudSelectItem Value="@("Usuario")">Usuario: consulta, altas de empleados y correcciones menores</MudSelectItem>
+                <MudSelectItem Value="@("RH")">RH: todo excepto la configuración del sistema</MudSelectItem>
+                <MudSelectItem Value="@("Administrador")">Administrador: acceso total</MudSelectItem>
             </MudSelect>
         </MudForm>
     </DialogContent>

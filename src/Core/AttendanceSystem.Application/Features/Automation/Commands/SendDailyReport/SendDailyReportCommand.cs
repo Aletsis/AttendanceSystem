@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport;
 
+[RequiresPermission(Permissions.SettingsManage)]
 public record SendDailyReportCommand() : IRequest<Result<bool>>;
 
 public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportCommand, Result<bool>>

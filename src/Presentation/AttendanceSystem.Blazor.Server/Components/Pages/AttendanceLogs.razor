@@ -1,4 +1,5 @@
 @page "/attendance/logs"
+@attribute [Authorize(Policy = Permissions.AttendanceView)]
 @using MediatR
 @using AttendanceSystem.Application.Features.Attendance.Queries.GetAttendanceLogs
 @using AttendanceSystem.Application.Features.Employees.Queries
@@ -12,6 +13,7 @@
 @using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
 @using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance
 @using AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift
+@using AttendanceSystem.Application.Features.Attendance.Decisions
 @using AttendanceSystem.Domain.ValueObjects
 @inject IDialogService DialogService
 @inject IReportExportService ExportService
@@ -37,7 +39,7 @@
     </MudItem>
     
     <MudItem xs="12" Class="d-flex align-center justify-end gap-2">
-        <AuthorizeView Roles="Administrador">
+        <AuthorizeView Policy="@Permissions.AttendanceAdjust">
             <Authorized>
                 <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="OpenChangeShiftDialog" Disabled="@(SelectedEmployeeObj == null)">
                     Cambiar Horario
@@ -50,6 +52,36 @@
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData">Ver Logs</MudButton>
         <MudButton Variant="Variant.Filled" Color="Color.Success" OnClick="ExportToExcel" StartIcon="@Icons.Material.Filled.FileDownload" Disabled="@(!LogsList.Any())">Exportar Excel</MudButton>
     </MudItem>
+
+    @if (SelectedEmployeeObj != null && SelectedDate != null && _dayState != null)
+    {
+        <MudItem xs="12" Class="d-flex flex-wrap align-center gap-2">
+            @if (_dayState.ShiftOverrideName != null)
+            {
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined">Horario cambiado a mano: @_dayState.ShiftOverrideName</MudChip>
+                @if (_canAdjust)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Info" StartIcon="@Icons.Material.Filled.Undo" OnClick="ClearShiftOverride">Regresar al horario del roster</MudButton>
+                }
+            }
+            @if (_dayState.IsRestDayOverride is { } rest)
+            {
+                <MudChip T="string" Color="Color.Info" Variant="Variant.Outlined">@(rest ? "Marcado a mano como descanso" : "Marcado a mano como laborable")</MudChip>
+                @if (_canAdjust)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Color="Color.Info" StartIcon="@Icons.Material.Filled.Undo" OnClick="ClearRestDayOverride">Regresar al descanso del roster</MudButton>
+                }
+            }
+            @if (_canViewHistory && _dayState.HistoryCount > 0)
+            {
+                <MudTooltip Text="Historial de ajustes del día">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.History" OnClick="OpenHistory">
+                        Historial (@_dayState.HistoryCount)
+                    </MudButton>
+                </MudTooltip>
+            }
+        </MudItem>
+    }
 </MudGrid>
 
 <MudDataGrid Items="@LogsList" Filterable="true" Class="mt-4">
@@ -68,6 +100,8 @@
                             <span class="ml-1" style="font-size: 0.8rem; opacity: 0.8;">(@context.Item.AssignedDate.Value.ToString("dd/MM"))</span>
                         }
                     </MudChip>
+                    @if (_canAdjust)
+                    {
                     <MudMenu Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Dense="true">
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada (B1)</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida B1"))">Asignar como Salida B1</MudMenuItem>
@@ -76,6 +110,7 @@
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar (dejar vacío)</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Restaurar"))">Restaurar cálculo automático</MudMenuItem>
                     </MudMenu>
+                    }
                 </div>
             </CellTemplate>
         </TemplateColumn>
@@ -97,9 +132,14 @@
     
     // Cache for autocomplete
     private List<EmployeeDto> _allEmployees = new();
+    private bool _canAdjust;
+    private bool _canViewHistory;
+    private DayAdjustmentStateDto? _dayState;
 
     protected override async Task OnInitializedAsync()
     {
+        _canAdjust = await UiPermissions.HasAsync(Permissions.AttendanceAdjust);
+        _canViewHistory = await UiPermissions.HasAsync(Permissions.AttendanceViewHistory);
         var result = await Mediator.Send(new GetAllEmployeesQuery());
         if (result.IsSuccess)
         {
@@ -148,11 +188,11 @@
 
         if (result is not null && !result.Canceled && result.Data is ManualLogDialog.ManualLogResult logResult)
         {
-            await CreateManualLog(logResult.DateTime);
+            await CreateManualLog(logResult.DateTime, logResult.Reason);
         }
     }
 
-    private async Task CreateManualLog(DateTime dateTime)
+    private async Task CreateManualLog(DateTime dateTime, string reason)
     {
         if (SelectedEmployeeObj == null) return;
 
@@ -160,7 +200,8 @@
         {
             var command = new RegisterManualAttendanceCommand(
                 SelectedEmployeeObj.Id,
-                dateTime);
+                dateTime,
+                Reason: reason);
 
             var result = await Mediator.Send(command);
 
@@ -246,24 +287,27 @@
 
     private async Task AssignLog(AttendanceLogViewDto record, string type)
     {
+        // Caso 13: asignar y desasignar exigen motivo; restaurar no.
+        string? reason = null;
+        if (type != "Restaurar")
+        {
+            reason = await ReasonDialog.AskAsync(DialogService, type == "None" ? "Desasignar marcaje" : $"Asignar como {type}",
+                $"Marcaje de las {record.CheckTime:HH:mm}");
+            if (reason == null) return;
+        }
+
         // La decisión se toma sobre la jornada que se está consultando (CheckTime es UTC y podría caer en otro día).
         var command = new ManuallyAssignAttendanceCommand(
             record.EmployeeId,
             DateOnly.FromDateTime(SelectedDate ?? record.CheckTime),
             record.Id.ToString(),
-            type);
+            type,
+            ExpectedRevision: SelectedEmployeeObj?.Id == record.EmployeeId ? _dayState?.Revision : null,
+            Reason: reason);
 
         var result = await Mediator.Send(command);
-
-        if (result.IsSuccess)
-        {
-            Snackbar.Add(result.Value.UserMessage, result.Value.Consolidated ? Severity.Success : Severity.Warning);
-            await LoadData();
-        }
-        else
-        {
-            Snackbar.Add(result.Error, Severity.Error);
-        }
+        ShowDecision(result);
+        await LoadData();
     }
 
     private async Task LoadData()
@@ -274,7 +318,47 @@
 
         var result = await Mediator.Send(new GetAttendanceLogsQuery(SelectedDate.Value, employeeId));
         LogsList = result.ToList();
+
+        _dayState = SelectedEmployeeObj != null
+            ? await Mediator.Send(new GetDayAdjustmentStateQuery(SelectedEmployeeObj.Id, DateOnly.FromDateTime(SelectedDate.Value)))
+            : null;
     }
+
+    private Task OpenHistory() =>
+        SelectedEmployeeObj == null || SelectedDate == null
+            ? Task.CompletedTask
+            : AttendanceHistoryDialog.ShowAsync(DialogService, SelectedEmployeeObj.Id, SelectedEmployeeObj.FullName, DateOnly.FromDateTime(SelectedDate.Value));
+
+    private async Task ClearShiftOverride()
+    {
+        if (SelectedEmployeeObj == null || SelectedDate == null) return;
+        ShowDecision(await Mediator.Send(new ClearDailyShiftOverrideCommand(SelectedEmployeeObj.Id, DateOnly.FromDateTime(SelectedDate.Value), ExpectedRevision: _dayState?.Revision)));
+        await LoadData();
+    }
+
+    private async Task ClearRestDayOverride()
+    {
+        if (SelectedEmployeeObj == null || SelectedDate == null) return;
+        ShowDecision(await Mediator.Send(new ClearDailyRestDayOverrideCommand(SelectedEmployeeObj.Id, DateOnly.FromDateTime(SelectedDate.Value), ExpectedRevision: _dayState?.Revision)));
+        await LoadData();
+    }
+
+    /// <summary>
+    /// Caso 13: si otra persona cambió el día mientras se veía, la decisión se rechaza; se avisa y la pantalla se recarga
+    /// con los datos actuales para revisar y volver a aplicar.
+    /// </summary>
+    private void ShowDecision(Result<AttendanceDecisionOutcome> result)
+    {
+        if (result.IsSuccess)
+            Snackbar.Add(result.Value.UserMessage, result.Value.Consolidated ? Severity.Success : Severity.Warning);
+        else if (IsConcurrencyConflict(result.Error))
+            Snackbar.Add("Este día fue modificado por otra persona; se recargó con los datos actuales. Revise y vuelva a aplicar.", Severity.Warning);
+        else
+            Snackbar.Add(result.Error, Severity.Error);
+    }
+
+    private static bool IsConcurrencyConflict(string error) =>
+        error.Contains("mientras se editaba", StringComparison.OrdinalIgnoreCase);
 
     private async Task ExportToExcel()
     {

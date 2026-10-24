@@ -45,4 +45,34 @@ public sealed class AttendanceAdjustmentHistory : Entity<Guid>
             ChangedAt = changedAt ?? DateTime.UtcNow
         };
     }
+
+    /// <summary>
+    /// Caso 13: movimiento de la jornada que no es una decisión del ajuste (alta o borrado de un marcaje manual);
+    /// no tiene ajuste ni revisión.
+    /// </summary>
+    public static AttendanceAdjustmentHistory Event(
+        EmployeeId employeeId,
+        DateTime date,
+        string action,
+        string before,
+        string after,
+        string? reason,
+        string changedBy,
+        DateTime? changedAt = null)
+    {
+        return new AttendanceAdjustmentHistory
+        {
+            Id = Guid.NewGuid(),
+            AdjustmentId = Guid.Empty,
+            EmployeeId = employeeId,
+            Date = date.Date,
+            Revision = 0,
+            Action = action,
+            Before = before,
+            After = after,
+            Reason = reason,
+            ChangedBy = string.IsNullOrWhiteSpace(changedBy) ? "Sistema" : changedBy,
+            ChangedAt = changedAt ?? DateTime.UtcNow
+        };
+    }
 }

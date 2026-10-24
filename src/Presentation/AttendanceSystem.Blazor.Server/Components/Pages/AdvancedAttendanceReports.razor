@@ -1,4 +1,5 @@
 @page "/attendance/advanced-reports"
+@attribute [Authorize(Policy = Permissions.ReportsView)]
 @using MediatR
 @using AttendanceSystem.Application.Features.Attendance.Queries.GetDailyAttendance
 @using AttendanceSystem.Application.Features.Reports.Queries.GetAdvancedAttendanceReport
@@ -577,7 +578,12 @@ else
         parameters.Add("ReportType", SelectedReportType);
 
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
-        await DialogService.ShowAsync<ReportDetailsDialog>($"Detalles - {item.EmployeeName}", parameters, options);
+        var dialog = await DialogService.ShowAsync<ReportDetailsDialog>($"Detalles - {item.EmployeeName}", parameters, options);
+        // Caso 13: si se corrigió algún día, el reporte se vuelve a generar para reflejarlo.
+        if (await dialog.Result is { Canceled: false, Data: true })
+        {
+            await LoadReport();
+        }
     }
     
     // UI FRAGMENT HELPERS

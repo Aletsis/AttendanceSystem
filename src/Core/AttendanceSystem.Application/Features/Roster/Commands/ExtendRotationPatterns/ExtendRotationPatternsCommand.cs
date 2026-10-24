@@ -12,6 +12,7 @@ namespace AttendanceSystem.Application.Features.Roster.Commands.ExtendRotationPa
 /// Caso 10 (4a): mantiene proyectado el roster de los esquemas rotativos indefinidos, para que un rotativo nunca
 /// llegue a un día sin turno. Devuelve los días generados.
 /// </summary>
+[RequiresPermission(Permissions.RosterManage)]
 public sealed record ExtendRotationPatternsCommand(DateTime? Today = null) : IRequest<int>;
 
 public sealed class ExtendRotationPatternsCommandHandler : IRequestHandler<ExtendRotationPatternsCommand, int>

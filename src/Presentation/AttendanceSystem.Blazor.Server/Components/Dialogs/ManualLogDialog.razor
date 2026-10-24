@@ -15,6 +15,9 @@
                 <MudItem xs="12" sm="6">
                     <MudTimePicker Label="Hora" @bind-Time="Time" Required="true" AmPm="false" />
                 </MudItem>
+                <MudItem xs="12">
+                    <MudTextField @bind-Value="Reason" Label="Motivo" Required="true" RequiredError="Indique el motivo" MaxLength="500" Lines="2" />
+                </MudItem>
             </MudGrid>
         </MudForm>
     </DialogContent>
@@ -33,6 +36,7 @@
     private bool success;
     private DateTime? Date;
     private TimeSpan? Time = DateTime.Now.TimeOfDay;
+    private string Reason = string.Empty;
 
     protected override void OnInitialized() => Date = Values.Date.ToDateTime(TimeOnly.MinValue);
 
@@ -40,13 +44,13 @@
 
     private void Submit()
     {
-        if (Date.HasValue && Time.HasValue)
+        if (Date.HasValue && Time.HasValue && !string.IsNullOrWhiteSpace(Reason))
         {
             var dateTime = Date.Value.Date + new TimeSpan(Time.Value.Hours, Time.Value.Minutes, 0);
-            MudDialog.Close(DialogResult.Ok(new ManualLogResult(dateTime)));
+            MudDialog.Close(DialogResult.Ok(new ManualLogResult(dateTime, Reason.Trim())));
         }
     }
 
     public record ManualLogCallbackValues(string EmployeeName, DateOnly Date);
-    public record ManualLogResult(DateTime DateTime);
+    public record ManualLogResult(DateTime DateTime, string Reason);
 }

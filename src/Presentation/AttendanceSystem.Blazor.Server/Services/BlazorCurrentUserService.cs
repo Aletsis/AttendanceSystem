@@ -38,6 +38,9 @@ public class BlazorCurrentUserService : ICurrentUserService
 
     public bool IsAuthenticated => GetUser()?.Identity?.IsAuthenticated == true;
 
+    public IReadOnlyCollection<string> Roles =>
+        GetUser()?.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList() ?? (IReadOnlyCollection<string>)Array.Empty<string>();
+
     private ClaimsPrincipal? GetUser()
     {
         if (_httpContextAccessor.HttpContext?.User?.Identity?.IsAuthenticated == true)

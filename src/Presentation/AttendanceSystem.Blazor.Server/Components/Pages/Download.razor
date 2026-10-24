@@ -1,5 +1,6 @@
 @page "/attendance/download"
 @page "/attendance/download-logs"
+@attribute [Authorize(Policy = Permissions.DevicesDownload)]
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices
 @using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices
@@ -36,12 +37,14 @@
                             <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_downloadToDate" Disabled="@_forceFullSync" HelperText="@(_forceFullSync ? "Deshabilitado (descarga completa)" : "Si vacío: hasta hoy")" />
                         </MudItem>
                         <MudItem xs="12" sm="2" Class="d-flex align-center">
-                            <MudTooltip Text="Solicita al reloj todos los registros históricos de su memoria y reinicia el watermark">
-                                <MudCheckBox @bind-Value="_forceFullSync" Color="Color.Warning" Label="Re-descargar Todo" Dense="true" />
-                            </MudTooltip>
+                            <AuthorizeView Policy="@Permissions.DevicesForceFullDownload" Context="authContext">
+                                <MudTooltip Text="Solicita al reloj todos los registros históricos de su memoria y reinicia el watermark">
+                                    <MudCheckBox @bind-Value="_forceFullSync" Color="Color.Warning" Label="Re-descargar Todo" Dense="true" />
+                                </MudTooltip>
+                            </AuthorizeView>
                         </MudItem>
                     </MudGrid>
-                    <AuthorizeView Roles="Administrador" Context="authContext">
+                    <AuthorizeView Policy="@Permissions.DevicesDownloadAll" Context="authContext">
                     <MudButton Variant="Variant.Filled" Color="@(_forceFullSync ? Color.Warning : Color.Primary)" OnClick="DownloadFromAllDevices" Disabled="@IsBusy">
                         @if (_isDownloadingAll)
                         {

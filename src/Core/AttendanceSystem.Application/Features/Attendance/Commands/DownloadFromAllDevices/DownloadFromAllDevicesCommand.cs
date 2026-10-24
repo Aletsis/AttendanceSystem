@@ -8,6 +8,7 @@ using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevi
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices;
 
+[RequiresPermission(Permissions.DevicesDownloadAll)]
 public sealed record DownloadFromAllDevicesCommand(
     DateTime? FromDate = null,
     DateTime? ToDate = null,

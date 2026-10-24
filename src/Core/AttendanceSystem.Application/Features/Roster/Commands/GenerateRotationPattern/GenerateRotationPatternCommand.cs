@@ -11,6 +11,10 @@ namespace AttendanceSystem.Application.Features.Roster.Commands.GenerateRotation
 
 public record CustomRotationSlotDto(Guid? ShiftId, bool IsRestDay, string? Notes = null);
 
+/// <summary>
+/// Caso 13: asignar o modificar esquemas es de <see cref="Permissions.RosterManage"/>; el primer esquema de un empleado
+/// recién dado de alta (sin roster) forma parte del alta y basta <see cref="Permissions.EmployeesCreate"/>.
+/// </summary>
 public record GenerateRotationPatternCommand(
     List<string> EmployeeIds,
     DateTime StartDate,
@@ -32,6 +36,7 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
     private readonly IAttendanceConsolidationRepository? _consolidations;
     private readonly IConsolidationWakeup? _wakeup;
     private readonly IRotationPatternRepository? _patternRepository;
+    private readonly IPermissionService? _permissions;
 
     public GenerateRotationPatternCommandHandler(
         IShiftRosterRepository rosterRepository,
@@ -65,7 +70,20 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         IAttendanceConsolidationRepository? consolidations,
         IConsolidationWakeup? wakeup,
         IRotationPatternRepository? patternRepository)
+        : this(rosterRepository, employeeRepository, unitOfWork, consolidations, wakeup, patternRepository, null)
     {
+    }
+
+    public GenerateRotationPatternCommandHandler(
+        IShiftRosterRepository rosterRepository,
+        IEmployeeRepository? employeeRepository,
+        IUnitOfWork unitOfWork,
+        IAttendanceConsolidationRepository? consolidations,
+        IConsolidationWakeup? wakeup,
+        IRotationPatternRepository? patternRepository,
+        IPermissionService? permissions)
+    {
+        _permissions = permissions;
         _patternRepository = patternRepository;
         _rosterRepository = rosterRepository;
         _employeeRepository = employeeRepository;
@@ -76,6 +94,11 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
 
     public async Task<int> Handle(GenerateRotationPatternCommand request, CancellationToken cancellationToken)
     {
+        if (_permissions != null && !_permissions.Has(Permissions.RosterManage) && !await IsFirstSchemeOfNewEmployeesAsync(request, cancellationToken))
+        {
+            throw new AttendanceSystem.Application.Exceptions.ForbiddenAccessException(PermissionServiceExtensions.DeniedMessage);
+        }
+
         if (request.EmployeeIds == null || !request.EmployeeIds.Any())
             return 0;
 
@@ -306,4 +329,15 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         DayOfWeek.Saturday => "Sábado",
         _ => dayOfWeek.ToString()
     };
+
+    private async Task<bool> IsFirstSchemeOfNewEmployeesAsync(GenerateRotationPatternCommand request, CancellationToken cancellationToken)
+    {
+        if (!_permissions!.Has(Permissions.EmployeesCreate) || request.EmployeeIds == null) return false;
+        foreach (var id in request.EmployeeIds)
+        {
+            var roster = await _rosterRepository.GetByEmployeeAsync(EmployeeId.From(id), DateTime.MinValue.Date, DateTime.MaxValue.Date, cancellationToken);
+            if (roster.Count > 0) return false;
+        }
+        return true;
+    }
 }

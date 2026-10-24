@@ -16,6 +16,7 @@ using AttendanceSystem.Application.Features.Attendance.Services;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
 
+[RequiresPermission(Permissions.DevicesDownload)]
 public sealed record DownloadFromDeviceCommand(
     string DeviceId,
     DateTime? FromDate = null,
@@ -23,7 +24,12 @@ public sealed record DownloadFromDeviceCommand(
     bool CalculateAttendance = true,
     string? InitiatedByUserId = null,
     string? InitiatedByUserName = null,
-    bool ForceFullSync = false) : IRequest<Result<DownloadResultDto>>;
+    bool ForceFullSync = false) : IRequest<Result<DownloadResultDto>>, IRequiresDataPermissions
+{
+    /// <summary>Caso 13: re-descargar todo el reloj sólo lo hace el administrador.</summary>
+    public IEnumerable<string> RequiredPermissions() =>
+        ForceFullSync ? new[] { Permissions.DevicesForceFullDownload } : Array.Empty<string>();
+}
 
 public sealed class DownloadFromDeviceCommandHandler
     : IRequestHandler<DownloadFromDeviceCommand, Result<DownloadResultDto>>

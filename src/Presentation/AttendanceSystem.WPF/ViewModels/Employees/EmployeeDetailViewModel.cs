@@ -142,6 +142,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public bool AllowsOvertimeBeforeEntry => AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.AllowsOvertimeBeforeEntry(SelectedShiftType);
 
         public int? SelectedRestDay { get => _selectedRestDay; set => SetProperty(ref _selectedRestDay, value); }
+
+        private int? _loadedRestDay;
+        private List<int>? _loadedRestDays;
+        private DevicePrivilege _loadedDevicePrivilege = DevicePrivilege.User;
         public bool OvertimeAuthorized
         {
             get => _overtimeAuthorized;
@@ -320,6 +324,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     SelectedShiftId = emp.ScheduleId?.ToString();
 
                     SelectedRestDay = emp.RestDay;
+                    _loadedRestDay = emp.RestDay;
+                    _loadedRestDays = emp.RestDays?.ToList();
+                    _loadedDevicePrivilege = emp.DevicePrivilege;
                     OvertimeAuthorized = emp.OvertimeAuthorized;
                     SelectedOvertimeCalculationMethod = emp.OvertimeCalculationMethod;
                     SelectedOvertimeCapType = emp.OvertimeCapType;
@@ -398,7 +405,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         CalculateOvertimeBeforeEntry,
                         CardNumber,
                         DevicePassword,
-                        Photo
+                        Photo,
+                        // Caso 13: se conservan el privilegio del reloj y los descansos que esta pantalla no edita.
+                        _loadedDevicePrivilege,
+                        SelectedRestDay == _loadedRestDay ? _loadedRestDays : null
                     );
 
                     var result = await _mediator.Send(command);

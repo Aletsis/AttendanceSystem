@@ -36,6 +36,9 @@ public interface IAttendanceRepository
     /// </summary>
     void Detach(AttendanceRecord record);
 
+    /// <summary>Caso 13: borra un marcaje (sólo los manuales se borran).</summary>
+    void Remove(AttendanceRecord record);
+
     Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(
         EmployeeId employeeId,
         DateTime checkTime,

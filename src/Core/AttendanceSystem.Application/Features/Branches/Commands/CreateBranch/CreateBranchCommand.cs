@@ -6,6 +6,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Branches.Commands.CreateBranch;
 
+[RequiresPermission(Permissions.BranchesManage)]
 public sealed record CreateBranchCommand(
     string Code,
     string Name,

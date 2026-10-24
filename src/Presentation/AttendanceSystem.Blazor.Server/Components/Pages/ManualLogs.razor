@@ -1,4 +1,5 @@
 @page "/attendance/manual-logs"
+@attribute [Authorize(Policy = Permissions.AttendanceManualPunch)]
 @using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
 @using AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
@@ -57,6 +58,11 @@
                 </MudSelect>
             </MudItem>
 
+            <MudItem xs="12">
+                <MudTextField @bind-Value="_bulkReason" Label="Motivo" Required="true" RequiredError="Indique el motivo" MaxLength="500"
+                              HelperText="Se guarda en cada marcaje con quién y cuándo lo registró" />
+            </MudItem>
+
             <MudItem xs="12" Class="d-flex justify-end mt-4">
                 <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="ProcessBulkAssignment" Disabled="_processing">
                     @if (_processing)
@@ -79,8 +85,11 @@
             El sistema decide si cada marcaje es entrada, salida o comida y a qué jornada pertenece.
         </MudText>
         
+        <MudTextField @bind-Value="_importReason" Label="Motivo" Required="true" RequiredError="Indique el motivo" MaxLength="500" Immediate="true"
+                      HelperText="Se guarda en cada marcaje importado" Class="mb-4" />
+
         <div class="d-flex align-center gap-4">
-            <MudFileUpload T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx, .csv">
+            <MudFileUpload Disabled="@string.IsNullOrWhiteSpace(_importReason)" T="IBrowserFile" FilesChanged="UploadFiles" Accept=".xlsx, .csv">
                 <CustomContent>
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.CloudUpload" OnClick="@context.OpenFilePickerAsync">
                         Seleccionar Archivo
@@ -155,6 +164,10 @@
         return $"{selectedValues.Count} empleados seleccionados";
     }
 
+    // Caso 13: los marcajes manuales exigen motivo.
+    private string _bulkReason = string.Empty;
+    private string _importReason = string.Empty;
+
     private async Task ProcessBulkAssignment()
     {
         if (_dateRange.Start == null || _dateRange.End == null)
@@ -172,6 +185,12 @@
         if (!_selectedEmployeeIds.Any())
         {
             Snackbar.Add("Seleccione al menos un empleado", Severity.Warning);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(_bulkReason))
+        {
+            Snackbar.Add("Indique el motivo", Severity.Warning);
             return;
         }
 
@@ -193,7 +212,7 @@
                 {
                     try
                     {
-                        var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime));
+                        var result = await Mediator.Send(new RegisterManualAttendanceCommand(empId, dateTime, Reason: _bulkReason.Trim()));
                         if (result.IsSuccess)
                         {
                             successCount++;
@@ -272,6 +291,11 @@
     private async Task UploadFiles(IBrowserFile file)
     {
         if (file == null) return;
+        if (string.IsNullOrWhiteSpace(_importReason))
+        {
+            Snackbar.Add("Indique el motivo", Severity.Warning);
+            return;
+        }
         
         _processingImport = true;
         // Limit size to 5MB
@@ -304,7 +328,7 @@
 
             foreach (var entry in importResult.ValidEntries)
             {
-                 var result = await Mediator.Send(new RegisterManualAttendanceCommand(entry.EmployeeId, entry.DateTime));
+                 var result = await Mediator.Send(new RegisterManualAttendanceCommand(entry.EmployeeId, entry.DateTime, Reason: _importReason.Trim()));
                  if (result.IsSuccess)
                  {
                      successCount++;

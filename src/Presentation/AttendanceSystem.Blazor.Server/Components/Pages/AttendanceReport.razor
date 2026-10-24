@@ -1,4 +1,5 @@
 @page "/attendance/reports"
+@attribute [Authorize(Policy = Permissions.ReportsView)]
 @using MediatR
 @using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport
 @using AttendanceSystem.Application.Features.Employees.Queries
@@ -61,18 +62,24 @@
                     <MudMenuItem OnClick="@(() => ExportExcel(true))">Detallado</MudMenuItem>
                 </MudMenu>
             }
-            <MudMenu Label="Nómina" Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Payments" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
-                <MudMenuItem OnClick="ExportContpaqi">CONTPAQi Nóminas (.csv)</MudMenuItem>
-                <MudMenuItem OnClick="ExportAspelNoi">Aspel NOI (.txt)</MudMenuItem>
-            </MudMenu>
+            @if (_canExportPayroll)
+            {
+                <MudMenu Label="Nómina" Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Payments" EndIcon="@Icons.Material.Filled.KeyboardArrowDown">
+                    <MudMenuItem OnClick="ExportContpaqi">CONTPAQi Nóminas (.csv)</MudMenuItem>
+                    <MudMenuItem OnClick="ExportAspelNoi">Aspel NOI (.txt)</MudMenuItem>
+                </MudMenu>
+            }
         </MudHidden>
         <MudHidden Breakpoint="Breakpoint.Xs" Invert="true">
             <MudMenu Icon="@Icons.Material.Filled.FileDownload" Label="Exportar" Variant="Variant.Filled" Color="Color.Info">
                 <MudMenuItem OnClick="ExportPdf">PDF</MudMenuItem>
                 <MudMenuItem OnClick="@(() => ExportExcel(false))">Excel Resumido</MudMenuItem>
                 <MudMenuItem OnClick="@(() => ExportExcel(true))">Excel Detallado</MudMenuItem>
-                <MudMenuItem OnClick="ExportContpaqi">CONTPAQi</MudMenuItem>
-                <MudMenuItem OnClick="ExportAspelNoi">Aspel NOI</MudMenuItem>
+                @if (_canExportPayroll)
+                {
+                    <MudMenuItem OnClick="ExportContpaqi">CONTPAQi</MudMenuItem>
+                    <MudMenuItem OnClick="ExportAspelNoi">Aspel NOI</MudMenuItem>
+                }
             </MudMenu>
         </MudHidden>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadData">Ver Reporte</MudButton>
@@ -180,7 +187,7 @@
                 @if (!context.Item.EmployeeOvertimeAuthorized && context.Item.RawOvertimeMinutes > 0)
                 {
                     var otItem = context.Item;
-                    <AuthorizeView Roles="Administrador" Context="auth">
+                    <AuthorizeView Policy="@Permissions.AttendanceAdjust" Context="auth">
                         <Authorized>
                             <div class="mt-1">
                                 @if (otItem.OvertimeAuthorized && !otItem.OvertimeAuthorizationOutdated)
@@ -206,7 +213,7 @@
                 @if (context.Item.TemporaryExits.Any())
                 {
                     var item = context.Item;
-                    <AuthorizeView Roles="Administrador" Context="auth">
+                    <AuthorizeView Policy="@Permissions.AttendanceAdjust" Context="auth">
                         <Authorized>
                             @* Caso 11: cada salida se clasifica por separado. *@
                             <div class="d-flex flex-wrap gap-1 mt-1">
@@ -254,8 +261,12 @@
         ? _allEmployees.Where(e => e.BranchId == SelectedBranchId.Value).ToList()
         : _allEmployees;
 
+    // Caso 13: la prenómina es de RH y Administrador.
+    private bool _canExportPayroll;
+
     protected override async Task OnInitializedAsync()
     {
+        _canExportPayroll = await UiPermissions.HasAsync(Permissions.ReportsPayrollExport);
         var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
         if (configResult.IsSuccess)
         {
@@ -312,7 +323,8 @@
     {
         var result = await Mediator.Send(new ClassifyTemporaryExitCommand(
             item.EmployeeId, DateOnly.FromDateTime(item.Date), exit.ExitRecordId, status,
-            status == null ? null : "Clasificado desde el reporte de asistencia"));
+            status == null ? null : "Clasificado desde el reporte de asistencia",
+            ExpectedRevision: item.AdjustmentRevision));
         await ShowDecisionAsync(result);
     }
 
@@ -331,6 +343,7 @@
             item.EmployeeId, DateOnly.FromDateTime(item.Date),
             authorize ? true : null, authorize ? item.CalculateOvertimeBeforeEntry : null,
             authorize ? "Extras autorizadas desde el reporte de asistencia" : null,
+            ExpectedRevision: item.AdjustmentRevision,
             AuthorizedMinutes: minutes, ForRawMinutes: minutes.HasValue ? item.RawOvertimeMinutes : null));
         await ShowDecisionAsync(result);
     }
@@ -339,6 +352,9 @@
     {
         if (result.IsSuccess)
             Snackbar.Add(result.Value.UserMessage, result.Value.Consolidated ? Severity.Success : Severity.Info);
+        else if (result.Error.Contains("mientras se editaba", StringComparison.OrdinalIgnoreCase))
+            // Caso 13: otra persona cambió el día; se recarga para revisar y volver a aplicar.
+            Snackbar.Add("Este día fue modificado por otra persona; se recargó con los datos actuales. Revise y vuelva a aplicar.", Severity.Warning);
         else
             Snackbar.Add(result.Error, Severity.Error);
         await LoadData();
@@ -431,6 +447,7 @@
 
     private async Task ExportContpaqi()
     {
+        if (!_canExportPayroll) return;
         if (!AttendanceList.Any())
         {
             Snackbar.Add("No hay datos para exportar", Severity.Warning);
@@ -456,6 +473,7 @@
 
     private async Task ExportAspelNoi()
     {
+        if (!_canExportPayroll) return;
         if (!AttendanceList.Any())
         {
             Snackbar.Add("No hay datos para exportar", Severity.Warning);

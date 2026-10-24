@@ -1,4 +1,5 @@
 @page "/employees"
+@attribute [Authorize(Policy = Permissions.EmployeesView)]
 @using MediatR
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Employees
@@ -144,7 +145,7 @@ else
                             <MudTooltip Text="Editar">
                                 <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context.Item))" Size="Size.Medium" />
                             </MudTooltip>
-                            <AuthorizeView Roles="Administrador" Context="authContext">
+                            <AuthorizeView Policy="@Permissions.EmployeesDelete" Context="authContext">
                                 <MudTooltip Text="Eliminar">
                                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteEmployee(context.Item.Id))" Size="Size.Medium" />
                                 </MudTooltip>
@@ -235,10 +236,12 @@ else
                             <MudTooltip Text="Enviar a Reloj">
                                 <MudIconButton Icon="@Icons.Material.Filled.Router" Color="Color.Info" OnClick="@(() => OpenSendToDeviceDialog(context.Item))" Size="Size.Medium" />
                             </MudTooltip>
-                            <MudTooltip Text="Editar">
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditExternalDialog(context.Item))" Size="Size.Medium" />
-                            </MudTooltip>
-                            <AuthorizeView Roles="Administrador" Context="authContext">
+                            <AuthorizeView Policy="@Permissions.ExternalEmployeesEdit" Context="authContext">
+                                <MudTooltip Text="Editar">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditExternalDialog(context.Item))" Size="Size.Medium" />
+                                </MudTooltip>
+                            </AuthorizeView>
+                            <AuthorizeView Policy="@Permissions.ExternalEmployeesDelete" Context="authContext">
                                 <MudTooltip Text="Eliminar">
                                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteExternalEmployee(context.Item))" Size="Size.Medium" />
                                 </MudTooltip>

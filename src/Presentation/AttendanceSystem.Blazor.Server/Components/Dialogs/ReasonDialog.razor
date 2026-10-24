@@ -1,0 +1,31 @@
+@* Caso 13: pide el motivo de un ajuste antes de aplicarlo. *@
+<MudDialog>
+    <DialogContent>
+        @if (!string.IsNullOrWhiteSpace(Message))
+        {
+            <MudText Class="mb-2">@Message</MudText>
+        }
+        <MudTextField @bind-Value="_reason" Label="Motivo" Required="true" RequiredError="Indique el motivo" MaxLength="500" Lines="2" AutoFocus="true" Immediate="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@(() => MudDialog.Cancel())">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Disabled="@string.IsNullOrWhiteSpace(_reason)" OnClick="@(() => MudDialog.Close(DialogResult.Ok(_reason.Trim())))">Aceptar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string? Message { get; set; }
+
+    private string _reason = string.Empty;
+
+    /// <summary>Muestra el diálogo y devuelve el motivo, o <c>null</c> si se canceló.</summary>
+    public static async Task<string?> AskAsync(IDialogService dialogs, string title, string? message = null)
+    {
+        var dialog = await dialogs.ShowAsync<ReasonDialog>(title, new DialogParameters<ReasonDialog> { { x => x.Message, message } },
+            new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true });
+        var result = await dialog.Result;
+        return result is { Canceled: false, Data: string reason } ? reason : null;
+    }
+}

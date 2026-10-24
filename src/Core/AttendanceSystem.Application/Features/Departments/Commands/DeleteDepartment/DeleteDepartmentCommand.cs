@@ -6,6 +6,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Departments.Commands.DeleteDepartment;
 
+[RequiresPermission(Permissions.DepartmentsManage)]
 public sealed record DeleteDepartmentCommand(Guid Id) : IRequest<Result>;
 
 public sealed class DeleteDepartmentCommandHandler : IRequestHandler<DeleteDepartmentCommand, Result>

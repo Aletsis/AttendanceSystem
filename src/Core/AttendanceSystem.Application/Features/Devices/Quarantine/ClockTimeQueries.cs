@@ -19,6 +19,7 @@ public sealed record ClockAlertDto(Guid Id, AlertType Type, string DeviceName, D
 public sealed record GetQuarantinedPunchesQuery(QuarantineStatus? Status = QuarantineStatus.Pending, int Take = 500) : IRequest<IReadOnlyList<QuarantinedPunchDto>>;
 public sealed record GetPunchTimeCorrectionsQuery(int Take = 50) : IRequest<IReadOnlyList<PunchTimeCorrectionDto>>;
 public sealed record GetClockAlertsQuery : IRequest<IReadOnlyList<ClockAlertDto>>;
+[RequiresPermission(Permissions.ClockAlertsResolve)]
 public sealed record ResolveClockAlertCommand(Guid Id) : IRequest<Result>;
 
 public sealed class ClockTimeQueryHandler :

@@ -1,4 +1,5 @@
 @page "/departments"
+@attribute [Authorize(Policy = Permissions.CatalogsView)]
 @using MediatR
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments
@@ -24,9 +25,13 @@
                       Clearable="true" Immediate="true" />
     </MudItem>
     <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
-        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportDepartments">Importar</MudButton>
+        <AuthorizeView Policy="@Permissions.DepartmentsManage" Context="authContext">
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportDepartments">Importar</MudButton>
+        </AuthorizeView>
         <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Departamento</MudButton>
+        <AuthorizeView Policy="@Permissions.DepartmentsManage" Context="authContext">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Departamento</MudButton>
+        </AuthorizeView>
     </MudItem>
 </MudGrid>
 
@@ -34,14 +39,14 @@
     <HeaderContent>
         <MudTh>Nombre</MudTh>
         <MudTh>Descripción</MudTh>
-        <AuthorizeView Roles="Administrador" Context="authContext">
+        <AuthorizeView Policy="@Permissions.DepartmentsManage" Context="authContext">
             <MudTh>Acciones</MudTh>
         </AuthorizeView>
     </HeaderContent>
     <RowTemplate>
         <MudTd DataLabel="Nombre">@context.Name</MudTd>
         <MudTd DataLabel="Descripción">@context.Description</MudTd>
-        <AuthorizeView Roles="Administrador" Context="authContext">
+        <AuthorizeView Policy="@Permissions.DepartmentsManage" Context="authContext">
             <MudTd DataLabel="Acciones">
                 <MudTooltip Text="Editar">
                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />

@@ -9,6 +9,9 @@ namespace AttendanceSystem.WPF.Services
         string? CurrentUserId { get; }
         string? CurrentUserName { get; }
         string? CurrentUserRole { get; }
+        IReadOnlyCollection<string> CurrentUserRoles { get; }
+        /// <summary>Caso 13: permisos del usuario según sus roles (ver RolePermissions).</summary>
+        bool HasPermission(string permission);
         Task<bool> LoginAsync(string username, string password);
         Task LogoutAsync();
     }
@@ -21,6 +24,10 @@ namespace AttendanceSystem.WPF.Services
         public string? CurrentUserId { get; private set; }
         public string? CurrentUserName { get; private set; }
         public string? CurrentUserRole { get; private set; }
+        public IReadOnlyCollection<string> CurrentUserRoles { get; private set; } = Array.Empty<string>();
+
+        public bool HasPermission(string permission) =>
+            IsAuthenticated && AttendanceSystem.Application.Authorization.RolePermissions.Grants(CurrentUserRoles, permission);
 
         public AuthenticationStateService(UserManager<ApplicationUser> userManager)
         {
@@ -62,6 +69,7 @@ namespace AttendanceSystem.WPF.Services
             // Obtener rol principal para futuro control de acceso
             var roles = await _userManager.GetRolesAsync(user);
             CurrentUserRole = roles.FirstOrDefault();
+            CurrentUserRoles = roles.ToList();
 
             return true;
         }
@@ -72,6 +80,7 @@ namespace AttendanceSystem.WPF.Services
             CurrentUserId = null;
             CurrentUserName = null;
             CurrentUserRole = null;
+            CurrentUserRoles = Array.Empty<string>();
             return Task.CompletedTask;
         }
     }

@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Employees.Commands;
 
+[RequiresPermission(Permissions.EmployeesCreate)]
 public sealed record CreateEmployeeCommand(
     string Id,
     string FirstName,
@@ -49,6 +50,7 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
     private readonly IShiftRepository _shiftRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<CreateEmployeeCommandHandler> _logger;
+    private readonly IPermissionService? _permissions;
 
     public CreateEmployeeCommandHandler(
         IEmployeeRepository employeeRepository,
@@ -57,8 +59,10 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
         IPositionRepository positionRepository,
         IShiftRepository shiftRepository,
         IUnitOfWork unitOfWork,
-        ILogger<CreateEmployeeCommandHandler> logger)
+        ILogger<CreateEmployeeCommandHandler> logger,
+        IPermissionService? permissions = null)
     {
+        _permissions = permissions;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
         _departmentRepository = departmentRepository;
@@ -72,6 +76,11 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
     {
         try
         {
+            if (EmployeeFieldPermissions.ForCreate(_permissions, request.OvertimeAuthorized, request.DevicePrivilege) is { } denied)
+            {
+                return Result<EmployeeDto>.Failure(denied);
+            }
+
             var employeeId = EmployeeId.From(request.Id);
 
             // Verificar si el empleado ya existe

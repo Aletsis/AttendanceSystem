@@ -90,6 +90,19 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
             .HasColumnType("int")
             .IsRequired(false);
 
+        builder.Property(x => x.RegisteredBy)
+            .HasMaxLength(256)
+            .IsRequired(false);
+
+        builder.Property(x => x.RegisteredAt)
+            .IsRequired(false);
+
+        builder.Property(x => x.Reason)
+            .HasMaxLength(500)
+            .IsRequired(false);
+
+        builder.Ignore(x => x.IsManual);
+
         // Ignorar eventos de dominio (no se persisten en esta tabla)
         builder.Ignore(x => x.DomainEvents);
 

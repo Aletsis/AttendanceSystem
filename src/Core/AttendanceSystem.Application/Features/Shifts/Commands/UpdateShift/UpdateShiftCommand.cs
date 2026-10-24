@@ -8,6 +8,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift;
 
+[RequiresPermission(Permissions.ShiftsManage)]
 public sealed record UpdateShiftCommand(
     Guid Id,
     string Name,

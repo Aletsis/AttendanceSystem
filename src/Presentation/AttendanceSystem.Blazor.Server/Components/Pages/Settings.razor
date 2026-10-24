@@ -1,6 +1,6 @@
 @page "/settings"
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Roles = "Administrador")]
+@attribute [Authorize(Policy = Permissions.SettingsManage)]
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration

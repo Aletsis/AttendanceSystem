@@ -1,4 +1,5 @@
 @page "/roster"
+@attribute [Authorize(Policy = Permissions.CatalogsView)]
 @using AttendanceSystem.Application.Features.Roster.Queries.GetRosterEmployees
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
 @using AttendanceSystem.Application.DTOs
@@ -21,11 +22,13 @@
                 Gestione los empleados con esquemas rotativos asignados (2x8, 3x8, 4x3, 24x48) y consulte sus proyecciones de turnos.
             </MudText>
         </div>
-        <div class="d-flex gap-2">
-            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoMode" OnClick="OpenRotationSchemeDialog">
-                Asignar Esquema Rotativo
-            </MudButton>
-        </div>
+        <AuthorizeView Policy="@Permissions.RosterManage" Context="authContext">
+            <div class="d-flex gap-2">
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.AutoMode" OnClick="OpenRotationSchemeDialog">
+                    Asignar Esquema Rotativo
+                </MudButton>
+            </div>
+        </AuthorizeView>
     </div>
 
     <!-- Filtros de búsqueda -->
@@ -170,13 +173,15 @@
                                    OnClick="@(() => OpenProjectionDialog(context))">
                             Ver Proyección
                         </MudButton>
-                        <MudButton Variant="Variant.Filled"
-                                   Color="Color.Secondary"
-                                   Size="Size.Small"
-                                   StartIcon="@Icons.Material.Filled.EditCalendar"
-                                   OnClick="@(() => OpenModifySchemeDialog(context))">
-                            Modificar Esquema
-                        </MudButton>
+                        <AuthorizeView Policy="@Permissions.RosterManage" Context="authContext">
+                            <MudButton Variant="Variant.Filled"
+                                       Color="Color.Secondary"
+                                       Size="Size.Small"
+                                       StartIcon="@Icons.Material.Filled.EditCalendar"
+                                       OnClick="@(() => OpenModifySchemeDialog(context))">
+                                Modificar Esquema
+                            </MudButton>
+                        </AuthorizeView>
                     </div>
                 </MudTd>
             </RowTemplate>

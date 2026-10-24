@@ -25,6 +25,7 @@ public sealed record PunchCorrectionResultDto(bool Applied, Guid? CorrectionId, 
 /// (<paramref name="TimeZoneId"/>; la hora que marcó el reloj se conserva) y/o con un desfase en minutos (el reloj
 /// marcaba una hora equivocada). Con <paramref name="Apply"/> = false sólo muestra la vista previa.
 /// </summary>
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record CorrectDevicePunchTimesCommand(
     string DeviceId, DateOnly FromDate, DateOnly ToDate, string? TimeZoneId, int OffsetMinutes, string Reason, bool Apply)
     : IRequest<Result<PunchCorrectionResultDto>>;
@@ -195,9 +196,11 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
 }
 
 /// <summary>Libera un marcaje en cuarentena con su hora corregida (reportada + desfase): se ingresa como cualquier otro.</summary>
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record ReleaseQuarantinedPunchCommand(Guid Id, int OffsetMinutes, string Note) : IRequest<Result<string>>;
 
 /// <summary>Descarta un marcaje en cuarentena (no corresponde a un marcaje real).</summary>
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record DiscardQuarantinedPunchCommand(Guid Id, string Note) : IRequest<Result>;
 
 public sealed class QuarantinedPunchDecisionHandler :

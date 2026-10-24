@@ -8,6 +8,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Departments.Commands.UpdateDepartment;
 
+[RequiresPermission(Permissions.DepartmentsManage)]
 public sealed record UpdateDepartmentCommand(
     Guid Id,
     string Name,

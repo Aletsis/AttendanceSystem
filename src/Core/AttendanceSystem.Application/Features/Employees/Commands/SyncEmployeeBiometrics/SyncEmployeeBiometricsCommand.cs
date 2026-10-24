@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics;
 
+[RequiresPermission(Permissions.EmployeesSendToDevice)]
 public sealed record SyncEmployeeBiometricsCommand(string DeviceId, string EmployeeId) : IRequest<Result<bool>>;
 
 public sealed class SyncEmployeeBiometricsCommandHandler : IRequestHandler<SyncEmployeeBiometricsCommand, Result<bool>>

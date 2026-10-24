@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Employees.Commands;
 
+[RequiresPermission(Permissions.EmployeesEdit)]
 public sealed record UpdateEmployeeCommand(
     string Id,
     string FirstName,
@@ -56,6 +57,7 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
     private readonly IShiftRosterRepository _rosterRepository;
     private readonly IRotationPatternRepository? _patternRepository;
     private readonly ILogger<UpdateEmployeeCommandHandler> _logger;
+    private readonly IPermissionService? _permissions;
 
     public UpdateEmployeeCommandHandler(
         IEmployeeRepository employeeRepository,
@@ -69,8 +71,10 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
         IConsolidationWakeup wakeup,
         IShiftRosterRepository rosterRepository,
         ILogger<UpdateEmployeeCommandHandler> logger,
-        IRotationPatternRepository? patternRepository = null)
+        IRotationPatternRepository? patternRepository = null,
+        IPermissionService? permissions = null)
     {
+        _permissions = permissions;
         _patternRepository = patternRepository;
         _rosterRepository = rosterRepository;
         _lockService = lockService;
@@ -95,6 +99,11 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             if (employee is null)
             {
                 return Result<EmployeeDto>.Failure($"No existe el empleado con ID {request.Id}");
+            }
+
+            if (EmployeeFieldPermissions.ForUpdate(_permissions, employee, request) is { } denied)
+            {
+                return Result<EmployeeDto>.Failure(denied);
             }
 
             // Validar que existan las entidades relacionadas

@@ -192,6 +192,8 @@ internal sealed class InMemoryAttendanceRecordRepository : IAttendanceRepository
 
     public void Detach(AttendanceRecord record) { }
 
+    public void Remove(AttendanceRecord record) => _store.Records.Remove(record);
+
     public Task<IReadOnlyList<AttendanceRecord>> GetByDeviceAndDateRangeAsync(DeviceId deviceId, DateTime startDateTime, DateTime endDateTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<AttendanceRecord>> GetByDownloadLogIdAsync(DownloadLogId downloadLogId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(EmployeeId employeeId, DateTime checkTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -408,6 +410,11 @@ public sealed class AttendanceRecalculationHarness
 
     public AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommandHandler ManualAssign() =>
         new(_dailyRepo, _attendanceRepo, _assignmentRepo, Decisions());
+
+    /// <summary>Recálculo inmediato con el orquestador real (lo que envía un comando tras guardar).</summary>
+    public ISender Sender => new RecalculationSender(this);
+
+    public IAttendanceConsolidationRepository Consolidations => new InMemoryConsolidationRepository(Store);
 
     /// <summary>Sin base compartida no hay otros procesos: el bloqueo es una operación vacía.</summary>
     public IAttendanceCalculationLockService LockService { get; } = Mock.Of<IAttendanceCalculationLockService>();

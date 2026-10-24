@@ -10,7 +10,15 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.SendEmployeeToDevice;
 
-public sealed record SendEmployeeToDeviceCommand(string EmployeeId, string DeviceId, DevicePrivilege? DevicePrivilege = null) : IRequest<Result<bool>>;
+[RequiresPermission(Permissions.EmployeesSendToDevice)]
+public sealed record SendEmployeeToDeviceCommand(string EmployeeId, string DeviceId, DevicePrivilege? DevicePrivilege = null) : IRequest<Result<bool>>, IRequiresDataPermissions
+{
+    /// <summary>Caso 13: sin indicar privilegio el empleado conserva el suyo (o entra como usuario normal).</summary>
+    public IEnumerable<string> RequiredPermissions() =>
+        DevicePrivilege is { } privilege && privilege != Domain.Enumerations.DevicePrivilege.User
+            ? new[] { Permissions.EmployeesDevicePrivilege }
+            : Array.Empty<string>();
+}
 
 public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeToDeviceCommand, Result<bool>>
 {

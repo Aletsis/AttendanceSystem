@@ -15,6 +15,22 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
     public string? Source { get; set; }
     public CheckType? OriginalCheckType { get; set; }
 
+    /// <summary>Caso 13: captura manual (origen <see cref="ManualSource"/>): quién la registró, cuándo y por qué.</summary>
+    public string? RegisteredBy { get; set; }
+    public DateTime? RegisteredAt { get; set; }
+    public string? Reason { get; set; }
+
+    public const string ManualSource = "Manual";
+
+    public bool IsManual => Source == ManualSource;
+
+    public void RecordManualCapture(string registeredBy, string reason, DateTime? registeredAt = null)
+    {
+        RegisteredBy = string.IsNullOrWhiteSpace(registeredBy) ? "Sistema" : registeredBy;
+        Reason = reason.Trim();
+        RegisteredAt = registeredAt ?? DateTime.UtcNow;
+    }
+
     // Constructor privado - solo se crea mediante Factory
     private AttendanceRecord() { }
 

@@ -5,6 +5,7 @@ using AttendanceSystem.Application.Common;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.ResetDeviceToFactory;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public record ResetDeviceToFactoryCommand(string DeviceId) : IRequest<Result>;
 
 public class ResetDeviceToFactoryHandler : IRequestHandler<ResetDeviceToFactoryCommand, Result>

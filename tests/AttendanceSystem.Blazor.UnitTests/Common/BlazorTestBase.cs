@@ -30,6 +30,9 @@ public abstract class BlazorTestBase : TestContext
         var authContext = this.AddTestAuthorization();
         authContext.SetAuthorized("TestUser");
         authContext.SetRoles("Administrador", "Supervisor", "Usuario");
+        // Caso 13: el administrador tiene todos los permisos (políticas) de la interfaz.
+        authContext.SetPolicies(AttendanceSystem.Application.Authorization.Permissions.All.ToArray());
+        Services.AddScoped<AttendanceSystem.Blazor.Server.Services.UiPermissions>();
 
         MediatorMock = new Mock<IMediator>();
         SenderMock = new Mock<ISender>();

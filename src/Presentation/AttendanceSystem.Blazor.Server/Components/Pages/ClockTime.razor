@@ -7,7 +7,7 @@
 @using AttendanceSystem.Domain.Aggregates.AttendanceAggregate
 @using AttendanceSystem.Domain.Enumerations
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Roles = "Administrador")]
+@attribute [Authorize(Policy = Permissions.ClockAlertsView)]
 @inject ISender Sender
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
@@ -47,12 +47,19 @@
                         }
                     </MudTd>
                     <MudTd>@context.Message</MudTd>
-                    <MudTd><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => ResolveAlert(context))">Atendida</MudButton></MudTd>
+                    <MudTd>
+                        @if (_canManage)
+                        {
+                            <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => ResolveAlert(context))">Atendida</MudButton>
+                        }
+                    </MudTd>
                 </RowTemplate>
             </MudTable>
         }
     </MudTabPanel>
 
+    @if (_canManage)
+    {
     <MudTabPanel Text="@($"Cuarentena ({_pendingCount})")" Icon="@Icons.Material.Filled.GppMaybe">
         <MudText Typo="Typo.body2" Class="mb-3">
             Marcajes que el reloj envió con una fecha anterior al año 2000 o con una hora posterior a la actual de su zona.
@@ -208,10 +215,13 @@
             <NoRecordsContent><MudText>Aún no se han aplicado correcciones.</MudText></NoRecordsContent>
         </MudTable>
     </MudTabPanel>
+    }
 </MudTabs>
 
 @code {
     private int _tab;
+    // Caso 13: las alertas las ven todos; atenderlas, la cuarentena y la corrección son del administrador.
+    private bool _canManage;
     private bool _busy;
 
     private List<ClockAlertDto> _alerts = new();
@@ -237,6 +247,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _canManage = await UiPermissions.HasAsync(Permissions.ClockAlertsResolve) && await UiPermissions.HasAsync(Permissions.DevicesManage);
         var devices = await Sender.Send(new GetAllDevicesQuery());
         if (devices.IsSuccess) _devices = devices.Value.OrderBy(d => d.Name).ToList();
         await LoadAsync();

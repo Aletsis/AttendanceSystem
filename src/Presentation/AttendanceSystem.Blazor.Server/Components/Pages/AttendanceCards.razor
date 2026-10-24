@@ -1,4 +1,5 @@
 @page "/attendance/cards"
+@attribute [Authorize(Policy = Permissions.ReportsView)]
 @using MediatR
 @using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport
 @using AttendanceSystem.Application.Features.Employees.Queries

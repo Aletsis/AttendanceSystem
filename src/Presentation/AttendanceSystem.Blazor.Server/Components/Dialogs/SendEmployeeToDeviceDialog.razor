@@ -45,12 +45,15 @@
                     </MudStack>
                 </MudPaper>
 
-                <MudSelect T="DevicePrivilege" @bind-Value="_devicePrivilege" Label="Rol / Privilegio" Class="mt-3" AnchorOrigin="Origin.BottomCenter">
-                    @foreach (var opt in AvailablePrivileges)
-                    {
-                        <MudSelectItem Value="@opt.Value">@opt.DisplayName</MudSelectItem>
-                    }
-                </MudSelect>
+                @if (_canSetPrivilege)
+                {
+                    <MudSelect T="DevicePrivilege" @bind-Value="_devicePrivilege" Label="Rol / Privilegio" Class="mt-3" AnchorOrigin="Origin.BottomCenter">
+                        @foreach (var opt in AvailablePrivileges)
+                        {
+                            <MudSelectItem Value="@opt.Value">@opt.DisplayName</MudSelectItem>
+                        }
+                    </MudSelect>
+                }
 
                 @if (IsExternal)
                 {
@@ -81,6 +84,7 @@
     private bool _sending = false;
     private string _selectedDeviceId = string.Empty;
     private DevicePrivilege _devicePrivilege = DevicePrivilege.User;
+    private bool _canSetPrivilege;
 
     private DeviceDto? SelectedDevice => _devices.FirstOrDefault(d => d.DeviceId == _selectedDeviceId);
 
@@ -91,6 +95,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _canSetPrivilege = await UiPermissions.HasAsync(AttendanceSystem.Application.Authorization.Permissions.EmployeesDevicePrivilege);
         var result = await Sender.Send(new GetAllDevicesQuery());
         if (result.IsSuccess)
         {
@@ -125,7 +130,7 @@
         _sending = true;
         try
         {
-            var result = await Sender.Send(new SendEmployeeToDeviceCommand(EmployeeId, _selectedDeviceId, _devicePrivilege));
+            var result = await Sender.Send(new SendEmployeeToDeviceCommand(EmployeeId, _selectedDeviceId, _canSetPrivilege ? _devicePrivilege : null));
             if (result.IsSuccess && result.Value)
             {
                 Snackbar.Add($"Empleado enviado correctamente a {SelectedDevice?.Name}", Severity.Success);

@@ -106,7 +106,7 @@ public class Phase05ManualDecisionTests
         (await new ClassifyTemporaryExitCommandHandler(decisions).Handle(new ClassifyTemporaryExitCommand(Emp.Value, tuesday, leave.Id.Value, TemporaryExitStatus.ApprovedPaid, "Cita médica"), CancellationToken.None)).IsSuccess.Should().BeTrue();
         (await new SetDailyOvertimeAuthorizationCommandHandler(decisions).Handle(new SetDailyOvertimeAuthorizationCommand(Emp.Value, tuesday, false, false, "Sin autorización"), CancellationToken.None)).IsSuccess.Should().BeTrue();
         var daily = h.Daily(Emp, Tuesday)!;
-        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(daily.Id.Value, true), CancellationToken.None)).Should().BeTrue();
+        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(daily.Id.Value, true), CancellationToken.None)).IsSuccess.Should().BeTrue();
 
         await RecalculateAroundAsync(h, Tuesday);
 
@@ -247,7 +247,7 @@ public class Phase05ManualDecisionTests
         var saves = h.Store.SaveChangesCount;
         var snapshot = AttendanceResultSnapshot.Capture(h.Store);
 
-        var foreignResult = await h.ManualAssign().Handle(new ManuallyAssignAttendanceCommand(Emp.Value, DateOnly.FromDateTime(Tuesday), foreign.Id.Value.ToString(), "Entrada"), CancellationToken.None);
+        var foreignResult = await h.ManualAssign().Handle(new ManuallyAssignAttendanceCommand(Emp.Value, DateOnly.FromDateTime(Tuesday), foreign.Id.Value.ToString(), "Entrada", Reason: "Prueba"), CancellationToken.None);
         var occupiedResult = await Assign(h, mondayExit, Tuesday, "Salida");
 
         foreignResult.Error.Should().Be("El marcaje no pertenece al empleado indicado.");
@@ -440,7 +440,7 @@ public class Phase05ManualDecisionTests
         var day = DateOnly.FromDateTime(Tuesday);
         (await Assign(h, chosen, Tuesday, "Entrada")).IsSuccess.Should().BeTrue($"{kind}: asignación");
         (await new SetDailyOvertimeAuthorizationCommandHandler(decisions).Handle(new SetDailyOvertimeAuthorizationCommand(Emp.Value, day, false, false), CancellationToken.None)).IsSuccess.Should().BeTrue();
-        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(h.Daily(Emp, Tuesday)!.Id.Value, true), CancellationToken.None)).Should().BeTrue();
+        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(h.Daily(Emp, Tuesday)!.Id.Value, true), CancellationToken.None)).IsSuccess.Should().BeTrue();
 
         await RecalculateAroundAsync(h, Tuesday);
 
@@ -459,7 +459,7 @@ public class Phase05ManualDecisionTests
         new(h.AttendanceRepository, h.UnitOfWork, AttendanceSystem.Application.Abstractions.DefaultTimeNormalizer.Instance);
 
     private static Task<Result> CaptureAsync(AttendanceRecalculationHarness h, DateTime civil) =>
-        ManualCapture(h).Handle(new RegisterManualAttendanceCommand(Emp.Value, civil, AttendanceRegressionFixtures.TimeZoneMexicoCity), CancellationToken.None);
+        ManualCapture(h).Handle(new RegisterManualAttendanceCommand(Emp.Value, civil, AttendanceRegressionFixtures.TimeZoneMexicoCity, "Olvidó checar"), CancellationToken.None);
 
     [Fact]
     public async Task ManualCapture_OnCalculatedDay_IsPlacedByNormalRules_WithoutManualDecision()

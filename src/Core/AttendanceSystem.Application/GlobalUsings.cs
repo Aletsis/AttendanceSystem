@@ -15,3 +15,4 @@ global using AttendanceSystem.Domain.Repositories;
 global using AttendanceSystem.Domain.ValueObjects;
 global using AttendanceSystem.Domain.Events;
 global using AttendanceSystem.Application.DTOs;
+global using AttendanceSystem.Application.Authorization;

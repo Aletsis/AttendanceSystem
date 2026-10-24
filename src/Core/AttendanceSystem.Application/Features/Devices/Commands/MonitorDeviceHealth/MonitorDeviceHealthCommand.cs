@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.MonitorDeviceHealth;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record MonitorDeviceHealthCommand() : IRequest<Result<int>>;
 
 public sealed class MonitorDeviceHealthCommandHandler : IRequestHandler<MonitorDeviceHealthCommand, Result<int>>

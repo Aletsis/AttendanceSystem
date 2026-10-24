@@ -8,6 +8,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Shifts.Commands.CreateShift;
 
+[RequiresPermission(Permissions.ShiftsManage)]
 public sealed record CreateShiftCommand(
     string Name,
     TimeSpan StartTime,

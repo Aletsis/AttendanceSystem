@@ -6,6 +6,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.RefreshDeviceInfo;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public record RefreshDeviceInfoCommand(Guid DeviceId) : IRequest<Result>;
 
 public class RefreshDeviceInfoCommandHandler : IRequestHandler<RefreshDeviceInfoCommand, Result>

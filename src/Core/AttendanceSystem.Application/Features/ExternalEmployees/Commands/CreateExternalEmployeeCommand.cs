@@ -10,6 +10,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.ExternalEmployees.Commands;
 
+[RequiresPermission(Permissions.ExternalEmployeesCreate)]
 public sealed record CreateExternalEmployeeCommand(
     string BranchId,
     string EmployeeNumber,

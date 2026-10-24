@@ -11,6 +11,7 @@ namespace AttendanceSystem.Application.Features.Devices.Commands.SetDeviceTime;
 /// Sincroniza el reloj con la hora actual de SU zona horaria (y, en ADMS/Hikvision, también su desfase).
 /// <paramref name="CivilTime"/> permite fijar una hora concreta, expresada en la zona del reloj.
 /// </summary>
+[RequiresPermission(Permissions.DevicesManage)]
 public record SetDeviceTimeCommand(string DeviceId, DateTime? CivilTime = null) : IRequest<Result>;
 
 public class SetDeviceTimeHandler : IRequestHandler<SetDeviceTimeCommand, Result>

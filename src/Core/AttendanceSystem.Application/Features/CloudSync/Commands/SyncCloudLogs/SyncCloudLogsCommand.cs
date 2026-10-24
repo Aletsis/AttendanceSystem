@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs;
 
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record SyncCloudLogsCommand : IRequest<Result<SyncCloudLogsResultDto>>;
 
 public sealed record SyncCloudLogsResultDto(int DownloadedLogsCount, int UploadedLogsCount);
