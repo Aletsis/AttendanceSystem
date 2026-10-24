@@ -1,8 +1,16 @@
+@inject ISender Sender
 <MudNavMenu>
     <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Home">Inicio</MudNavLink>
     <MudNavGroup Title="Gestión de personal" Expanded="false" Icon="@Icons.Material.Filled.People" >
         <AuthorizeView Policy="@Permissions.EmployeesView">
             <MudNavLink Href="/employees" Icon="@Icons.Material.Filled.PersonAdd">Empleados</MudNavLink>
+            <MudNavLink Href="/employees/unmatched-punches" Icon="@Icons.Material.Filled.PersonSearch">
+                Marcajes sin empleado
+                @if (_unmatched > 0)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Class="ml-1">@_unmatched</MudChip>
+                }
+            </MudNavLink>
         </AuthorizeView>
         <AuthorizeView Policy="@Permissions.CatalogsView">
             <MudNavLink Href="/branches" Icon="@Icons.Material.Filled.Business">Sucursales</MudNavLink>
@@ -57,3 +65,24 @@
         <MudNavLink Href="/account/password" Icon="@Icons.Material.Filled.Password">Cambiar mi contraseña</MudNavLink>
     </MudNavGroup>
 </MudNavMenu>
+
+@code {
+    // Caso 14: aviso de marcajes que no cuentan (IDs no registrados, antes del ingreso o después de la baja).
+    private int _unmatched;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            if (!await UiPermissions.HasAsync(Permissions.EmployeesView)) return;
+            var to = DateOnly.FromDateTime(DateTime.Today);
+            var from = to.AddDays(-AttendanceSystem.Application.Features.Attendance.Queries.GetUnmatchedPunches.GetUnmatchedPunchesQueryHandler.DefaultLookbackDays);
+            var rows = await Sender.Send(new AttendanceSystem.Application.Features.Attendance.Queries.GetUnmatchedPunches.GetUnmatchedPunchesQuery(from, to));
+            _unmatched = rows?.Count ?? 0;
+        }
+        catch
+        {
+            _unmatched = 0; // el aviso nunca impide mostrar el menú
+        }
+    }
+}

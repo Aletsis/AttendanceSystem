@@ -1,0 +1,99 @@
+@page "/employees/unmatched-punches"
+@attribute [Authorize(Policy = Permissions.EmployeesView)]
+@using AttendanceSystem.Application.Features.Attendance.Queries.GetUnmatchedPunches
+@inject ISender Sender
+@inject NavigationManager Navigation
+
+<PageTitle>Marcajes sin empleado</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Marcajes sin empleado</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Marcajes de los relojes que no cuentan en la asistencia: IDs que no son de ningún empleado, o empleados que checaron
+    antes de su ingreso o después de su baja. Al dar de alta o reingresar al empleado, sus marcajes se calculan y el aviso desaparece.
+</MudText>
+
+<MudGrid Class="mb-2">
+    <MudItem xs="12" sm="6" md="4">
+        <MudDateRangePicker @bind-DateRange="_range" Label="Fechas laborales" AutoClose="true" />
+    </MudItem>
+    <MudItem xs="12" sm="6" md="2" Class="d-flex align-center">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="LoadAsync">Buscar</MudButton>
+    </MudItem>
+</MudGrid>
+
+@if (_rows == null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else if (_rows.Count == 0)
+{
+    <MudAlert Severity="Severity.Success">Todos los marcajes del periodo corresponden a empleados activos.</MudAlert>
+}
+else
+{
+    <MudTable Items="_rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>ID</MudTh>
+            <MudTh>Empleado</MudTh>
+            <MudTh>Motivo</MudTh>
+            <MudTh>Relojes</MudTh>
+            <MudTh>Marcajes</MudTh>
+            <MudTh>Del</MudTh>
+            <MudTh>Al</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="ID">@context.EmployeeId</MudTd>
+            <MudTd DataLabel="Empleado">@(context.EmployeeName ?? "—")</MudTd>
+            <MudTd DataLabel="Motivo">
+                <MudChip T="string" Size="Size.Small" Color="@KindColor(context.Kind)">@KindLabel(context.Kind)</MudChip>
+                <MudText Typo="Typo.caption" Class="d-block">@context.Detail</MudText>
+            </MudTd>
+            <MudTd DataLabel="Relojes">@context.Devices</MudTd>
+            <MudTd DataLabel="Marcajes">@context.Count</MudTd>
+            <MudTd DataLabel="Del">@context.FirstDate.ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Al">@context.LastDate.ToString("dd/MM/yyyy")</MudTd>
+            <MudTd>
+                @if (context.Kind == UnmatchedPunchKind.NotRegistered)
+                {
+                    <AuthorizeView Policy="@Permissions.EmployeesCreate" Context="authContext">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PersonAdd"
+                                   OnClick="@(() => Navigation.NavigateTo($"/employees?alta={Uri.EscapeDataString(context.EmployeeId)}"))">Dar de alta</MudButton>
+                    </AuthorizeView>
+                }
+                else
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Href="@($"/employees?buscar={Uri.EscapeDataString(context.EmployeeId)}")">Ver empleado</MudButton>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private DateRange _range = new(DateTime.Today.AddDays(-GetUnmatchedPunchesQueryHandler.DefaultLookbackDays), DateTime.Today);
+    private IReadOnlyList<UnmatchedPunchDto>? _rows;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        if (_range.Start is not { } start || _range.End is not { } end) return;
+        _rows = null;
+        _rows = await Sender.Send(new GetUnmatchedPunchesQuery(DateOnly.FromDateTime(start), DateOnly.FromDateTime(end))) ?? Array.Empty<UnmatchedPunchDto>();
+    }
+
+    private static string KindLabel(UnmatchedPunchKind kind) => kind switch
+    {
+        UnmatchedPunchKind.NotRegistered => "No registrado",
+        UnmatchedPunchKind.BeforeHire => "Antes del ingreso",
+        _ => "Después de la baja"
+    };
+
+    private static Color KindColor(UnmatchedPunchKind kind) => kind switch
+    {
+        UnmatchedPunchKind.NotRegistered => Color.Error,
+        UnmatchedPunchKind.BeforeHire => Color.Info,
+        _ => Color.Warning
+    };
+}

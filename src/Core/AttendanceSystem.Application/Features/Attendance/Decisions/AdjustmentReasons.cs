@@ -8,7 +8,7 @@ namespace AttendanceSystem.Application.Features.Attendance.Decisions;
 public static class AdjustmentReasons
 {
     public const string ManualPunch = "MarcajeManual";
-    public const string DeleteManualPunch = "EliminarMarcajeManual";
+    public const string VoidManualPunch = "AnularMarcajeManual";
     public const string AssignPunch = "AsignarMarcaje";
     public const string UnassignPunch = "DesasignarMarcaje";
 
@@ -17,7 +17,7 @@ public static class AdjustmentReasons
     private static readonly HashSet<string> Required = new(StringComparer.Ordinal)
     {
         ManualPunch,
-        DeleteManualPunch,
+        VoidManualPunch,
         AssignPunch,
         UnassignPunch,
     };

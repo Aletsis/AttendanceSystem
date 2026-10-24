@@ -25,7 +25,8 @@ public record ProcessRegularAttendanceCommand(
 
 public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessRegularAttendanceCommand>
 {
-    private const int DoubleTapThresholdMinutes = 15;
+    // Caso 14: configurable (Configuración → Tiempos y periodos); se toma de la política de la petición.
+    private int DoubleTapThresholdMinutes = LunchPolicy.DoubleTapMaxMinutes;
 
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IAttendanceRepository _attendanceRepo;
@@ -43,6 +44,7 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
 
     public async Task Handle(ProcessRegularAttendanceCommand request, CancellationToken cancellationToken)
     {
+        DoubleTapThresholdMinutes = (request.Lunch ?? LunchPolicy.Default).DoubleTapMinutes;
         DateTime? checkIn = null;
         DateTime? checkOut = null;
         AttendanceRecord? checkInRecord = null;

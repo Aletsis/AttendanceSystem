@@ -66,6 +66,7 @@ public sealed class GetSystemConfigurationQueryHandler : IRequestHandler<GetSyst
             config.PaidLunchMinutes,
             config.NightLunchWindowStart,
             config.NightLunchWindowEnd,
-            config.LunchWindowEnabled));
+            config.LunchWindowEnabled,
+            config.DoubleTapMinutes));
     }
 }

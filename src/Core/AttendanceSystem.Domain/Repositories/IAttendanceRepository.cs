@@ -36,8 +36,8 @@ public interface IAttendanceRepository
     /// </summary>
     void Detach(AttendanceRecord record);
 
-    /// <summary>Caso 13: borra un marcaje (sólo los manuales se borran).</summary>
-    void Remove(AttendanceRecord record);
+    /// <summary>Caso 14: marcajes vigentes por empleado, fecha laboral y reloj en el rango (para detectar los que no cuentan).</summary>
+    Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default);
 
     Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(
         EmployeeId employeeId,
@@ -64,3 +64,6 @@ public interface IAttendanceRepository
     Task<IReadOnlyList<AttendanceRecord>> GetAllAsync(
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Marcajes vigentes de un empleado en una fecha laboral desde un reloj.</summary>
+public sealed record PunchDaySummary(EmployeeId EmployeeId, DateOnly WorkDate, DeviceId DeviceId, int Count);

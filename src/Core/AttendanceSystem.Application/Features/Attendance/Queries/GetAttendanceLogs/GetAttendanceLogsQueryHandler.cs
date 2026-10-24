@@ -102,7 +102,15 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
                 VerifyMethod = r.VerifyMethod.Name,
                 DeviceName = devName,
                 Status = r.Status.ToString(),
-                AssignedDate = assignedDate
+                AssignedDate = r.IsVoided ? null : assignedDate,
+                IsVoided = r.IsVoided,
+                VoidedBy = r.VoidedBy,
+                VoidReason = r.VoidReason,
+                WasCorrected = r.ReplacedByRecordId != null,
+                IsCorrection = r.ReplacesRecordId != null,
+                IsManual = r.IsManual,
+                RegisteredBy = r.RegisteredBy,
+                ManualReason = r.Reason
             };
         });
 

@@ -60,7 +60,7 @@ public static class Permissions
     /// <summary>Asignar/desasignar marcajes, turno y descanso del día, salidas temporales y extras.</summary>
     public const string AttendanceAdjust = "Attendance.Adjust";
     public const string AttendanceManualPunch = "Attendance.ManualPunch";
-    public const string AttendanceDeleteManualPunch = "Attendance.DeleteManualPunch";
+    public const string AttendanceVoidManualPunch = "Attendance.VoidManualPunch";
     public const string AttendanceViewHistory = "Attendance.ViewHistory";
 
     // Reportes

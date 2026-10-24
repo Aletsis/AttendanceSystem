@@ -34,6 +34,9 @@ public class PunchTimeCorrectionEntryConfiguration : IEntityTypeConfiguration<Pu
         builder.Property(x => x.EmployeeId).HasMaxLength(20).IsRequired();
         builder.Property(x => x.OldTimeZoneId).HasMaxLength(100);
         builder.Property(x => x.NewTimeZoneId).HasMaxLength(100).IsRequired();
+        builder.Property(x => x.NewRecordId)
+            .HasConversion(id => id == null ? (Guid?)null : id.Value, value => value == null ? null : AttendanceRecordId.From(value.Value))
+            .IsRequired(false);
         builder.HasIndex(x => x.AttendanceRecordId);
     }
 }

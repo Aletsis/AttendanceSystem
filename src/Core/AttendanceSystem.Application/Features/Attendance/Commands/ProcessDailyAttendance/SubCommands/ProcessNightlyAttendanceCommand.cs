@@ -60,7 +60,7 @@ public class ProcessNightlyAttendanceCommandHandler : IRequestHandler<ProcessNig
         const double entryEarlyAllowanceHours = 4;
         const double exitEarlyAllowanceHours = 2;
         const double exitLateAllowanceHours = 7;
-        const int doubleTapThresholdMinutes = 15;
+        var doubleTapThresholdMinutes = (request.Lunch ?? LunchPolicy.DefaultNight).DoubleTapMinutes;
 
         var entryWindowStart = scheduledIn.AddHours(-entryEarlyAllowanceHours);
         var exitWindowStart = scheduledOut.AddHours(-exitEarlyAllowanceHours);

@@ -52,8 +52,12 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public TimeSpan NightLunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultNightWindowStart;
     public TimeSpan NightLunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultNightWindowEnd;
 
-    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled);
-    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled);
+    /// <summary>Caso 14: minutos dentro de los cuales dos checadas son un toque doble.</summary>
+    public int DoubleTapMinutes { get; private set; } = Services.LunchPolicy.DoubleTapMaxMinutes;
+    public const int MaxDoubleTapMinutes = 60;
+
+    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled, DoubleTapMinutes);
+    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled, DoubleTapMinutes);
 
     // Alert Settings
     public bool AreAlertsEnabled { get; private set; }
@@ -189,6 +193,13 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         LunchWindowStart = windowStart;
         LunchWindowEnd = windowEnd;
         PaidLunchMinutes = paidLunchMinutes;
+    }
+
+    public void UpdateDoubleTapMinutes(int minutes)
+    {
+        if (minutes < 1 || minutes > MaxDoubleTapMinutes)
+            throw new DomainException($"El toque doble debe estar entre 1 y {MaxDoubleTapMinutes} minutos");
+        DoubleTapMinutes = minutes;
     }
 
     public void SetLunchWindowEnabled(bool enabled)

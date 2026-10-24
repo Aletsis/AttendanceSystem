@@ -93,6 +93,26 @@
         <TemplateColumn Title="Tipo (Asignación)">
             <CellTemplate>
                 <div class="d-flex align-center gap-2">
+                    @if (context.Item.IsVoided)
+                    {
+                        <MudTooltip Text="@($"{(context.Item.WasCorrected ? "Corregido" : "Anulado")} por {context.Item.VoidedBy}: {context.Item.VoidReason}")">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined" Style="text-decoration: line-through">
+                                @(context.Item.WasCorrected ? "Corregido (no cuenta)" : "Anulado (no cuenta)")
+                            </MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                    @if (context.Item.IsCorrection)
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Text">Hora corregida</MudChip>
+                    }
+                    @if (context.Item.IsManual)
+                    {
+                        <MudTooltip Text="@($"Manual: {context.Item.RegisteredBy} — {context.Item.ManualReason}")">
+                            <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Text">Manual</MudChip>
+                        </MudTooltip>
+                    }
                     <MudChip Size="Size.Small" Color="@GetEntryTypeColor(context.Item.EntryType)" Variant="Variant.Text">
                         @context.Item.EntryType
                         @if (context.Item.AssignedDate.HasValue)
@@ -110,6 +130,7 @@
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar (dejar vacío)</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Restaurar"))">Restaurar cálculo automático</MudMenuItem>
                     </MudMenu>
+                    }
                     }
                 </div>
             </CellTemplate>

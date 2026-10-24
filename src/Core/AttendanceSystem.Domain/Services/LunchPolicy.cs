@@ -8,11 +8,12 @@ namespace AttendanceSystem.Domain.Services;
 /// <item>Con la ventana de comida activa, la primera ausencia que se traslapa con la ventana global se clasifica sola
 /// como comida (RH puede cambiarla). Apagada, toda ausencia queda pendiente.</item>
 /// <item>De la comida sólo se descuenta el excedente sobre <see cref="PaidMinutes"/> (global, o la del turno).</item>
-/// <item>Una ausencia de hasta 15 min es doble toque.</item>
+/// <item>Una ausencia de hasta <see cref="DoubleTapMinutes"/> (15 min por defecto) es doble toque.</item>
 /// <item>Un marcaje intermedio sin pareja no es salida temporal ni se descuenta: es una incidencia para revisión.</item>
 /// </list>
 /// </summary>
-public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int PaidMinutes, bool WindowEnabled = true)
+/// <param name="DoubleTapMinutes">Caso 14: dos checadas a esta distancia o menos son un toque doble (configurable).</param>
+public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int PaidMinutes, bool WindowEnabled = true, int DoubleTapMinutes = LunchPolicy.DoubleTapMaxMinutes)
 {
     public static readonly TimeSpan DefaultWindowStart = new(12, 30, 0);
     public static readonly TimeSpan DefaultWindowEnd = new(15, 0, 0);
@@ -61,7 +62,7 @@ public sealed record LunchPolicy(TimeSpan WindowStart, TimeSpan WindowEnd, int P
             }
 
             var minutes = (p.ReturnCivil.Value - p.ExitCivil).TotalMinutes;
-            if (minutes <= DoubleTapMaxMinutes) kinds[i] = IntermediateKind.DoubleTap;
+            if (minutes <= DoubleTapMinutes) kinds[i] = IntermediateKind.DoubleTap;
             else if (!lunchTaken && Overlaps(p.ExitCivil, p.ReturnCivil.Value))
             {
                 // La primera ausencia en la ventana es la comida; las demás son salidas temporales.

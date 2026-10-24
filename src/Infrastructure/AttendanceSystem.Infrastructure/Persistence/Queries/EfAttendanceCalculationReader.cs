@@ -67,7 +67,8 @@ public sealed class EfAttendanceCalculationReader : IAttendanceCalculationReader
         var expandedStartUtc = startWork.AddDays(-1).ToDateTime(TimeOnly.MinValue);
         var expandedEndUtc = endWork.AddDays(1).ToDateTime(TimeOnly.MaxValue);
         var records = await _context.AttendanceRecords
-            .Where(x => ids.Contains(x.EmployeeId) &&
+            // Caso 14: los marcajes anulados no participan en el cálculo.
+            .Where(x => ids.Contains(x.EmployeeId) && x.VoidedAt == null &&
                         ((x.WorkDate.HasValue && x.WorkDate.Value >= startWork && x.WorkDate.Value <= endWork) ||
                          (!x.WorkDate.HasValue && x.CheckTime >= expandedStartUtc && x.CheckTime <= expandedEndUtc)))
             .ToListAsync(cancellationToken);
@@ -87,7 +88,7 @@ public sealed class EfAttendanceCalculationReader : IAttendanceCalculationReader
     {
         if (recordIds.Count == 0) return Array.Empty<AttendanceRecord>();
         var ids = recordIds.Distinct().ToList();
-        return await _context.AttendanceRecords.Where(r => ids.Contains(r.Id)).ToListAsync(cancellationToken);
+        return await _context.AttendanceRecords.Where(r => ids.Contains(r.Id) && r.VoidedAt == null).ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyList<DailyAttendance>> GetDailiesAsync(IReadOnlyCollection<EmployeeId> employeeIds, DateTime start, DateTime end, CancellationToken cancellationToken)

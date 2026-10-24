@@ -47,7 +47,8 @@ public sealed record UpdateSystemConfigurationCommand(
     int? PaidLunchMinutes = null,
     TimeSpan? NightLunchWindowStart = null,
     TimeSpan? NightLunchWindowEnd = null,
-    bool? LunchWindowEnabled = null) : IRequest<Result<Guid>>;
+    bool? LunchWindowEnabled = null,
+    int? DoubleTapMinutes = null) : IRequest<Result<Guid>>;
 
 public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<UpdateSystemConfigurationCommand, Result<Guid>>
 {
@@ -122,6 +123,11 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
         if (command.LunchWindowEnabled.HasValue)
         {
             config.SetLunchWindowEnabled(command.LunchWindowEnabled.Value);
+        }
+
+        if (command.DoubleTapMinutes.HasValue)
+        {
+            config.UpdateDoubleTapMinutes(command.DoubleTapMinutes.Value);
         }
 
         if (command.NightLunchWindowStart.HasValue || command.NightLunchWindowEnd.HasValue)

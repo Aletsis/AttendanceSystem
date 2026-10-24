@@ -192,7 +192,12 @@ internal sealed class InMemoryAttendanceRecordRepository : IAttendanceRepository
 
     public void Detach(AttendanceRecord record) { }
 
-    public void Remove(AttendanceRecord record) => _store.Records.Remove(record);
+    public Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<PunchDaySummary>>(_store.Records
+            .Where(r => !r.IsVoided && r.WorkDate is { } d && d >= fromDate && d <= toDate)
+            .GroupBy(r => (r.EmployeeId, r.WorkDate!.Value, r.DeviceId))
+            .Select(g => new PunchDaySummary(g.Key.EmployeeId, g.Key.Item2, g.Key.DeviceId, g.Count()))
+            .ToList());
 
     public Task<IReadOnlyList<AttendanceRecord>> GetByDeviceAndDateRangeAsync(DeviceId deviceId, DateTime startDateTime, DateTime endDateTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<AttendanceRecord>> GetByDownloadLogIdAsync(DownloadLogId downloadLogId, CancellationToken cancellationToken = default) => throw new NotSupportedException();

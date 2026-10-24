@@ -2,8 +2,8 @@ namespace AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 
 /// <summary>
 /// Reinterpretación auditada de los marcajes de un reloj en un rango de fechas: con la zona correcta (el reloj marcaba
-/// bien pero se interpretó en otra zona) y/o con un desfase (el reloj marcaba una hora equivocada). Conserva los valores
-/// anteriores de cada marcaje.
+/// bien pero se interpretó en otra zona) y/o con un desfase (el reloj marcaba una hora equivocada). Caso 14: el marcaje
+/// original no se modifica; se anula y lo reemplaza un marcaje corregido.
 /// </summary>
 public sealed class PunchTimeCorrection : AggregateRoot<Guid>
 {
@@ -41,11 +41,13 @@ public sealed class PunchTimeCorrection : AggregateRoot<Guid>
         };
     }
 
-    /// <summary>Aplica la corrección al marcaje y registra sus valores anteriores.</summary>
-    public void Apply(AttendanceRecord record, DateTime newCheckTimeUtc, DateTime newCivilTime, DateOnly newWorkDate, string newTimeZoneId)
+    /// <summary>Crea el marcaje corregido, anula el original apuntando a él y registra ambos.</summary>
+    public AttendanceRecord Apply(AttendanceRecord record, DateTime newCheckTimeUtc, DateTime newCivilTime, DateOnly newWorkDate, string newTimeZoneId)
     {
-        _entries.Add(new PunchTimeCorrectionEntry(Id, record, newCheckTimeUtc, newCivilTime, newWorkDate, newTimeZoneId));
-        record.CorrectTime(newCheckTimeUtc, newCivilTime, newWorkDate, newTimeZoneId);
+        var corrected = record.CorrectedCopy(newCheckTimeUtc, newCivilTime, newWorkDate, newTimeZoneId);
+        record.Void(AppliedBy, $"Corrección de hora del reloj: {Reason}", corrected.Id, AppliedAtUtc);
+        _entries.Add(new PunchTimeCorrectionEntry(Id, record, corrected));
+        return corrected;
     }
 
     public void Skip() => SkippedCount++;
@@ -65,22 +67,25 @@ public sealed class PunchTimeCorrectionEntry
     public DateTime NewCivilTime { get; private set; }
     public DateOnly NewWorkDate { get; private set; }
     public string NewTimeZoneId { get; private set; } = null!;
+    /// <summary>Marcaje corregido que reemplaza al original (caso 14); nulo en correcciones anteriores.</summary>
+    public AttendanceRecordId? NewRecordId { get; private set; }
 
     private PunchTimeCorrectionEntry() { }
 
-    internal PunchTimeCorrectionEntry(Guid correctionId, AttendanceRecord record, DateTime newCheckTimeUtc, DateTime newCivilTime, DateOnly newWorkDate, string newTimeZoneId)
+    internal PunchTimeCorrectionEntry(Guid correctionId, AttendanceRecord original, AttendanceRecord corrected)
     {
         Id = Guid.NewGuid();
         CorrectionId = correctionId;
-        AttendanceRecordId = record.Id;
-        EmployeeId = record.EmployeeId.Value;
-        OldCheckTimeUtc = record.CheckTime;
-        OldCivilTime = record.OriginalCheckTime;
-        OldWorkDate = record.WorkDate;
-        OldTimeZoneId = record.TimeZoneId;
-        NewCheckTimeUtc = newCheckTimeUtc;
-        NewCivilTime = DateTime.SpecifyKind(newCivilTime, DateTimeKind.Unspecified);
-        NewWorkDate = newWorkDate;
-        NewTimeZoneId = newTimeZoneId;
+        AttendanceRecordId = original.Id;
+        EmployeeId = original.EmployeeId.Value;
+        OldCheckTimeUtc = original.CheckTime;
+        OldCivilTime = original.OriginalCheckTime;
+        OldWorkDate = original.WorkDate;
+        OldTimeZoneId = original.TimeZoneId;
+        NewCheckTimeUtc = corrected.CheckTime;
+        NewCivilTime = DateTime.SpecifyKind(corrected.OriginalCheckTime!.Value, DateTimeKind.Unspecified);
+        NewWorkDate = corrected.WorkDate!.Value;
+        NewTimeZoneId = corrected.TimeZoneId!;
+        NewRecordId = corrected.Id;
     }
 }

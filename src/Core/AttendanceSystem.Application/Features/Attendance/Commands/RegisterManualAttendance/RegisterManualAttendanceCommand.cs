@@ -77,7 +77,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
 
         // Única restricción de captura: no puede existir otro marcaje del empleado en el mismo minuto.
         var nearby = await _attendanceRepo.GetByDateRangeAsync(workDate.AddDays(-1), workDate.AddDays(1), employeeId, cancellationToken);
-        if (nearby.Any(r => TruncateToMinute(r.CheckTime) == utcCheckTime))
+        if (nearby.Any(r => !r.IsVoided && TruncateToMinute(r.CheckTime) == utcCheckTime))
         {
             return Result.Failure($"El empleado {employeeId.Value} ya tiene un marcaje el {civilCheckTime:dd/MM/yyyy} a las {civilCheckTime:HH:mm}.");
         }

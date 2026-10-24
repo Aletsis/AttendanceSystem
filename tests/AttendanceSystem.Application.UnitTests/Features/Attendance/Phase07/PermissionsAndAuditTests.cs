@@ -92,7 +92,7 @@ public class PermissionsAndAuditTests
     [InlineData(Permissions.DevicesManage, false)]
     [InlineData(Permissions.DevicesDownloadAll, false)]
     [InlineData(Permissions.ClockAlertsResolve, false)]
-    [InlineData(Permissions.AttendanceDeleteManualPunch, false)]
+    [InlineData(Permissions.AttendanceVoidManualPunch, false)]
     [InlineData(Permissions.SettingsManage, false)]
     [InlineData(Permissions.BackupsManage, false)]
     [InlineData(Permissions.UsersManage, false)]
@@ -253,10 +253,10 @@ public class PermissionsAndAuditTests
                 currentUser: User(h), history: h.AdjustmentRepository)
             .Handle(new RegisterManualAttendanceCommand(Emp.Value, civil, AttendanceRegressionFixtures.TimeZoneMexicoCity, reason), CancellationToken.None);
 
-    private static Task<Result> DeleteAsync(AttendanceRecalculationHarness h, AttendanceRecord record, string? reason) =>
-        new DeleteManualAttendanceCommandHandler(h.AttendanceRepository, h.AdjustmentRepository, h.Consolidations, NoOpConsolidationWakeup.Instance,
-                h.UnitOfWork, h.LockService, h.Sender, NullLogger<DeleteManualAttendanceCommandHandler>.Instance, User(h))
-            .Handle(new DeleteManualAttendanceCommand(record.Id.Value.ToString(), reason), CancellationToken.None);
+    private static Task<Result> VoidAsync(AttendanceRecalculationHarness h, AttendanceRecord record, string? reason) =>
+        new VoidManualAttendanceCommandHandler(h.AttendanceRepository, h.AdjustmentRepository, h.Consolidations, NoOpConsolidationWakeup.Instance,
+                h.UnitOfWork, h.LockService, h.Sender, NullLogger<VoidManualAttendanceCommandHandler>.Instance, User(h))
+            .Handle(new VoidManualAttendanceCommand(record.Id.Value.ToString(), reason), CancellationToken.None);
 
     private static DailyAttendance Day(AttendanceRecalculationHarness h) => h.Store.Dailies.Single(d => d.EmployeeId == Emp && d.Date == Monday);
 
@@ -294,7 +294,7 @@ public class PermissionsAndAuditTests
     }
 
     [Fact]
-    public async Task DeletingAManualPunch_RemovesItsDecisions_RecalculatesAndLeavesItInTheHistory()
+    public async Task VoidingAManualPunch_KeepsIt_RemovesItsDecisions_RecalculatesAndLeavesItInTheHistory()
     {
         var h = Week();
         await CaptureAsync(h, Monday.AddHours(18), "Salida tarde");
@@ -304,23 +304,25 @@ public class PermissionsAndAuditTests
             .IsSuccess.Should().BeTrue();
         Day(h).CivilCheckOut!.Value.Hour.Should().Be(18);
 
-        (await DeleteAsync(h, manual, null)).Error.Should().Be(AdjustmentReasons.RequiredMessage);
-        (await DeleteAsync(h, manual, "Se capturó por error")).IsSuccess.Should().BeTrue();
+        (await VoidAsync(h, manual, null)).Error.Should().Be(AdjustmentReasons.RequiredMessage);
+        (await VoidAsync(h, manual, "Se capturó por error")).IsSuccess.Should().BeTrue();
 
-        h.Store.Records.Should().NotContain(manual);
+        h.Store.Records.Should().Contain(manual, "los marcajes son inmutables: se anulan, no se borran");
+        manual.IsVoided.Should().BeTrue();
+        manual.VoidReason.Should().Be("Se capturó por error");
         h.Store.Adjustments.Single().DecidedRecordIds().Should().NotContain(manual.Id);
         Day(h).CivilCheckOut!.Value.Hour.Should().Be(17);
-        h.Store.AdjustmentHistory.Should().Contain(e => e.Action == AdjustmentReasons.DeleteManualPunch && e.Reason == "Se capturó por error" && e.Before.Contains("Salida tarde"));
+        h.Store.AdjustmentHistory.Should().Contain(e => e.Action == AdjustmentReasons.VoidManualPunch && e.Reason == "Se capturó por error" && e.Before.Contains("Salida tarde"));
     }
 
     [Fact]
-    public async Task OnlyManualPunchesCanBeDeleted()
+    public async Task OnlyManualPunchesCanBeVoided()
     {
         var h = Week();
         var devicePunch = h.Store.Records.First();
 
-        (await DeleteAsync(h, devicePunch, "Prueba")).Error.Should().Be("Sólo se pueden eliminar marcajes manuales.");
-        h.Store.Records.Should().Contain(devicePunch);
+        (await VoidAsync(h, devicePunch, "Prueba")).Error.Should().Be("Sólo se pueden anular marcajes manuales.");
+        devicePunch.IsVoided.Should().BeFalse();
     }
 
     [Fact]

@@ -24,6 +24,47 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
 
     public bool IsManual => Source == ManualSource;
 
+    /// <summary>
+    /// Caso 14: los marcajes son inmutables. Uno equivocado se anula (con autor y motivo) y, si se corrigió, apunta al
+    /// marcaje que lo reemplaza; el cálculo sólo usa marcajes vigentes.
+    /// </summary>
+    public DateTime? VoidedAt { get; private set; }
+    public string? VoidedBy { get; private set; }
+    public string? VoidReason { get; private set; }
+    public AttendanceRecordId? ReplacedByRecordId { get; private set; }
+
+    /// <summary>Marcaje original al que este corrige (caso 14).</summary>
+    public AttendanceRecordId? ReplacesRecordId { get; private set; }
+
+    public bool IsVoided => VoidedAt.HasValue;
+
+    public void Void(string voidedBy, string reason, AttendanceRecordId? replacedBy = null, DateTime? voidedAt = null)
+    {
+        if (IsVoided) throw new DomainException("El marcaje ya está anulado.");
+        if (string.IsNullOrWhiteSpace(reason)) throw new DomainException("Indique el motivo.");
+        VoidedBy = string.IsNullOrWhiteSpace(voidedBy) ? "Sistema" : voidedBy;
+        VoidReason = reason.Trim();
+        VoidedAt = voidedAt ?? DateTime.UtcNow;
+        ReplacedByRecordId = replacedBy;
+    }
+
+    /// <summary>
+    /// Marcaje corregido de éste (nuevo instante, hora civil, fecha laboral y zona); el llamador anula el original con
+    /// <see cref="Void"/>. Conserva reloj, método, tipo original y fuente.
+    /// </summary>
+    public AttendanceRecord CorrectedCopy(DateTime checkTimeUtc, DateTime civilTime, DateOnly workDate, string timeZoneId)
+    {
+        if (checkTimeUtc.Kind != DateTimeKind.Utc) throw new DomainException("El instante corregido debe estar en UTC");
+        var copy = Create(EmployeeId, DeviceId, checkTimeUtc, VerifyMethod, OriginalCheckType ?? CheckType, workDate,
+            DateTime.SpecifyKind(civilTime, DateTimeKind.Unspecified), timeZoneId, Source);
+        copy.ReplacesRecordId = Id;
+        copy.DownloadLogId = DownloadLogId;
+        copy.RegisteredBy = RegisteredBy;
+        copy.RegisteredAt = RegisteredAt;
+        copy.Reason = Reason;
+        return copy;
+    }
+
     public void RecordManualCapture(string registeredBy, string reason, DateTime? registeredAt = null)
     {
         RegisteredBy = string.IsNullOrWhiteSpace(registeredBy) ? "Sistema" : registeredBy;
@@ -138,20 +179,6 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
         {
             TimeZoneId = timeZoneId;
         }
-    }
-
-    /// <summary>
-    /// Corrige la hora del marcaje (sólo desde <see cref="PunchTimeCorrection"/>, que conserva los valores anteriores):
-    /// nuevo instante, hora civil, fecha laboral y zona. Su jornada se recalcula después.
-    /// </summary>
-    internal void CorrectTime(DateTime checkTimeUtc, DateTime civilTime, DateOnly workDate, string timeZoneId)
-    {
-        if (checkTimeUtc.Kind != DateTimeKind.Utc) throw new DomainException("El instante corregido debe estar en UTC");
-        CheckTime = checkTimeUtc;
-        OriginalCheckTime = DateTime.SpecifyKind(civilTime, DateTimeKind.Unspecified);
-        WorkDate = workDate;
-        TimeZoneId = timeZoneId;
-        ResetStatus();
     }
 
     public DateTime GetCivilTime(string? fallbackTimeZoneId = null)

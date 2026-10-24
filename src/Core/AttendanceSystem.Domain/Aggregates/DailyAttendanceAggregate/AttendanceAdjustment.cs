@@ -329,6 +329,33 @@ public sealed class AttendanceAdjustment : Entity<Guid>
         Touch(updatedBy, "Actualización de configuración de horas extras");
     }
 
+    /// <summary>
+    /// Caso 14: el marcaje corregido reemplaza al original en todas las decisiones (posición, exclusión y clasificación
+    /// de salida). Devuelve si alguna lo usaba.
+    /// </summary>
+    public bool ReplaceRecord(AttendanceRecordId original, AttendanceRecordId replacement, DateTime replacementTime, string updatedBy)
+    {
+        var changed = false;
+        foreach (var position in AllPositions.Where(p => OverrideRecord(p) == original).ToList())
+        {
+            var kind = OverrideKind(position);
+            SetPosition(position, kind, replacement, kind == PositionOverrideKind.Assigned ? replacementTime : null);
+            changed = true;
+        }
+        if (ExcludedPunches.Remove(original.Value))
+        {
+            ExcludedPunches.Add(replacement.Value);
+            changed = true;
+        }
+        if (ExitClassifications.Remove(original.Value, out var status))
+        {
+            ExitClassifications[replacement.Value] = status;
+            changed = true;
+        }
+        if (changed) Touch(updatedBy, "Marcaje corregido");
+        return changed;
+    }
+
     /// <summary>Caso 11: clasifica una salida (por su marcaje de salida); null retira la decisión.</summary>
     public void ClassifyExit(Guid exitRecordId, TemporaryExitStatus? status, string updatedBy, string? note = null)
     {

@@ -68,14 +68,14 @@ public sealed class ClearDailyRestDayOverrideCommandHandler : IRequestHandler<Cl
 }
 
 /// <summary>
-/// Caso 13: borra un marcaje manual (sólo backend, sin pantalla todavía). Exige motivo; retira las decisiones que lo
-/// usaban, deja el movimiento en el historial y recalcula las jornadas que pudo tocar (la previa si el turno cruza la
-/// medianoche).
+/// Caso 13/14: anula un marcaje manual (sólo backend, sin pantalla todavía). Los marcajes son inmutables: no se borra,
+/// queda anulado con autor y motivo y el cálculo lo ignora. Retira las decisiones que lo usaban, deja el movimiento en
+/// el historial y recalcula las jornadas que pudo tocar (la previa si el turno cruza la medianoche).
 /// </summary>
-[RequiresPermission(Permissions.AttendanceDeleteManualPunch)]
-public sealed record DeleteManualAttendanceCommand(string RecordId, string? Reason) : IRequest<Result>;
+[RequiresPermission(Permissions.AttendanceVoidManualPunch)]
+public sealed record VoidManualAttendanceCommand(string RecordId, string? Reason) : IRequest<Result>;
 
-public sealed class DeleteManualAttendanceCommandHandler : IRequestHandler<DeleteManualAttendanceCommand, Result>
+public sealed class VoidManualAttendanceCommandHandler : IRequestHandler<VoidManualAttendanceCommand, Result>
 {
     private readonly IAttendanceRepository _records;
     private readonly IAttendanceAdjustmentRepository _adjustments;
@@ -85,9 +85,9 @@ public sealed class DeleteManualAttendanceCommandHandler : IRequestHandler<Delet
     private readonly IAttendanceCalculationLockService _lockService;
     private readonly ISender _sender;
     private readonly ICurrentUserService? _currentUser;
-    private readonly ILogger<DeleteManualAttendanceCommandHandler> _logger;
+    private readonly ILogger<VoidManualAttendanceCommandHandler> _logger;
 
-    public DeleteManualAttendanceCommandHandler(
+    public VoidManualAttendanceCommandHandler(
         IAttendanceRepository records,
         IAttendanceAdjustmentRepository adjustments,
         IAttendanceConsolidationRepository consolidations,
@@ -95,7 +95,7 @@ public sealed class DeleteManualAttendanceCommandHandler : IRequestHandler<Delet
         IUnitOfWork unitOfWork,
         IAttendanceCalculationLockService lockService,
         ISender sender,
-        ILogger<DeleteManualAttendanceCommandHandler> logger,
+        ILogger<VoidManualAttendanceCommandHandler> logger,
         ICurrentUserService? currentUser = null)
     {
         _records = records;
@@ -109,16 +109,17 @@ public sealed class DeleteManualAttendanceCommandHandler : IRequestHandler<Delet
         _currentUser = currentUser;
     }
 
-    public async Task<Result> Handle(DeleteManualAttendanceCommand request, CancellationToken cancellationToken)
+    public async Task<Result> Handle(VoidManualAttendanceCommand request, CancellationToken cancellationToken)
     {
-        if (AdjustmentReasons.Validate(AdjustmentReasons.DeleteManualPunch, request.Reason) is { } missingReason)
+        if (AdjustmentReasons.Validate(AdjustmentReasons.VoidManualPunch, request.Reason) is { } missingReason)
         {
             return Result.Failure(missingReason);
         }
 
         var record = await _records.GetByIdAsync(AttendanceRecordId.From(request.RecordId), cancellationToken);
         if (record == null) return Result.Failure("Marcaje no encontrado.");
-        if (!record.IsManual) return Result.Failure("Sólo se pueden eliminar marcajes manuales.");
+        if (!record.IsManual) return Result.Failure("Sólo se pueden anular marcajes manuales.");
+        if (record.IsVoided) return Result.Failure("El marcaje ya está anulado.");
 
         var author = _currentUser is { IsAuthenticated: true, UserName: { Length: > 0 } name } ? name : "Sistema";
         var workDate = record.GetWorkDate().ToDateTime(TimeOnly.MinValue);
@@ -128,21 +129,22 @@ public sealed class DeleteManualAttendanceCommandHandler : IRequestHandler<Delet
 
         var written = await ExclusiveAttendanceWrite.RunAsync(_unitOfWork, _lockService, new[] { record.EmployeeId }, async () =>
         {
-            // Las decisiones que asignaban o excluían el marcaje dejan de existir con él.
+            // Las decisiones que asignaban o excluían el marcaje dejan de aplicar.
             foreach (var adjustment in await _adjustments.GetByDateRangeAsync(from, to, employeeId: record.EmployeeId, cancellationToken: cancellationToken))
             {
                 var before = adjustment.Describe();
                 if (!adjustment.RestoreAutomatic(record.Id, author, request.Reason)) continue;
                 _adjustments.Update(adjustment);
                 await _adjustments.AddHistoryAsync(
-                    AttendanceAdjustmentHistory.Record(adjustment, AdjustmentReasons.DeleteManualPunch, before, request.Reason, author), cancellationToken);
+                    AttendanceAdjustmentHistory.Record(adjustment, AdjustmentReasons.VoidManualPunch, before, request.Reason, author), cancellationToken);
             }
 
-            _records.Remove(record);
+            record.Void(author, request.Reason!);
+            await _records.UpdateAsync(record, cancellationToken);
             await _adjustments.AddHistoryAsync(AttendanceAdjustmentHistory.Event(
-                record.EmployeeId, workDate, AdjustmentReasons.DeleteManualPunch,
+                record.EmployeeId, workDate, AdjustmentReasons.VoidManualPunch,
                 $"marcaje manual {civil:dd/MM/yyyy HH:mm} (registró {record.RegisteredBy ?? "sin dato"}: {record.Reason ?? "sin motivo"})",
-                "", request.Reason, author), cancellationToken);
+                "anulado", request.Reason, author), cancellationToken);
 
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await _consolidations.RequestAsync(record.EmployeeId, from, to, cancellationToken);
@@ -150,7 +152,7 @@ public sealed class DeleteManualAttendanceCommandHandler : IRequestHandler<Delet
         }, cancellationToken);
         if (written.IsFailure) return written;
 
-        _logger.LogInformation("Marcaje manual {RecordId} de {EmployeeId} eliminado por {Author}.", request.RecordId, record.EmployeeId.Value, author);
+        _logger.LogInformation("Marcaje manual {RecordId} de {EmployeeId} anulado por {Author}.", request.RecordId, record.EmployeeId.Value, author);
         _wakeup.Signal();
         try
         {
@@ -158,7 +160,7 @@ public sealed class DeleteManualAttendanceCommandHandler : IRequestHandler<Delet
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _logger.LogWarning(ex, "El marcaje se eliminó, pero el recálculo inmediato falló; la consolidación durable lo aplicará.");
+            _logger.LogWarning(ex, "El marcaje se anuló, pero el recálculo inmediato falló; la consolidación durable lo aplicará.");
         }
         return Result.Success();
     }
@@ -207,7 +209,7 @@ public sealed class GetAttendanceHistoryQueryHandler : IRequestHandler<GetAttend
         "SalidaTemporal" => "Clasificó una salida temporal",
         "HorasExtras" => "Cambió la autorización de extras",
         AdjustmentReasons.ManualPunch => "Agregó un marcaje manual",
-        AdjustmentReasons.DeleteManualPunch => "Eliminó un marcaje manual",
+        AdjustmentReasons.VoidManualPunch => "Anuló un marcaje manual",
         _ => action
     };
 }

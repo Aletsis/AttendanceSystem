@@ -712,7 +712,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         }
 
         public void Detach(AttendanceRecord record) => _inner.Detach(record);
-        public void Remove(AttendanceRecord record) => _inner.Remove(record);
+        public Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) => _inner.GetPunchDaySummaryAsync(fromDate, toDate, cancellationToken);
         public Task<AttendanceRecord?> GetByIdAsync(AttendanceRecordId id, CancellationToken cancellationToken = default) => _inner.GetByIdAsync(id, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetByDateRangeAsync(DateOnly startDate, DateOnly endDate, EmployeeId? employeeId = null, CancellationToken cancellationToken = default) => _inner.GetByDateRangeAsync(startDate, endDate, employeeId, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetByDeviceAndDateRangeAsync(DeviceId deviceId, DateTime startDateTime, DateTime endDateTime, CancellationToken cancellationToken = default) => _inner.GetByDeviceAndDateRangeAsync(deviceId, startDateTime, endDateTime, cancellationToken);

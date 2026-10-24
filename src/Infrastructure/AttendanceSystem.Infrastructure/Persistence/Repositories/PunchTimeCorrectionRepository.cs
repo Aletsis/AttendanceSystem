@@ -13,7 +13,7 @@ public sealed class PunchTimeCorrectionRepository : IPunchTimeCorrectionReposito
 
     public async Task<IReadOnlyList<AttendanceRecord>> GetDeviceRecordsAsync(DeviceId deviceId, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default)
         => await _context.AttendanceRecords
-            .Where(r => r.DeviceId == deviceId && r.WorkDate >= fromDate && r.WorkDate <= toDate)
+            .Where(r => r.DeviceId == deviceId && r.WorkDate >= fromDate && r.WorkDate <= toDate && r.VoidedAt == null)
             .OrderBy(r => r.CheckTime)
             .ToListAsync(cancellationToken);
 

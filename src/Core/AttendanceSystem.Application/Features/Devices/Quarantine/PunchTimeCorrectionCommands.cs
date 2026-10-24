@@ -46,6 +46,7 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
     private readonly ITimeNormalizer _timeNormalizer;
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ICurrentUserService? _currentUser;
+    private readonly IAttendanceAdjustmentRepository? _adjustments;
     private readonly ILogger<CorrectDevicePunchTimesCommandHandler> _logger;
 
     public CorrectDevicePunchTimesCommandHandler(
@@ -60,8 +61,10 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver timeZoneResolver,
         ICurrentUserService? currentUser = null,
-        ILogger<CorrectDevicePunchTimesCommandHandler>? logger = null)
+        ILogger<CorrectDevicePunchTimesCommandHandler>? logger = null,
+        IAttendanceAdjustmentRepository? adjustments = null)
     {
+        _adjustments = adjustments;
         _devices = devices;
         _corrections = corrections;
         _attendance = attendance;
@@ -123,14 +126,17 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
             var assignments = await _assignments.GetByRecordIdsAsync(moving.Select(m => m.Record.Id).ToList(), cancellationToken);
             foreach (var assignment in assignments) _assignments.Remove(assignment);
 
-            foreach (var m in moving)
-            {
-                correction.Apply(m.Record, m.NewUtc, m.Row.NewCivil, m.Row.NewWorkDate, m.Row.NewTimeZone);
-            }
-
-            // La identidad (empleado, instante) es única y un marcaje puede ocupar el instante que deja otro: EF ordena
-            // las actualizaciones por el índice único. Con un mismo desfase para todos no hay ciclos de intercambio.
+            // Caso 14: el original no se modifica; se anula y lo reemplaza un marcaje corregido.
+            var replacements = moving
+                .Select(m => (Original: m.Record, Corrected: correction.Apply(m.Record, m.NewUtc, m.Row.NewCivil, m.Row.NewWorkDate, m.Row.NewTimeZone)))
+                .ToList();
             await _corrections.AddAsync(correction, cancellationToken);
+            await RepointDecisionsAsync(replacements, author, cancellationToken);
+
+            // La identidad (empleado, instante) es única entre los marcajes vigentes y un corregido puede ocupar el instante
+            // de otro original: primero se anulan los originales y después se insertan los corregidos.
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _attendance.AddRangeAsync(replacements.Select(r => r.Corrected).ToList(), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
 
             ranges = moving
@@ -157,6 +163,27 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
 
     private sealed record Planned(AttendanceRecord Record, DateTime NewUtc, PunchCorrectionRowDto Row);
 
+    /// <summary>Las decisiones de RH que usaban un marcaje corregido pasan a su reemplazo.</summary>
+    private async Task RepointDecisionsAsync(IReadOnlyList<(AttendanceRecord Original, AttendanceRecord Corrected)> replacements, string author, CancellationToken cancellationToken)
+    {
+        if (_adjustments == null) return;
+        foreach (var group in replacements.GroupBy(r => r.Original.EmployeeId))
+        {
+            var dates = group.SelectMany(r => new[] { r.Original.GetWorkDate(), r.Corrected.GetWorkDate() }).ToList();
+            var from = dates.Min().AddDays(-1).ToDateTime(TimeOnly.MinValue);
+            var to = dates.Max().AddDays(1).ToDateTime(TimeOnly.MinValue);
+            foreach (var adjustment in await _adjustments.GetByDateRangeAsync(from, to, employeeId: group.Key, cancellationToken: cancellationToken))
+            {
+                var changed = false;
+                foreach (var (original, corrected) in group)
+                {
+                    changed |= adjustment.ReplaceRecord(original.Id, corrected.Id, corrected.CheckTime, author);
+                }
+                if (changed) _adjustments.Update(adjustment);
+            }
+        }
+    }
+
     /// <summary>
     /// Nueva hora de cada marcaje. Se omiten (con motivo) los que no cambian y los que chocarían con otro marcaje del
     /// mismo empleado en el instante corregido.
@@ -177,7 +204,7 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
         var movingIds = drafts.Where(d => !d.Unchanged).Select(d => d.Record.Id).ToHashSet();
         var wanted = drafts.Where(d => !d.Unchanged).Select(d => (d.Record.EmployeeId, d.NewUtc)).Distinct().ToList();
         var occupied = (await _attendance.GetByIdentitiesAsync(wanted, cancellationToken))
-            .Where(r => !movingIds.Contains(r.Id))
+            .Where(r => !movingIds.Contains(r.Id) && !r.IsVoided)
             .Select(r => (r.EmployeeId, r.CheckTime))
             .ToHashSet();
 

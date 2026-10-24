@@ -171,22 +171,30 @@ public class PostgresClockTimeCorrectionTests : IClassFixture<PostgresTestDataba
         applied.Applied.Should().BeTrue();
 
         await using var verify = _fixture.CreateDbContext();
-        var anaNow = await verify.AttendanceRecords.Where(r => r.EmployeeId == ana).OrderBy(r => r.CheckTime).ToListAsync();
+        var anaNow = await verify.AttendanceRecords.Where(r => r.EmployeeId == ana && r.VoidedAt == null).OrderBy(r => r.CheckTime).ToListAsync();
         anaNow.Select(r => DateTime.SpecifyKind(r.OriginalCheckTime!.Value, DateTimeKind.Unspecified).Hour).Should().Equal(9, 10, 11);
         anaNow.Select(r => r.CheckTime.Hour).Should().Equal(14, 15, 16);
-        (await verify.AttendanceRecords.SingleAsync(r => r.Id == betoPunch.Id)).CheckTime.Should().Be(betoPunch.CheckTime, "el choque se omite");
+        // Caso 14: los originales no cambian; quedan anulados y apuntan a su marcaje corregido.
+        var anaOriginals = await verify.AttendanceRecords.Where(r => anaPunches.Select(p => p.Id).Contains(r.Id)).OrderBy(r => r.CheckTime).ToListAsync();
+        anaOriginals.Select(r => r.CheckTime).Should().Equal(anaPunches.Select(p => p.CheckTime));
+        anaOriginals.Should().OnlyContain(r => r.VoidedAt != null && r.VoidedBy != null && r.ReplacedByRecordId != null);
+        anaNow.Select(r => r.ReplacesRecordId).Should().BeEquivalentTo(anaOriginals.Select(r => (AttendanceRecordId?)r.Id));
+        var beto2 = await verify.AttendanceRecords.SingleAsync(r => r.Id == betoPunch.Id);
+        beto2.CheckTime.Should().Be(betoPunch.CheckTime, "el choque se omite");
+        beto2.VoidedAt.Should().BeNull();
         (await verify.PunchAssignments.AnyAsync(a => a.Id == anaPunches[0].Id)).Should().BeFalse("la asignación del marcaje corregido se rehace al recalcular");
 
         var correction = await verify.PunchTimeCorrections.Include(c => c.Entries).SingleAsync(c => c.Id == applied.CorrectionId);
         correction.Entries.Should().HaveCount(3);
         correction.SkippedCount.Should().Be(1);
-        correction.Entries.Should().OnlyContain(e => e.NewCheckTimeUtc - e.OldCheckTimeUtc == TimeSpan.FromHours(1));
+        correction.Entries.Should().OnlyContain(e => e.NewCheckTimeUtc - e.OldCheckTimeUtc == TimeSpan.FromHours(1) && e.NewRecordId != null);
         (await verify.AttendanceConsolidationRequests.AnyAsync(r => r.EmployeeId == ana)).Should().BeTrue();
 
         // Revertir en sentido contrario: cada marcaje ocupa el instante que deja el anterior.
         (await RunAsync(apply: true, offset: -60)).Corrected.Should().Be(4, "también se mueve el de Beto: a las 07:00 no choca");
         await using var reverted = _fixture.CreateDbContext();
-        (await reverted.AttendanceRecords.Where(r => r.EmployeeId == ana).OrderBy(r => r.CheckTime).Select(r => r.CheckTime).ToListAsync())
+        (await reverted.AttendanceRecords.Where(r => r.EmployeeId == ana && r.VoidedAt == null).OrderBy(r => r.CheckTime).Select(r => r.CheckTime).ToListAsync())
             .Should().Equal(anaPunches.Select(p => p.CheckTime));
+        (await reverted.AttendanceRecords.CountAsync(r => r.EmployeeId == ana)).Should().Be(9, "cada corrección agrega marcajes y conserva los anteriores");
     }
 }

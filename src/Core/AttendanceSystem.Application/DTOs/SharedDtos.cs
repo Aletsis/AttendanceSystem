@@ -200,7 +200,8 @@ public sealed record SystemConfigurationDto(
     int PaidLunchMinutes = 30,
     TimeSpan? NightLunchWindowStart = null,
     TimeSpan? NightLunchWindowEnd = null,
-    bool LunchWindowEnabled = true)
+    bool LunchWindowEnabled = true,
+    int DoubleTapMinutes = 15)
 {
     public SystemConfigurationDto() : this(string.Empty, null, TimeSpan.Zero, TimeSpan.Zero, false, false, null, false) { }
 }

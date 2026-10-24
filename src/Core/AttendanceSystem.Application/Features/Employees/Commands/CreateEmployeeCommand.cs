@@ -51,6 +51,9 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<CreateEmployeeCommandHandler> _logger;
     private readonly IPermissionService? _permissions;
+    private readonly IAttendanceRepository? _attendance;
+    private readonly IAttendanceConsolidationRepository? _consolidations;
+    private readonly IConsolidationWakeup? _wakeup;
 
     public CreateEmployeeCommandHandler(
         IEmployeeRepository employeeRepository,
@@ -60,9 +63,15 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
         IShiftRepository shiftRepository,
         IUnitOfWork unitOfWork,
         ILogger<CreateEmployeeCommandHandler> logger,
-        IPermissionService? permissions = null)
+        IPermissionService? permissions = null,
+        IAttendanceRepository? attendance = null,
+        IAttendanceConsolidationRepository? consolidations = null,
+        IConsolidationWakeup? wakeup = null)
     {
         _permissions = permissions;
+        _attendance = attendance;
+        _consolidations = consolidations;
+        _wakeup = wakeup;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
         _departmentRepository = departmentRepository;
@@ -172,6 +181,7 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
 
             _employeeRepository.Add(employee);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await RecalculateExistingPunchesAsync(employee, cancellationToken);
 
             var effectiveRestDays = employee.GetEffectiveRestDays();
 
@@ -223,6 +233,24 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             _logger.LogError(ex, "Error inesperado al crear empleado");
             return Result<EmployeeDto>.Failure("Error al crear el empleado");
         }
+    }
+
+    /// <summary>
+    /// Caso 14: si el reloj ya tenía marcajes de este ID (aviso de marcajes sin empleado), se calculan desde el ingreso.
+    /// </summary>
+    private async Task RecalculateExistingPunchesAsync(Employee employee, CancellationToken cancellationToken)
+    {
+        if (_attendance == null || _consolidations == null) return;
+        var today = DateTime.Today;
+        if (employee.HireDate.Date > today) return;
+
+        var punches = await _attendance.GetByDateRangeAsync(DateOnly.FromDateTime(employee.HireDate), DateOnly.FromDateTime(today), employee.Id, cancellationToken);
+        var first = punches.Where(r => !r.IsVoided).Select(r => r.GetWorkDate()).DefaultIfEmpty().Min();
+        if (first == default) return;
+
+        await _consolidations.RequestAsync(employee.Id, first.ToDateTime(TimeOnly.MinValue), today, cancellationToken);
+        _wakeup?.Signal();
+        _logger.LogInformation("Empleado {EmployeeId} dado de alta con marcajes previos desde {From:yyyy-MM-dd}: se recalcularán.", employee.Id.Value, first);
     }
 
     private static string GetDayName(int day) => day switch

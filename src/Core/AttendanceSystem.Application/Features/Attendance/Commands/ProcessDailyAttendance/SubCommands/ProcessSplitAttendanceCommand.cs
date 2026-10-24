@@ -25,7 +25,8 @@ public record ProcessSplitAttendanceCommand(
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
-    private const int DoubleTapThresholdMinutes = 15;
+    // Caso 14: configurable (Configuración → Tiempos y periodos); se toma de la política de la petición.
+    private int DoubleTapThresholdMinutes = LunchPolicy.DoubleTapMaxMinutes;
 
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IAttendanceRepository _attendanceRepo;
@@ -43,6 +44,7 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
 
     public async Task Handle(ProcessSplitAttendanceCommand request, CancellationToken cancellationToken)
     {
+        DoubleTapThresholdMinutes = (request.Lunch ?? LunchPolicy.Default).DoubleTapMinutes;
         if (!request.Shift.SecondBlockStartTime.HasValue || !request.Shift.SecondBlockEndTime.HasValue)
         {
             // F05-04: antes se retornaba sin crear la jornada y se perdía el ajuste. Se registra como un solo

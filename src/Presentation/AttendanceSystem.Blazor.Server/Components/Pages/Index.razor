@@ -207,6 +207,14 @@
             </MudCard>
         }
 
+        @if (_unmatchedPunches > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-4" Variant="Variant.Outlined">
+                Hay @_unmatchedPunches ID(s) con marcajes que no cuentan en la asistencia (no registrados, antes del ingreso o después de la baja).
+                <MudLink Href="/employees/unmatched-punches" Class="ml-2">Revisar</MudLink>
+            </MudAlert>
+        }
+
         <!-- Gestión de Personal -->
         <MudText Typo="Typo.h5" Class="mb-3">
             <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
@@ -483,6 +491,7 @@
 
 @code {
     private bool _isLoading = true;
+    private int _unmatchedPunches;
     private int _totalEmployees;
     private int _totalDevices;
     private int _totalBranches;
@@ -548,6 +557,19 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadStats();
+        try
+        {
+            if (await UiPermissions.HasAsync(Permissions.EmployeesView))
+            {
+                var to = DateOnly.FromDateTime(DateTime.Today);
+                var from = to.AddDays(-AttendanceSystem.Application.Features.Attendance.Queries.GetUnmatchedPunches.GetUnmatchedPunchesQueryHandler.DefaultLookbackDays);
+                _unmatchedPunches = (await Mediator.Send(new AttendanceSystem.Application.Features.Attendance.Queries.GetUnmatchedPunches.GetUnmatchedPunchesQuery(from, to)))?.Count ?? 0;
+            }
+        }
+        catch
+        {
+            _unmatchedPunches = 0;
+        }
     }
 
     private async Task LoadStats()
