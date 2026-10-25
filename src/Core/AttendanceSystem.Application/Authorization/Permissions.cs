@@ -64,6 +64,10 @@ public static class Permissions
     public const string AttendanceManualPunch = "Attendance.ManualPunch";
     public const string AttendanceVoidManualPunch = "Attendance.VoidManualPunch";
     public const string AttendanceViewHistory = "Attendance.ViewHistory";
+    /// <summary>Caso 17: ver y cerrar periodos.</summary>
+    public const string AttendanceClosePeriod = "Attendance.ClosePeriod";
+    /// <summary>Caso 17: reabrir el último periodo cerrado.</summary>
+    public const string AttendanceReopenPeriod = "Attendance.ReopenPeriod";
 
     // Reportes
     public const string ReportsView = "Reports.View";
@@ -116,6 +120,7 @@ public static class RolePermissions
         Permissions.AttendanceAdjust,
         Permissions.AttendanceManualPunch,
         Permissions.AttendanceViewHistory,
+        Permissions.AttendanceClosePeriod,
         Permissions.ReportsPayrollExport,
     }).ToArray();
 

@@ -38,6 +38,9 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
 
     public bool IsVoided => VoidedAt.HasValue;
 
+    /// <summary>Caso 17: cuándo lo recibió el sistema (UTC); nulo en marcajes anteriores. Detecta los que llegan a un periodo cerrado.</summary>
+    public DateTime? ReceivedAt { get; private set; }
+
     public void Void(string voidedBy, string reason, AttendanceRecordId? replacedBy = null, DateTime? voidedAt = null)
     {
         if (IsVoided) throw new DomainException("El marcaje ya está anulado.");
@@ -116,7 +119,8 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
             OriginalCheckTime = civilOriginal,
             WorkDate = workDate ?? DateOnly.FromDateTime(civilOriginal),
             TimeZoneId = timeZoneId,
-            Source = source
+            Source = source,
+            ReceivedAt = DateTime.UtcNow
         };
 
         // Regla de negocio: validar horario

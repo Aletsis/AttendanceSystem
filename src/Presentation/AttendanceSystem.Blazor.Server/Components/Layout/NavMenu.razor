@@ -37,6 +37,9 @@
         <AuthorizeView Policy="@Permissions.AttendanceCalculate">
             <MudNavLink Href="/attendance/calculation" Icon="@Icons.Material.Filled.Calculate">Cálculo de asistencia</MudNavLink>
         </AuthorizeView>
+        <AuthorizeView Policy="@Permissions.AttendanceClosePeriod">
+            <MudNavLink Href="/attendance/periods" Icon="@Icons.Material.Filled.Lock">Cierre de periodos</MudNavLink>
+        </AuthorizeView>
     </MudNavGroup>
     
     <AuthorizeView Policy="@Permissions.ReportsView">

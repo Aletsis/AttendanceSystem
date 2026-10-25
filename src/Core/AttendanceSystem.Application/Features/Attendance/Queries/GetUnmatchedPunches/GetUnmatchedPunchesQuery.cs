@@ -13,6 +13,8 @@ public enum UnmatchedPunchKind
     AfterTermination = 3,
     /// <summary>Caso 16: checó durante sus vacaciones, incapacidad o baja temporal (regresó antes o el período está mal).</summary>
     DuringLeave = 4,
+    /// <summary>Caso 17: llegó después de cerrar su periodo; no se calculó (el periodo se reabre si debe contar).</summary>
+    ArrivedAfterClosure = 5,
 }
 
 public sealed record UnmatchedPunchDto(
@@ -41,18 +43,25 @@ public sealed class GetUnmatchedPunchesQueryHandler : IRequestHandler<GetUnmatch
     private readonly IAttendanceRepository _records;
     private readonly IEmployeeRepository _employees;
     private readonly IDeviceRepository _devices;
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
 
-    public GetUnmatchedPunchesQueryHandler(IAttendanceRepository records, IEmployeeRepository employees, IDeviceRepository devices)
+    public GetUnmatchedPunchesQueryHandler(
+        IAttendanceRepository records,
+        IEmployeeRepository employees,
+        IDeviceRepository devices,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
         _records = records;
         _employees = employees;
         _devices = devices;
+        _closures = closures;
     }
 
     public async Task<IReadOnlyList<UnmatchedPunchDto>> Handle(GetUnmatchedPunchesQuery request, CancellationToken cancellationToken)
     {
-        var summary = await _records.GetPunchDaySummaryAsync(request.FromDate, request.ToDate, cancellationToken);
-        if (summary.Count == 0) return Array.Empty<UnmatchedPunchDto>();
+        var summary = (await _records.GetPunchDaySummaryAsync(request.FromDate, request.ToDate, cancellationToken)).ToList();
+        var late = await ArrivedAfterClosureAsync(request, cancellationToken);
+        if (summary.Count == 0 && late.Count == 0) return Array.Empty<UnmatchedPunchDto>();
 
         var employees = (await _employees.GetAllAsync(cancellationToken)).ToDictionary(e => e.Id);
         var deviceNames = (await _devices.GetAllDevicesAsync(cancellationToken)).ToDictionary(d => d.Id, d => d.Name);
@@ -72,6 +81,10 @@ public sealed class GetUnmatchedPunchesQueryHandler : IRequestHandler<GetUnmatch
                 : UnmatchedPunchKind.AfterTermination;
             unmatched.Add((day.EmployeeId, kind, day));
         }
+        // Los de IDs no registrados o fuera de su periodo de empleo ya aparecen por ese motivo.
+        unmatched.AddRange(late
+            .Where(day => employees.TryGetValue(day.EmployeeId, out var e) && e.IsActiveOn(day.WorkDate.ToDateTime(TimeOnly.MinValue)))
+            .Select(day => (day.EmployeeId, UnmatchedPunchKind.ArrivedAfterClosure, day)));
 
         return unmatched
             .GroupBy(u => (u.Id, u.Kind))
@@ -96,12 +109,31 @@ public sealed class GetUnmatchedPunchesQueryHandler : IRequestHandler<GetUnmatch
             .ToList();
     }
 
+    /// <summary>Marcajes de días cerrados que llegaron después del cierre de su periodo (por empleado, día y reloj).</summary>
+    private async Task<IReadOnlyList<PunchDaySummary>> ArrivedAfterClosureAsync(GetUnmatchedPunchesQuery request, CancellationToken cancellationToken)
+    {
+        if (_closures == null) return Array.Empty<PunchDaySummary>();
+        var closures = (await _closures.ActiveAsync(cancellationToken))
+            .Where(c => c.StartDate <= request.ToDate.ToDateTime(TimeOnly.MinValue) && c.EndDate >= request.FromDate.ToDateTime(TimeOnly.MinValue))
+            .ToList();
+        if (closures.Count == 0) return Array.Empty<PunchDaySummary>();
+
+        var records = await _records.GetReceivedAfterAsync(closures.Min(c => c.ClosedAt),
+            DateOnly.FromDateTime(closures.Min(c => c.StartDate)), DateOnly.FromDateTime(closures.Max(c => c.EndDate)), cancellationToken);
+        return records
+            .Where(r => closures.Any(c => c.Contains(r.GetWorkDate().ToDateTime(TimeOnly.MinValue)) && r.ReceivedAt > c.ClosedAt))
+            .GroupBy(r => (r.EmployeeId, r.GetWorkDate(), r.DeviceId))
+            .Select(g => new PunchDaySummary(g.Key.EmployeeId, g.Key.Item2, g.Key.DeviceId, g.Count()))
+            .ToList();
+    }
+
     private static DateTime FirstHireDate(Employee employee) =>
         employee.EmploymentPeriods.Select(p => p.StartDate).DefaultIfEmpty(employee.HireDate).Min().Date;
 
     private static string Detail(UnmatchedPunchKind kind, Employee? employee, DateOnly firstDate) => kind switch
     {
         UnmatchedPunchKind.NotRegistered => "El ID del reloj no corresponde a ningún empleado.",
+        UnmatchedPunchKind.ArrivedAfterClosure => "Llegó después de cerrar su periodo y no se calculó; reabra el periodo si debe contar.",
         UnmatchedPunchKind.BeforeHire => $"Checó antes de su ingreso del {FirstHireDate(employee!):dd/MM/yyyy}.",
         UnmatchedPunchKind.DuringLeave => employee!.LeaveOn(firstDate.ToDateTime(TimeOnly.MinValue)) is { } leave
             ? $"Checó durante su {LeaveName(leave.Status)} del {leave.StartDate:dd/MM/yyyy}{(leave.EndDate is { } end ? $" al {end:dd/MM/yyyy}" : " (sin fecha de regreso)")}."

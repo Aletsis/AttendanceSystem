@@ -86,6 +86,12 @@
     </MudItem>
 </MudGrid>
 
+@if (_closedPeriods.Count > 0)
+{
+    <MudAlert Severity="Severity.Info" Class="mt-4" Dense="true" Icon="@Icons.Material.Filled.Lock">
+        Periodo cerrado: @string.Join(", ", _closedPeriods.Select(p => p.Describe())). Esos días no cambian.
+    </MudAlert>
+}
 <MudDataGrid @ref="_dataGrid" Items="@AttendanceList" Filterable="true" Class="mt-4" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
     <Columns>
         <PropertyColumn T="AttendanceReportViewDto" TProperty="string" Property="x => x.EmployeeId" Title="ID" SortBy="@SortByEmployeeId" />
@@ -376,7 +382,13 @@
         ));
 
         AttendanceList = result.ToList();
+        _closedPeriods = await Mediator.Send(new AttendanceSystem.Application.Features.Attendance.PeriodClosure.GetClosedPeriodsInRangeQuery(StartDate.Value, EndDate.Value))
+            ?? Array.Empty<AttendanceSystem.Application.Features.Attendance.PeriodClosure.AttendancePeriod>();
     }
+
+    // Caso 17: aviso de los periodos cerrados que toca el reporte.
+    private IReadOnlyList<AttendanceSystem.Application.Features.Attendance.PeriodClosure.AttendancePeriod> _closedPeriods =
+        Array.Empty<AttendanceSystem.Application.Features.Attendance.PeriodClosure.AttendancePeriod>();
 
     private async Task ExportExcel(bool detailed)
     {

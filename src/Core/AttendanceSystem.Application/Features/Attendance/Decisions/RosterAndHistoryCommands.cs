@@ -86,6 +86,7 @@ public sealed class VoidManualAttendanceCommandHandler : IRequestHandler<VoidMan
     private readonly ISender _sender;
     private readonly ICurrentUserService? _currentUser;
     private readonly ILogger<VoidManualAttendanceCommandHandler> _logger;
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
 
     public VoidManualAttendanceCommandHandler(
         IAttendanceRepository records,
@@ -96,8 +97,10 @@ public sealed class VoidManualAttendanceCommandHandler : IRequestHandler<VoidMan
         IAttendanceCalculationLockService lockService,
         ISender sender,
         ILogger<VoidManualAttendanceCommandHandler> logger,
-        ICurrentUserService? currentUser = null)
+        ICurrentUserService? currentUser = null,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
+        _closures = closures;
         _records = records;
         _adjustments = adjustments;
         _consolidations = consolidations;
@@ -123,6 +126,7 @@ public sealed class VoidManualAttendanceCommandHandler : IRequestHandler<VoidMan
 
         var author = _currentUser is { IsAuthenticated: true, UserName: { Length: > 0 } name } ? name : "Sistema";
         var workDate = record.GetWorkDate().ToDateTime(TimeOnly.MinValue);
+        if (_closures != null && await _closures.DenyAsync(workDate, cancellationToken) is { } closedError) return Result.Failure(closedError);
         var from = workDate.AddDays(-1);
         var to = workDate.AddDays(1);
         var civil = record.GetCivilTime();

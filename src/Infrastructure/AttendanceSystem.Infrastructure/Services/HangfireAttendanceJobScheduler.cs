@@ -124,6 +124,13 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
             jobs => jobs.CalculatePreviousDay(),
             "5 0 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+
+        // Caso 17: 00:30, cierra los periodos que terminaron hace más de 3 días.
+        _recurringJobManager.AddOrUpdate<AttendanceJobs>(
+            "auto-close-periods",
+            jobs => jobs.AutoClosePeriods(),
+            "30 0 * * *",
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
     }
 
     public void EnqueueBiometricSync(string deviceId, string employeeId)
@@ -165,6 +172,11 @@ public class AttendanceJobs
     public async Task CalculatePreviousDay()
     {
         await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.CalculatePreviousDayCommand());
+    }
+
+    public async Task AutoClosePeriods()
+    {
+        await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.PeriodClosure.AutoClosePeriodsCommand());
     }
 
     public async Task CheckCriticalAbsences()

@@ -533,6 +533,33 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
     }
 
     [Fact]
+    public async Task PeriodClosures_AndPunchReceivedAt_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var closure = AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure.Close(
+            new DateTime(2026, 5, 4), new DateTime(2026, 5, 10), "rh", automatic: true);
+        closure.Reopen("admin", "Faltó un marcaje");
+        var record = AttendanceRecord.Create(EmployeeId.From("EMP-PG-C17"), DeviceId.From("DEV-C17"), new DateTime(2026, 5, 5, 15, 0, 0, DateTimeKind.Utc),
+            VerifyMethod.Fingerprint, CheckType.CheckIn);
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            context.AttendancePeriodClosures.Add(closure);
+            context.AttendanceRecords.Add(record);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var stored = await verify.AttendancePeriodClosures.SingleAsync(c => c.Id == closure.Id);
+        stored.StartDate.Should().Be(new DateTime(2026, 5, 4));
+        stored.Automatic.Should().BeTrue();
+        stored.IsActive.Should().BeFalse();
+        stored.ReopenReason.Should().Be("Faltó un marcaje");
+        (await verify.AttendanceRecords.SingleAsync(r => r.Id == record.Id)).ReceivedAt.Should().NotBeNull();
+    }
+
+    [Fact]
     public async Task MixedShiftDays_ReferenceExistingSchedules_RoundTrip()
     {
         if (!_fixture.IsAvailable) return;
@@ -715,6 +742,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         }
 
         public void Detach(AttendanceRecord record) => _inner.Detach(record);
+        public Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) => _inner.GetReceivedAfterAsync(receivedAfterUtc, fromDate, toDate, cancellationToken);
         public Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) => _inner.GetPunchDaySummaryAsync(fromDate, toDate, cancellationToken);
         public Task<AttendanceRecord?> GetByIdAsync(AttendanceRecordId id, CancellationToken cancellationToken = default) => _inner.GetByIdAsync(id, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetByDateRangeAsync(DateOnly startDate, DateOnly endDate, EmployeeId? employeeId = null, CancellationToken cancellationToken = default) => _inner.GetByDateRangeAsync(startDate, endDate, employeeId, cancellationToken);

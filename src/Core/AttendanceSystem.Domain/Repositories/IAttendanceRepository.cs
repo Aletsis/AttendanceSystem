@@ -36,6 +36,9 @@ public interface IAttendanceRepository
     /// </summary>
     void Detach(AttendanceRecord record);
 
+    /// <summary>Caso 17: marcajes vigentes recibidos después de un instante con fecha laboral en el rango.</summary>
+    Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default);
+
     /// <summary>Caso 14: marcajes vigentes por empleado, fecha laboral y reloj en el rango (para detectar los que no cuentan).</summary>
     Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default);
 

@@ -88,6 +88,7 @@ else
         UnmatchedPunchKind.NotRegistered => "No registrado",
         UnmatchedPunchKind.BeforeHire => "Antes del ingreso",
         UnmatchedPunchKind.DuringLeave => "Vacaciones / incapacidad",
+        UnmatchedPunchKind.ArrivedAfterClosure => "Periodo cerrado",
         _ => "Después de la baja"
     };
 
@@ -96,6 +97,7 @@ else
         UnmatchedPunchKind.NotRegistered => Color.Error,
         UnmatchedPunchKind.BeforeHire => Color.Info,
         UnmatchedPunchKind.DuringLeave => Color.Secondary,
+        UnmatchedPunchKind.ArrivedAfterClosure => Color.Dark,
         _ => Color.Warning
     };
 }

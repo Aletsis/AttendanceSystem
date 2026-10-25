@@ -46,6 +46,8 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
     public DbSet<AttendanceAdjustmentHistory> AttendanceAdjustmentHistory => Set<AttendanceAdjustmentHistory>();
     public DbSet<QuarantinedPunch> QuarantinedPunches => Set<QuarantinedPunch>();
     public DbSet<PunchTimeCorrection> PunchTimeCorrections => Set<PunchTimeCorrection>();
+    public DbSet<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure> AttendancePeriodClosures =>
+        Set<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure>();
 
     private readonly ICurrentUserService? _currentUserService;
 

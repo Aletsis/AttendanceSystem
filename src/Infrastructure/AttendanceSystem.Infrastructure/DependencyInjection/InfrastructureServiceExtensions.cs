@@ -73,6 +73,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
         services.AddScoped<IQuarantinedPunchRepository, QuarantinedPunchRepository>();
         services.AddScoped<IPunchTimeCorrectionRepository, PunchTimeCorrectionRepository>();
+        services.AddScoped<IAttendancePeriodClosureRepository, AttendancePeriodClosureRepository>();
         services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
         services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
         services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();

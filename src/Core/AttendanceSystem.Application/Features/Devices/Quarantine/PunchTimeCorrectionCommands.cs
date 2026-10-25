@@ -47,6 +47,7 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ICurrentUserService? _currentUser;
     private readonly IAttendanceAdjustmentRepository? _adjustments;
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
     private readonly ILogger<CorrectDevicePunchTimesCommandHandler> _logger;
 
     public CorrectDevicePunchTimesCommandHandler(
@@ -62,9 +63,11 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
         IAuthoritativeTimeZoneResolver timeZoneResolver,
         ICurrentUserService? currentUser = null,
         ILogger<CorrectDevicePunchTimesCommandHandler>? logger = null,
-        IAttendanceAdjustmentRepository? adjustments = null)
+        IAttendanceAdjustmentRepository? adjustments = null,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
         _adjustments = adjustments;
+        _closures = closures;
         _devices = devices;
         _corrections = corrections;
         _attendance = attendance;
@@ -209,10 +212,13 @@ public sealed class CorrectDevicePunchTimesCommandHandler : IRequestHandler<Corr
             .ToHashSet();
 
         var claimed = new HashSet<(EmployeeId, DateTime)>();
+        var isClosed = _closures != null ? await _closures.ClosedDaysAsync(cancellationToken) : _ => false;
         return drafts.Select(d =>
         {
             string? skip = null;
             if (d.Unchanged) skip = "Sin cambio";
+            else if (isClosed(d.Record.GetWorkDate(deviceZone).ToDateTime(TimeOnly.MinValue)) || isClosed(d.NewWorkDate.ToDateTime(TimeOnly.MinValue)))
+                skip = "Periodo cerrado";
             else if (occupied.Contains((d.Record.EmployeeId, d.NewUtc)) || !claimed.Add((d.Record.EmployeeId, d.NewUtc)))
                 skip = "Ya existe un marcaje del empleado a esa hora";
             var row = new PunchCorrectionRowDto(d.Record.Id.Value, d.Record.EmployeeId.Value, d.OldCivil, d.Record.GetWorkDate(deviceZone), d.Record.TimeZoneId,

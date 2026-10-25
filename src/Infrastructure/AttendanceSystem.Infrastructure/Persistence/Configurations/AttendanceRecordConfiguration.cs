@@ -105,6 +105,7 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
         builder.Ignore(x => x.IsVoided);
 
         builder.Property(x => x.VoidedAt).IsRequired(false);
+        builder.Property(x => x.ReceivedAt).IsRequired(false);
         builder.Property(x => x.VoidedBy).HasMaxLength(256).IsRequired(false);
         builder.Property(x => x.VoidReason).HasMaxLength(500).IsRequired(false);
         builder.Property(x => x.ReplacedByRecordId)

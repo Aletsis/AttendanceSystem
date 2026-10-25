@@ -192,6 +192,11 @@ internal sealed class InMemoryAttendanceRecordRepository : IAttendanceRepository
 
     public void Detach(AttendanceRecord record) { }
 
+    public Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AttendanceRecord>>(_store.Records
+            .Where(r => !r.IsVoided && r.ReceivedAt > receivedAfterUtc && r.WorkDate is { } d && d >= fromDate && d <= toDate)
+            .ToList());
+
     public Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<PunchDaySummary>>(_store.Records
             .Where(r => !r.IsVoided && r.WorkDate is { } d && d >= fromDate && d <= toDate)
@@ -410,11 +415,17 @@ public sealed class AttendanceRecalculationHarness
             LockService,
             new RecalculationSender(this),
             NullLogger<AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService>.Instance,
-            user.Object);
+            user.Object,
+            closures: PeriodClosures);
     }
 
     public AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommandHandler ManualAssign() =>
         new(_dailyRepo, _attendanceRepo, _assignmentRepo, Decisions());
+
+    /// <summary>Caso 17: cierres de periodo vigentes en las pruebas (vacío: todo abierto).</summary>
+    public InMemoryPeriodClosureRepository ClosureRepository { get; } = new();
+
+    public AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService PeriodClosures => new(ClosureRepository);
 
     /// <summary>Recálculo inmediato con el orquestador real (lo que envía un comando tras guardar).</summary>
     public ISender Sender => new RecalculationSender(this);
@@ -455,7 +466,8 @@ public sealed class AttendanceRecalculationHarness
             LockService,
             _unitOfWork,
             new SubCommandRoutingSender(_dailyRepo, _attendanceRepo),
-            NullLogger<ProcessDailyAttendanceCommandHandler>.Instance);
+            NullLogger<ProcessDailyAttendanceCommandHandler>.Instance,
+            closures: PeriodClosures);
 
         return handler.Handle(new ProcessDailyAttendanceCommand(start, end, EmployeeId: employeeId), CancellationToken.None);
     }
@@ -517,4 +529,20 @@ public static class AttendanceResultSnapshot
         var extra = actual.Except(expected).Select(l => "+ " + l);
         return missing.Concat(extra).ToList();
     }
+}
+
+public sealed class InMemoryPeriodClosureRepository : IAttendancePeriodClosureRepository
+{
+    public List<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure> Items { get; } = new();
+
+    public Task<IReadOnlyList<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure>>(Items.ToList());
+
+    public Task AddAsync(AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure closure, CancellationToken cancellationToken = default)
+    {
+        Items.Add(closure);
+        return Task.CompletedTask;
+    }
+
+    public void Update(AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure closure) { }
 }

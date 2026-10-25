@@ -46,6 +46,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IAttendanceCalculationReader _reader;
     private readonly int _batchSize;
     private readonly Dictionary<BranchId, string> _branchTimeZones = new();
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
+    /// <summary>Caso 17: días de periodos cerrados; no se recalculan ni se eliminan.</summary>
+    private Func<DateTime, bool> _isClosed = _ => false;
 
     public ProcessDailyAttendanceCommandHandler(
         IDailyAttendanceRepository dailyRepo,
@@ -62,8 +65,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         ILogger<ProcessDailyAttendanceCommandHandler> logger,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         IAttendanceCalculationReader? reader = null,
-        int batchSize = DefaultBatchSize)
+        int batchSize = DefaultBatchSize,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
+        _closures = closures;
         _reader = reader ?? new RepositoryCalculationReader(employeeRepo, dailyRepo, rosterRepo, adjustmentRepo, attendanceRepo, assignmentRepo);
         _batchSize = Math.Max(1, batchSize);
         _dailyRepo = dailyRepo;
@@ -93,6 +98,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         // F07-02 / A05: el rango se valida antes de consultar o modificar nada (también si se invoca sin MediatR).
         var rangeError = DateRangePolicy.Validate(request.StartDate, request.EndDate, DateRangePolicy.MaxRecalculationDays);
         if (rangeError != null) throw new AttendanceSystem.Application.Exceptions.InvalidDateRangeException(rangeError);
+
+        if (_closures != null) _isClosed = await _closures.ClosedDaysAsync(cancellationToken);
 
         // F07-03: sólo los empleados del alcance, filtrados en la base de datos por vigencia de empleo y, con
         // sucursal, por la sucursal vigente en el rango (F06-08). Orden estable por identificador (F02-05).
@@ -325,6 +332,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             var overtime = WeeklyHoursCalculationHelper.Calculate(empAttendances, ws.Employee, weeklyStartDay, periodStartOf, date => ExpectedDayOf(ws, date, shifts));
             foreach (var att in empAttendances)
             {
+                if (_isClosed(att.Date)) continue; // caso 17: una jornada cerrada no cambia
                 if (overtime.TryGetValue(att.Id, out var ot) &&
                     (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw || att.WeeklyShortfallMinutes != ot.WeeklyShortfall))
                 {
@@ -401,7 +409,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         // marcaje libre del primer día solicitado; así su salida no queda libre para el día siguiente.
         var unitStart = requestStart;
         var previous = requestStart.AddDays(-1);
-        if (employee.IsActiveOn(previous) &&
+        if (!_isClosed(previous) && employee.IsActiveOn(previous) &&
             (PreviousJornadaReachesFreePunch(ws, previous, shifts) || HasEarlyEntryPunch(ws, requestStart, shifts)))
         {
             unitStart = previous;
@@ -416,7 +424,11 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         {
             if (date <= lastDate)
             {
-                if (employee.IsActiveOn(date))
+                if (_isClosed(date))
+                {
+                    // Caso 17: periodo cerrado; la jornada queda como se cerró.
+                }
+                else if (employee.IsActiveOn(date))
                 {
                     await EnsureLoadedAsync(ws, date, cancellationToken);
                     await IncludeInUnitAsync(ws, date, cancellationToken);
@@ -438,7 +450,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             // F02-03 (hacia adelante): si la unidad cambió qué marcajes del día siguiente consume,
             // la jornada siguiente ya calculada depende de este resultado y se reconstruye también.
             var next = lastDate.AddDays(1);
-            if (ws.UnitDates.Count == 0 || !employee.IsActiveOn(next)) break;
+            if (ws.UnitDates.Count == 0 || _isClosed(next) || !employee.IsActiveOn(next)) break;
 
             await EnsureLoadedAsync(ws, next, cancellationToken);
             var (before, after) = ws.BoundaryClaims(DateOnly.FromDateTime(next));

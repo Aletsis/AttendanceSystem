@@ -40,6 +40,7 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
     private readonly IPersistenceFailureClassifier _failureClassifier;
     private readonly ICurrentUserService? _currentUser;
     private readonly IAttendanceAdjustmentRepository? _history;
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
 
     public RegisterManualAttendanceCommandHandler(
         IAttendanceRepository attendanceRepo,
@@ -48,8 +49,10 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         IPersistenceFailureClassifier? failureClassifier = null,
         ICurrentUserService? currentUser = null,
-        IAttendanceAdjustmentRepository? history = null)
+        IAttendanceAdjustmentRepository? history = null,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
+        _closures = closures;
         _currentUser = currentUser;
         _history = history;
         _attendanceRepo = attendanceRepo;
@@ -74,6 +77,10 @@ public sealed class RegisterManualAttendanceCommandHandler : IRequestHandler<Reg
         var civilCheckTime = TruncateToMinute(request.CheckTime);
         var utcCheckTime = _timeNormalizer.ToUtc(civilCheckTime, authoritativeTimeZone);
         var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, authoritativeTimeZone);
+        if (_closures != null && await _closures.DenyAsync(workDate.ToDateTime(TimeOnly.MinValue), cancellationToken) is { } closedError)
+        {
+            return Result.Failure(closedError);
+        }
 
         // Única restricción de captura: no puede existir otro marcaje del empleado en el mismo minuto.
         var nearby = await _attendanceRepo.GetByDateRangeAsync(workDate.AddDays(-1), workDate.AddDays(1), employeeId, cancellationToken);
