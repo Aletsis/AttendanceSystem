@@ -157,6 +157,26 @@ public class AdmsCommandServiceTests
     }
 
     [Fact]
+    public async Task ALateStartupLoad_DoesNotQueueAgainACommandEnqueuedMeanwhile()
+    {
+        // La carga de comandos pendientes corre en segundo plano al crear el servicio. Si termina después de que se
+        // encoló (y guardó) un comando nuevo, antes lo volvía a encolar: el reloj lo ejecutaba dos veces.
+        var service = new AdmsCommandService(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), Mock.Of<ILogger<AdmsCommandService>>());
+        service.EnqueueCommand("SN_RACE", "CLEAR LOG");
+        await using (var context = new AttendanceDbContext(_dbOptions, _publisherMock.Object))
+        {
+            for (int i = 0; i < 100 && !await context.AdmsCommands.AnyAsync(c => c.SerialNumber == "SN_RACE"); i++) await Task.Delay(20);
+        }
+
+        var load = typeof(AdmsCommandService).GetMethod("LoadPendingCommandsFromDatabaseAsync",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        await (Task)load.Invoke(service, null)!;
+
+        service.GetNextCommand("SN_RACE").Command.Should().Be("CLEAR LOG");
+        service.HasPendingCommands("SN_RACE").Should().BeFalse("el comando se encola una sola vez");
+    }
+
+    [Fact]
     public void DownloadSession_AccumulatesRecordsAndNotifiesOnCompletion()
     {
         // Arrange

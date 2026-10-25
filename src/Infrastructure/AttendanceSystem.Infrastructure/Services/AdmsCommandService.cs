@@ -42,6 +42,10 @@ public class AdmsCommandService : IAdmsCommandService
 
     private static int _commandCounter = 10000;
 
+    // Comandos que ya entraron a la cola en memoria: la carga inicial desde la base corre en segundo plano y no debe
+    // volver a encolar uno que se encoló mientras tanto (el reloj lo ejecutaría dos veces).
+    private readonly ConcurrentDictionary<Guid, byte> _knownCommandIds = new();
+
     public AdmsCommandService(IServiceScopeFactory scopeFactory, ILogger<AdmsCommandService> logger)
     {
         _scopeFactory = scopeFactory;
@@ -81,6 +85,7 @@ public class AdmsCommandService : IAdmsCommandService
                     }
                 }
 
+                if (!_knownCommandIds.TryAdd(cmd.Id, 0)) continue;
                 var queue = _commandQueues.GetOrAdd(cmd.SerialNumber, _ => new ConcurrentQueue<QueuedCommand>());
                 queue.Enqueue(new QueuedCommand(cmd.Id, cmd.CommandText, cmd.DownloadLogId));
             }
@@ -118,6 +123,7 @@ public class AdmsCommandService : IAdmsCommandService
             }
         });
 
+        _knownCommandIds.TryAdd(admsCommand.Id, 0);
         var queue = _commandQueues.GetOrAdd(cleanSn, _ => new ConcurrentQueue<QueuedCommand>());
         queue.Enqueue(new QueuedCommand(admsCommand.Id, command, downloadLogId));
     }
