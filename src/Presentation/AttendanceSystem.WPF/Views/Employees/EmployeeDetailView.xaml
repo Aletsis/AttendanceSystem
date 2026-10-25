@@ -154,9 +154,20 @@
                                     <StackPanel Grid.Column="2">
                                         <TextBlock Text="Estatus" Style="{StaticResource FieldLabelStyle}"/>
                                         <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status}" Style="{StaticResource ModernComboBoxStyle}"
-                                                  IsEnabled="{Binding IsEditMode}"/>
+                                                  IsEnabled="{Binding CanChangeStatus}"/>
                                     </StackPanel>
                                 </Grid>
+
+                                <!-- Caso 16: fecha del cambio de estado y, para vacaciones, incapacidad o baja temporal, el último día. -->
+                                <StackPanel Visibility="{Binding StatusChanged, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Text="{Binding StatusDateLabel}" Style="{StaticResource FieldLabelStyle}"/>
+                                    <DatePicker SelectedDate="{Binding StatusDate}" Margin="0,0,0,10"/>
+                                    <StackPanel Visibility="{Binding StartsLeave, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                        <TextBlock Text="Hasta (opcional)" Style="{StaticResource FieldLabelStyle}"/>
+                                        <DatePicker SelectedDate="{Binding LeaveTo}" Margin="0,0,0,4"/>
+                                        <TextBlock Text="Al día siguiente regresa solo a Alta. Sin fecha: hasta que RH lo regrese a Alta." FontSize="11" Foreground="#858796" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                    </StackPanel>
+                                </StackPanel>
 
                                 <TextBlock Text="Correo Electrónico" Style="{StaticResource FieldLabelStyle}"/>
                                 <TextBox Text="{Binding Email}" Style="{StaticResource ModernTextBoxStyle}"/>

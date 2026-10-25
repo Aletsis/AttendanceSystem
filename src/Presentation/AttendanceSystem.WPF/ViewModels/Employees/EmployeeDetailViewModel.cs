@@ -78,7 +78,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public ObservableCollection<ShiftDto> VisibleShifts { get; } = new(); // Filtered Shifts
 
         public IEnumerable<Gender> GenderOptions => Enum.GetValues(typeof(Gender)).Cast<Gender>();
-        public IEnumerable<EmployeeStatus> StatusOptions => Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>();
+        // Caso 16: vacaciones, incapacidad y baja temporal son períodos con fechas y sólo los registran RH y Administrador.
+        public IEnumerable<EmployeeStatus> StatusOptions => Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>()
+            .Where(s => CanManageLeave || !AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(s) || s == _loadedStatus);
         public IEnumerable<ShiftType> ShiftTypeOptions => Enum.GetValues(typeof(ShiftType)).Cast<ShiftType>();
         public IEnumerable<OvertimeCalculationMethod> OvertimeCalculationMethodOptions => Enum.GetValues(typeof(OvertimeCalculationMethod)).Cast<OvertimeCalculationMethod>();
         public IEnumerable<OvertimeCapType> OvertimeCapTypeOptions => Enum.GetValues(typeof(OvertimeCapType)).Cast<OvertimeCapType>();
@@ -106,7 +108,32 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public string PhoneNumber { get => _phoneNumber; set => SetProperty(ref _phoneNumber, value); }
         public DateTime HireDate { get => _hireDate; set => SetProperty(ref _hireDate, value); }
         public Gender Gender { get => _gender; set => SetProperty(ref _gender, value); }
-        public EmployeeStatus Status { get => _status; set => SetProperty(ref _status, value); }
+        public EmployeeStatus Status
+        {
+            get => _status;
+            set
+            {
+                if (!SetProperty(ref _status, value)) return;
+                RaisePropertyChanged(nameof(StatusChanged));
+                RaisePropertyChanged(nameof(StartsLeave));
+                RaisePropertyChanged(nameof(StatusDateLabel));
+            }
+        }
+
+        private EmployeeStatus _loadedStatus = EmployeeStatus.Alta;
+        private DateTime? _statusDate = DateTime.Today;
+        private DateTime? _leaveTo;
+
+        public bool CanManageLeave => _authService?.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesLeave) ?? true;
+        public bool CanChangeStatus => IsEditMode && (CanManageLeave || !AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(_loadedStatus));
+        public bool StatusChanged => IsEditMode && Status != _loadedStatus;
+        public bool StartsLeave => StatusChanged && AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(Status);
+        public string StatusDateLabel => StartsLeave ? "Desde"
+            : Status == EmployeeStatus.Alta && AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(_loadedStatus) ? "Regresa a trabajar el"
+            : Status == EmployeeStatus.Baja ? "Último día laborado" : "Vigente desde";
+        public DateTime? StatusDate { get => _statusDate; set => SetProperty(ref _statusDate, value); }
+        /// <summary>Último día del período; vacío = hasta regresar a Alta.</summary>
+        public DateTime? LeaveTo { get => _leaveTo; set => SetProperty(ref _leaveTo, value); }
 
         public string? SelectedDepartmentId
         {
@@ -170,12 +197,15 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
+        private readonly IAuthenticationStateService? _authService;
 
         public EmployeeDetailViewModel(
             IFrameNavigationService navigationService,
             IMessageService messageService,
-            IMediator mediator)
+            IMediator mediator,
+            IAuthenticationStateService? authService = null)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
@@ -310,7 +340,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     PhoneNumber = emp.PhoneNumber ?? string.Empty;
                     HireDate = emp.HireDate;
                     Gender = emp.Gender;
+                    _loadedStatus = emp.Status;
                     Status = emp.Status;
+                    RaisePropertyChanged(nameof(StatusOptions));
+                    RaisePropertyChanged(nameof(CanChangeStatus));
                     SelectedDepartmentId = emp.DepartmentId.ToString();
                     // Filter Positions triggers here
 
@@ -408,7 +441,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         Photo,
                         // Caso 13: se conservan el privilegio del reloj y los descansos que esta pantalla no edita.
                         _loadedDevicePrivilege,
-                        SelectedRestDay == _loadedRestDay ? _loadedRestDays : null
+                        SelectedRestDay == _loadedRestDay ? _loadedRestDays : null,
+                        // Caso 16: la fecha del cambio de estado (inicio del período, regreso, baja o reingreso).
+                        StatusChanged ? StatusDate : null,
+                        StartsLeave ? LeaveTo : null
                     );
 
                     var result = await _mediator.Send(command);
