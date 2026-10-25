@@ -50,6 +50,13 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     private readonly List<EmploymentPeriod> _employmentPeriods = new();
     public IReadOnlyCollection<EmploymentPeriod> EmploymentPeriods => _employmentPeriods.AsReadOnly();
 
+    // Caso 16: vacaciones, incapacidades y bajas temporales con fechas.
+    private readonly List<StatusPeriod> _statusPeriods = new();
+    public IReadOnlyCollection<StatusPeriod> StatusPeriods => _statusPeriods.AsReadOnly();
+
+    public static bool IsLeaveStatus(EmployeeStatus status) =>
+        status is EmployeeStatus.Vacaciones or EmployeeStatus.Incapacidad or EmployeeStatus.BajaTemporal;
+
     private readonly List<ScheduleAssignment> _scheduleAssignments = new();
     public IReadOnlyCollection<ScheduleAssignment> ScheduleAssignments => _scheduleAssignments.AsReadOnly();
 
@@ -184,7 +191,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         string? photo = null,
         DevicePrivilege devicePrivilege = DevicePrivilege.User,
         IEnumerable<WeekDay>? restDays = null,
-        DateTime? effectiveFrom = null)
+        DateTime? effectiveFrom = null,
+        DateTime? effectiveTo = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -206,7 +214,21 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             MoveHireDate(hireDate);
             recalculateFrom = recalculateFrom is { } r && r < earliest ? r : earliest;
         }
-        if (Status != status)
+        if (IsLeaveStatus(status) && (status != Status || effectiveTo.HasValue))
+        {
+            // Caso 16: vacaciones, incapacidad o baja temporal del período indicado (puede ser futuro).
+            if (Status == EmployeeStatus.Baja)
+                throw new DomainException("Reingrese al empleado antes de registrar vacaciones, incapacidad o baja temporal");
+            StartLeave(status, from, effectiveTo);
+            recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
+        }
+        else if (status == EmployeeStatus.Alta && IsLeaveStatus(Status))
+        {
+            // Regreso a Alta: termina la pausa vigente el día anterior.
+            EndLeave(from);
+            recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
+        }
+        else if (Status != status)
         {
             if (from > DateTime.Today)
                 throw new DomainException("La baja o el reingreso no pueden registrarse con fecha futura");
@@ -230,7 +252,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         PhoneNumber = phoneNumber;
         HireDate = hireDate;
         Gender = gender;
-        Status = status;
+        RefreshStatus(DateTime.Today);
         BranchId = branchId;
         DepartmentId = departmentId;
         PositionId = positionId;
@@ -308,6 +330,9 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     {
         var open = _employmentPeriods.LastOrDefault(p => !p.EndDate.HasValue);
         open?.Close(terminationDate);
+        // Las pausas no pasan de la baja.
+        _statusPeriods.RemoveAll(p => p.StartDate > terminationDate.Date);
+        foreach (var period in _statusPeriods.Where(p => !p.EndDate.HasValue || p.EndDate > terminationDate.Date)) period.Close(terminationDate);
         TerminationDate = terminationDate.Date;
         Status = EmployeeStatus.Baja;
     }
@@ -330,7 +355,72 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         Status = EmployeeStatus.Alta;
     }
 
-    public bool IsActiveOn(DateTime date)
+    /// <summary>
+    /// Se calcula asistencia ese día: hay relación laboral y no está de vacaciones, incapacidad o baja temporal
+    /// (caso 16). Los reportes sólo muestran los días activos.
+    /// </summary>
+    public bool IsActiveOn(DateTime date) => IsEmployedOn(date) && LeaveOn(date) == null;
+
+    /// <summary>Pausa (vacaciones, incapacidad o baja temporal) que incluye la fecha.</summary>
+    public StatusPeriod? LeaveOn(DateTime date) => _statusPeriods.FirstOrDefault(p => p.Contains(date));
+
+    /// <summary>Estado del empleado en una fecha: Baja fuera de la relación laboral, la pausa vigente o Alta.</summary>
+    public EmployeeStatus StatusOn(DateTime date) =>
+        !IsEmployedOn(date) ? EmployeeStatus.Baja : LeaveOn(date)?.Status ?? EmployeeStatus.Alta;
+
+    /// <summary>
+    /// Caso 16: actualiza el estado guardado al de hoy (al terminar unas vacaciones vuelve solo a Alta). La baja sólo
+    /// cambia con un reingreso. Devuelve si cambió.
+    /// </summary>
+    public bool RefreshStatus(DateTime today)
+    {
+        if (Status == EmployeeStatus.Baja) return false;
+        var current = LeaveOn(today)?.Status ?? EmployeeStatus.Alta;
+        if (current == Status) return false;
+        Status = current;
+        return true;
+    }
+
+    /// <summary>
+    /// Caso 16: registra vacaciones, incapacidad o baja temporal [desde, hasta]; sin hasta, hasta regresar a Alta. Lo
+    /// que se traslape con otra pausa la reemplaza en esos días.
+    /// </summary>
+    public void StartLeave(EmployeeStatus status, DateTime from, DateTime? to)
+    {
+        if (!IsLeaveStatus(status)) throw new DomainException("Sólo vacaciones, incapacidad o baja temporal se registran por período");
+        if (to.HasValue && to.Value.Date < from.Date) throw new DomainException("La fecha final no puede ser anterior a la inicial");
+        if (!IsEmployedOn(from)) throw new DomainException($"El {from:dd/MM/yyyy} el empleado no está dado de alta");
+
+        foreach (var other in _statusPeriods.Where(p => p.Overlaps(from, to)).ToList())
+        {
+            var tailStart = to?.Date.AddDays(1);
+            var keepsTail = tailStart.HasValue && (!other.EndDate.HasValue || other.EndDate.Value >= tailStart.Value);
+            if (keepsTail && other.StartDate < from.Date)
+            {
+                _statusPeriods.Add(new StatusPeriod(other.Status, tailStart!.Value, other.EndDate));
+                other.Close(from.Date.AddDays(-1));
+            }
+            else if (keepsTail) other.MoveStart(tailStart!.Value);
+            else if (other.StartDate < from.Date) other.Close(from.Date.AddDays(-1));
+            else _statusPeriods.Remove(other);
+        }
+        _statusPeriods.Add(new StatusPeriod(status, from, to));
+        RefreshStatus(DateTime.Today);
+    }
+
+    /// <summary>Caso 16: regresa a Alta desde la fecha: la pausa que la incluye termina el día anterior.</summary>
+    public void EndLeave(DateTime returnDate)
+    {
+        var period = _statusPeriods.FirstOrDefault(p => p.Contains(returnDate))
+                     ?? _statusPeriods.Where(p => !p.EndDate.HasValue && p.StartDate <= returnDate.Date).OrderByDescending(p => p.StartDate).FirstOrDefault()
+                     ?? throw new DomainException($"El {returnDate:dd/MM/yyyy} el empleado no está de vacaciones, incapacidad ni baja temporal");
+        if (period.StartDate >= returnDate.Date) _statusPeriods.Remove(period);
+        else period.Close(returnDate.Date.AddDays(-1));
+        RefreshStatus(DateTime.Today);
+    }
+
+    /// <summary>Hay relación laboral ese día (F06-08), aunque esté de vacaciones o incapacidad.</summary>
+    public bool IsEmployedOn(DateTime date)
     {
         if (_employmentPeriods.Count > 0)
         {
@@ -347,8 +437,20 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         return true;
     }
 
-    /// <summary>Hubo relación laboral en algún día de [inicio, fin].</summary>
+    /// <summary>Algún día de [inicio, fin] es activo: hay relación laboral y no está en pausa (caso 16).</summary>
     public bool IsActiveDuring(DateTime start, DateTime end)
+    {
+        if (!IsEmployedDuring(start, end)) return false;
+        if (_statusPeriods.Count == 0) return true;
+        for (var day = start.Date; day <= end.Date; day = day.AddDays(1))
+        {
+            if (IsActiveOn(day)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Hubo relación laboral en algún día de [inicio, fin].</summary>
+    public bool IsEmployedDuring(DateTime start, DateTime end)
     {
         if (_employmentPeriods.Count > 0)
         {

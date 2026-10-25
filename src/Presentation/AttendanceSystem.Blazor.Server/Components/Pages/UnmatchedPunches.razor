@@ -9,7 +9,7 @@
 <MudText Typo="Typo.h5" Class="mb-1">Marcajes sin empleado</MudText>
 <MudText Typo="Typo.body2" Class="mb-4">
     Marcajes de los relojes que no cuentan en la asistencia: IDs que no son de ningún empleado, o empleados que checaron
-    antes de su ingreso o después de su baja. Al dar de alta o reingresar al empleado, sus marcajes se calculan y el aviso desaparece.
+    antes de su ingreso, después de su baja o durante vacaciones, incapacidad o baja temporal. Al dar de alta o reingresar al empleado, sus marcajes se calculan y el aviso desaparece.
 </MudText>
 
 <MudGrid Class="mb-2">
@@ -87,6 +87,7 @@ else
     {
         UnmatchedPunchKind.NotRegistered => "No registrado",
         UnmatchedPunchKind.BeforeHire => "Antes del ingreso",
+        UnmatchedPunchKind.DuringLeave => "Vacaciones / incapacidad",
         _ => "Después de la baja"
     };
 
@@ -94,6 +95,7 @@ else
     {
         UnmatchedPunchKind.NotRegistered => Color.Error,
         UnmatchedPunchKind.BeforeHire => Color.Info,
+        UnmatchedPunchKind.DuringLeave => Color.Secondary,
         _ => Color.Warning
     };
 }

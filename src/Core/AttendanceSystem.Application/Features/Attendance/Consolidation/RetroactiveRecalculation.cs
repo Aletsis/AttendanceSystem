@@ -76,7 +76,7 @@ public sealed class RetroactiveRecalculation
         }
         foreach (var employee in await _employees.GetAllAsync(cancellationToken))
         {
-            if (!employee.IsActiveDuring(from, to)) continue;
+            if (!employee.IsEmployedDuring(from, to)) continue;
             var uses = (employee.AssignmentOn(from).ScheduleId is { } atStart && related.Contains(atStart)) ||
                        employee.ScheduleAssignments.Any(a => a.EffectiveFrom.Date <= to && a.ScheduleId != null && related.Contains(a.ScheduleId));
             if (uses) ids.Add(employee.Id);
@@ -102,7 +102,7 @@ public sealed class RetroactiveRecalculation
     }
 
     private async Task<IReadOnlyList<EmployeeId>> ActiveEmployeesAsync(DateTime from, DateTime to, CancellationToken cancellationToken) =>
-        (await _employees.GetAllAsync(cancellationToken)).Where(e => e.IsActiveDuring(from, to)).Select(e => e.Id).ToList();
+        (await _employees.GetAllAsync(cancellationToken)).Where(e => e.IsEmployedDuring(from, to)).Select(e => e.Id).ToList();
 
     public async Task<RecalculationImpactDto> AllEmployeesImpactAsync(DateTime effectiveFrom, CancellationToken cancellationToken)
     {
@@ -147,7 +147,8 @@ public sealed class RecalculationImpactQueryHandler :
 
 /// <summary>
 /// Caso 15: al iniciar el día se calcula el día anterior de todos los empleados activos ese día, para que existan las
-/// faltas de quien no checó nada aunque nadie descargue ni calcule a mano (p. ej. relojes sólo por ADMS).
+/// faltas de quien no checó nada aunque nadie descargue ni calcule a mano (p. ej. relojes sólo por ADMS). Caso 16:
+/// antes actualiza el estado de cada empleado al de hoy (empieza o termina sus vacaciones o incapacidad).
 /// </summary>
 [RequiresPermission(Permissions.AttendanceCalculate)]
 public sealed record CalculatePreviousDayCommand : IRequest<int>;
@@ -159,14 +160,17 @@ public sealed class CalculatePreviousDayCommandHandler : IRequestHandler<Calcula
     private readonly IConsolidationWakeup _wakeup;
     private readonly ILogger<CalculatePreviousDayCommandHandler> _logger;
     private readonly TimeProvider _timeProvider;
+    private readonly IUnitOfWork? _unitOfWork;
 
     public CalculatePreviousDayCommandHandler(
         IEmployeeRepository employees,
         IAttendanceConsolidationRepository consolidations,
         IConsolidationWakeup wakeup,
         ILogger<CalculatePreviousDayCommandHandler> logger,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IUnitOfWork? unitOfWork = null)
     {
+        _unitOfWork = unitOfWork;
         _employees = employees;
         _consolidations = consolidations;
         _wakeup = wakeup;
@@ -177,8 +181,22 @@ public sealed class CalculatePreviousDayCommandHandler : IRequestHandler<Calcula
     /// <returns>Empleados solicitados.</returns>
     public async Task<int> Handle(CalculatePreviousDayCommand request, CancellationToken cancellationToken)
     {
-        var yesterday = _timeProvider.GetLocalNow().Date.AddDays(-1);
-        var active = (await _employees.GetAllAsync(cancellationToken)).Where(e => e.IsActiveOn(yesterday)).Select(e => e.Id).ToList();
+        var today = _timeProvider.GetLocalNow().Date;
+        var yesterday = today.AddDays(-1);
+        var all = await _employees.GetAllAsync(cancellationToken);
+
+        if (_unitOfWork != null)
+        {
+            var refreshed = all.Where(e => e.RefreshStatus(today)).ToList();
+            foreach (var employee in refreshed) _employees.Update(employee);
+            if (refreshed.Count > 0)
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                _logger.LogInformation("Estado actualizado al de hoy para {Count} empleados (inicio o fin de vacaciones, incapacidad o baja temporal).", refreshed.Count);
+            }
+        }
+
+        var active = all.Where(e => e.IsActiveOn(yesterday)).Select(e => e.Id).ToList();
         if (active.Count == 0) return 0;
 
         await _consolidations.RequestManyAsync(active, yesterday, yesterday, cancellationToken);

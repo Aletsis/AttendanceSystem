@@ -82,6 +82,8 @@ public sealed class GetAllEmployeesQueryHandler : IRequestHandler<GetAllEmployee
                 OvertimeCapMinutes = e.OvertimeCapMinutes,
                 CalculateOvertimeBeforeEntry = e.CalculateOvertimeBeforeEntry,
                 DevicePrivilege = e.DevicePrivilege,
+
+                StatusPeriods = e.StatusPeriods.OrderByDescending(p => p.StartDate).Select(p => new StatusPeriodDto(p.Status, p.StartDate, p.EndDate)).ToList(),
                 Photo = e.Photo,
                 CreatedAt = e.CreatedAt,
                 CreatedBy = e.CreatedBy,

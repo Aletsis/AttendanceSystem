@@ -216,7 +216,9 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 CardNumber = employee.CardNumber,
                 DevicePassword = employee.DevicePassword,
                 Photo = employee.Photo,
-                DevicePrivilege = employee.DevicePrivilege
+                DevicePrivilege = employee.DevicePrivilege,
+
+                StatusPeriods = employee.StatusPeriods.OrderByDescending(p => p.StartDate).Select(p => new StatusPeriodDto(p.Status, p.StartDate, p.EndDate)).ToList()
             };
 
             _logger.LogInformation("Empleado creado: {EmployeeId} - {FullName}", employee.Id.Value, employee.GetFullName());

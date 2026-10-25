@@ -128,7 +128,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                         internalEmployee.FirstName,
                         internalEmployee.DevicePassword ?? "",
                         (int)internalEmployee.DevicePrivilege,
-                        internalEmployee.Status == EmployeeStatus.Alta,
+                        internalEmployee.Status != EmployeeStatus.Baja, // caso 16: de vacaciones o incapacidad sigue habilitado
                         internalEmployee.CardNumber,
                         internalEmployee.Fingerprints?.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.Template)).ToList(),
                         internalEmployee.FaceTemplate,
@@ -154,7 +154,7 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                         $"{externalEmployee.FirstName} {externalEmployee.LastName}".Trim(),
                         "", // Sin contraseña PIN en sucursal remota
                         privilege,
-                        externalEmployee.Status == EmployeeStatus.Alta,
+                        externalEmployee.Status != EmployeeStatus.Baja,
                         externalEmployee.CardNumber,
                         null,
                         null,

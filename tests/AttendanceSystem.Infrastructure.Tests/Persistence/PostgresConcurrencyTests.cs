@@ -415,6 +415,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         employee.RecordAssignment(new DateTime(2026, 6, 10), afternoon.Id, ShiftType.Vespertino, branch.Id, new[] { WeekDay.Sabado, WeekDay.Domingo });
         employee.Terminate(new DateTime(2026, 6, 20));
         employee.Rehire(new DateTime(2026, 7, 1));
+        employee.StartLeave(EmployeeStatus.Vacaciones, new DateTime(2026, 7, 6), new DateTime(2026, 7, 10));
 
         var daily = DailyAttendance.Create(employee.Id, new DateTime(2026, 6, 15), afternoon, null, null, false);
         daily.MarkOpenInterval("Intervalo abierto sin salida registrada desde las 13:00.");
@@ -435,6 +436,8 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         loaded.EmploymentPeriods.Should().HaveCount(2);
         loaded.IsActiveOn(new DateTime(2026, 6, 25)).Should().BeFalse("la interrupción entre períodos persiste");
         loaded.IsActiveOn(new DateTime(2026, 7, 2)).Should().BeTrue();
+        loaded.StatusPeriods.Should().ContainSingle(p => p.Status == EmployeeStatus.Vacaciones && p.EndDate == new DateTime(2026, 7, 10));
+        loaded.IsActiveOn(new DateTime(2026, 7, 8)).Should().BeFalse("las vacaciones persisten");
         loaded.AssignmentOn(new DateTime(2026, 6, 9)).ScheduleId.Should().Be(morning.Id);
         loaded.AssignmentOn(new DateTime(2026, 6, 10)).ScheduleId.Should().Be(afternoon.Id);
         loaded.RestDaysOn(new DateTime(2026, 6, 9)).Should().BeEmpty("los descansos fechados persisten por vigencia");

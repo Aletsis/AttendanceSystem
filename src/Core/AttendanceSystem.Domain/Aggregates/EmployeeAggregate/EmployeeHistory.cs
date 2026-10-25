@@ -27,6 +27,36 @@ public sealed class EmploymentPeriod : Entity<Guid>
 }
 
 /// <summary>
+/// Caso 16: pausa dentro de la relación laboral (vacaciones, incapacidad o baja temporal) [inicio, fin]; sin fin =
+/// hasta que RH regrese al empleado a Alta. En esos días no se calcula asistencia ni aparece en los reportes.
+/// </summary>
+public sealed class StatusPeriod : Entity<Guid>
+{
+    public Enumerations.EmployeeStatus Status { get; private set; }
+    public DateTime StartDate { get; private set; }
+    public DateTime? EndDate { get; private set; }
+
+    private StatusPeriod() { }
+
+    internal StatusPeriod(Enumerations.EmployeeStatus status, DateTime startDate, DateTime? endDate)
+    {
+        Id = Guid.NewGuid();
+        Status = status;
+        StartDate = startDate.Date;
+        EndDate = endDate?.Date;
+    }
+
+    public bool Contains(DateTime date) => date.Date >= StartDate && (!EndDate.HasValue || date.Date <= EndDate.Value);
+
+    public bool Overlaps(DateTime start, DateTime? end) =>
+        (!end.HasValue || StartDate <= end.Value.Date) && (!EndDate.HasValue || EndDate.Value >= start.Date);
+
+    internal void Close(DateTime endDate) => EndDate = endDate.Date;
+
+    internal void MoveStart(DateTime startDate) => StartDate = startDate.Date;
+}
+
+/// <summary>
 /// Asignación laboral vigente desde una fecha (F06-08): horario, tipo de turno, sucursal y días de descanso. El
 /// cálculo de una fecha usa la asignación con la mayor <see cref="EffectiveFrom"/> que no la supere.
 /// </summary>

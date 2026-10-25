@@ -80,10 +80,12 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true">
-                                @foreach (var status in Enum.GetValues<StatusEnum>())
+                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true"
+                                       Disabled="@(IsLeave(_originalStatus) && !_canManageLeave)"
+                                       HelperText="@(IsLeave(Status) ? "En vacaciones, incapacidad o baja temporal no se calcula asistencia ni aparece en reportes." : null)">
+                                @foreach (var status in Enum.GetValues<StatusEnum>().Where(s => _canManageLeave || !IsLeave(s) || s == _originalStatus))
                                 {
-                                    <MudSelectItem T="StatusEnum" Value="@status">@status.ToString()</MudSelectItem>
+                                    <MudSelectItem T="StatusEnum" Value="@status">@StatusName(status)</MudSelectItem>
                                 }
                             </MudSelect>
                         </MudItem>
@@ -273,8 +275,14 @@
                     <MudText Typo="Typo.subtitle2" Class="mb-2">@EffectiveFromTitle</MudText>
                     <MudDatePicker @bind-Date="_effectiveFrom" Label="@EffectiveFromLabel" Required="true" Editable="true"
                                    Mask="@(new DateMask("dd/MM/yyyy"))" MinDate="_hireDate"
-                                   MaxDate="@(Status != _originalStatus ? DateTime.Today : null)"
+                                   MaxDate="@(Status != _originalStatus && !StartsLeave ? DateTime.Today : null)"
                                    HelperText="Si la fecha es pasada, las jornadas desde esa fecha se recalculan automáticamente." />
+                    @if (StartsLeave)
+                    {
+                        <MudDatePicker @bind-Date="_effectiveTo" Label="Hasta (opcional)" Editable="true" Clearable="true" Class="mt-2"
+                                       Mask="@(new DateMask("dd/MM/yyyy"))" MinDate="_effectiveFrom"
+                                       HelperText="Último día del período; al día siguiente regresa solo a Alta. Sin fecha: hasta que RH lo regrese a Alta." />
+                    }
                 </MudPaper>
             }
         }
@@ -331,12 +339,27 @@
         (BranchId != _originalBranchId || _selectedShiftType != _originalShiftType ||
          ScheduleId != _originalScheduleId || Status != _originalStatus || !_originalRestDays.SetEquals(_selectedRestDays));
 
+    // Caso 16: vacaciones, incapacidad y baja temporal son períodos con fechas; sólo RH y Administrador los registran.
+    private static bool IsLeave(StatusEnum status) => AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(status);
+    private bool StartsLeave => Status != _originalStatus && IsLeave(Status);
+    private bool ReturnsFromLeave => Status == StatusEnum.Alta && IsLeave(_originalStatus);
+    private bool _canManageLeave;
+    private DateTime? _effectiveTo;
+
+    private static string StatusName(StatusEnum status) => status switch
+    {
+        StatusEnum.BajaTemporal => "Baja temporal",
+        _ => status.ToString()
+    };
+
     private string EffectiveFromTitle => Status != _originalStatus
-        ? (Status == StatusEnum.Baja ? "Fecha de la baja" : "Fecha del reingreso")
+        ? (StartsLeave ? $"Período de {StatusName(Status).ToLowerInvariant()}"
+            : ReturnsFromLeave ? "Regreso a trabajar"
+            : Status == StatusEnum.Baja ? "Fecha de la baja" : "Fecha del reingreso")
         : "Vigencia del cambio de horario, turno, sucursal o días de descanso";
 
-    private string EffectiveFromLabel => Status != _originalStatus && Status == StatusEnum.Baja
-        ? "Último día laborado"
+    private string EffectiveFromLabel => Status != _originalStatus
+        ? (StartsLeave ? "Desde" : ReturnsFromLeave ? "Regresa a trabajar el" : Status == StatusEnum.Baja ? "Último día laborado" : "Vigente desde")
         : "Vigente desde";
     private bool _loading = true;
     private bool _canEditOvertime;
@@ -385,6 +408,7 @@
     {
         _hasSchedulePermission = await UiPermissions.HasAsync(Permissions.EmployeesEditSchedule);
         _canEditOvertime = await UiPermissions.HasAsync(Permissions.EmployeesEditOvertime);
+        _canManageLeave = await UiPermissions.HasAsync(Permissions.EmployeesLeave);
 
         _hireDate = HireDate;
         
@@ -625,6 +649,12 @@
                 return;
             }
 
+            if (StartsLeave && _effectiveTo.HasValue && _effectiveTo.Value.Date < _effectiveFrom!.Value.Date)
+            {
+                Snackbar.Add("La fecha final no puede ser anterior a la inicial", Severity.Warning);
+                return;
+            }
+
             if (!_filteredPositions.Any(p => p.Id == PositionId))
             {
                 Snackbar.Add("El puesto seleccionado no pertenece al departamento seleccionado", Severity.Warning);
@@ -831,7 +861,8 @@
                     Photo,
                     DevicePrivilege,
                     effectiveRestDays,
-                    HasDatedChange ? _effectiveFrom : null);
+                    HasDatedChange ? _effectiveFrom : null,
+                    StartsLeave ? _effectiveTo : null);
             }
             else
             {

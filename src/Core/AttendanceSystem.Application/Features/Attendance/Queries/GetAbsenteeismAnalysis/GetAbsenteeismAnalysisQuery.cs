@@ -51,7 +51,8 @@ public sealed class GetAbsenteeismAnalysisQueryHandler
                 cancellationToken);
 
             var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
-            var employees = allEmployees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
+            // Caso 16: cada empleado se incluye por sus días activos (relación laboral sin vacaciones ni incapacidad), no por su estado actual.
+            var employees = allEmployees.ToList();
             if (request.BranchId != null)
             {
                 employees = employees.Where(e => e.BranchId == request.BranchId).ToList();

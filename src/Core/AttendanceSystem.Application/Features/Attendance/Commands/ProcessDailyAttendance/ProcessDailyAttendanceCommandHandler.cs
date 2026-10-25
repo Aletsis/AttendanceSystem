@@ -423,6 +423,13 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                     await RecalculateJornadaAsync(ws, date, shifts, assignedAt, cancellationToken);
                     processed++;
                 }
+                else if (employee.IsEmployedOn(date))
+                {
+                    // Caso 16: de vacaciones, incapacidad o baja temporal no se calcula; una jornada ya calculada
+                    // (pausa registrada con fecha pasada) se elimina y sus marcajes quedan libres.
+                    await EnsureLoadedAsync(ws, date, cancellationToken);
+                    if (ws.ExistingDaily.ContainsKey(date.Date)) await IncludeInUnitAsync(ws, date, cancellationToken);
+                }
 
                 date = date.AddDays(1);
                 continue;

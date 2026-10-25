@@ -186,6 +186,19 @@ public class EmployeeConfiguration : IEntityTypeConfiguration<Employee>
         });
         builder.Navigation(e => e.EmploymentPeriods).UsePropertyAccessMode(PropertyAccessMode.Field);
 
+        // Caso 16: vacaciones, incapacidades y bajas temporales con fechas.
+        builder.OwnsMany(e => e.StatusPeriods, sb =>
+        {
+            sb.ToTable("EmployeeStatusPeriods");
+            sb.WithOwner().HasForeignKey("EmployeeId");
+            sb.HasKey(p => p.Id);
+            sb.Property(p => p.Id).ValueGeneratedNever();
+            sb.Property(p => p.Status).HasConversion<int>().IsRequired();
+            sb.Property(p => p.StartDate).HasColumnType("date").IsRequired();
+            sb.Property(p => p.EndDate).HasColumnType("date");
+        });
+        builder.Navigation(e => e.StatusPeriods).UsePropertyAccessMode(PropertyAccessMode.Field);
+
         // F06-08: vigencias de horario, tipo de turno y sucursal.
         builder.OwnsMany(e => e.ScheduleAssignments, ab =>
         {

@@ -39,7 +39,7 @@ public sealed class EfAttendanceCalculationReader : IAttendanceCalculationReader
 
         var employees = await query.ToListAsync(cancellationToken);
         return employees
-            .Where(e => e.IsActiveDuring(start, end) && (branchId == null || e.WasInBranchDuring(branchId, start, end)))
+            .Where(e => e.IsEmployedDuring(start, end) && (branchId == null || e.WasInBranchDuring(branchId, start, end)))
             .ToList();
     }
 

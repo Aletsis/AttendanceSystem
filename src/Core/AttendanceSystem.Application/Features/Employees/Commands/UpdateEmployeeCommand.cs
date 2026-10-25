@@ -41,7 +41,8 @@ public sealed record UpdateEmployeeCommand(
     string? Photo = null,
     DevicePrivilege DevicePrivilege = DevicePrivilege.User,
     List<int>? RestDays = null,
-    DateTime? EffectiveFrom = null) : IRequest<Result<EmployeeDto>>;
+    DateTime? EffectiveFrom = null,
+    DateTime? EffectiveTo = null) : IRequest<Result<EmployeeDto>>;
 
 public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmployeeCommand, Result<EmployeeDto>>
 {
@@ -191,7 +192,8 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                     request.Photo,
                     request.DevicePrivilege,
                     restDays,
-                    request.EffectiveFrom);
+                    request.EffectiveFrom,
+                    request.EffectiveTo);
 
                 _employeeRepository.Update(employee);
 
@@ -255,7 +257,9 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 CardNumber = employee.CardNumber,
                 DevicePassword = employee.DevicePassword,
                 Photo = employee.Photo,
-                DevicePrivilege = employee.DevicePrivilege
+                DevicePrivilege = employee.DevicePrivilege,
+
+                StatusPeriods = employee.StatusPeriods.OrderByDescending(p => p.StartDate).Select(p => new StatusPeriodDto(p.Status, p.StartDate, p.EndDate)).ToList()
             };
 
             _logger.LogInformation("Empleado actualizado: {EmployeeId} - {FullName}", employee.Id.Value, employee.GetFullName());

@@ -65,10 +65,23 @@
                         </MudItem>
                         <MudItem xs="6">
                             <MudText Typo="Typo.subtitle2">Estado</MudText>
-                             <MudChip T="string" Color="@(_employee.Status == EmployeeStatus.Alta ? Color.Success : Color.Error)" Size="Size.Small">
-                                @_employee.Status
+                             <MudChip T="string" Color="@(_employee.Status == EmployeeStatus.Alta ? Color.Success : _employee.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">
+                                @(_employee.Status == EmployeeStatus.BajaTemporal ? "Baja temporal" : _employee.Status.ToString())
                             </MudChip>
                         </MudItem>
+                        @if (_employee.StatusPeriods.Any())
+                        {
+                            <MudItem xs="12">
+                                <MudText Typo="Typo.subtitle2">Vacaciones, incapacidades y bajas temporales</MudText>
+                                @foreach (var period in _employee.StatusPeriods)
+                                {
+                                    <MudText Typo="Typo.body2">
+                                        @(period.Status == EmployeeStatus.BajaTemporal ? "Baja temporal" : period.Status.ToString()):
+                                        del @period.StartDate.ToString("dd/MM/yyyy") @(period.EndDate is { } end ? $"al {end:dd/MM/yyyy}" : "sin fecha de regreso")
+                                    </MudText>
+                                }
+                            </MudItem>
+                        }
                         <MudItem xs="6">
                             <MudText Typo="Typo.subtitle2">Turno / Horario</MudText>
                             @if (_employee.ShiftType == ShiftType.Rotativo)

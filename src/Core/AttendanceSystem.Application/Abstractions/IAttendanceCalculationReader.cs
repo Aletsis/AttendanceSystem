@@ -77,7 +77,7 @@ public sealed class RepositoryCalculationReader : IAttendanceCalculationReader
             employees = employees.Where(e => set.Contains(e.Id));
         }
         return employees
-            .Where(e => e.IsActiveDuring(start, end) && (branchId == null || e.WasInBranchDuring(branchId, start, end)))
+            .Where(e => e.IsEmployedDuring(start, end) && (branchId == null || e.WasInBranchDuring(branchId, start, end)))
             .ToList();
     }
 

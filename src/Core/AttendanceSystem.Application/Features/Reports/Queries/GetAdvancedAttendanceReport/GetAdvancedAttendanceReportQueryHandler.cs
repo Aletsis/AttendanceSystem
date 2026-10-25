@@ -75,9 +75,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             employees = employees.Where(e => e.DepartmentId == request.DepartmentId).ToList();
         }
 
-        // Filtrar solo empleados activos
-        employees = employees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
-
+        // Caso 16: cada empleado se incluye por sus días activos (relación laboral sin vacaciones ni incapacidad), no por su estado actual.
 
         // 3. Obtener Departamentos, Puestos y Sucursales para referencia
         var departments = await _departmentRepository.GetAllAsync(cancellationToken);

@@ -11,6 +11,8 @@ public enum UnmatchedPunchKind
     BeforeHire = 2,
     /// <summary>Siguió checando después de su baja.</summary>
     AfterTermination = 3,
+    /// <summary>Caso 16: checó durante sus vacaciones, incapacidad o baja temporal (regresó antes o el período está mal).</summary>
+    DuringLeave = 4,
 }
 
 public sealed record UnmatchedPunchDto(
@@ -65,7 +67,10 @@ public sealed class GetUnmatchedPunchesQueryHandler : IRequestHandler<GetUnmatch
             }
             var date = day.WorkDate.ToDateTime(TimeOnly.MinValue);
             if (employee.IsActiveOn(date)) continue;
-            unmatched.Add((day.EmployeeId, date < FirstHireDate(employee) ? UnmatchedPunchKind.BeforeHire : UnmatchedPunchKind.AfterTermination, day));
+            var kind = employee.IsEmployedOn(date) ? UnmatchedPunchKind.DuringLeave
+                : date < FirstHireDate(employee) ? UnmatchedPunchKind.BeforeHire
+                : UnmatchedPunchKind.AfterTermination;
+            unmatched.Add((day.EmployeeId, kind, day));
         }
 
         return unmatched
@@ -98,9 +103,19 @@ public sealed class GetUnmatchedPunchesQueryHandler : IRequestHandler<GetUnmatch
     {
         UnmatchedPunchKind.NotRegistered => "El ID del reloj no corresponde a ningún empleado.",
         UnmatchedPunchKind.BeforeHire => $"Checó antes de su ingreso del {FirstHireDate(employee!):dd/MM/yyyy}.",
+        UnmatchedPunchKind.DuringLeave => employee!.LeaveOn(firstDate.ToDateTime(TimeOnly.MinValue)) is { } leave
+            ? $"Checó durante su {LeaveName(leave.Status)} del {leave.StartDate:dd/MM/yyyy}{(leave.EndDate is { } end ? $" al {end:dd/MM/yyyy}" : " (sin fecha de regreso)")}."
+            : "Checó durante vacaciones, incapacidad o baja temporal.",
         _ => TerminationBefore(employee!, firstDate) is { } end
             ? $"Siguió checando después de su baja del {end:dd/MM/yyyy}."
             : "Siguió checando sin estar dado de alta."
+    };
+
+    public static string LeaveName(EmployeeStatus status) => status switch
+    {
+        EmployeeStatus.Vacaciones => "periodo de vacaciones",
+        EmployeeStatus.Incapacidad => "incapacidad",
+        _ => "baja temporal"
     };
 
     private static DateTime? TerminationBefore(Employee employee, DateOnly date)

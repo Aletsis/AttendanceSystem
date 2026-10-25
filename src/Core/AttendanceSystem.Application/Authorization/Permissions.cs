@@ -26,6 +26,8 @@ public static class Permissions
     public const string EmployeesEditSchedule = "Employees.EditSchedule";
     /// <summary>Autorización, redondeo, topes y extras antes de la entrada.</summary>
     public const string EmployeesEditOvertime = "Employees.EditOvertime";
+    /// <summary>Caso 16: vacaciones, incapacidad y baja temporal (registrar, cambiar o terminar el período).</summary>
+    public const string EmployeesLeave = "Employees.Leave";
     public const string EmployeesDelete = "Employees.Delete";
     public const string EmployeesImport = "Employees.Import";
     public const string EmployeesExport = "Employees.Export";
@@ -106,6 +108,7 @@ public static class RolePermissions
     {
         Permissions.EmployeesEditSchedule,
         Permissions.EmployeesEditOvertime,
+        Permissions.EmployeesLeave,
         Permissions.ExternalEmployeesEdit,
         Permissions.PositionsManage,
         Permissions.RosterManage,

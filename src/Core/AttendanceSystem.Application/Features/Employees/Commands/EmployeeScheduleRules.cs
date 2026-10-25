@@ -47,6 +47,11 @@ public static class EmployeeFieldPermissions
         if (!SameOvertime(employee, request) && permissions.Deny(Permissions.EmployeesEditOvertime) is { } overtime) return overtime;
 
         if (employee.DevicePrivilege != request.DevicePrivilege && permissions.Deny(Permissions.EmployeesDevicePrivilege) is { } device) return device;
+
+        // Caso 16: vacaciones, incapacidad y baja temporal son de RH y Administrador; alta y baja, de todos.
+        var leaveChange = (Employee.IsLeaveStatus(request.Status) && (request.Status != employee.Status || request.EffectiveTo.HasValue)) ||
+                          (Employee.IsLeaveStatus(employee.Status) && request.Status != employee.Status);
+        if (leaveChange && permissions.Deny(Permissions.EmployeesLeave) is { } leave) return leave;
         return null;
     }
 

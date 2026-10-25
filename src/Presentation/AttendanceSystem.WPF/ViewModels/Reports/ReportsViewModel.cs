@@ -80,7 +80,7 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
                 {
                     Employees.Clear();
                     Employees.Add("Todos");
-                    foreach (var emp in empResult.Value.Where(e => e.Status == EmployeeStatus.Alta)) Employees.Add($"{emp.Id} - {emp.FullName}");
+                    foreach (var emp in empResult.Value) Employees.Add($"{emp.Id} - {emp.FullName}");
                     SelectedEmployee = "Todos";
                 }
 
