@@ -49,7 +49,8 @@ public sealed record UpdateSystemConfigurationCommand(
     TimeSpan? NightLunchWindowEnd = null,
     bool? LunchWindowEnabled = null,
     int? DoubleTapMinutes = null,
-    DateTime? RecalculateFrom = null) : IRequest<Result<Guid>>;
+    DateTime? RecalculateFrom = null,
+    AttendanceSystem.Domain.Services.PunchQuarantinePolicy? QuarantinePolicy = null) : IRequest<Result<Guid>>;
 
 public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<UpdateSystemConfigurationCommand, Result<Guid>>
 {
@@ -132,6 +133,12 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
         if (command.DoubleTapMinutes.HasValue)
         {
             config.UpdateDoubleTapMinutes(command.DoubleTapMinutes.Value);
+        }
+
+        // Caso 18: los clientes que no envían los umbrales de cuarentena los conservan.
+        if (command.QuarantinePolicy != null)
+        {
+            config.UpdateQuarantinePolicy(command.QuarantinePolicy);
         }
 
         if (command.NightLunchWindowStart.HasValue || command.NightLunchWindowEnd.HasValue)

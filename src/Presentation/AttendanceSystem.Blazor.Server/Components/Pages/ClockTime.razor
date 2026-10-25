@@ -62,9 +62,24 @@
     {
     <MudTabPanel Text="@($"Cuarentena ({_pendingCount})")" Icon="@Icons.Material.Filled.GppMaybe">
         <MudText Typo="Typo.body2" Class="mb-3">
-            Marcajes que el reloj envió con una fecha anterior al año 2000 o con una hora posterior a la actual de su zona.
-            No cuentan en ninguna jornada hasta que se liberan con la hora corregida o se descartan.
+            Marcajes con hora sospechosa: fecha anterior a la mínima del reloj, hora en el futuro, la hora retrocedió entre marcajes,
+            o el reloj estaba atrasado (al descargar o en tiempo real). No cuentan en ninguna jornada hasta que se liberan con la hora
+            corregida o se descartan; una re-descarga no los vuelve a ingresar.
         </MudText>
+        @foreach (var group in _quarantine.Where(p => p.Status == QuarantineStatus.Pending).GroupBy(p => (p.DeviceId, p.DeviceName)))
+        {
+            <MudPaper Outlined="true" Class="pa-3 mb-3 d-flex flex-wrap align-center gap-3">
+                <MudText Typo="Typo.body2"><b>@group.Key.DeviceName</b>: @group.Count() pendiente(s)@(group.Any(p => p.SuggestedOffsetMinutes.HasValue) ? $", {group.Count(p => p.SuggestedOffsetMinutes.HasValue)} con corrección sugerida" : "")</MudText>
+                <MudTextField @bind-Value="_bulkNote" Label="Motivo" Dense="true" Style="max-width: 280px" />
+                @if (group.Any(p => p.SuggestedOffsetMinutes.HasValue))
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_bulkNote))"
+                               OnClick="@(() => ReleaseDeviceAsync(group.Key.DeviceId, null))">Liberar con la corrección sugerida</MudButton>
+                }
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_bulkNote))"
+                           OnClick="@(() => ReleaseDeviceAsync(group.Key.DeviceId, ReleaseOffset))">Liberar todos con el desfase de abajo (@FormatOffset(ReleaseOffset))</MudButton>
+            </MudPaper>
+        }
         <MudSelect T="QuarantineStatus?" Value="_statusFilter" ValueChanged="OnStatusFilterChanged" Label="Mostrar" Dense="true" Class="mb-3" Style="max-width: 240px">
             <MudSelectItem T="QuarantineStatus?" Value="@((QuarantineStatus?)QuarantineStatus.Pending)">Pendientes</MudSelectItem>
             <MudSelectItem T="QuarantineStatus?" Value="@((QuarantineStatus?)QuarantineStatus.Released)">Liberados</MudSelectItem>
@@ -78,14 +93,18 @@
                 <MudTh>Empleado</MudTh>
                 <MudTh>Reloj</MudTh>
                 <MudTh>Hora reportada</MudTh>
+                <MudTh>Regla</MudTh>
                 <MudTh>Motivo</MudTh>
+                <MudTh>Corrección sugerida</MudTh>
                 <MudTh>Estado</MudTh>
             </HeaderContent>
             <RowTemplate>
                 <MudTd>@context.EmployeeId – @context.EmployeeName</MudTd>
                 <MudTd>@context.DeviceName</MudTd>
                 <MudTd>@context.ReportedTime.ToString("dd/MM/yyyy HH:mm:ss")</MudTd>
+                <MudTd>@(context.Rule ?? "—")</MudTd>
                 <MudTd>@context.Reason</MudTd>
+                <MudTd>@(context.SuggestedOffsetMinutes is { } suggested ? FormatOffset(suggested) : "—")</MudTd>
                 <MudTd>
                     @switch (context.Status)
                     {
@@ -274,8 +293,31 @@
     private void SelectPunch(QuarantinedPunchDto punch)
     {
         _selected = punch;
-        _releaseDays = _releaseHours = _releaseMinutes = 0;
+        // Caso 18: se propone la corrección sugerida por la regla.
+        var suggested = punch.SuggestedOffsetMinutes ?? 0;
+        _releaseDays = suggested / 1440;
+        _releaseHours = suggested % 1440 / 60;
+        _releaseMinutes = suggested % 60;
         _note = string.Empty;
+    }
+
+    private string _bulkNote = string.Empty;
+
+    private async Task ReleaseDeviceAsync(string deviceId, int? offsetMinutes)
+    {
+        _busy = true;
+        var result = await Sender.Send(new ReleaseQuarantinedPunchesCommand(deviceId, offsetMinutes, _bulkNote));
+        _busy = false;
+        if (result.IsFailure)
+        {
+            Snackbar.Add(result.Error, Severity.Error);
+            return;
+        }
+        var r = result.Value;
+        Snackbar.Add($"{r.Released} ingresado(s), {r.Duplicates} ya existían, {r.Skipped} omitido(s).", r.Skipped > 0 ? Severity.Warning : Severity.Success);
+        foreach (var error in r.Errors) Snackbar.Add(error, Severity.Warning);
+        _bulkNote = string.Empty;
+        await LoadAsync();
     }
 
     private async Task ResolveAlert(ClockAlertDto alert)

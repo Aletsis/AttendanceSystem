@@ -8,7 +8,8 @@ namespace AttendanceSystem.Application.Features.Devices.Quarantine;
 
 public sealed record QuarantinedPunchDto(
     Guid Id, string EmployeeId, string EmployeeName, string DeviceId, string DeviceName, DateTime ReportedTime, string TimeZoneId,
-    string Reason, DateTime ReceivedAtUtc, QuarantineStatus Status, DateTime? ReleasedTime, string? ResolvedBy, string? ResolutionNote);
+    string Reason, DateTime ReceivedAtUtc, QuarantineStatus Status, DateTime? ReleasedTime, string? ResolvedBy, string? ResolutionNote,
+    string? Rule = null, int? SuggestedOffsetMinutes = null);
 
 public sealed record PunchTimeCorrectionDto(
     Guid Id, string DeviceName, DateOnly FromDate, DateOnly ToDate, string? TimeZoneId, int OffsetMinutes, string Reason,
@@ -60,7 +61,7 @@ public sealed class ClockTimeQueryHandler :
         return punches.Select(p => new QuarantinedPunchDto(p.Id, p.EmployeeId, employees.GetValueOrDefault(p.EmployeeId, "(no registrado)"),
             p.DeviceId.Value, devices.GetValueOrDefault(p.DeviceId.Value, p.DeviceId.Value), DateTime.SpecifyKind(p.ReportedTime, DateTimeKind.Unspecified),
             p.TimeZoneId, p.Reason, p.ReceivedAtUtc, p.Status, p.ReleasedTime is { } r ? DateTime.SpecifyKind(r, DateTimeKind.Unspecified) : null,
-            p.ResolvedBy, p.ResolutionNote)).ToList();
+            p.ResolvedBy, p.ResolutionNote, p.Rule, p.SuggestedOffsetMinutes)).ToList();
     }
 
     public async Task<IReadOnlyList<PunchTimeCorrectionDto>> Handle(GetPunchTimeCorrectionsQuery request, CancellationToken cancellationToken)

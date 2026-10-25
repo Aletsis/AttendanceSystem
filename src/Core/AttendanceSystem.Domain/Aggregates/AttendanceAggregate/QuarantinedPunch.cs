@@ -31,12 +31,16 @@ public sealed class QuarantinedPunch : AggregateRoot<Guid>
     public string? ResolutionNote { get; private set; }
     /// <summary>Hora civil con la que se liberó (reportada + desfase aplicado).</summary>
     public DateTime? ReleasedTime { get; private set; }
+
+    /// <summary>Caso 18: regla que lo mandó a cuarentena (R1…R4, Atraso al descargar, Incidente) y la corrección sugerida.</summary>
+    public string? Rule { get; private set; }
+    public int? SuggestedOffsetMinutes { get; private set; }
     public AttendanceRecordId? ReleasedRecordId { get; private set; }
 
     private QuarantinedPunch() { }
 
     public static QuarantinedPunch Create(string employeeId, DeviceId deviceId, DateTime reportedTime, string timeZoneId,
-        int verifyMethodCode, int checkTypeCode, string source, string reason)
+        int verifyMethodCode, int checkTypeCode, string source, string reason, string? rule = null, int? suggestedOffsetMinutes = null)
     {
         if (string.IsNullOrWhiteSpace(employeeId)) throw new DomainException("El marcaje en cuarentena requiere empleado");
         return new QuarantinedPunch
@@ -50,6 +54,8 @@ public sealed class QuarantinedPunch : AggregateRoot<Guid>
             CheckTypeCode = checkTypeCode,
             Source = source,
             Reason = reason,
+            Rule = rule,
+            SuggestedOffsetMinutes = suggestedOffsetMinutes,
             ReceivedAtUtc = DateTime.UtcNow,
             Status = QuarantineStatus.Pending
         };

@@ -57,6 +57,13 @@ public class SystemConfigurationConfiguration : IEntityTypeConfiguration<SystemC
         builder.Property(c => c.PaidLunchMinutes).IsRequired().HasDefaultValue(30);
         builder.Property(c => c.LunchWindowEnabled).IsRequired().HasDefaultValue(true);
         builder.Property(c => c.DoubleTapMinutes).IsRequired().HasDefaultValue(15);
+        builder.Property(c => c.QuarantineMinDateDaysBeforeDevice).IsRequired().HasDefaultValue(30);
+        builder.Property(c => c.QuarantineFutureToleranceMinutes).IsRequired().HasDefaultValue(5);
+        builder.Property(c => c.QuarantineBackwardJumpMinutes).IsRequired().HasDefaultValue(60);
+        builder.Property(c => c.QuarantineRealtimeLagMinutes).IsRequired().HasDefaultValue(30);
+        builder.Property(c => c.QuarantineClockDriftAlertMinutes).IsRequired().HasDefaultValue(10);
+        builder.Property(c => c.QuarantineSdkReadMarginDays).IsRequired().HasDefaultValue(1);
+        builder.Ignore(c => c.QuarantinePolicy);
         builder.Property(c => c.NightLunchWindowStart).IsRequired().HasDefaultValue(new TimeSpan(23, 0, 0));
         builder.Property(c => c.NightLunchWindowEnd).IsRequired().HasDefaultValue(new TimeSpan(4, 0, 0));
         builder.Ignore(c => c.LunchPolicy);

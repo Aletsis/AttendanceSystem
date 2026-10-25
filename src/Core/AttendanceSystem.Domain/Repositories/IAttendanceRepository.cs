@@ -36,6 +36,9 @@ public interface IAttendanceRepository
     /// </summary>
     void Detach(AttendanceRecord record);
 
+    /// <summary>Caso 18: el marcaje vigente más reciente (por hora reportada) de un reloj; null si no tiene.</summary>
+    Task<AttendanceRecord?> GetLatestByDeviceAsync(DeviceId deviceId, CancellationToken cancellationToken = default);
+
     /// <summary>Caso 17: marcajes vigentes recibidos después de un instante con fecha laboral en el rango.</summary>
     Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default);
 

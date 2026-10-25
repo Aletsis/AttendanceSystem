@@ -14,19 +14,32 @@ public class DeviceHeartbeatTracker : IDeviceHeartbeatTracker
     // Mapeo de identificadores (Número de serie o DeviceId en minúsculas) a la última fecha/hora UTC registrada
     private readonly ConcurrentDictionary<string, DateTime> _lastActivityByDevice = new(StringComparer.OrdinalIgnoreCase);
 
+    // Caso 18: inicio de la comunicación sin interrupción (un hueco mayor que ConnectionGap la reinicia).
+    private static readonly TimeSpan ConnectionGap = TimeSpan.FromMinutes(5);
+    private readonly ConcurrentDictionary<string, DateTime> _connectedSince = new(StringComparer.OrdinalIgnoreCase);
+
     public void RecordActivity(string serialNumber, string? deviceId = null)
     {
         var now = DateTime.UtcNow;
 
-        if (!string.IsNullOrWhiteSpace(serialNumber))
+        foreach (var key in new[] { serialNumber, deviceId }.Where(k => !string.IsNullOrWhiteSpace(k)).Select(k => k!.Trim()))
         {
-            _lastActivityByDevice[serialNumber.Trim()] = now;
+            if (!_lastActivityByDevice.TryGetValue(key, out var previous) || now - previous > ConnectionGap)
+            {
+                _connectedSince[key] = now;
+            }
+            _lastActivityByDevice[key] = now;
         }
+    }
 
-        if (!string.IsNullOrWhiteSpace(deviceId))
+    public DateTime? GetConnectedSince(string? serialNumber, string? deviceId = null)
+    {
+        DateTime? since = null;
+        foreach (var key in new[] { serialNumber, deviceId }.Where(k => !string.IsNullOrWhiteSpace(k)).Select(k => k!.Trim()))
         {
-            _lastActivityByDevice[deviceId.Trim()] = now;
+            if (_connectedSince.TryGetValue(key, out var value) && (since == null || value < since)) since = value;
         }
+        return since;
     }
 
     public DateTime? GetLastActivity(string? serialNumber, string? deviceId = null)

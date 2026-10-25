@@ -192,6 +192,9 @@ internal sealed class InMemoryAttendanceRecordRepository : IAttendanceRepository
 
     public void Detach(AttendanceRecord record) { }
 
+    public Task<AttendanceRecord?> GetLatestByDeviceAsync(DeviceId deviceId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_store.Records.Where(r => r.DeviceId == deviceId && !r.IsVoided).OrderByDescending(r => r.CheckTime).FirstOrDefault());
+
     public Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) =>
         Task.FromResult<IReadOnlyList<AttendanceRecord>>(_store.Records
             .Where(r => !r.IsVoided && r.ReceivedAt > receivedAfterUtc && r.WorkDate is { } d && d >= fromDate && d <= toDate)

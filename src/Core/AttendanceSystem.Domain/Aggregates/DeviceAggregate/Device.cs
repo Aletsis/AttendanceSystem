@@ -22,6 +22,18 @@ public class Device : AggregateRoot<DeviceId>
     public string? Password { get; private set; }
     public string? TimeZoneId { get; private set; }
 
+    /// <summary>
+    /// Caso 18 (R1): marcajes anteriores a esta fecha son imposibles (el reloj perdió su fecha). Sin valor: la fecha de
+    /// alta del reloj menos los días configurados. El Administrador la adelanta para aceptar el historial de un reloj
+    /// migrado de otro sistema.
+    /// </summary>
+    public DateTime? AcceptPunchesFrom { get; private set; }
+
+    public DateTime MinimumPunchDate(int daysBeforeCreation) =>
+        (AcceptPunchesFrom ?? CreatedAt.Date.AddDays(-daysBeforeCreation)).Date;
+
+    public void SetAcceptPunchesFrom(DateTime? date) => AcceptPunchesFrom = date?.Date;
+
     public void SetDeviceType(string deviceType)
     {
         DeviceType = deviceType;

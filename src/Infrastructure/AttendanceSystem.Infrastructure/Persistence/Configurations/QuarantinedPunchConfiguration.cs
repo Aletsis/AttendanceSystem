@@ -18,6 +18,8 @@ public class QuarantinedPunchConfiguration : IEntityTypeConfiguration<Quarantine
         builder.Property(x => x.TimeZoneId).HasMaxLength(100).IsRequired();
         builder.Property(x => x.Source).HasMaxLength(50).IsRequired();
         builder.Property(x => x.Reason).HasMaxLength(500).IsRequired();
+        builder.Property(x => x.Rule).HasMaxLength(60);
+        builder.Property(x => x.SuggestedOffsetMinutes);
         builder.Property(x => x.Status).HasConversion<int>().IsRequired();
         builder.Property(x => x.ResolvedBy).HasMaxLength(100);
         builder.Property(x => x.ResolutionNote).HasMaxLength(500);

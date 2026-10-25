@@ -236,8 +236,19 @@ public sealed record ReleaseQuarantinedPunchCommand(Guid Id, int OffsetMinutes, 
 [RequiresPermission(Permissions.DevicesManage)]
 public sealed record DiscardQuarantinedPunchCommand(Guid Id, string Note) : IRequest<Result>;
 
+/// <summary>Resultado de liberar en bloque.</summary>
+public sealed record BulkReleaseResultDto(int Released, int Duplicates, int Skipped, IReadOnlyList<string> Errors);
+
+/// <summary>
+/// Caso 18: libera de una vez los marcajes pendientes de un reloj (o los indicados) con un mismo desfase, o con la
+/// corrección que sugirió cada regla si no se indica (los que no tienen sugerencia se omiten).
+/// </summary>
+[RequiresPermission(Permissions.DevicesManage)]
+public sealed record ReleaseQuarantinedPunchesCommand(string DeviceId, int? OffsetMinutes, string Note, IReadOnlyCollection<Guid>? Ids = null) : IRequest<Result<BulkReleaseResultDto>>;
+
 public sealed class QuarantinedPunchDecisionHandler :
     IRequestHandler<ReleaseQuarantinedPunchCommand, Result<string>>,
+    IRequestHandler<ReleaseQuarantinedPunchesCommand, Result<BulkReleaseResultDto>>,
     IRequestHandler<DiscardQuarantinedPunchCommand, Result>
 {
     private readonly IQuarantinedPunchRepository _quarantine;
@@ -312,6 +323,40 @@ public sealed class QuarantinedPunchDecisionHandler :
         {
             return Result<string>.Failure(ex.Message);
         }
+    }
+
+    public async Task<Result<BulkReleaseResultDto>> Handle(ReleaseQuarantinedPunchesCommand request, CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(request.Note)) return Result<BulkReleaseResultDto>.Failure("Indique el motivo de la decisión.");
+        var ids = request.Ids?.ToHashSet();
+        var pending = (await _quarantine.GetAsync(QuarantineStatus.Pending, 100_000, cancellationToken))
+            .Where(p => p.DeviceId.Value == request.DeviceId && (ids == null || ids.Contains(p.Id)))
+            .OrderBy(p => p.ReportedTime)
+            .ToList();
+        if (pending.Count == 0) return Result<BulkReleaseResultDto>.Failure("No hay marcajes pendientes de ese reloj.");
+
+        int released = 0, duplicates = 0, skipped = 0;
+        var errors = new List<string>();
+        foreach (var punch in pending)
+        {
+            var offset = request.OffsetMinutes ?? punch.SuggestedOffsetMinutes;
+            if (offset is not { } minutes)
+            {
+                skipped++;
+                continue;
+            }
+            var result = await Handle(new ReleaseQuarantinedPunchCommand(punch.Id, minutes, request.Note), cancellationToken);
+            if (result.IsFailure)
+            {
+                skipped++;
+                if (errors.Count < 10) errors.Add($"{punch.EmployeeId} {punch.ReportedTime:dd/MM/yyyy HH:mm}: {result.Error}");
+            }
+            else if (result.Value.StartsWith("Ya existía", StringComparison.Ordinal)) duplicates++;
+            else released++;
+        }
+        _logger.LogInformation("Liberación en bloque del reloj {Device} por {Author}: {Released} ingresados, {Duplicates} duplicados, {Skipped} omitidos.",
+            request.DeviceId, Author, released, duplicates, skipped);
+        return Result<BulkReleaseResultDto>.Success(new BulkReleaseResultDto(released, duplicates, skipped, errors));
     }
 
     public async Task<Result> Handle(DiscardQuarantinedPunchCommand request, CancellationToken cancellationToken)

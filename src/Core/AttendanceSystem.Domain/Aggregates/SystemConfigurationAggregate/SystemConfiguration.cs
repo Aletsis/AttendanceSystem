@@ -195,6 +195,28 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         PaidLunchMinutes = paidLunchMinutes;
     }
 
+    // Caso 18: umbrales de la cuarentena de marcajes.
+    public int QuarantineMinDateDaysBeforeDevice { get; private set; } = 30;
+    public int QuarantineFutureToleranceMinutes { get; private set; } = 5;
+    public int QuarantineBackwardJumpMinutes { get; private set; } = 60;
+    public int QuarantineRealtimeLagMinutes { get; private set; } = 30;
+    public int QuarantineClockDriftAlertMinutes { get; private set; } = 10;
+    public int QuarantineSdkReadMarginDays { get; private set; } = 1;
+
+    public Services.PunchQuarantinePolicy QuarantinePolicy => new(QuarantineMinDateDaysBeforeDevice, QuarantineFutureToleranceMinutes,
+        QuarantineBackwardJumpMinutes, QuarantineRealtimeLagMinutes, QuarantineClockDriftAlertMinutes, QuarantineSdkReadMarginDays);
+
+    public void UpdateQuarantinePolicy(Services.PunchQuarantinePolicy policy)
+    {
+        if (policy.Validate() is { } error) throw new DomainException(error);
+        QuarantineMinDateDaysBeforeDevice = policy.MinDateDaysBeforeDevice;
+        QuarantineFutureToleranceMinutes = policy.FutureToleranceMinutes;
+        QuarantineBackwardJumpMinutes = policy.BackwardJumpMinutes;
+        QuarantineRealtimeLagMinutes = policy.RealtimeLagMinutes;
+        QuarantineClockDriftAlertMinutes = policy.ClockDriftAlertMinutes;
+        QuarantineSdkReadMarginDays = policy.SdkReadMarginDays;
+    }
+
     public void UpdateDoubleTapMinutes(int minutes)
     {
         if (minutes < 1 || minutes > MaxDoubleTapMinutes)

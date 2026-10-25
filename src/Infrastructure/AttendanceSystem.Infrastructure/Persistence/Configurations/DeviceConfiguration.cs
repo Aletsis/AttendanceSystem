@@ -60,6 +60,8 @@ public class DeviceConfiguration : IEntityTypeConfiguration<Device>
             .HasColumnType("int")
             .IsRequired();
 
+        builder.Property(x => x.AcceptPunchesFrom).HasColumnType("date").IsRequired(false);
+
         builder.Property(x => x.TimeZoneId)
             .HasMaxLength(100)
             .IsRequired(false);

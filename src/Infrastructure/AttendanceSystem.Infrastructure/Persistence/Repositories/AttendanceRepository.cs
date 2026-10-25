@@ -62,6 +62,12 @@ public class AttendanceRepository : IAttendanceRepository
         _context.Entry(record).State = EntityState.Detached;
     }
 
+    public async Task<AttendanceRecord?> GetLatestByDeviceAsync(DeviceId deviceId, CancellationToken cancellationToken = default) =>
+        await _context.AttendanceRecords.AsNoTracking()
+            .Where(r => r.DeviceId == deviceId && r.VoidedAt == null)
+            .OrderByDescending(r => r.CheckTime)
+            .FirstOrDefaultAsync(cancellationToken);
+
     public async Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) =>
         await _context.AttendanceRecords.AsNoTracking()
             .Where(r => r.VoidedAt == null && r.ReceivedAt > receivedAfterUtc && r.WorkDate.HasValue && r.WorkDate.Value >= fromDate && r.WorkDate.Value <= toDate)

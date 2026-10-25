@@ -385,6 +385,12 @@
                  else
                  {
                      Snackbar.Add($"Descarga de {GetDeviceName(deviceId)} completada", Severity.Success);
+                     // Caso 18: avisos de la cuarentena.
+                     if (result.Value.ClockWarning is { } clockWarning) Snackbar.Add(clockWarning, Severity.Warning);
+                     if (result.Value.QuarantinedCount > 0)
+                         Snackbar.Add($"{result.Value.QuarantinedCount} marcaje(s) con hora sospechosa quedaron en cuarentena (Hora de relojes).", Severity.Warning);
+                     if (result.Value.AlreadyResolvedCount > 0)
+                         Snackbar.Add($"{result.Value.AlreadyResolvedCount} marcaje(s) ya resueltos en cuarentena; no se ingresaron de nuevo.", Severity.Info);
                  }
                  await LoadLogs(silent: true);
             }

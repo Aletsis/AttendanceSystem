@@ -273,7 +273,33 @@ public sealed class DownloadFromDeviceCommandHandler
             // con la de esa zona; si se desvió, se resincroniza y queda una alerta (los marcajes ya capturados con la
             // hora equivocada no se alteran aquí).
             var authoritativeTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
-            await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken, deviceIdValue);
+            var clockCheck = await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken, deviceIdValue);
+
+            // Caso 18: un reloj atrasado grabó los marcajes desde la descarga anterior con la hora corrida. Se lee más
+            // atrás (para no perderlos), se registra el incidente y esos marcajes van a cuarentena con la corrección.
+            var arrival = command.ForceFullSync
+                ? new AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext(AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Redownload)
+                : AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext.Download;
+            string? clockWarning = null;
+            if (!command.ForceFullSync && clockCheck.Drift is { } drift && -drift > AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService.DriftTolerance && _quarantine != null)
+            {
+                var behind = -drift;
+                var policy = await _quarantine.PolicyAsync(cancellationToken);
+                var previousCivil = filterDate.HasValue ? ToDeviceCivil(filterDate.Value, authoritativeTimeZone) : (DateTime?)null;
+                arrival = new AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext(
+                    AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Download, behind, previousCivil);
+                if (filterDate.HasValue) filterDate = filterDate.Value - behind - TimeSpan.FromDays(policy.SdkReadMarginDays);
+                if (clockCheck.Reported is { } reportedNow)
+                {
+                    await _quarantine.RecordClockIncidentAsync(deviceId,
+                        (previousCivil ?? reportedNow.AddDays(-policy.SdkReadMarginDays)) - behind - TimeSpan.FromDays(policy.SdkReadMarginDays),
+                        reportedNow, behind,
+                        $"Al descargar, el reloj marcaba {reportedNow:dd/MM/yyyy HH:mm} cuando eran las {clockCheck.Expected:dd/MM/yyyy HH:mm}",
+                        cancellationToken);
+                }
+                clockWarning = $"El reloj estaba atrasado {AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(behind)}: " +
+                               "se resincronizó y sus marcajes desde la descarga anterior quedaron en cuarentena para revisarlos.";
+            }
 
             // 5. Descargar registros mediante contrato explícito de resultados
             // La ventana se expresa en la hora civil del reloj (el SDK compara con la hora que marca).
@@ -393,15 +419,18 @@ public sealed class DownloadFromDeviceCommandHandler
                 }
             }
 
+            int quarantinedCount = 0, alreadyResolvedCount = 0;
             // Marcajes con hora imposible: a cuarentena (guardada antes de que el reloj pueda borrarse), no al cálculo.
             if (_quarantine != null && domainRecords.Count > 0)
             {
                 var punches = domainRecords.Select(r => new AttendanceSystem.Application.Features.Devices.Quarantine.PunchCandidate(
                     r.EmployeeId.Value, r.OriginalCheckTime ?? r.CheckTime, authoritativeTimeZone, r.VerifyMethod.Id, r.CheckType.Id, r.Source ?? deviceBrand.ToString())).ToList();
-                var impossible = await _quarantine.QuarantineImpossibleAsync(deviceId, deviceName, punches, cancellationToken);
-                if (impossible.Count > 0)
+                var outcome = await _quarantine.EvaluateAsync(deviceId, deviceName, punches, arrival, cancellationToken);
+                quarantinedCount = outcome.Quarantined;
+                alreadyResolvedCount = outcome.AlreadyResolved;
+                if (outcome.Excluded.Count > 0)
                 {
-                    domainRecords = domainRecords.Where((_, i) => !impossible.Contains(i)).ToList();
+                    domainRecords = domainRecords.Where((_, i) => !outcome.Excluded.Contains(i)).ToList();
                 }
             }
 
@@ -548,7 +577,10 @@ public sealed class DownloadFromDeviceCommandHandler
                 AffectedEmployeeIds: affectedEmployeeIds,
                 ReadStatus: readResult.Status,
                 LogsCleared: logsCleared,
-                ClearErrorMessage: clearErrorMessage));
+                ClearErrorMessage: clearErrorMessage,
+                QuarantinedCount: quarantinedCount,
+                AlreadyResolvedCount: alreadyResolvedCount,
+                ClockWarning: clockWarning));
         }
         catch (Exception ex)
         {

@@ -836,10 +836,16 @@ public class AdmsController : ControllerBase
         int insertedCount = 0;
         if (localLogs.Count > 0)
         {
+            // Caso 18: sin descarga ni comando en curso, el reloj empuja sus checadas al momento (tiempo real).
+            var arrival = downloadLogId == null && commandId == null
+                ? AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Realtime
+                : AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Redownload;
             var batchResult = await _mediator.Send(new RecordAttendanceBatchCommand(
                 device.Id.Value.ToString(),
                 localLogs,
-                DownloadLogId: downloadLogId));
+                DownloadLogId: downloadLogId,
+                Arrival: arrival,
+                DeviceSerial: SN));
 
             if (!batchResult.IsSuccess)
             {

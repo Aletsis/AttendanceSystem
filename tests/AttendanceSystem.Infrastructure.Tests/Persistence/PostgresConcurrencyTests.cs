@@ -560,6 +560,43 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
     }
 
     [Fact]
+    public async Task QuarantineRules_Incidents_AndDeviceMinimumDate_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var device = AttendanceSystem.Domain.Aggregates.DeviceAggregate.Device.Create("DEV-PG-Q18", "Reloj Q18", "10.0.0.18", 4370, timeZoneId: "UTC");
+        device.SetAcceptPunchesFrom(new DateTime(2025, 1, 1));
+        var punch = QuarantinedPunch.Create("EMP-Q18", device.Id, new DateTime(2026, 5, 4, 8, 0, 0), "UTC", 1, 0, "ADMS",
+            "Reloj atrasado", AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.RuleRealtimeLag, 720);
+        var incident = DeviceClockIncident.Create(device.Id, new DateTime(2026, 5, 3, 20, 0, 0), new DateTime(2026, 5, 4, 9, 0, 0), 720, "Atrasado 12 h");
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            var config = await context.SystemConfigurations.FirstOrDefaultAsync();
+            if (config == null)
+            {
+                config = SystemConfiguration.CreateDefault();
+                context.SystemConfigurations.Add(config);
+            }
+            config.UpdateQuarantinePolicy(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2));
+            context.Devices.Add(device);
+            context.QuarantinedPunches.Add(punch);
+            context.DeviceClockIncidents.Add(incident);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        (await verify.SystemConfigurations.FirstAsync()).QuarantinePolicy.Should().Be(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2));
+        (await verify.Devices.SingleAsync(d => d.Id == device.Id)).AcceptPunchesFrom.Should().Be(new DateTime(2025, 1, 1));
+        var storedPunch = await verify.QuarantinedPunches.SingleAsync(q => q.Id == punch.Id);
+        storedPunch.Rule.Should().Be(AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.RuleRealtimeLag);
+        storedPunch.SuggestedOffsetMinutes.Should().Be(720);
+        var storedIncident = await verify.DeviceClockIncidents.SingleAsync(i => i.Id == incident.Id);
+        storedIncident.Contains(new DateTime(2026, 5, 4, 1, 0, 0)).Should().BeTrue();
+        storedIncident.OffsetMinutes.Should().Be(720);
+    }
+
+    [Fact]
     public async Task MixedShiftDays_ReferenceExistingSchedules_RoundTrip()
     {
         if (!_fixture.IsAvailable) return;
@@ -742,6 +779,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         }
 
         public void Detach(AttendanceRecord record) => _inner.Detach(record);
+        public Task<AttendanceRecord?> GetLatestByDeviceAsync(DeviceId deviceId, CancellationToken cancellationToken = default) => _inner.GetLatestByDeviceAsync(deviceId, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) => _inner.GetReceivedAfterAsync(receivedAfterUtc, fromDate, toDate, cancellationToken);
         public Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) => _inner.GetPunchDaySummaryAsync(fromDate, toDate, cancellationToken);
         public Task<AttendanceRecord?> GetByIdAsync(AttendanceRecordId id, CancellationToken cancellationToken = default) => _inner.GetByIdAsync(id, cancellationToken);
