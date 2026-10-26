@@ -76,6 +76,7 @@ public sealed class DefaultTimeNormalizer : ITimeNormalizer
             {
                 try { return TimeZoneInfo.FindSystemTimeZoneById(ianaId); } catch { }
             }
+            if (AttendanceSystem.Domain.Services.TimeZoneEquivalents.TryFind(timeZoneId, out var equivalent)) return equivalent;
             try { return TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City"); }
             catch
             {

@@ -224,6 +224,7 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
             }
             try
             {
+                if (Services.TimeZoneEquivalents.TryFind(timeZoneId, out var equivalent)) return equivalent;
                 return TimeZoneInfo.FindSystemTimeZoneById("America/Mexico_City");
             }
             catch

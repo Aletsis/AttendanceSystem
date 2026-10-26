@@ -137,7 +137,9 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
             CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Contain(nameof(PersistenceFailureKind.Connection)).And.Contain("reintentable");
+        // Linux rechaza la conexión al puerto 1; Windows la deja vencer (Timeout). Ambas son recuperables y no duplicados.
+        result.Error.Should().Contain("reintentable").And.NotContain("duplicad");
+        result.Error.Should().Match(e => e.Contains(nameof(PersistenceFailureKind.Connection)) || e.Contains(nameof(PersistenceFailureKind.Timeout)));
     }
 
     #endregion
