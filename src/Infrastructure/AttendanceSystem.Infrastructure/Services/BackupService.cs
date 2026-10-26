@@ -128,10 +128,8 @@ public class BackupService : IBackupService
         try
         {
             var backupDirectory = await GetBackupDirectoryAsync();
-            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var backupFileName = $"Full_Backup_{timestamp}.zip";
-            var backupFilePath = Path.Combine(backupDirectory, backupFileName);
-            tempDir = Path.Combine(Path.GetTempPath(), $"AttendanceBackup_{timestamp}");
+            var backupFilePath = NewBackupFilePath(backupDirectory, "Full_Backup", ".zip");
+            tempDir = Path.Combine(Path.GetTempPath(), $"AttendanceBackup_{DateTime.Now:yyyyMMdd_HHmmss}_{Guid.NewGuid():N}");
 
             _logger.LogInformation("Archivo de respaldo: {BackupFilePath}", backupFilePath);
             _logger.LogInformation("Directorio temporal: {TempDir}", tempDir);
@@ -156,6 +154,14 @@ public class BackupService : IBackupService
                         Success = false,
                         Message = dbResult.Message
                     };
+                }
+
+                // Un respaldo que no se puede leer no debe desplazar, por retención, a uno bueno.
+                var dumpValidation = await ValidateBackupArchiveAsync(dbBackupFile, cancellationToken);
+                if (!dumpValidation.Valid)
+                {
+                    _logger.LogError("El respaldo generado no superó la verificación: {Message}", dumpValidation.Message);
+                    return new BackupResultDto { Success = false, Message = $"El respaldo generado no es válido: {dumpValidation.Message}" };
                 }
 
                 _logger.LogInformation("Respaldo de base de datos creado exitosamente");
@@ -209,6 +215,7 @@ public class BackupService : IBackupService
                 catch (Exception zipEx)
                 {
                     _logger.LogError(zipEx, "Error al comprimir el respaldo");
+                    TryDeleteFile(backupFilePath);
                     throw new InvalidOperationException($"Error al crear archivo ZIP: {zipEx.Message}", zipEx);
                 }
 
@@ -269,9 +276,7 @@ public class BackupService : IBackupService
         try
         {
             var backupDirectory = await GetBackupDirectoryAsync();
-            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
-            var backupFileName = $"DB_Backup_{timestamp}.backup";
-            var backupFilePath = Path.Combine(backupDirectory, backupFileName);
+            var backupFilePath = NewBackupFilePath(backupDirectory, "DB_Backup", ".backup");
 
             _logger.LogInformation("Creando respaldo de base de datos...");
             var result = await CreateDatabaseBackupFileAsync(backupFilePath, cancellationToken);
@@ -283,6 +288,15 @@ public class BackupService : IBackupService
                     Success = false,
                     Message = result.Message
                 };
+            }
+
+            // Un respaldo que no se puede leer no debe desplazar, por retención, a uno bueno.
+            var validation = await ValidateBackupArchiveAsync(backupFilePath, cancellationToken);
+            if (!validation.Valid)
+            {
+                _logger.LogError("El respaldo generado no superó la verificación: {Message}", validation.Message);
+                TryDeleteFile(backupFilePath);
+                return new BackupResultDto { Success = false, Message = $"El respaldo generado no es válido: {validation.Message}" };
             }
 
             var fileInfo = new FileInfo(backupFilePath);
@@ -318,6 +332,18 @@ public class BackupService : IBackupService
         }
     }
 
+    /// <summary>Nombre con fecha y hora; si ya existe uno en el mismo segundo se agrega un consecutivo en vez de pisarlo.</summary>
+    private static string NewBackupFilePath(string backupDirectory, string prefix, string extension)
+    {
+        var baseName = $"{prefix}_{DateTime.Now:yyyyMMdd_HHmmss}";
+        var path = Path.Combine(backupDirectory, baseName + extension);
+        for (var i = 2; File.Exists(path); i++)
+        {
+            path = Path.Combine(backupDirectory, $"{baseName}_{i}{extension}");
+        }
+        return path;
+    }
+
     public async Task<RestoreResultDto> RestoreBackupAsync(string backupFilePath, IProgress<RestoreProgressReport>? progress = null, CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("=== INICIANDO RESTAURACIÓN DE RESPALDO ===");
@@ -334,16 +360,19 @@ public class BackupService : IBackupService
 
         try
         {
-            if (!File.Exists(backupFilePath))
+            var resolvedPath = await ResolveBackupPathAsync(backupFilePath);
+            if (resolvedPath == null)
             {
-                _logger.LogError("El archivo de respaldo no existe: {BackupFilePath}", backupFilePath);
-                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Error", "El archivo de respaldo no existe", IsError: true));
+                const string notFound = "El archivo de respaldo no existe o está fuera del directorio de respaldos";
+                _logger.LogError("{Message}: {BackupFilePath}", notFound, backupFilePath);
+                progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Error", notFound, IsError: true));
                 return new RestoreResultDto
                 {
                     Success = false,
-                    Message = "El archivo de respaldo no existe"
+                    Message = notFound
                 };
             }
+            backupFilePath = resolvedPath;
 
             var fileInfo = new FileInfo(backupFilePath);
             _logger.LogInformation("Tamaño del archivo: {SizeBytes} bytes ({SizeMB:F2} MB)", fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
@@ -421,7 +450,7 @@ public class BackupService : IBackupService
             {
                 progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Generando snapshot de seguridad previo para rollback automático...", ProgressPercentage: 25));
                 var backupDirectory = await GetBackupDirectoryAsync();
-                safetyBackupFile = Path.Combine(backupDirectory, $".safety_snapshot_{DateTime.Now:yyyyMMdd_HHmmss}.backup");
+                safetyBackupFile = Path.Combine(backupDirectory, $"{SafetySnapshotPrefix}{DateTime.Now:yyyyMMdd_HHmmss}.backup");
                 _logger.LogInformation("Generando snapshot de seguridad previo en: {SafetyBackupFile}", safetyBackupFile);
                 var safetyResult = await CreateDatabaseBackupFileAsync(safetyBackupFile, cancellationToken);
                 if (safetyResult.Success)
@@ -645,6 +674,39 @@ public class BackupService : IBackupService
         try { File.Delete(path); } catch (Exception ex) { _logger.LogWarning(ex, "No se pudo eliminar el archivo {Path}", path); }
     }
 
+    private const string SafetySnapshotPrefix = ".safety_snapshot_";
+    private const string UploadTempPrefix = ".upload_";
+
+    private static readonly string[] BackupExtensions = { ".zip", ".backup", ".bak" };
+
+    // Respaldos que genera el sistema (manuales o programados): sólo a éstos se aplica la retención.
+    private static readonly System.Text.RegularExpressions.Regex ManagedBackupName = new(
+        @"^(?<kind>Full_Backup|DB_Backup)_(?<stamp>\d{8}_\d{6})(_\d+)?\.(zip|backup)$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static readonly System.Text.RegularExpressions.Regex SnapshotName = new(
+        @"^\.safety_snapshot_(?<stamp>\d{8}_\d{6})\.backup$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
+    private static bool HasBackupExtension(string fileName) =>
+        BackupExtensions.Any(ext => fileName.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Fecha del respaldo: la del nombre que puso el sistema y, si no la tiene, la última escritura. La fecha de
+    /// creación del archivo no sirve: un respaldo viejo que se sube o copia aparece como recién creado.
+    /// </summary>
+    private static DateTime GetBackupDate(FileInfo file)
+    {
+        var match = ManagedBackupName.Match(file.Name);
+        if (!match.Success) match = SnapshotName.Match(file.Name);
+        if (match.Success && DateTime.TryParseExact(match.Groups["stamp"].Value, "yyyyMMdd_HHmmss",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal, out var stamped))
+        {
+            return stamped;
+        }
+        return file.LastWriteTime;
+    }
+
     public async Task<IEnumerable<BackupDto>> GetAvailableBackupsAsync(CancellationToken cancellationToken = default)
     {
         try
@@ -660,8 +722,11 @@ public class BackupService : IBackupService
                 return Enumerable.Empty<BackupDto>();
             }
 
+            // Los archivos ocultos (subidas a medias, pruebas de permisos) no son respaldos; los snapshots de seguridad
+            // sólo quedan tras una restauración fallida y se listan aparte para poder recuperarlos.
             var backupFiles = Directory.GetFiles(backupDirectory, "*.*")
-                .Where(f => f.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".backup", StringComparison.OrdinalIgnoreCase))
+                .Where(f => HasBackupExtension(f))
+                .Where(f => !Path.GetFileName(f).StartsWith('.') || SnapshotName.IsMatch(Path.GetFileName(f)))
                 .ToList();
 
             _logger.LogInformation("Se encontraron {Count} archivos de respaldo", backupFiles.Count);
@@ -673,8 +738,11 @@ public class BackupService : IBackupService
                 try
                 {
                     var fileInfo = new FileInfo(file);
-                    var backupType = file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? "Full" : "DatabaseOnly";
-                    var description = "";
+                    var isSnapshot = SnapshotName.IsMatch(fileInfo.Name);
+                    var backupType = isSnapshot
+                        ? BackupDto.SafetySnapshotType
+                        : file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? "Full" : "DatabaseOnly";
+                    var description = isSnapshot ? "Estado previo a una restauración fallida" : "";
 
                     // Intentar leer metadata si es un archivo zip
                     if (file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
@@ -703,7 +771,7 @@ public class BackupService : IBackupService
                         FileName = fileInfo.Name,
                         FilePath = fileInfo.FullName,
                         SizeInBytes = fileInfo.Length,
-                        CreatedAt = fileInfo.CreationTime,
+                        CreatedAt = GetBackupDate(fileInfo),
                         BackupType = backupType,
                         Description = description
                     });
@@ -723,54 +791,51 @@ public class BackupService : IBackupService
         }
     }
 
-    public Task<bool> DeleteBackupAsync(string backupFilePath, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteBackupAsync(string backupFilePath, CancellationToken cancellationToken = default)
     {
         try
         {
-            if (!File.Exists(backupFilePath))
+            var target = await ResolveBackupPathAsync(backupFilePath);
+            if (target == null)
             {
-                _logger.LogWarning("El archivo de respaldo no existe: {FilePath}", backupFilePath);
-                return Task.FromResult(false);
+                _logger.LogWarning("Se rechazó eliminar un archivo inexistente o fuera del directorio de respaldos: {FilePath}", backupFilePath);
+                return false;
             }
 
-            File.Delete(backupFilePath);
-            _logger.LogInformation("Respaldo eliminado: {FilePath}", backupFilePath);
-            return Task.FromResult(true);
+            File.Delete(target);
+            _logger.LogInformation("Respaldo eliminado: {FilePath}", target);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al eliminar respaldo: {FilePath}", backupFilePath);
-            return Task.FromResult(false);
+            return false;
         }
     }
 
-    public Task<bool> ValidateBackupAsync(string backupFilePath, CancellationToken cancellationToken = default)
+    public async Task<bool> ValidateBackupAsync(string backupFilePath, CancellationToken cancellationToken = default)
     {
         try
         {
             if (!File.Exists(backupFilePath))
             {
-                return Task.FromResult(false);
+                return false;
             }
 
-            // Validar que el archivo no esté corrupto
             if (backupFilePath.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
             {
+                // Sin extraer (la restauración lo hace y valida el contenido): basta con que traiga la base.
                 using var archive = ZipFile.OpenRead(backupFilePath);
-                // Si puede abrir el archivo, es válido
-                return Task.FromResult(archive.Entries.Count > 0);
+                var database = archive.GetEntry("database.backup");
+                return database is { Length: > 0 };
             }
-            else
-            {
-                // Para archivos .backup/.bak, solo verificar que existan y tengan contenido
-                var fileInfo = new FileInfo(backupFilePath);
-                return Task.FromResult(fileInfo.Length > 0);
-            }
+
+            return (await ValidateBackupArchiveAsync(backupFilePath, cancellationToken)).Valid;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al validar respaldo: {FilePath}", backupFilePath);
-            return Task.FromResult(false);
+            return false;
         }
     }
 
@@ -779,10 +844,11 @@ public class BackupService : IBackupService
         _logger.LogInformation("=== CARGANDO ARCHIVO DE RESPALDO ===");
         _logger.LogInformation("Nombre recibido: {FileName}", fileName);
 
+        string? tempPath = null;
         try
         {
             var cleanFileName = Path.GetFileName(fileName);
-            if (string.IsNullOrWhiteSpace(cleanFileName))
+            if (string.IsNullOrWhiteSpace(cleanFileName) || cleanFileName.StartsWith('.'))
             {
                 return new BackupResultDto
                 {
@@ -792,7 +858,7 @@ public class BackupService : IBackupService
             }
 
             var extension = Path.GetExtension(cleanFileName).ToLowerInvariant();
-            if (extension != ".zip" && extension != ".backup" && extension != ".bak")
+            if (!BackupExtensions.Contains(extension))
             {
                 return new BackupResultDto
                 {
@@ -803,34 +869,53 @@ public class BackupService : IBackupService
 
             var backupDirectory = await GetBackupDirectoryAsync();
             var destinationPath = Path.Combine(backupDirectory, cleanFileName);
+            if (File.Exists(destinationPath))
+            {
+                return new BackupResultDto
+                {
+                    Success = false,
+                    Message = $"Ya existe un respaldo llamado '{cleanFileName}'. Elimínelo o cambie el nombre del archivo antes de subirlo."
+                };
+            }
 
-            _logger.LogInformation("Guardando respaldo en: {DestinationPath}", destinationPath);
+            // Se escribe a un archivo oculto y sólo se publica con su nombre cuando llegó completo y es válido:
+            // una subida cortada o dañada nunca aparece en la lista ni reemplaza a otro respaldo.
+            tempPath = Path.Combine(backupDirectory, $"{UploadTempPrefix}{Guid.NewGuid():N}{extension}");
+            _logger.LogInformation("Recibiendo respaldo en: {TempPath}", tempPath);
 
-            // Escribir archivo en disco
-            await using (var fileStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.None, 81920, useAsync: true))
+            await using (var fileStream = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
             {
                 await contentStream.CopyToAsync(fileStream, cancellationToken);
             }
 
-            // Validar integridad del archivo recibido
-            var isValid = await ValidateBackupAsync(destinationPath, cancellationToken);
-            if (!isValid)
+            var validation = await ValidateUploadedBackupAsync(tempPath, cancellationToken);
+            if (!validation.Valid)
             {
-                _logger.LogWarning("El archivo de respaldo subido no superó la validación de integridad: {DestinationPath}", destinationPath);
-                if (File.Exists(destinationPath))
-                {
-                    try { File.Delete(destinationPath); } catch { }
-                }
-
+                _logger.LogWarning("El archivo de respaldo subido no superó la validación de integridad: {Message}", validation.Message);
                 return new BackupResultDto
                 {
                     Success = false,
-                    Message = "El archivo cargado está dañado o no es un formato de respaldo válido."
+                    Message = $"El archivo cargado está dañado o no es un formato de respaldo válido: {validation.Message}"
+                };
+            }
+
+            try
+            {
+                File.Move(tempPath, destinationPath, overwrite: false);
+                tempPath = null;
+            }
+            catch (IOException) when (File.Exists(destinationPath))
+            {
+                return new BackupResultDto
+                {
+                    Success = false,
+                    Message = $"Ya existe un respaldo llamado '{cleanFileName}'. Elimínelo o cambie el nombre del archivo antes de subirlo."
                 };
             }
 
             var fileInfo = new FileInfo(destinationPath);
-            _logger.LogInformation("Respaldo cargado exitosamente. Tamaño: {SizeBytes} bytes ({SizeMB:F2} MB)", fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
+            _logger.LogInformation("Respaldo cargado exitosamente en {DestinationPath}. Tamaño: {SizeBytes} bytes ({SizeMB:F2} MB)",
+                destinationPath, fileInfo.Length, fileInfo.Length / 1024.0 / 1024.0);
 
             return new BackupResultDto
             {
@@ -850,6 +935,42 @@ public class BackupService : IBackupService
                 Message = $"Error al cargar respaldo: {ex.Message}"
             };
         }
+        finally
+        {
+            TryDeleteFile(tempPath);
+        }
+    }
+
+    /// <summary>Valida el contenido real: el dump con pg_restore -l, también el que viene dentro de un .zip.</summary>
+    private async Task<(bool Valid, string Message)> ValidateUploadedBackupAsync(string path, CancellationToken cancellationToken)
+    {
+        if (!path.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            return await ValidateBackupArchiveAsync(path, cancellationToken);
+        }
+
+        string? extracted = null;
+        try
+        {
+            using var archive = ZipFile.OpenRead(path);
+            var database = archive.GetEntry("database.backup");
+            if (database is not { Length: > 0 })
+            {
+                return (false, "El paquete no contiene el archivo database.backup.");
+            }
+
+            extracted = Path.Combine(Path.GetTempPath(), $"AttendanceUpload_{Guid.NewGuid():N}.backup");
+            database.ExtractToFile(extracted);
+            return await ValidateBackupArchiveAsync(extracted, cancellationToken);
+        }
+        catch (InvalidDataException ex)
+        {
+            return (false, $"El archivo .zip está dañado: {ex.Message}");
+        }
+        finally
+        {
+            TryDeleteFile(extracted);
+        }
     }
 
     public async Task<string?> GetBackupFilePathAsync(string fileName, CancellationToken cancellationToken = default)
@@ -863,31 +984,43 @@ public class BackupService : IBackupService
             }
 
             var backupDirectory = await GetBackupDirectoryAsync();
-            var targetPath = Path.Combine(backupDirectory, cleanFileName);
-
-            // Prevenir Path Traversal
-            var fullTargetPath = Path.GetFullPath(targetPath);
-            var fullBackupDir = Path.GetFullPath(backupDirectory);
-
-            if (!fullTargetPath.StartsWith(fullBackupDir, StringComparison.OrdinalIgnoreCase))
+            var target = await ResolveBackupPathAsync(Path.Combine(backupDirectory, cleanFileName));
+            if (target == null)
             {
-                _logger.LogWarning("Intento de acceso fuera del directorio de respaldos: {Target}", fullTargetPath);
-                return null;
+                _logger.LogWarning("Archivo de respaldo solicitado no encontrado o fuera del directorio de respaldos: {FileName}", fileName);
             }
-
-            if (!File.Exists(fullTargetPath))
-            {
-                _logger.LogWarning("Archivo de respaldo solicitado no encontrado: {Target}", fullTargetPath);
-                return null;
-            }
-
-            return fullTargetPath;
+            return target;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al resolver la ruta del archivo de respaldo: {FileName}", fileName);
             return null;
         }
+    }
+
+    /// <summary>
+    /// Ruta completa si es un respaldo existente directamente dentro del directorio de respaldos; si no, null.
+    /// Restaurar y eliminar reciben rutas completas, así que sin esta comprobación podrían tocar cualquier archivo.
+    /// </summary>
+    private async Task<string?> ResolveBackupPathAsync(string backupFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(backupFilePath))
+        {
+            return null;
+        }
+
+        var backupDirectory = Path.GetFullPath(await GetBackupDirectoryAsync())
+            .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var fullPath = Path.GetFullPath(backupFilePath);
+        var parent = Path.GetDirectoryName(fullPath)?.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        var comparison = OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        if (!string.Equals(parent, backupDirectory, comparison) || !HasBackupExtension(fullPath) || !File.Exists(fullPath))
+        {
+            return null;
+        }
+
+        return fullPath;
     }
 
     public async Task<int> PruneOldBackupsAsync(int? keepCount = null, CancellationToken cancellationToken = default)
@@ -906,7 +1039,10 @@ public class BackupService : IBackupService
                 return 0;
             }
 
-            var backups = (await GetAvailableBackupsAsync(cancellationToken)).ToList();
+            // Sólo los que generó el sistema: los subidos y los snapshots de seguridad se administran a mano.
+            var backups = (await GetAvailableBackupsAsync(cancellationToken))
+                .Where(b => ManagedBackupName.IsMatch(b.FileName))
+                .ToList();
             if (backups.Count <= retention)
             {
                 return 0;
@@ -1036,6 +1172,17 @@ public class BackupService : IBackupService
 
     private async Task<(bool Success, string Message)> CreateDatabaseBackupFileAsync(string outputPath, CancellationToken cancellationToken)
     {
+        var result = await RunPgDumpAsync(outputPath, cancellationToken);
+        if (!result.Success)
+        {
+            // Un dump a medias no es un respaldo: si se queda, aparece en la lista y cuenta para la retención.
+            TryDeleteFile(outputPath);
+        }
+        return result;
+    }
+
+    private async Task<(bool Success, string Message)> RunPgDumpAsync(string outputPath, CancellationToken cancellationToken)
+    {
         _logger.LogInformation("--- Iniciando respaldo de base de datos con pg_dump ---");
         _logger.LogInformation("Archivo de salida: {OutputPath}", outputPath);
 
@@ -1164,10 +1311,11 @@ public class BackupService : IBackupService
                     return (false, $"pg_dump se canceló por inactividad prolongada ({stallTimeout.TotalSeconds} segundos sin progreso).");
                 }
 
-                await Task.Delay(500, cancellationToken);
+                // Sin token: la cancelación se atiende arriba, matando el proceso en vez de dejarlo huérfano.
+                await Task.Delay(500, CancellationToken.None);
             }
 
-            await Task.Delay(100, cancellationToken);
+            process.WaitForExit();
 
             var output = outputBuilder.ToString();
             var error = errorBuilder.ToString();

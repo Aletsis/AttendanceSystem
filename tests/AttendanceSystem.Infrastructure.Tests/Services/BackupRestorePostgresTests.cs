@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AttendanceSystem.Application.Common;
+using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Infrastructure.Persistence;
@@ -440,5 +441,63 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
             (await context.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
             (await context.Database.GetAppliedMigrationsAsync()).Should().Contain(latest);
         }
+    }
+
+    [Fact]
+    public async Task AnUploadedBak_IsValidated_Listed_AndRestorable_ButNotPruned()
+    {
+        var (service, state) = CreateService();
+        if (!ToolsAvailable(service)) return;
+
+        await SetProbeAsync("subido");
+        var backup = await service.CreateDatabaseBackupAsync();
+        backup.Success.Should().BeTrue(backup.Message);
+        var bytes = await File.ReadAllBytesAsync(backup.BackupFilePath!);
+        File.Delete(backup.BackupFilePath!);
+        await SetProbeAsync("vigente");
+
+        BackupResultDto upload;
+        using (var stream = new MemoryStream(bytes))
+        {
+            upload = await service.UploadBackupAsync("desde_otro_servidor.bak", stream);
+        }
+        upload.Success.Should().BeTrue(upload.Message);
+        (await service.GetAvailableBackupsAsync()).Should().ContainSingle(b => b.FileName == "desde_otro_servidor.bak");
+
+        (await service.PruneOldBackupsAsync(keepCount: 1)).Should().Be(0);
+
+        var result = await service.RestoreBackupAsync(upload.BackupFilePath!);
+        result.Success.Should().BeTrue(result.Message);
+        (await ProbeValueAsync()).Should().Be("subido");
+        state.CurrentState.Should().Be(MaintenanceState.Normal);
+    }
+
+    [Fact]
+    public async Task AnUploadedFileThatIsNotADump_IsRejected()
+    {
+        var (service, _) = CreateService();
+        if (!ToolsAvailable(service)) return;
+
+        using var stream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("esto no es un respaldo de PostgreSQL"));
+        var upload = await service.UploadBackupAsync("falso.backup", stream);
+
+        upload.Success.Should().BeFalse();
+        Directory.GetFiles(_backupDir).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AFailedDump_LeavesNoPartialBackupBehind()
+    {
+        var (probe, _) = CreateService();
+        if (!ToolsAvailable(probe)) return;
+
+        var wrongPassword = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString) { Password = "contraseña-incorrecta" }.ConnectionString;
+        var configuration = BuildConfiguration(new() { ["ConnectionStrings:AttendanceDb"] = wrongPassword });
+        var service = new BackupService(configuration, NullLogger<BackupService>.Instance, _configRepo.Object, NewState());
+
+        var result = await service.CreateDatabaseBackupAsync();
+
+        result.Success.Should().BeFalse();
+        Directory.GetFiles(_backupDir).Should().BeEmpty();
     }
 }

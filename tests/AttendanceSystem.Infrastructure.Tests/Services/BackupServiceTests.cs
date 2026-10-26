@@ -8,10 +8,30 @@ using Xunit;
 
 namespace AttendanceSystem.Infrastructure.Tests.Services;
 
-public class BackupServiceTests
+public class BackupServiceTests : IDisposable
 {
     private readonly Mock<ISystemConfigurationRepository> _systemConfigRepoMock;
     private readonly Dictionary<string, string?> _configDict;
+    private string? _backupDir;
+
+    public void Dispose()
+    {
+        if (_backupDir != null && Directory.Exists(_backupDir))
+        {
+            Directory.Delete(Path.GetDirectoryName(_backupDir)!, true);
+        }
+    }
+
+    /// <summary>Directorio de respaldos propio de la prueba (dentro de una carpeta padre para probar rutas vecinas).</summary>
+    private string UseBackupDirectory()
+    {
+        _backupDir = Path.Combine(Path.GetTempPath(), $"backup_files_test_{Guid.NewGuid():N}", "Backups");
+        Directory.CreateDirectory(_backupDir);
+        var configEntity = AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate.SystemConfiguration.CreateDefault();
+        configEntity.UpdateBackupDirectory(_backupDir);
+        _systemConfigRepoMock.Setup(r => r.GetConfigurationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(configEntity);
+        return _backupDir;
+    }
 
     public BackupServiceTests()
     {
@@ -199,20 +219,15 @@ public class BackupServiceTests
         restoreStateMock.SetupGet(s => s.CurrentState).Returns(AttendanceSystem.Application.Common.MaintenanceState.Restoring);
         restoreStateMock.SetupGet(s => s.CurrentOwner).Returns("Another_Admin");
 
-        var tempFile = Path.GetTempFileName();
-        try
-        {
-            var service = CreateService(restoreStateService: restoreStateMock.Object);
+        var tempFile = Path.Combine(UseBackupDirectory(), "DB_Backup_20260101_100000.backup");
+        File.WriteAllText(tempFile, "dummy");
 
-            var result = await service.RestoreBackupAsync(tempFile);
+        var service = CreateService(restoreStateService: restoreStateMock.Object);
 
-            result.Success.Should().BeFalse();
-            result.Message.Should().Contain("Ya existe otra restauración");
-        }
-        finally
-        {
-            if (File.Exists(tempFile)) File.Delete(tempFile);
-        }
+        var result = await service.RestoreBackupAsync(tempFile);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("Ya existe otra restauración");
     }
 
     [Fact]
@@ -229,7 +244,7 @@ public class BackupServiceTests
     [Fact]
     public async Task RestoreBackupAsync_OfAZipWithoutDatabase_ReleasesTheLockAndRemovesTheExtractedFiles()
     {
-        var zipPath = Path.Combine(Path.GetTempPath(), $"no_database_{Guid.NewGuid():N}.zip");
+        var zipPath = Path.Combine(UseBackupDirectory(), $"no_database_{Guid.NewGuid():N}.zip");
         using (var archive = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
         {
             var entry = archive.CreateEntry("config/appsettings.json");
@@ -284,5 +299,136 @@ public class BackupServiceTests
 
         result.Valid.Should().BeFalse();
         result.Message.Should().Contain("no existe");
+    }
+
+    [Fact]
+    public async Task RestoreBackupAsync_OfAFileOutsideTheBackupDirectory_IsRejected()
+    {
+        var backupDir = UseBackupDirectory();
+        var outside = Path.Combine(Path.GetDirectoryName(backupDir)!, "outside.backup");
+        File.WriteAllText(outside, "dummy");
+        var restoreState = new RestoreStateService(NullLogger<RestoreStateService>.Instance);
+
+        var result = await CreateService(restoreStateService: restoreState).RestoreBackupAsync(outside);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("fuera del directorio de respaldos");
+        restoreState.CurrentState.Should().Be(AttendanceSystem.Application.Common.MaintenanceState.Normal);
+    }
+
+    [Theory]
+    [InlineData("../outside.backup")]
+    [InlineData("../Backups2/look_alike.backup")]
+    [InlineData("notes.txt")]
+    public async Task DeleteBackupAsync_OnlyDeletesBackupsDirectlyInsideTheBackupDirectory(string relative)
+    {
+        var backupDir = UseBackupDirectory();
+        var target = Path.GetFullPath(Path.Combine(backupDir, relative));
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        File.WriteAllText(target, "keep me");
+
+        var deleted = await CreateService().DeleteBackupAsync(target);
+
+        deleted.Should().BeFalse();
+        File.Exists(target).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task DeleteBackupAsync_DeletesABackupInsideTheBackupDirectory()
+    {
+        var target = Path.Combine(UseBackupDirectory(), "DB_Backup_20260101_100000.backup");
+        File.WriteAllText(target, "dummy");
+
+        (await CreateService().DeleteBackupAsync(target)).Should().BeTrue();
+        File.Exists(target).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task UploadBackupAsync_WithTheNameOfAnExistingBackup_IsRejectedAndKeepsTheOriginal()
+    {
+        var existing = Path.Combine(UseBackupDirectory(), "DB_Backup_20260101_100000.backup");
+        File.WriteAllText(existing, "original");
+
+        using var upload = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("otro contenido"));
+        var result = await CreateService().UploadBackupAsync("DB_Backup_20260101_100000.backup", upload);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("Ya existe");
+        File.ReadAllText(existing).Should().Be("original");
+        Directory.GetFiles(_backupDir!).Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task UploadBackupAsync_OfAZipWithoutDatabase_IsRejectedAndLeavesNothingBehind()
+    {
+        var backupDir = UseBackupDirectory();
+        using var zip = new MemoryStream();
+        using (var archive = new System.IO.Compression.ZipArchive(zip, System.IO.Compression.ZipArchiveMode.Create, leaveOpen: true))
+        {
+            using var writer = new StreamWriter(archive.CreateEntry("metadata.json").Open());
+            writer.Write("{}");
+        }
+        zip.Position = 0;
+
+        var result = await CreateService().UploadBackupAsync("paquete.zip", zip);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("database.backup");
+        Directory.GetFiles(backupDir).Should().BeEmpty("la subida temporal se borra y nunca se publica");
+    }
+
+    [Fact]
+    public async Task UploadBackupAsync_WithAHiddenName_IsRejected()
+    {
+        var backupDir = UseBackupDirectory();
+        using var upload = new MemoryStream(System.Text.Encoding.UTF8.GetBytes("dummy"));
+
+        var result = await CreateService().UploadBackupAsync(".safety_snapshot_20260101_100000.backup", upload);
+
+        result.Success.Should().BeFalse();
+        Directory.GetFiles(backupDir).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task GetAvailableBackupsAsync_ListsBakAndSafetySnapshots_HidesTemporaryFiles_AndDatesByName()
+    {
+        var backupDir = UseBackupDirectory();
+        File.WriteAllText(Path.Combine(backupDir, "DB_Backup_20250301_080000.backup"), "a");
+        File.WriteAllText(Path.Combine(backupDir, "desde_otro_servidor.bak"), "b");
+        File.WriteAllText(Path.Combine(backupDir, ".safety_snapshot_20260102_090000.backup"), "c");
+        File.WriteAllText(Path.Combine(backupDir, ".upload_0123456789abcdef.backup"), "d");
+        File.WriteAllText(Path.Combine(backupDir, ".perm_test_x.tmp"), "e");
+
+        var backups = (await CreateService().GetAvailableBackupsAsync()).ToList();
+
+        backups.Select(b => b.FileName).Should().BeEquivalentTo(
+            "DB_Backup_20250301_080000.backup", "desde_otro_servidor.bak", ".safety_snapshot_20260102_090000.backup");
+        backups.Single(b => b.FileName.StartsWith(".safety")).BackupType.Should().Be(AttendanceSystem.Application.DTOs.BackupDto.SafetySnapshotType);
+        backups.Single(b => b.FileName.StartsWith("DB_")).CreatedAt.Should().Be(new DateTime(2025, 3, 1, 8, 0, 0));
+    }
+
+    [Fact]
+    public async Task PruneOldBackupsAsync_OnlyPrunesSystemBackups_ByTheDateInTheirName()
+    {
+        var backupDir = UseBackupDirectory();
+        var oldest = Path.Combine(backupDir, "DB_Backup_20250101_100000.backup");
+        var middle = Path.Combine(backupDir, "Full_Backup_20250201_100000.zip");
+        var newest = Path.Combine(backupDir, "DB_Backup_20250301_100000.backup");
+        var uploaded = Path.Combine(backupDir, "copia_vieja.bak");
+        var snapshot = Path.Combine(backupDir, ".safety_snapshot_20240101_100000.backup");
+        // El más antiguo se escribe al final: su fecha de archivo es la más reciente, la de su nombre no.
+        foreach (var file in new[] { newest, middle, uploaded, snapshot, oldest })
+        {
+            File.WriteAllText(file, "x");
+        }
+
+        var deleted = await CreateService().PruneOldBackupsAsync(keepCount: 2);
+
+        deleted.Should().Be(1);
+        File.Exists(oldest).Should().BeFalse();
+        File.Exists(middle).Should().BeTrue();
+        File.Exists(newest).Should().BeTrue();
+        File.Exists(uploaded).Should().BeTrue("los respaldos subidos se administran a mano");
+        File.Exists(snapshot).Should().BeTrue("el snapshot de una restauración fallida es la vía de recuperación");
     }
 }

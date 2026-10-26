@@ -2,11 +2,14 @@ namespace AttendanceSystem.Application.DTOs;
 
 public class BackupDto
 {
+    /// <summary>Snapshot que conserva una restauración fallida; se lista para poder recuperarlo y no se purga.</summary>
+    public const string SafetySnapshotType = "SafetySnapshot";
+
     public string FileName { get; set; } = string.Empty;
     public string FilePath { get; set; } = string.Empty;
     public long SizeInBytes { get; set; }
     public DateTime CreatedAt { get; set; }
-    public string BackupType { get; set; } = string.Empty; // "Full", "DatabaseOnly", "ConfigOnly"
+    public string BackupType { get; set; } = string.Empty; // "Full", "DatabaseOnly", SafetySnapshotType
     public string Description { get; set; } = string.Empty;
 }
 
