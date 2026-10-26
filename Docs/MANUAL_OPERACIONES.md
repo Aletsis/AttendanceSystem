@@ -412,6 +412,7 @@ Cada respaldo se verifica al terminar; si no se puede leer, se descarta y se mue
 #### Retención (purga automática)
 Después de crear un respaldo, el sistema conserva los **10 respaldos más recientes** generados por él mismo (los archivos `Full_Backup_*` y `DB_Backup_*`) y elimina los anteriores. La cantidad se configura con `Backup:KeepLastNBackups` (ver Manual Técnico).
 * Los respaldos **subidos** o copiados a la carpeta con otro nombre **no se purgan**: elimínelos a mano cuando ya no se necesiten.
+* Tampoco se purgan los respaldos `PreMigration_Backup_*`, que el sistema crea solo antes de actualizar la estructura de la base tras instalar una versión nueva. Consérvelos hasta comprobar que la versión nueva funciona bien y luego elimínelos a mano.
 * La fecha que se usa es la del nombre del archivo, no la de copia o subida.
 
 #### Listado de Respaldos
@@ -489,7 +490,7 @@ Abre el panel de control del motor de procesamiento en segundo plano **Hangfire*
 
 ### 5. Aparece "la base de datos está en modo de mantenimiento" al guardar
 * Hay una restauración en curso, iniciada desde este u otro equipo. Espere a que termine: el aviso desaparece solo en pocos segundos después de que concluya. Los relojes reenvían automáticamente las checadas de ese lapso.
-* Si el aviso dice **Failed** y no desaparece, vea el punto siguiente.
+* Si el aviso dice **Failed** y no desaparece, vea los puntos 6 y 7.
 
 ### 6. El sistema quedó en mantenimiento tras una restauración (fallo crítico)
 Ocurre sólo si una restauración se aplicó, no superó la verificación y además no se pudo volver al estado previo. Para proteger los datos, el sistema se queda bloqueado **incluso después de reiniciar**: no acepta cambios, no ejecuta tareas programadas ni actualiza la base de datos. Sí permite consultar e iniciar sesión.
@@ -499,6 +500,17 @@ Para recuperarlo:
 2. En el listado aparece un archivo **SafetySnapshot** con la fecha de la restauración fallida: es el estado previo. Restáurelo (o restaure otro respaldo confiable).
 3. Al completarse la restauración, el bloqueo se levanta en todos los equipos y las tareas se reanudan. Reinicie la aplicación.
 4. Si la restauración del snapshot también falla, no reintente repetidamente: conserve el archivo y el mensaje de error, y contacte a soporte técnico (ver Manual Técnico, sección 4.4).
+
+### 7. El sistema quedó en mantenimiento después de una actualización
+Al arrancar tras instalar una versión nueva, el sistema respalda la base de datos y actualiza su estructura. Si no puede hacerlo con seguridad, arranca en mantenimiento (igual que en el punto anterior: permite consultar e iniciar sesión, pero no guardar cambios). Ocurre cuando:
+* **No se pudo crear el respaldo previo** (falta espacio, carpeta de respaldos inaccesible, no se encuentra `pg_dump`). La base no se modificó.
+* **Falló la actualización de la estructura.** La base quedó en el último paso que terminó bien, y el respaldo previo está disponible.
+* **La base de datos es de una versión más nueva** que la instalada (se reinstaló una versión anterior).
+
+Para recuperarlo:
+1. Pida a soporte técnico que revise el log de la aplicación: la causa aparece en una línea marcada como `FTL`.
+2. Corrija la causa (liberar espacio, instalar la versión correcta, etc.) y **reinicie la aplicación**: el sistema vuelve a intentar la actualización por sí solo.
+3. Si soporte lo indica, restaure desde **Respaldo y Restauración** el respaldo con la descripción *Estado previo a una actualización del esquema*.
 
 ---
 

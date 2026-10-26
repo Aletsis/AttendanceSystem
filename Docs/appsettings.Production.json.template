@@ -55,5 +55,10 @@
   },
   "Maintenance": {
     "PollIntervalSeconds": 5
+  },
+  "Database": {
+    "MigrationTimeoutMinutes": 30,
+    "StartupConnectAttempts": 6,
+    "StartupConnectRetrySeconds": 2
   }
 }
