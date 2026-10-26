@@ -452,7 +452,8 @@ public class BackupService : IBackupService
             {
                 progress?.Report(new RestoreProgressReport(RestoreStage.SafetySnapshot, "Snapshot de Seguridad", "Generando snapshot de seguridad previo para rollback automático...", ProgressPercentage: 25));
                 var backupDirectory = await GetBackupDirectoryAsync();
-                safetyBackupFile = Path.Combine(backupDirectory, $"{SafetySnapshotPrefix}{DateTime.Now:yyyyMMdd_HHmmss}.backup");
+                // Nombre único: restaurar un snapshot conservado genera otro, y no debe pisar al que se está restaurando.
+                safetyBackupFile = NewBackupFilePath(backupDirectory, SafetySnapshotPrefix, ".backup");
                 _logger.LogInformation("Generando snapshot de seguridad previo en: {SafetyBackupFile}", safetyBackupFile);
                 var safetyResult = await CreateDatabaseBackupFileAsync(safetyBackupFile, cancellationToken);
                 if (safetyResult.Success)
@@ -676,7 +677,7 @@ public class BackupService : IBackupService
         try { File.Delete(path); } catch (Exception ex) { _logger.LogWarning(ex, "No se pudo eliminar el archivo {Path}", path); }
     }
 
-    private const string SafetySnapshotPrefix = ".safety_snapshot_";
+    private const string SafetySnapshotPrefix = ".safety_snapshot";
     private const string UploadTempPrefix = ".upload_";
 
     private static readonly string[] BackupExtensions = { ".zip", ".backup", ".bak" };
@@ -687,7 +688,7 @@ public class BackupService : IBackupService
         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     private static readonly System.Text.RegularExpressions.Regex SnapshotName = new(
-        @"^\.safety_snapshot_(?<stamp>\d{8}_\d{6})\.backup$",
+        @"^\.safety_snapshot_(?<stamp>\d{8}_\d{6})(_\d+)?\.backup$",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
     private static bool HasBackupExtension(string fileName) =>

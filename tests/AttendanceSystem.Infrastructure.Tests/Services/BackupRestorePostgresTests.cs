@@ -584,6 +584,8 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
             .ContainSingle(b => b.BackupType == BackupDto.SafetySnapshotType).Subject;
         (await service.PruneOldBackupsAsync(keepCount: 1)).Should().Be(0);
 
+        var snapshotBytes = await File.ReadAllBytesAsync(snapshot.FilePath);
+
         // El administrador corrige la causa, reinicia y restaura el snapshot desde la lista.
         await ExecAsync(allowSchemaDrops);
         var restarted = NewState();
@@ -599,6 +601,8 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
         await AssertSchemaIntactAsync();
         restarted.CurrentState.Should().Be(MaintenanceState.Normal);
         restartedJobs.Resumes.Should().Be(1);
+        // El snapshot nuevo de esta restauración no pisó al conservado (pasaba si coincidían en el mismo segundo).
+        (await File.ReadAllBytesAsync(snapshot.FilePath)).Should().Equal(snapshotBytes);
     }
 
     [Fact]

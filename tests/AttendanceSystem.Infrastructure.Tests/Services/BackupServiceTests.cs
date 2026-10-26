@@ -396,14 +396,17 @@ public class BackupServiceTests : IDisposable
         File.WriteAllText(Path.Combine(backupDir, "DB_Backup_20250301_080000.backup"), "a");
         File.WriteAllText(Path.Combine(backupDir, "desde_otro_servidor.bak"), "b");
         File.WriteAllText(Path.Combine(backupDir, ".safety_snapshot_20260102_090000.backup"), "c");
+        File.WriteAllText(Path.Combine(backupDir, ".safety_snapshot_20260102_090000_2.backup"), "c2");
         File.WriteAllText(Path.Combine(backupDir, ".upload_0123456789abcdef.backup"), "d");
         File.WriteAllText(Path.Combine(backupDir, ".perm_test_x.tmp"), "e");
 
         var backups = (await CreateService().GetAvailableBackupsAsync()).ToList();
 
         backups.Select(b => b.FileName).Should().BeEquivalentTo(
-            "DB_Backup_20250301_080000.backup", "desde_otro_servidor.bak", ".safety_snapshot_20260102_090000.backup");
-        backups.Single(b => b.FileName.StartsWith(".safety")).BackupType.Should().Be(AttendanceSystem.Application.DTOs.BackupDto.SafetySnapshotType);
+            "DB_Backup_20250301_080000.backup", "desde_otro_servidor.bak",
+            ".safety_snapshot_20260102_090000.backup", ".safety_snapshot_20260102_090000_2.backup");
+        backups.Where(b => b.FileName.StartsWith(".safety")).Should()
+            .OnlyContain(b => b.BackupType == AttendanceSystem.Application.DTOs.BackupDto.SafetySnapshotType);
         backups.Single(b => b.FileName.StartsWith("DB_")).CreatedAt.Should().Be(new DateTime(2025, 3, 1, 8, 0, 0));
     }
 
