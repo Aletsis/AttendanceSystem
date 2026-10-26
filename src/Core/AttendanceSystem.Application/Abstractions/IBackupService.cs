@@ -15,6 +15,12 @@ public interface IBackupService
     Task<BackupResultDto> CreateDatabaseBackupAsync(string? description = null, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Respalda la base antes de que el arranque aplique migraciones. No cuenta para la retención: es el único
+    /// camino de vuelta si una migración que transforma datos sale mal.
+    /// </summary>
+    Task<BackupResultDto> CreatePreMigrationBackupAsync(string description, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Restaura desde un archivo de respaldo con reporte opcional de progreso y logs en tiempo real
     /// </summary>
     Task<RestoreResultDto> RestoreBackupAsync(string backupFilePath, IProgress<RestoreProgressReport>? progress = null, CancellationToken cancellationToken = default);

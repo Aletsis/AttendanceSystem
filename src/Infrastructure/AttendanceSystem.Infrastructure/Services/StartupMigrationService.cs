@@ -1,3 +1,4 @@
+using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -17,20 +18,24 @@ public enum StartupMigrationOutcome
 public sealed record StartupMigrationResult(StartupMigrationOutcome Outcome, string Message);
 
 /// <summary>
-/// Aplica al arrancar las migraciones pendientes del servidor web, de a un proceso a la vez.
+/// Aplica al arrancar las migraciones pendientes del servidor web, de a un proceso a la vez y después de respaldar la
+/// base: varias migraciones transforman o eliminan datos y algunas no tienen vuelta atrás.
 /// </summary>
 public class StartupMigrationService
 {
     private readonly IDbContextFactory<AttendanceDbContext> _contextFactory;
+    private readonly IBackupService _backupService;
     private readonly ILogger<StartupMigrationService> _logger;
     private readonly TimeSpan _lockTimeout;
 
     public StartupMigrationService(
         IDbContextFactory<AttendanceDbContext> contextFactory,
+        IBackupService backupService,
         ILogger<StartupMigrationService> logger,
         IConfiguration configuration)
     {
         _contextFactory = contextFactory;
+        _backupService = backupService;
         _logger = logger;
         _lockTimeout = TimeSpan.FromMinutes(Math.Max(configuration.GetValue("Database:MigrationTimeoutMinutes", 30), 1));
     }
@@ -54,6 +59,19 @@ public class StartupMigrationService
         foreach (var migration in pending)
         {
             _logger.LogInformation("Migración pendiente: {Migration}", migration);
+        }
+
+        // Una base recién creada no tiene nada que proteger.
+        var applied = (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
+        if (applied.Count > 0)
+        {
+            var backup = await _backupService.CreatePreMigrationBackupAsync(
+                $"{applied.Last()} → {pending.Last()}", cancellationToken);
+            if (!backup.Success)
+            {
+                throw new InvalidOperationException($"No se aplicaron las migraciones porque falló el respaldo previo: {backup.Message}");
+            }
+            _logger.LogInformation("Respaldo previo a las migraciones: {Path}", backup.BackupFilePath);
         }
 
         await context.Database.MigrateAsync(cancellationToken);

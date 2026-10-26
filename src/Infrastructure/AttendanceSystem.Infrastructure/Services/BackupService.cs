@@ -89,8 +89,18 @@ public class BackupService : IBackupService
     private async Task<string> GetBackupDirectoryAsync()
     {
         _logger.LogInformation("Obteniendo directorio de respaldos desde configuración del sistema...");
-        var config = await _systemConfigRepository.GetConfigurationAsync();
-        var configuredDir = config?.BackupDirectory;
+        string? configuredDir;
+        try
+        {
+            configuredDir = (await _systemConfigRepository.GetConfigurationAsync())?.BackupDirectory;
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable)
+        {
+            // Esquema de una versión anterior (respaldo previo a migrar o arranque en mantenimiento): el modelo pide
+            // columnas que todavía no existen, así que sólo se lee la que hace falta.
+            _logger.LogWarning("El esquema de la base es anterior a esta versión; se lee el directorio de respaldos directamente.");
+            configuredDir = await ReadBackupDirectoryFromOlderSchemaAsync();
+        }
 
         string backupDir;
         if (string.IsNullOrWhiteSpace(configuredDir))
@@ -268,6 +278,58 @@ public class BackupService : IBackupService
                 Success = false,
                 Message = $"Error: {ex.Message}"
             };
+        }
+    }
+
+    private async Task<string?> ReadBackupDirectoryFromOlderSchemaAsync()
+    {
+        try
+        {
+            await using var connection = new NpgsqlConnection(_connectionString);
+            await connection.OpenAsync();
+            await using var cmd = new NpgsqlCommand(@"SELECT ""BackupDirectory"" FROM ""SystemConfiguration"" LIMIT 1", connection);
+            return await cmd.ExecuteScalarAsync() as string;
+        }
+        catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable)
+        {
+            return null;
+        }
+    }
+
+    public async Task<BackupResultDto> CreatePreMigrationBackupAsync(string description, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var backupDirectory = await GetBackupDirectoryAsync();
+            var backupFilePath = NewBackupFilePath(backupDirectory, PreMigrationPrefix, ".backup");
+
+            _logger.LogWarning("Creando respaldo previo a la actualización del esquema ({Description}) en {Path}...", description, backupFilePath);
+            var result = await CreateDatabaseBackupFileAsync(backupFilePath, cancellationToken);
+            if (!result.Success)
+            {
+                return new BackupResultDto { Success = false, Message = result.Message };
+            }
+
+            var validation = await ValidateBackupArchiveAsync(backupFilePath, cancellationToken);
+            if (!validation.Valid)
+            {
+                TryDeleteFile(backupFilePath);
+                return new BackupResultDto { Success = false, Message = $"El respaldo generado no es válido: {validation.Message}" };
+            }
+
+            return new BackupResultDto
+            {
+                Success = true,
+                Message = "Respaldo previo a la actualización del esquema creado",
+                BackupFilePath = backupFilePath,
+                SizeInBytes = new FileInfo(backupFilePath).Length,
+                CreatedAt = DateTime.Now
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al crear el respaldo previo a la actualización del esquema");
+            return new BackupResultDto { Success = false, Message = $"Error: {ex.Message}" };
         }
     }
 
@@ -678,6 +740,7 @@ public class BackupService : IBackupService
     }
 
     private const string SafetySnapshotPrefix = ".safety_snapshot";
+    private const string PreMigrationPrefix = "PreMigration_Backup";
     private const string UploadTempPrefix = ".upload_";
 
     private static readonly string[] BackupExtensions = { ".zip", ".backup", ".bak" };
@@ -691,6 +754,11 @@ public class BackupService : IBackupService
         @"^\.safety_snapshot_(?<stamp>\d{8}_\d{6})(_\d+)?\.backup$",
         System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 
+    // Respaldos previos a migrar: se listan para poder restaurarlos, pero la retención no los toca.
+    private static readonly System.Text.RegularExpressions.Regex PreMigrationName = new(
+        @"^PreMigration_Backup_(?<stamp>\d{8}_\d{6})(_\d+)?\.backup$",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+
     private static bool HasBackupExtension(string fileName) =>
         BackupExtensions.Any(ext => fileName.EndsWith(ext, StringComparison.OrdinalIgnoreCase));
 
@@ -702,6 +770,7 @@ public class BackupService : IBackupService
     {
         var match = ManagedBackupName.Match(file.Name);
         if (!match.Success) match = SnapshotName.Match(file.Name);
+        if (!match.Success) match = PreMigrationName.Match(file.Name);
         if (match.Success && DateTime.TryParseExact(match.Groups["stamp"].Value, "yyyyMMdd_HHmmss",
                 System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeLocal, out var stamped))
         {
@@ -745,7 +814,8 @@ public class BackupService : IBackupService
                     var backupType = isSnapshot
                         ? BackupDto.SafetySnapshotType
                         : file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) ? "Full" : "DatabaseOnly";
-                    var description = isSnapshot ? "Estado previo a una restauración fallida" : "";
+                    var description = isSnapshot ? "Estado previo a una restauración fallida"
+                        : PreMigrationName.IsMatch(fileInfo.Name) ? "Estado previo a una actualización del esquema" : "";
 
                     // Intentar leer metadata si es un archivo zip
                     if (file.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
