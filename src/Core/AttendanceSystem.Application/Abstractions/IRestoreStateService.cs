@@ -36,9 +36,17 @@ public interface IRestoreStateService
     /// <summary>
     /// Carga al arrancar el estado persistido en PostgreSQL. Un fallo crítico de restauración (Failed, o un rollback
     /// interrumpido) sobrevive al reinicio; una restauración interrumpida antes de confirmar vuelve a Normal porque
-    /// la restauración es atómica y no llegó a modificar la base.
+    /// la restauración es atómica y no llegó a modificar la base. El mantenimiento que dejó un arranque anterior
+    /// (<see cref="EnterStartupMaintenanceAsync"/>) también vuelve a Normal, para que este arranque lo reintente.
     /// </summary>
     Task<MaintenanceState> LoadPersistedStateAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Deja el sistema en mantenimiento (Failed) porque el arranque no pudo poner el esquema al día: falló el respaldo
+    /// previo o una migración, o la base es de una versión más nueva. Se sale restaurando un respaldo, igual que tras
+    /// una restauración fallida, o corrigiendo la causa y reiniciando: el siguiente arranque vuelve a intentarlo.
+    /// </summary>
+    Task EnterStartupMaintenanceAsync(string reason, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Intenta adquirir el bloqueo exclusivo de restauración para un propietario dado.

@@ -5,6 +5,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Infrastructure.Persistence;
 using AttendanceSystem.Infrastructure.Persistence.Repositories;
@@ -14,6 +15,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Npgsql;
@@ -103,25 +105,121 @@ public class StartupMigrationServiceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task WhenThePreMigrationBackupFails_NoMigrationIsApplied()
+    public async Task WhenThePreMigrationBackupFails_NothingIsMigrated_AndTheAppStartsInMaintenance()
     {
         if (!_available) return;
         await MigrateToAsync(V223LastMigration);
         _backupService.Setup(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(new BackupResultDto { Success = false, Message = "pg_dump no encontrado" });
+        var state = NewState();
 
-        var act = () => NewService().RunAsync();
+        var result = await NewService(state: state).RunAsync();
 
-        await act.Should().ThrowAsync<InvalidOperationException>().WithMessage("*respaldo previo*pg_dump no encontrado*");
-        await using var context = new ContextFactory(_connectionString).CreateDbContext();
-        (await context.Database.GetAppliedMigrationsAsync()).Last().Should().Be(V223LastMigration);
+        result.Outcome.Should().Be(StartupMigrationOutcome.Maintenance);
+        result.Message.Should().Contain("respaldo previo").And.Contain("pg_dump no encontrado");
+        state.CurrentState.Should().Be(MaintenanceState.Failed);
+        (await LastAppliedMigrationAsync()).Should().Be(V223LastMigration, "sin respaldo no se toca la base");
+
+        // Otro proceso (un cliente WPF) ve el mantenimiento y deja de escribir.
+        var other = NewState();
+        await other.RefreshRemoteStateAsync();
+        other.CanWrite.Should().BeFalse();
     }
 
-    private StartupMigrationService NewService(IBackupService? backupService = null, Dictionary<string, string?>? settings = null) => new(
+    [Fact]
+    public async Task AfterAStartupMaintenance_TheNextStartRetries()
+    {
+        if (!_available) return;
+        await MigrateToAsync(V223LastMigration);
+        _backupService.SetupSequence(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupResultDto { Success = false, Message = "disco lleno" })
+            .ReturnsAsync(new BackupResultDto { Success = true, BackupFilePath = "/respaldos/PreMigration_Backup_x.backup" });
+        (await NewService(state: NewState()).RunAsync()).Outcome.Should().Be(StartupMigrationOutcome.Maintenance);
+
+        // Reinicio tras liberar espacio: el mantenimiento lo dejó un arranque, no una restauración, así que se reintenta.
+        var restarted = NewState();
+        (await restarted.LoadPersistedStateAsync()).Should().Be(MaintenanceState.Normal);
+        (await NewService(state: restarted).RunAsync()).Outcome.Should().Be(StartupMigrationOutcome.Migrated);
+        restarted.CanWrite.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task WhenAMigrationFails_TheDatabaseStaysAtTheLastCompletedOne_AndTheAppStartsInMaintenance()
+    {
+        if (!_available) return;
+        await MigrateToAsync(V223LastMigration);
+        // La penúltima migración pendiente ya no puede crear su tabla.
+        await ExecuteAsync(_connectionString, @"CREATE TABLE ""DeviceClockIncidents"" (""Id"" uuid PRIMARY KEY);");
+        _backupService.Setup(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupResultDto { Success = true, BackupFilePath = "/respaldos/PreMigration_Backup_x.backup" });
+        var state = NewState();
+
+        var result = await NewService(state: state).RunAsync();
+
+        result.Outcome.Should().Be(StartupMigrationOutcome.Maintenance);
+        var lastApplied = await LastAppliedMigrationAsync();
+        lastApplied.Should().Be("20261107120000_AttendancePeriodClosures", "cada migración se confirma por separado");
+        result.Message.Should().Contain(lastApplied).And.Contain("/respaldos/PreMigration_Backup_x.backup");
+        state.CurrentState.Should().Be(MaintenanceState.Failed);
+    }
+
+    [Fact]
+    public async Task WhenTheDatabaseIsFromANewerVersion_NothingIsTouched_AndTheAppStartsInMaintenance()
+    {
+        if (!_available) return;
+        await MigrateToAsync("20261109120000_AddEmployeeStatusBranchDepartmentIndex");
+        await ExecuteAsync(_connectionString,
+            @"INSERT INTO ""__EFMigrationsHistory"" VALUES ('29991231000000_FromANewerVersion', '10.0.10');");
+        var state = NewState();
+
+        var result = await NewService(state: state).RunAsync();
+
+        result.Outcome.Should().Be(StartupMigrationOutcome.Maintenance);
+        result.Message.Should().Contain("versión más nueva").And.Contain("29991231000000_FromANewerVersion");
+        state.CurrentState.Should().Be(MaintenanceState.Failed);
+        _backupService.Verify(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
+    public async Task WhenPostgresIsUnreachable_StartupRetriesAndThenStops()
+    {
+        var unreachable = new NpgsqlConnectionStringBuilder(_connectionString) { Port = 1, Timeout = 2 }.ConnectionString;
+        var logger = new Mock<ILogger<StartupMigrationService>>();
+        var service = new StartupMigrationService(new ContextFactory(unreachable), _backupService.Object,
+            new RestoreStateService(NullLogger<RestoreStateService>.Instance), logger.Object,
+            new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                ["Database:StartupConnectAttempts"] = "3",
+                ["Database:StartupConnectRetrySeconds"] = "0"
+            }).Build());
+
+        // Sin base no hay pantalla de mantenimiento que mostrar: el arranque falla y el siguiente lo reintenta.
+        await service.Invoking(s => s.RunAsync()).Should().ThrowAsync<Exception>();
+        logger.Verify(l => l.Log(LogLevel.Warning, It.IsAny<EventId>(),
+            It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("No se pudo conectar con PostgreSQL")),
+            It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Exactly(2));
+    }
+
+    private StartupMigrationService NewService(IBackupService? backupService = null, RestoreStateService? state = null) => new(
         new ContextFactory(_connectionString),
         backupService ?? _backupService.Object,
+        state ?? NewState(),
         NullLogger<StartupMigrationService>.Instance,
-        new ConfigurationBuilder().AddInMemoryCollection(settings ?? new()).Build());
+        new ConfigurationBuilder().Build());
+
+    /// <summary>Cada instancia representa otro proceso o un reinicio; el estado de los demás se refresca a mano.</summary>
+    private RestoreStateService NewState() => new(NullLogger<RestoreStateService>.Instance,
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:AttendanceDb"] = _connectionString,
+            ["Maintenance:PollIntervalSeconds"] = "0"
+        }).Build());
+
+    private async Task<string?> LastAppliedMigrationAsync()
+    {
+        await using var context = new ContextFactory(_connectionString).CreateDbContext();
+        return (await context.Database.GetAppliedMigrationsAsync()).LastOrDefault();
+    }
 
     /// <summary>Respaldo real con pg_dump; null si faltan las herramientas fuera de CI.</summary>
     private BackupService? RealBackupService()

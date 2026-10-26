@@ -86,13 +86,19 @@ public class BackupService : IBackupService
     }
 
 
-    private async Task<string> GetBackupDirectoryAsync()
+    /// <param name="schemaMayBeOlder">
+    /// Antes de migrar el esquema suele ser anterior al modelo: se lee directamente la columna, sin pasar por una
+    /// consulta que EF registraría como error.
+    /// </param>
+    private async Task<string> GetBackupDirectoryAsync(bool schemaMayBeOlder = false)
     {
         _logger.LogInformation("Obteniendo directorio de respaldos desde configuración del sistema...");
         string? configuredDir;
         try
         {
-            configuredDir = (await _systemConfigRepository.GetConfigurationAsync())?.BackupDirectory;
+            configuredDir = schemaMayBeOlder
+                ? await ReadBackupDirectoryFromOlderSchemaAsync()
+                : (await _systemConfigRepository.GetConfigurationAsync())?.BackupDirectory;
         }
         catch (PostgresException ex) when (ex.SqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedTable)
         {
@@ -300,7 +306,7 @@ public class BackupService : IBackupService
     {
         try
         {
-            var backupDirectory = await GetBackupDirectoryAsync();
+            var backupDirectory = await GetBackupDirectoryAsync(schemaMayBeOlder: true);
             var backupFilePath = NewBackupFilePath(backupDirectory, PreMigrationPrefix, ".backup");
 
             _logger.LogWarning("Creando respaldo previo a la actualización del esquema ({Description}) en {Path}...", description, backupFilePath);
@@ -1938,6 +1944,10 @@ GRANT ALL ON SCHEMA public TO public;
         {
             NpgsqlConnection.ClearAllPools();
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            var migrationTimeout = StartupMigrationService.MigrationTimeout(_configuration);
+            // Mismo bloqueo que el arranque: un worker que inicia ahora no debe migrar a la vez.
+            await using var migrationLock = await DatabaseMigrationLock.AcquireAsync(
+                context.Database.GetConnectionString()!, migrationTimeout, _logger, cancellationToken);
 
             var known = context.Database.GetMigrations().ToList();
             var applied = (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
@@ -1959,6 +1969,7 @@ GRANT ALL ON SCHEMA public TO public;
             progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Actualización de Esquema",
                 $"El respaldo es de una versión anterior: aplicando {pending.Count} migración(es) pendiente(s)...", ProgressPercentage: 90));
 
+            context.Database.SetCommandTimeout(migrationTimeout);
             await context.Database.MigrateAsync(cancellationToken);
             return (true, $"Se aplicaron {pending.Count} migraciones pendientes.");
         }
