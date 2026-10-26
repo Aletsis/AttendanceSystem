@@ -182,6 +182,22 @@ public class PermissionsAndAuditTests
         new PermissionService(user.Object).Has(Permissions.EmployeesCreate).Should().BeTrue();
     }
 
+    [Fact]
+    public void InAClientThatRequiresSignIn_NothingRunsWithoutASession()
+    {
+        // Cliente WPF: no hay tareas del sistema; sin sesión se rechaza todo.
+        var signedOut = new Mock<ICurrentUserService>();
+        signedOut.SetupGet(u => u.RequiresSignIn).Returns(true);
+        var service = new PermissionService(signedOut.Object);
+
+        service.IsSystem.Should().BeFalse();
+        service.Has(Permissions.EmployeesView).Should().BeFalse();
+
+        signedOut.SetupGet(u => u.IsAuthenticated).Returns(true);
+        signedOut.SetupGet(u => u.Roles).Returns(new[] { AppRoles.User });
+        service.Has(Permissions.EmployeesView).Should().BeTrue();
+    }
+
     // ---------- Permisos por campo del empleado ----------
 
     private static Employee NewEmployee(DevicePrivilege privilege = DevicePrivilege.User) =>

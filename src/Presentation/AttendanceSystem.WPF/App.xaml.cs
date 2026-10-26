@@ -39,9 +39,9 @@ namespace AttendanceSystem.WPF
         {
             var shell = Container.Resolve<ShellWindow>();
 
-            // Navigate to Dashboard
+            // Se arranca en el inicio de sesión: sin usuario los comandos no se restringen. Al entrar se navega al Dashboard.
             var regionManager = Container.Resolve<IRegionManager>();
-            regionManager.RegisterViewWithRegion("MainRegion", typeof(Views.Dashboard.DashboardView));
+            regionManager.RegisterViewWithRegion("MainRegion", typeof(Views.Auth.LoginView));
 
             return shell;
         }

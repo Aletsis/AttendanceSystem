@@ -11,4 +11,10 @@ public interface ICurrentUserService
 
     /// <summary>Roles del usuario (caso 13); vacío si no hay sesión.</summary>
     IReadOnlyCollection<string> Roles => Array.Empty<string>();
+
+    /// <summary>
+    /// El host sólo ejecuta acciones de usuarios (cliente WPF): sin sesión no hay "sistema" y todo se rechaza. En Blazor
+    /// es falso, porque las tareas programadas y ADMS corren sin usuario.
+    /// </summary>
+    bool RequiresSignIn => false;
 }
