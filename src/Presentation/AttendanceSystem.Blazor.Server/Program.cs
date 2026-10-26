@@ -165,32 +165,11 @@ try
         // ===== VERIFICAR Y APLICAR MIGRACIONES PENDIENTES =====
         using (var scope = app.Services.CreateScope())
         {
-            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger("DatabaseMigration");
+            var logger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("DatabaseMigration");
 
             try
             {
-                var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
-
-                // Verificar si hay migraciones pendientes
-                var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
-
-                if (pendingMigrations.Any())
-                {
-                    logger.LogWarning("Se encontraron {Count} migraciones pendientes. Aplicando migraciones...", pendingMigrations.Count());
-                    foreach (var migration in pendingMigrations)
-                    {
-                        logger.LogInformation("Migración pendiente: {Migration}", migration);
-                    }
-
-                    // Aplicar migraciones
-                    await dbContext.Database.MigrateAsync();
-                    logger.LogInformation("Todas las migraciones se aplicaron correctamente");
-                }
-                else
-                {
-                    logger.LogInformation("La base de datos está actualizada. No hay migraciones pendientes");
-                }
+                await scope.ServiceProvider.GetRequiredService<StartupMigrationService>().RunAsync();
             }
             catch (Exception ex)
             {

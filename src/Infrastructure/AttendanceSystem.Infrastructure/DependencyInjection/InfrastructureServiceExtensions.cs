@@ -111,6 +111,7 @@ public static class InfrastructureServiceExtensions
         services.AddSingleton<IRestoreStateService, RestoreStateService>();
         services.AddSingleton<ICloudDataSourceProvider, CloudDataSourceProvider>();
         services.AddScoped<IBackupService, BackupService>();
+        services.AddScoped<StartupMigrationService>();
         services.AddScoped<ILogTransferService, LogTransferService>();
         services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();
         services.AddSingleton<IAdmsCommandService, AdmsCommandService>();
