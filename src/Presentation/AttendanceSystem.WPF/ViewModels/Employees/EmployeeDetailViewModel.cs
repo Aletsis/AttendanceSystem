@@ -91,7 +91,19 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         };
 
         public string Title { get => _title; set => SetProperty(ref _title, value); }
-        public bool IsEditMode { get => _isEditMode; set => SetProperty(ref _isEditMode, value); }
+        public bool IsEditMode
+        {
+            get => _isEditMode;
+            set
+            {
+                if (!SetProperty(ref _isEditMode, value)) return;
+                // El estatus sólo se cambia al editar: sin avisar, el combo quedaba deshabilitado al abrir un empleado.
+                RaisePropertyChanged(nameof(CanChangeStatus));
+                RaisePropertyChanged(nameof(StatusChanged));
+                RaisePropertyChanged(nameof(StartsLeave));
+                RaisePropertyChanged(nameof(StatusDateLabel));
+            }
+        }
 
         public string Id
         {
@@ -216,25 +228,31 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         public void OnNavigatedTo(NavigationContext navigationContext)
         {
-            _ = LoadCatalogsAsync().ContinueWith(async t =>
+            var employeeId = navigationContext.Parameters.ContainsKey("EmployeeId")
+                ? navigationContext.Parameters.GetValue<string>("EmployeeId")
+                : null;
+            _ = InitializeAsync(employeeId);
+        }
+
+        private async Task InitializeAsync(string? employeeId)
+        {
+            await LoadCatalogsAsync();
+            if (employeeId != null)
             {
-                if (navigationContext.Parameters.ContainsKey("EmployeeId"))
-                {
-                    _originalId = navigationContext.Parameters.GetValue<string>("EmployeeId");
-                    await LoadEmployeeAsync(_originalId);
-                    IsEditMode = true;
-                    Title = "Editar Empleado";
-                }
-                else
-                {
-                    ClearForm();
-                    IsEditMode = false;
-                    Title = "Nuevo Empleado";
-                    // Trigger initial filters
-                    FilterPositions();
-                    FilterShifts();
-                }
-            }, TaskScheduler.FromCurrentSynchronizationContext());
+                // Antes de cargar: el estatus y sus fechas dependen de que sea una edición.
+                _originalId = employeeId;
+                IsEditMode = true;
+                Title = "Editar Empleado";
+                await LoadEmployeeAsync(employeeId);
+            }
+            else
+            {
+                ClearForm();
+                IsEditMode = false;
+                Title = "Nuevo Empleado";
+                FilterPositions();
+                FilterShifts();
+            }
         }
 
         public bool IsNavigationTarget(NavigationContext navigationContext) => true;
@@ -541,6 +559,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             _navigationService.GoBack();
         }
 
+        /// <summary>Formulario de alta: nada del último empleado abierto (estatus, turno, extras, bitácora) se conserva.</summary>
         private void ClearForm()
         {
             Id = string.Empty;
@@ -550,16 +569,30 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             Email = string.Empty;
             PhoneNumber = string.Empty;
             HireDate = DateTime.Today;
+            Gender = Gender.Male;
+            _loadedStatus = EmployeeStatus.Alta;
+            Status = EmployeeStatus.Alta;
+            StatusDate = DateTime.Today;
+            LeaveTo = null;
+            RaisePropertyChanged(nameof(StatusOptions));
             SelectedDepartmentId = null;
             SelectedPositionId = null;
             SelectedBranchId = null;
+            SelectedShiftType = ShiftType.Matutino;
             SelectedShiftId = null;
             SelectedRestDay = null;
+            _loadedRestDay = null;
+            _loadedRestDays = null;
+            _loadedDevicePrivilege = DevicePrivilege.User;
             OvertimeAuthorized = false;
+            SelectedOvertimeCalculationMethod = OvertimeCalculationMethod.NoRounding;
+            SelectedOvertimeCapType = OvertimeCapType.None;
+            OvertimeCapMinutes = null;
             CalculateOvertimeBeforeEntry = false;
             CardNumber = null;
             DevicePassword = null;
             Photo = null;
+            AuditLogs.Clear();
         }
     }
 }

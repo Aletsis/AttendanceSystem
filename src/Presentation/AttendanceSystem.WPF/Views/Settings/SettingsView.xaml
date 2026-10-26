@@ -132,7 +132,7 @@
 
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="Jornada Laboral Estándar (Horas)" Style="{StaticResource LabelStyle}"/>
-                                <mah:NumericUpDown Value="{Binding StandardWorkHours}" Minimum="1" Maximum="24" Padding="12,10" BorderBrush="#EAECF4" Background="#F8F9FC"/>
+                                <mah:NumericUpDown Value="{Binding StandardWorkHours}" Minimum="1" Maximum="24" Interval="0.5" StringFormat="0.##" Padding="12,10" BorderBrush="#EAECF4" Background="#F8F9FC"/>
                             </StackPanel>
 
                             <StackPanel Grid.Row="2" Grid.Column="0">
@@ -163,14 +163,14 @@
                             
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="Modo de Periodo" Style="{StaticResource LabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding WorkPeriodModes}" SelectedItem="{Binding WorkPeriodMode}" Padding="12,10" BorderBrush="#EAECF4" Background="#F8F9FC"/>
+                                <ComboBox ItemsSource="{Binding WorkPeriodModes}" SelectedItem="{Binding WorkPeriodMode}" ItemTemplate="{StaticResource EnumItemTemplate}" Padding="12,10" BorderBrush="#EAECF4" Background="#F8F9FC"/>
                             </StackPanel>
 
                             <StackPanel Grid.Column="2">
                                 <!-- Semanal -->
                                 <StackPanel Visibility="{Binding WorkPeriodMode, Converter={StaticResource WorkPeriodModeToVisibilityConverter}, ConverterParameter=Weekly}">
                                     <TextBlock Text="Día de Inicio" Style="{StaticResource LabelStyle}"/>
-                                    <ComboBox ItemsSource="{Binding DaysOfWeek}" SelectedItem="{Binding WeeklyStartDay}" Padding="12,10" BorderBrush="#EAECF4" Background="#F8F9FC"/>
+                                    <ComboBox ItemsSource="{Binding DaysOfWeek}" SelectedItem="{Binding WeeklyStartDay}" ItemTemplate="{StaticResource EnumItemTemplate}" Padding="12,10" BorderBrush="#EAECF4" Background="#F8F9FC"/>
                                 </StackPanel>
                                 
                                 <!-- Quincenal -->

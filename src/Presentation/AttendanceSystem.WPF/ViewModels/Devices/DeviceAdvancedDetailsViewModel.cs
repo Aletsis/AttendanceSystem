@@ -104,6 +104,14 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                     var filtered = result.Value.Where(l => l.DeviceId.Value == _device.DeviceId).OrderByDescending(l => l.StartedAt);
                     DownloadHistory = new ObservableCollection<DownloadLog>(filtered);
                 }
+                else
+                {
+                    await _messageService.ShowErrorAsync($"Error al cargar el historial: {result.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al cargar el historial: {ex.Message}");
             }
             finally
             {

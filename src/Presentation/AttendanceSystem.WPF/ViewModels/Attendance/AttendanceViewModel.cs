@@ -78,6 +78,12 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
 
         private async Task LoadAttendanceLogsAsync()
         {
+            if (EndDate < StartDate)
+            {
+                await _messageService.ShowWarningAsync("La fecha final debe ser igual o posterior a la inicial.");
+                return;
+            }
+
             SetBusy(true, "Cargando registros de asistencia...");
             try
             {

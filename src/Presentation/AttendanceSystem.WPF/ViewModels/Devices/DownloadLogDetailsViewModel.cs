@@ -17,6 +17,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
     public class DownloadLogDetailsViewModel : BindableBase, IDialogAware
     {
         private readonly IMediator _mediator;
+        private readonly AttendanceSystem.WPF.Services.IMessageService _messageService;
         private DownloadLog? _log;
         private string _deviceName = string.Empty;
         private bool _isLoadingRecords;
@@ -53,9 +54,10 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
 
         public DialogCloseListener RequestClose { get; }
 
-        public DownloadLogDetailsViewModel(IMediator mediator)
+        public DownloadLogDetailsViewModel(IMediator mediator, AttendanceSystem.WPF.Services.IMessageService messageService)
         {
             _mediator = mediator;
+            _messageService = messageService;
             CancelCommand = new DelegateCommand(() => RequestClose.Invoke(ButtonResult.OK));
         }
 
@@ -67,6 +69,10 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             {
                 var result = await _mediator.Send(new GetAttendanceByDownloadLogQuery(_log.Id));
                 ImportedRecords = new ObservableCollection<AttendanceLogViewDto>(result);
+            }
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al cargar los registros: {ex.Message}");
             }
             finally
             {

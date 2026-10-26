@@ -65,6 +65,13 @@
                                        mah:TextBoxHelper.Watermark="0.00"
                                        Padding="10,8"/>
                 </StackPanel>
+
+                <CheckBox IsChecked="{Binding IsCritical}" Margin="0,0,0,5">
+                    <StackPanel>
+                        <TextBlock Text="Puesto crítico" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                        <TextBlock Text="Su ausencia genera una alerta de falta crítica." FontSize="11" Foreground="#858796"/>
+                    </StackPanel>
+                </CheckBox>
             </StackPanel>
 
             <!-- Actions -->

@@ -212,11 +212,31 @@
                         <DataGridTemplateColumn Header="Tipo" Width="100">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Border Background="{Binding IsExternal, Converter={StaticResource BooleanToStatusBrushConverter}, ConverterParameter='External'}" 
-                                            CornerRadius="10" Padding="8,3" HorizontalAlignment="Left" Margin="5,0">
-                                        <TextBlock Text="{Binding IsExternal, Converter={StaticResource BooleanToStatusTextConverter}, ConverterParameter='External'}" 
-                                                   Foreground="{Binding IsExternal, Converter={StaticResource BooleanToStatusBrushConverter}, ConverterParameter='ExternalText'}" 
-                                                   FontSize="11" FontWeight="Bold"/>
+                                    <Border CornerRadius="10" Padding="8,3" HorizontalAlignment="Left" Margin="5,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{StaticResource Brush.PrimarySoft}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsExternal}" Value="True">
+                                                        <Setter Property="Background" Value="#EDE9FE"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock FontSize="11" FontWeight="Bold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Interna"/>
+                                                    <Setter Property="Foreground" Value="{StaticResource Brush.Primary}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsExternal}" Value="True">
+                                                            <Setter Property="Text" Value="Externa"/>
+                                                            <Setter Property="Foreground" Value="#7C3AED"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </Border>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>

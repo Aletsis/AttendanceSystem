@@ -85,10 +85,8 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             _dialogService = dialogService;
 
             AddPositionCommand = new DelegateCommand(ExecuteAddPosition);
-            EditPositionCommand = new DelegateCommand(ExecuteEditPosition, CanExecuteEdit)
-                .ObservesProperty(() => SelectedPosition);
-            DeletePositionCommand = new DelegateCommand(async () => await ExecuteDeletePositionAsync(), CanExecuteEdit)
-                .ObservesProperty(() => SelectedPosition);
+            EditPositionCommand = new DelegateCommand<PositionListItem?>(x => ExecuteEditPosition(x ?? SelectedPosition));
+            DeletePositionCommand = new DelegateCommand<PositionListItem?>(async x => await ExecuteDeletePositionAsync(x ?? SelectedPosition));
             RefreshCommand = new DelegateCommand(async () => await LoadPositionsAsync());
             ImportPositionsCommand = new DelegateCommand(async () => await ExecuteImportPositionsAsync());
             ExportPositionsCommand = new DelegateCommand(async () => await ExecuteExportPositionsAsync());
@@ -183,8 +181,9 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                     var name = result.Parameters.GetValue<string>("Name");
                     var description = result.Parameters.GetValue<string>("Description");
                     var baseSalary = result.Parameters.GetValue<decimal>("BaseSalary");
+                    var isCritical = result.Parameters.GetValue<bool>("IsCritical");
 
-                    var command = new CreatePositionCommand(name, description, baseSalary, false);
+                    var command = new CreatePositionCommand(name, description, baseSalary, isCritical);
                     var createResult = await _mediator.Send(command);
 
                     if (createResult.IsSuccess)
@@ -200,11 +199,11 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             });
         }
 
-        private void ExecuteEditPosition()
+        private void ExecuteEditPosition(PositionListItem? item)
         {
-            if (SelectedPosition == null) return;
+            if (item == null) return;
 
-            var posData = _allPositionsData.FirstOrDefault(p => p.Id == SelectedPosition.Id);
+            var posData = _allPositionsData.FirstOrDefault(p => p.Id == item.Id);
             if (posData == null) return;
 
             var parameters = new DialogParameters
@@ -212,7 +211,8 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                 { "PositionId", posData.Id },
                 { "Name", posData.Name },
                 { "Description", posData.Description ?? string.Empty },
-                { "BaseSalary", posData.BaseSalary }
+                { "BaseSalary", posData.BaseSalary },
+                { "IsCritical", posData.IsCritical }
             };
 
             _dialogService.ShowDialog("PositionDetailDialog", parameters, async result =>
@@ -222,8 +222,9 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                     var name = result.Parameters.GetValue<string>("Name");
                     var description = result.Parameters.GetValue<string>("Description");
                     var baseSalary = result.Parameters.GetValue<decimal>("BaseSalary");
+                    var isCritical = result.Parameters.GetValue<bool>("IsCritical");
 
-                    var command = new UpdatePositionCommand(posData.Id, name, description, baseSalary, false);
+                    var command = new UpdatePositionCommand(posData.Id, name, description, baseSalary, isCritical);
                     var updateResult = await _mediator.Send(command);
 
                     if (updateResult.IsSuccess)
@@ -239,20 +240,20 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             });
         }
 
-        private async Task ExecuteDeletePositionAsync()
+        private async Task ExecuteDeletePositionAsync(PositionListItem? item)
         {
-            if (SelectedPosition == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar la posición {SelectedPosition.Name}?");
+                $"¿Está seguro de eliminar la posición {item.Name}?");
 
             if (!confirmed) return;
 
             SetBusy(true, "Eliminando posición...");
             try
             {
-                var command = new DeletePositionCommand(SelectedPosition.Id);
+                var command = new DeletePositionCommand(item.Id);
                 var result = await _mediator.Send(command);
 
                 if (result.IsSuccess)
@@ -275,11 +276,6 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             }
         }
 
-        private bool CanExecuteEdit()
-        {
-            return SelectedPosition != null;
-        }
-
         private async Task ExecuteImportPositionsAsync()
         {
             var openFileDialog = new OpenFileDialog
@@ -298,20 +294,18 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
                     if (result.IsSuccess)
                     {
-                        int importedCount = 0;
-                        int errorCount = 0;
+                        var summary = new ImportSummary();
 
                         foreach (var item in result.Data)
                         {
                             var command = new CreatePositionCommand(item.Name, item.Description, item.BaseSalary, false);
                             var createResult = await _mediator.Send(command);
-                            if (createResult.IsSuccess)
-                                importedCount++;
-                            else
-                                errorCount++;
+                            if (createResult.IsSuccess) summary.Success();
+                            else summary.Fail(item.Name, createResult.Error);
                         }
 
-                        await _messageService.ShowSuccessAsync($"Importación finalizada. Éxito: {importedCount}, Errores: {errorCount}");
+                        if (summary.Failed == 0) await _messageService.ShowSuccessAsync(summary.ToMessage());
+                        else await _messageService.ShowWarningAsync(summary.ToMessage());
                         await LoadPositionsAsync();
                     }
                     else

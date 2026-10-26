@@ -88,13 +88,13 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,10,0">
                             <TextBlock Text="Marca" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                            <ComboBox ItemsSource="{Binding Brands}" 
+                            <ComboBox ItemsSource="{Binding Brands}" ItemTemplate="{StaticResource EnumItemTemplate}" 
                                       SelectedItem="{Binding SelectedBrand}"
                                       Padding="10,5"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1">
                             <TextBlock Text="Método de Descarga" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                            <ComboBox ItemsSource="{Binding DownloadMethods}" 
+                            <ComboBox ItemsSource="{Binding DownloadMethods}" ItemTemplate="{StaticResource EnumItemTemplate}" 
                                       SelectedItem="{Binding SelectedDownloadMethod}"
                                       Padding="10,5"/>
                         </StackPanel>

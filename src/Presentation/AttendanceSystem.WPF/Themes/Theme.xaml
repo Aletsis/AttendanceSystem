@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:converters="clr-namespace:AttendanceSystem.WPF.Converters">
 
     <!-- Paleta única de la aplicación: las pantallas usan estos recursos en lugar de colores escritos a mano. -->
     <Color x:Key="Color.Primary">#4E73DF</Color>
@@ -39,6 +40,12 @@
     <SolidColorBrush x:Key="Brush.Surface" Color="{StaticResource Color.Surface}"/>
     <SolidColorBrush x:Key="Brush.SurfaceAlt" Color="{StaticResource Color.SurfaceAlt}"/>
     <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}"/>
+
+    <!-- Valores de enumeración en español dentro de combos: ItemTemplate="{StaticResource EnumItemTemplate}". -->
+    <converters:EnumDisplayConverter x:Key="EnumDisplayConverter"/>
+    <DataTemplate x:Key="EnumItemTemplate">
+        <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}"/>
+    </DataTemplate>
 
     <DropShadowEffect x:Key="Effect.CardShadow" BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
 

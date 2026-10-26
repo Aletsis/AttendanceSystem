@@ -15,6 +15,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
     public class ExternalEmployeeDetailViewModel : BindableBase, IDialogAware
     {
         private readonly IMediator _mediator;
+        private readonly AttendanceSystem.WPF.Services.IMessageService _messageService;
         private Guid? _id;
         private string _title = "Nuevo Empleado Externo";
         private BranchLookupItem? _selectedBranch;
@@ -134,9 +135,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         public DialogCloseListener RequestClose { get; }
 
-        public ExternalEmployeeDetailViewModel(IMediator mediator)
+        public ExternalEmployeeDetailViewModel(IMediator mediator, AttendanceSystem.WPF.Services.IMessageService messageService)
         {
             _mediator = mediator;
+            _messageService = messageService;
 
             SaveCommand = new DelegateCommand(ExecuteSave, CanExecuteSave);
             CancelCommand = new DelegateCommand(ExecuteCancel);
@@ -203,9 +205,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // Manejo silencioso en carga inicial
+                // Sin sucursales externas no se puede guardar: se avisa en vez de mostrar el combo vacío sin explicación.
+                await _messageService.ShowErrorAsync($"Error al cargar las sucursales externas: {ex.Message}");
             }
 
             if (parameters.ContainsKey("Id"))

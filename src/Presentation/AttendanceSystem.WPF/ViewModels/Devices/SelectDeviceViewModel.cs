@@ -14,6 +14,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
     public class SelectDeviceViewModel : BindableBase, IDialogAware
     {
         private readonly IMediator _mediator;
+        private readonly AttendanceSystem.WPF.Services.IMessageService _messageService;
         private ObservableCollection<DeviceDto> _devices = new();
         private DeviceDto? _selectedDevice;
 
@@ -42,9 +43,10 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public ICommand SelectCommand { get; }
         public ICommand CancelCommand { get; }
 
-        public SelectDeviceViewModel(IMediator mediator)
+        public SelectDeviceViewModel(IMediator mediator, AttendanceSystem.WPF.Services.IMessageService messageService)
         {
             _mediator = mediator;
+            _messageService = messageService;
             SelectCommand = new DelegateCommand(ExecuteSelect, CanExecuteSelect);
             CancelCommand = new DelegateCommand(ExecuteCancel);
 
@@ -53,14 +55,25 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
 
         private async void LoadDevices()
         {
-            var result = await _mediator.Send(new GetActiveDevicesQuery());
-            if (result.IsSuccess)
+            try
             {
-                Devices = new ObservableCollection<DeviceDto>(result.Value);
-                if (Devices.Any())
+                var result = await _mediator.Send(new GetActiveDevicesQuery());
+                if (result.IsSuccess)
                 {
-                    SelectedDevice = Devices.First();
+                    Devices = new ObservableCollection<DeviceDto>(result.Value);
+                    if (Devices.Any())
+                    {
+                        SelectedDevice = Devices.First();
+                    }
                 }
+                else
+                {
+                    await _messageService.ShowErrorAsync($"Error al cargar dispositivos: {result.Error}");
+                }
+            }
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al cargar dispositivos: {ex.Message}");
             }
         }
 

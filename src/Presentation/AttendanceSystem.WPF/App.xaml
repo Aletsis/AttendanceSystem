@@ -27,6 +27,7 @@
             <converters:WorkPeriodModeToVisibilityConverter x:Key="WorkPeriodModeToVisibilityConverter" />
             <converters:BytesToSizeConverter x:Key="BytesToSizeConverter" />
             <converters:BackupTypeToBrushConverter x:Key="BackupTypeToBrushConverter" />
+            <converters:BackupTypeToTextConverter x:Key="BackupTypeToTextConverter" />
         </ResourceDictionary>
     </Application.Resources>
 </prism:PrismApplication>

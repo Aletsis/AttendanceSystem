@@ -149,11 +149,11 @@
                                     
                                     <StackPanel Grid.Column="0">
                                         <TextBlock Text="Sexo" Style="{StaticResource FieldLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding GenderOptions}" SelectedItem="{Binding Gender}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                        <ComboBox ItemsSource="{Binding GenderOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding Gender}" Style="{StaticResource ModernComboBoxStyle}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
                                         <TextBlock Text="Estatus" Style="{StaticResource FieldLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status}" Style="{StaticResource ModernComboBoxStyle}"
+                                        <ComboBox ItemsSource="{Binding StatusOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding Status}" Style="{StaticResource ModernComboBoxStyle}"
                                                   IsEnabled="{Binding CanChangeStatus}"/>
                                     </StackPanel>
                                 </Grid>
@@ -202,7 +202,7 @@
                                 <TextBlock Text="Horario y Jornada" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
                                 
                                 <TextBlock Text="Tipo de Turno" Style="{StaticResource FieldLabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding ShiftTypeOptions}" SelectedItem="{Binding SelectedShiftType}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                <ComboBox ItemsSource="{Binding ShiftTypeOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedShiftType}" Style="{StaticResource ModernComboBoxStyle}"/>
 
                                 <TextBlock Text="Horario Asignado" Style="{StaticResource FieldLabelStyle}"/>
                                 <ComboBox ItemsSource="{Binding VisibleShifts}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedShiftId}" Style="{StaticResource ModernComboBoxStyle}"/>
@@ -223,21 +223,6 @@
                                 <TextBlock Text="Contraseña PIN" Style="{StaticResource FieldLabelStyle}"/>
                                 <TextBox Text="{Binding DevicePassword}" Style="{StaticResource ModernTextBoxStyle}" mah:TextBoxHelper.Watermark="Máx. 8 dígitos"/>
                                 
-                                <TextBlock Text="Biometría Registrada" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,10"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Border Background="#EBFBEE" CornerRadius="15" Padding="12,6" Margin="0,0,10,0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <iconPacks:PackIconMaterial Kind="Fingerprint" Width="14" Height="14" Foreground="#28A745" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                            <TextBlock Text="2 Huellas" FontSize="12" Foreground="#28A745" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Background="#F8F9FC" CornerRadius="15" Padding="12,6">
-                                        <StackPanel Orientation="Horizontal">
-                                            <iconPacks:PackIconMaterial Kind="FaceRecognition" Width="14" Height="14" Foreground="#858796" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                            <TextBlock Text="Sin Rostro" FontSize="12" Foreground="#858796" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
                             </StackPanel>
                         </Border>
 
@@ -251,7 +236,7 @@
 
                                 <StackPanel IsEnabled="{Binding OvertimeAuthorized}">
                                     <TextBlock Text="Método de Redondeo" Style="{StaticResource FieldLabelStyle}"/>
-                                    <ComboBox ItemsSource="{Binding OvertimeCalculationMethodOptions}" SelectedItem="{Binding SelectedOvertimeCalculationMethod}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                    <ComboBox ItemsSource="{Binding OvertimeCalculationMethodOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedOvertimeCalculationMethod}" Style="{StaticResource ModernComboBoxStyle}"/>
 
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -262,7 +247,7 @@
                                         
                                         <StackPanel Grid.Column="0">
                                             <TextBlock Text="Tipo de Tope" Style="{StaticResource FieldLabelStyle}"/>
-                                            <ComboBox ItemsSource="{Binding OvertimeCapTypeOptions}" SelectedItem="{Binding SelectedOvertimeCapType}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                            <ComboBox ItemsSource="{Binding OvertimeCapTypeOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedOvertimeCapType}" Style="{StaticResource ModernComboBoxStyle}"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2">
                                             <TextBlock Text="Minutos Tope" Style="{StaticResource FieldLabelStyle}"/>

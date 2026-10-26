@@ -73,10 +73,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             _dialogService = dialogService;
 
             AddShiftCommand = new DelegateCommand(ExecuteAddShift);
-            EditShiftCommand = new DelegateCommand(ExecuteEditShift, CanExecuteEdit)
-                .ObservesProperty(() => SelectedShift);
-            DeleteShiftCommand = new DelegateCommand(async () => await ExecuteDeleteShiftAsync(), CanExecuteEdit)
-                .ObservesProperty(() => SelectedShift);
+            EditShiftCommand = new DelegateCommand<ShiftListItem?>(x => ExecuteEditShift(x ?? SelectedShift));
+            DeleteShiftCommand = new DelegateCommand<ShiftListItem?>(async x => await ExecuteDeleteShiftAsync(x ?? SelectedShift));
             RefreshCommand = new DelegateCommand(async () => await LoadShiftsAsync());
 
             _ = LoadShiftsAsync();
@@ -112,7 +110,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                             EndTime = s.EndTime.ToString(@"hh\:mm"),
                             WorkingHours = s.WorkHours.ToString(@"hh\:mm"),
                             ToleranceMinutes = s.ToleranceMinutes,
-                            ShiftTypeDisplay = s.ShiftType.ToString(),
+                            ShiftTypeDisplay = Converters.EnumDisplay.Text(s.ShiftType),
                             IsNightShift = s.ShiftType == ShiftType.Nocturno,
                             EmployeeCount = employeeCounts.GetValueOrDefault(s.Id, 0)
                         });
@@ -201,11 +199,11 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             });
         }
 
-        private void ExecuteEditShift()
+        private void ExecuteEditShift(ShiftListItem? item)
         {
-            if (SelectedShift == null) return;
+            if (item == null) return;
 
-            var shiftData = _allShiftsData.FirstOrDefault(s => s.Id == SelectedShift.Id);
+            var shiftData = _allShiftsData.FirstOrDefault(s => s.Id == item.Id);
             if (shiftData == null) return;
 
             var parameters = new DialogParameters
@@ -285,20 +283,20 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             });
         }
 
-        private async Task ExecuteDeleteShiftAsync()
+        private async Task ExecuteDeleteShiftAsync(ShiftListItem? item)
         {
-            if (SelectedShift == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Eliminar Turno",
-                $"¿Está seguro de eliminar el turno {SelectedShift.Name}?");
+                $"¿Está seguro de eliminar el turno {item.Name}?");
 
             if (!confirmed) return;
 
             SetBusy(true, "Eliminando turno...");
             try
             {
-                var shiftId = ShiftId.From(SelectedShift.Id);
+                var shiftId = ShiftId.From(item.Id);
                 var command = new DeleteShiftCommand(shiftId);
                 var result = await _mediator.Send(command);
 
@@ -320,11 +318,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             {
                 SetBusy(false);
             }
-        }
-
-        private bool CanExecuteEdit()
-        {
-            return SelectedShift != null;
         }
     }
 

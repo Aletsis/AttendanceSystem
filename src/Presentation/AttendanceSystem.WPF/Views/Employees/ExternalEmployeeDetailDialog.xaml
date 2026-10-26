@@ -138,7 +138,7 @@
 
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
                         <TextBlock Text="Estatus" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                        <ComboBox ItemsSource="{Binding StatusOptions}"
+                        <ComboBox ItemsSource="{Binding StatusOptions}" ItemTemplate="{StaticResource EnumItemTemplate}"
                                   SelectedItem="{Binding Status}"
                                   Padding="10,8"/>
                     </StackPanel>

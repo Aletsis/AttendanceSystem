@@ -49,6 +49,15 @@ namespace AttendanceSystem.WPF
             AppDomain.CurrentDomain.UnhandledException += (_, args) =>
                 Log.Fatal(args.ExceptionObject as Exception, "Error no controlado; la aplicación se cerrará");
 
+            // Fechas, horas y moneda en español de México en toda la interfaz (WPF usa en-US si no se indica).
+            var culture = new System.Globalization.CultureInfo("es-MX");
+            System.Globalization.CultureInfo.DefaultThreadCurrentCulture = culture;
+            System.Globalization.CultureInfo.DefaultThreadCurrentUICulture = culture;
+            Thread.CurrentThread.CurrentCulture = culture;
+            Thread.CurrentThread.CurrentUICulture = culture;
+            FrameworkElement.LanguageProperty.OverrideMetadata(typeof(FrameworkElement),
+                new FrameworkPropertyMetadata(System.Windows.Markup.XmlLanguage.GetLanguage(culture.IetfLanguageTag)));
+
             base.OnStartup(e);
         }
 

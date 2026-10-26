@@ -6,6 +6,36 @@
              Background="#F5F7FA">
     
     <UserControl.Resources>
+        <!-- Estatus: verde en alta, rojo en baja y ámbar en ausencias con período (vacaciones, incapacidad, baja temporal). -->
+        <Style x:Key="StatusBadgeStyle" TargetType="Border">
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="Padding" Value="8,3"/>
+            <Setter Property="Margin" Value="5,0"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Background" Value="{StaticResource Brush.WarningSoft}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusValue}" Value="Alta">
+                    <Setter Property="Background" Value="{StaticResource Brush.SuccessSoft}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusValue}" Value="Baja">
+                    <Setter Property="Background" Value="{StaticResource Brush.DangerSoft}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <Style x:Key="StatusBadgeTextStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.WarningText}"/>
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding StatusValue}" Value="Alta">
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Success}"/>
+                </DataTrigger>
+                <DataTrigger Binding="{Binding StatusValue}" Value="Baja">
+                    <Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/>
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+
         <!-- Shadow Effect -->
         <DropShadowEffect x:Key="CardShadow" 
                           BlurRadius="15" 
@@ -308,11 +338,11 @@
                         <DataGridTextColumn Header="Sucursal" Binding="{Binding BranchName}" Width="140"/>
                         <DataGridTextColumn Header="Departamento" Binding="{Binding DepartmentName}" Width="140"/>
                         <DataGridTextColumn Header="Posición" Binding="{Binding PositionName}" Width="140"/>
-                        <DataGridTemplateColumn Header="Estado" Width="100">
+                        <DataGridTemplateColumn Header="Estado" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Border Background="#E1F7EF" CornerRadius="10" Padding="8,3" HorizontalAlignment="Left" Margin="5,0">
-                                        <TextBlock Text="{Binding Status}" Foreground="#1CC88A" FontSize="11" FontWeight="Bold"/>
+                                    <Border Style="{StaticResource StatusBadgeStyle}">
+                                        <TextBlock Text="{Binding Status}" Style="{StaticResource StatusBadgeTextStyle}"/>
                                     </Border>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -406,11 +436,11 @@
                         <DataGridTextColumn Header="Departamento" Binding="{Binding Department}" Width="140"/>
                         <DataGridTextColumn Header="Puesto" Binding="{Binding Position}" Width="140"/>
                         <DataGridTextColumn Header="No. Tarjeta" Binding="{Binding CardNumber}" Width="110"/>
-                        <DataGridTemplateColumn Header="Estado" Width="100">
+                        <DataGridTemplateColumn Header="Estado" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Border Background="#E1F7EF" CornerRadius="10" Padding="8,3" HorizontalAlignment="Left" Margin="5,0">
-                                        <TextBlock Text="{Binding Status}" Foreground="#1CC88A" FontSize="11" FontWeight="Bold"/>
+                                    <Border Style="{StaticResource StatusBadgeStyle}">
+                                        <TextBlock Text="{Binding Status}" Style="{StaticResource StatusBadgeTextStyle}"/>
                                     </Border>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -421,11 +451,13 @@
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Command="{Binding DataContext.EditExternalEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar Empleado Externo">
                                             <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeleteExternalEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar Empleado Externo">
                                             <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>

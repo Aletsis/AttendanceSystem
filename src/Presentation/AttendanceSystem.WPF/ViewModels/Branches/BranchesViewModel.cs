@@ -83,10 +83,8 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             _dialogService = dialogService;
 
             AddBranchCommand = new DelegateCommand(ExecuteAddBranch);
-            EditBranchCommand = new DelegateCommand(ExecuteEditBranch, CanExecuteEdit)
-                .ObservesProperty(() => SelectedBranch);
-            DeleteBranchCommand = new DelegateCommand(async () => await ExecuteDeleteBranchAsync(), CanExecuteEdit)
-                .ObservesProperty(() => SelectedBranch);
+            EditBranchCommand = new DelegateCommand<BranchListItem?>(x => ExecuteEditBranch(x ?? SelectedBranch));
+            DeleteBranchCommand = new DelegateCommand<BranchListItem?>(async x => await ExecuteDeleteBranchAsync(x ?? SelectedBranch));
             RefreshCommand = new DelegateCommand(async () => await LoadBranchesAsync());
             ImportBranchesCommand = new DelegateCommand(async () => await ExecuteImportBranchesAsync());
             ExportBranchesCommand = new DelegateCommand(async () => await ExecuteExportBranchesAsync());
@@ -187,11 +185,11 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             });
         }
 
-        private void ExecuteEditBranch()
+        private void ExecuteEditBranch(BranchListItem? item)
         {
-            if (SelectedBranch == null) return;
+            if (item == null) return;
 
-            var branchData = _allBranchesData.FirstOrDefault(b => b.Id == SelectedBranch.Id);
+            var branchData = _allBranchesData.FirstOrDefault(b => b.Id == item.Id);
             if (branchData == null) return;
 
             var parameters = new DialogParameters
@@ -230,13 +228,13 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             });
         }
 
-        private async Task ExecuteDeleteBranchAsync()
+        private async Task ExecuteDeleteBranchAsync(BranchListItem? item)
         {
-            if (SelectedBranch == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar la sucursal {SelectedBranch.Name}?\nEsta acción no se puede deshacer.");
+                $"¿Está seguro de eliminar la sucursal {item.Name}?\nEsta acción no se puede deshacer.");
 
             if (!confirmed) return;
 
@@ -254,11 +252,6 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             {
                 await _messageService.ShowErrorAsync($"Error al eliminar: {ex.Message}");
             }
-        }
-
-        private bool CanExecuteEdit()
-        {
-            return SelectedBranch != null;
         }
 
         private async Task ExecuteImportBranchesAsync()
@@ -279,8 +272,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
 
                     if (result.IsSuccess)
                     {
-                        int importedCount = 0;
-                        int errorCount = 0;
+                        var summary = new ImportSummary();
 
                         foreach (var item in result.Data)
                         {
@@ -293,13 +285,12 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
                             );
 
                             var createResult = await _mediator.Send(command);
-                            if (createResult.IsSuccess)
-                                importedCount++;
-                            else
-                                errorCount++;
+                            if (createResult.IsSuccess) summary.Success();
+                            else summary.Fail($"{item.Code} {item.Name}", createResult.Error);
                         }
 
-                        await _messageService.ShowSuccessAsync($"Importación finalizada. Éxito: {importedCount}, Errores: {errorCount}");
+                        if (summary.Failed == 0) await _messageService.ShowSuccessAsync(summary.ToMessage());
+                        else await _messageService.ShowWarningAsync(summary.ToMessage());
                         await LoadBranchesAsync();
                     }
                     else

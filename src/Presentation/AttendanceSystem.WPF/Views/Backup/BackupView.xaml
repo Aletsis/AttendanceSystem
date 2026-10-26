@@ -157,7 +157,7 @@
                             <iconPacks:PackIconMaterial Kind="Alert" Foreground="#856404" Width="16" Height="16" Margin="0,0,8,0"/>
                             <TextBlock Text="¡Advertencia!" FontWeight="Bold" Foreground="#856404"/>
                         </StackPanel>
-                        <TextBlock Text="La restauración sobrescribe los datos actuales y requiere reiniciar la aplicación." FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
+                        <TextBlock Text="La restauración sobrescribe los datos actuales (antes guarda una copia de la base) y al terminar cierra la sesión." FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -189,7 +189,7 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Background="{Binding BackupType, Converter={StaticResource BackupTypeToBrushConverter}}" CornerRadius="8" Padding="6,2" HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding BackupType}" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding BackupType, Converter={StaticResource BackupTypeToTextConverter}}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                                         </Border>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>

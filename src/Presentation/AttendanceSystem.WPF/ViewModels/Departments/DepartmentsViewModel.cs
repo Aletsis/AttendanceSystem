@@ -84,10 +84,8 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             _dialogService = dialogService;
 
             AddDepartmentCommand = new DelegateCommand(ExecuteAddDepartment);
-            EditDepartmentCommand = new DelegateCommand(ExecuteEditDepartment, CanExecuteEdit)
-                .ObservesProperty(() => SelectedDepartment);
-            DeleteDepartmentCommand = new DelegateCommand(async () => await ExecuteDeleteDepartmentAsync(), CanExecuteEdit)
-                .ObservesProperty(() => SelectedDepartment);
+            EditDepartmentCommand = new DelegateCommand<DepartmentListItem?>(x => ExecuteEditDepartment(x ?? SelectedDepartment));
+            DeleteDepartmentCommand = new DelegateCommand<DepartmentListItem?>(async x => await ExecuteDeleteDepartmentAsync(x ?? SelectedDepartment));
             RefreshCommand = new DelegateCommand(async () => await LoadDepartmentsAsync());
             ImportDepartmentsCommand = new DelegateCommand(async () => await ExecuteImportDepartmentsAsync());
             ExportDepartmentsCommand = new DelegateCommand(async () => await ExecuteExportDepartmentsAsync());
@@ -183,11 +181,11 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             });
         }
 
-        private void ExecuteEditDepartment()
+        private void ExecuteEditDepartment(DepartmentListItem? item)
         {
-            if (SelectedDepartment == null) return;
+            if (item == null) return;
 
-            var deptData = _allDepartmentsData.FirstOrDefault(d => d.Id == SelectedDepartment.Id);
+            var deptData = _allDepartmentsData.FirstOrDefault(d => d.Id == item.Id);
             if (deptData == null) return;
 
             var parameters = new DialogParameters
@@ -222,20 +220,20 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             });
         }
 
-        private async Task ExecuteDeleteDepartmentAsync()
+        private async Task ExecuteDeleteDepartmentAsync(DepartmentListItem? item)
         {
-            if (SelectedDepartment == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar el departamento {SelectedDepartment.Name}?");
+                $"¿Está seguro de eliminar el departamento {item.Name}?");
 
             if (!confirmed) return;
 
             SetBusy(true, "Eliminando departamento...");
             try
             {
-                var command = new DeleteDepartmentCommand(SelectedDepartment.Id);
+                var command = new DeleteDepartmentCommand(item.Id);
                 var result = await _mediator.Send(command);
 
                 if (result.IsSuccess)
@@ -258,11 +256,6 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             }
         }
 
-        private bool CanExecuteEdit()
-        {
-            return SelectedDepartment != null;
-        }
-
         private async Task ExecuteImportDepartmentsAsync()
         {
             var openFileDialog = new OpenFileDialog
@@ -281,20 +274,18 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
 
                     if (result.IsSuccess)
                     {
-                        int importedCount = 0;
-                        int errorCount = 0;
+                        var summary = new ImportSummary();
 
                         foreach (var item in result.Data)
                         {
                             var command = new CreateDepartmentCommand(item.Name, item.Description);
                             var createResult = await _mediator.Send(command);
-                            if (createResult.IsSuccess)
-                                importedCount++;
-                            else
-                                errorCount++;
+                            if (createResult.IsSuccess) summary.Success();
+                            else summary.Fail(item.Name, createResult.Error);
                         }
 
-                        await _messageService.ShowSuccessAsync($"Importación finalizada. Éxito: {importedCount}, Errores: {errorCount}");
+                        if (summary.Failed == 0) await _messageService.ShowSuccessAsync(summary.ToMessage());
+                        else await _messageService.ShowWarningAsync(summary.ToMessage());
                         await LoadDepartmentsAsync();
                     }
                     else

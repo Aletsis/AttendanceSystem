@@ -20,6 +20,7 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
 
         private ObservableCollection<BackupDto> _backupFiles = new();
         private BackupDto? _selectedBackup;
@@ -45,8 +46,10 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
         public BackupViewModel(
             IFrameNavigationService navigationService,
             IMessageService messageService,
-            IMediator mediator)
+            IMediator mediator,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
@@ -104,7 +107,7 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar Restauración",
-                $"¿Está seguro de restaurar el respaldo '{backup.FileName}'?\n\nEsta acción sobrescribirá todos los datos actuales.\nLa aplicación se reiniciará automáticamente.");
+                $"¿Está seguro de restaurar el respaldo '{backup.FileName}'?\n\nEsta acción sobrescribirá todos los datos actuales. Antes se guarda una copia de seguridad de la base actual.\nAl terminar se cerrará la sesión.");
 
             if (!confirmed) return;
 
@@ -114,8 +117,10 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
                 var result = await _mediator.Send(new RestoreBackupCommand(backup.FilePath));
                 if (result.Success)
                 {
-                    await _messageService.ShowSuccessAsync("✓ Restauración completada exitosamente. La aplicación debe reiniciarse.");
-                    // En WPF podrías forzar un reinicio o cerrar la app.
+                    // Los datos en pantalla (y los usuarios y permisos) pueden no existir ya en la base restaurada.
+                    await _messageService.ShowSuccessAsync("Restauración completada. Vuelva a iniciar sesión para trabajar con los datos restaurados.");
+                    await _authService.LogoutAsync();
+                    _navigationService.ResetTo(FrameNavigationService.LoginViewName);
                 }
                 else
                 {
@@ -130,10 +135,12 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
         {
             if (backup == null) return;
 
+            var extension = Path.GetExtension(backup.FileName);
             var saveDialog = new SaveFileDialog
             {
                 FileName = backup.FileName,
-                Filter = "Archivos de Respaldo (*.bak;*.zip)|*.bak;*.zip",
+                // Con el filtro anterior (sólo .bak y .zip) no se podían guardar los respaldos .backup ni las copias previas.
+                Filter = string.IsNullOrEmpty(extension) ? "Todos los archivos (*.*)|*.*" : $"Respaldo (*{extension})|*{extension}|Todos los archivos (*.*)|*.*",
                 Title = "Guardar Respaldo Como"
             };
 

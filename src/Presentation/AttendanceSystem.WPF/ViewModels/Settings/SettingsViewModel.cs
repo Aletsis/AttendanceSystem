@@ -33,7 +33,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
 
         // General Settings
         private int _toleranceMinutes = 15;
-        private int _standardWorkHours = 8;
+        private double _standardWorkHours = 8;
 
         // ADMS Settings
         private int _admsPort = 5005;
@@ -57,7 +57,8 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         public string CompanyName { get => _companyName; set => SetProperty(ref _companyName, value); }
         public byte[]? CompanyLogo { get => _companyLogo; set => SetProperty(ref _companyLogo, value); }
         public int ToleranceMinutes { get => _toleranceMinutes; set => SetProperty(ref _toleranceMinutes, value); }
-        public int StandardWorkHours { get => _standardWorkHours; set => SetProperty(ref _standardWorkHours, value); }
+        /// <summary>Horas de la jornada; admite fracciones (7.5) que antes se truncaban al guardar.</summary>
+        public double StandardWorkHours { get => _standardWorkHours; set => SetProperty(ref _standardWorkHours, value); }
         public int AdmsPort { get => _admsPort; set => SetProperty(ref _admsPort, value); }
         public bool IsAutoDownloadEnabled { get => _isAutoDownloadEnabled; set => SetProperty(ref _isAutoDownloadEnabled, value); }
         public bool AutoDownloadOnlyToday { get => _autoDownloadOnlyToday; set => SetProperty(ref _autoDownloadOnlyToday, value); }
@@ -140,7 +141,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     CompanyName = _currentConfig.CompanyName;
                     CompanyLogo = _currentConfig.CompanyLogo;
                     ToleranceMinutes = (int)_currentConfig.LateToleranceMinutes.TotalMinutes;
-                    StandardWorkHours = (int)_currentConfig.StandardWorkHours.TotalHours;
+                    StandardWorkHours = _currentConfig.StandardWorkHours.TotalHours;
                     AdmsPort = _currentConfig.AdmsPort;
                     IsAutoDownloadEnabled = _currentConfig.IsAutoDownloadEnabled;
                     AutoDownloadTime = _currentConfig.AutoDownloadTime;
@@ -172,6 +173,14 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
 
         private async Task ExecuteSaveSettingsAsync()
         {
+            // Sin la configuración cargada se guardarían valores por omisión en lo que esta pantalla no edita
+            // (correo, alertas, respaldos y reportes automáticos, nube).
+            if (_currentConfig == null)
+            {
+                await _messageService.ShowErrorAsync("No se pudo cargar la configuración actual, así que no se puede guardar. Vuelva a abrir la pantalla e intente de nuevo.");
+                return;
+            }
+
             DateTime? recalculateFrom = null;
             if (_dialogService != null && _loadedPeriods != null && PeriodSettings() != _loadedPeriods)
             {
@@ -188,7 +197,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     CompanyName,
                     CompanyLogo,
                     TimeSpan.FromMinutes(ToleranceMinutes),
-                    TimeSpan.FromHours(StandardWorkHours),
+                    TimeSpan.FromMinutes(Math.Round(StandardWorkHours * 60)),
                     AutoClearDevicesAfterDownload,
                     IsAutoDownloadEnabled,
                     AutoDownloadTime,
@@ -201,24 +210,24 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     FortnightFirstDay,
                     FortnightSecondDay,
                     MonthlyStartDay,
-                    _currentConfig?.AreAlertsEnabled ?? false,
-                    _currentConfig?.AbsenceAlertEmails,
-                    _currentConfig?.LateAlertEmails,
-                    _currentConfig?.SystemFailureAlertEmails,
-                    _currentConfig?.SmtpHost,
-                    _currentConfig?.SmtpPort ?? 587,
-                    _currentConfig?.SmtpUser,
-                    _currentConfig?.SmtpPassword,
-                    _currentConfig?.SmtpEnableSsl ?? true,
-                    _currentConfig?.IsAutoBackupEnabled ?? false,
-                    _currentConfig?.AutoBackupTime,
-                    _currentConfig?.IsAutoReportEnabled ?? false,
-                    _currentConfig?.AutoReportTime,
-                    _currentConfig?.AutoReportEmails,
+                    _currentConfig.AreAlertsEnabled,
+                    _currentConfig.AbsenceAlertEmails,
+                    _currentConfig.LateAlertEmails,
+                    _currentConfig.SystemFailureAlertEmails,
+                    _currentConfig.SmtpHost,
+                    _currentConfig.SmtpPort,
+                    _currentConfig.SmtpUser,
+                    _currentConfig.SmtpPassword,
+                    _currentConfig.SmtpEnableSsl,
+                    _currentConfig.IsAutoBackupEnabled,
+                    _currentConfig.AutoBackupTime,
+                    _currentConfig.IsAutoReportEnabled,
+                    _currentConfig.AutoReportTime,
+                    _currentConfig.AutoReportEmails,
                     // Esta pantalla no edita lo siguiente: se conserva lo guardado (antes se reiniciaba la nube y el reporte del día).
-                    _currentConfig?.AutoReportForToday ?? false,
-                    _currentConfig?.IsCloudSyncEnabled ?? true,
-                    _currentConfig?.CloudDbConnectionString,
+                    _currentConfig.AutoReportForToday,
+                    _currentConfig.IsCloudSyncEnabled,
+                    _currentConfig.CloudDbConnectionString,
                     RecalculateFrom: recalculateFrom
                 );
 
