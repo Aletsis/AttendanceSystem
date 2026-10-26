@@ -67,31 +67,36 @@ namespace AttendanceSystem.Infrastructure.Persistence.Migrations
                 table: "OutboxMessages",
                 columns: new[] { "ProcessedOnUtc", "OccurredOnUtc" });
 
-            // 3. F03-P03: Reconciliación segura de duplicados existentes antes de crear el índice único
-            // Preservar cualquier registro que esté referenciado por DailyAttendances.
+            // 3. F03-P03: Reconciliación de duplicados existentes antes de crear el índice único.
+            // Un mismo marcaje (empleado, instante) descargado más de una vez. De cada grupo se conserva uno: primero el
+            // que ya usa una jornada, luego el de mayor estado. Las jornadas que apuntaban a una copia pasan a apuntar al
+            // conservado y las copias se eliminan. (Antes se conservaban todas las copias enlazadas, y si dos copias
+            // estaban enlazadas, o la enlazada no era la primera del grupo, el índice único no se podía crear.)
             migrationBuilder.Sql(@"
                 DO $$
                 BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'AttendanceRecords') THEN
-                        -- Deduplicar preservando los registros enlazados a DailyAttendances
-                        DELETE FROM ""AttendanceRecords"" a
-                        WHERE a.""Id"" NOT IN (
-                            SELECT DISTINCT coalesce(""CheckInRecordId"", '00000000-0000-0000-0000-000000000000'::uuid) FROM ""DailyAttendances"" WHERE ""CheckInRecordId"" IS NOT NULL
-                            UNION
-                            SELECT DISTINCT coalesce(""Block1CheckOutRecordId"", '00000000-0000-0000-0000-000000000000'::uuid) FROM ""DailyAttendances"" WHERE ""Block1CheckOutRecordId"" IS NOT NULL
-                            UNION
-                            SELECT DISTINCT coalesce(""Block2CheckInRecordId"", '00000000-0000-0000-0000-000000000000'::uuid) FROM ""DailyAttendances"" WHERE ""Block2CheckInRecordId"" IS NOT NULL
-                            UNION
-                            SELECT DISTINCT coalesce(""CheckOutRecordId"", '00000000-0000-0000-0000-000000000000'::uuid) FROM ""DailyAttendances"" WHERE ""CheckOutRecordId"" IS NOT NULL
-                        )
-                        AND a.""Id"" IN (
-                            SELECT ""Id"" FROM (
-                                SELECT ""Id"",
-                                       ROW_NUMBER() OVER(PARTITION BY ""EmployeeId"", ""CheckTime"" ORDER BY ""StatusId"" DESC, ""Id"") as rnum
-                                FROM ""AttendanceRecords""
-                            ) t
-                            WHERE t.rnum > 1
-                        );
+                        CREATE TEMP TABLE punch_duplicates ON COMMIT DROP AS
+                        SELECT t.""Id"", t.""KeeperId""
+                        FROM (
+                            SELECT a.""Id"",
+                                   FIRST_VALUE(a.""Id"") OVER w AS ""KeeperId""
+                            FROM ""AttendanceRecords"" a
+                            WINDOW w AS (
+                                PARTITION BY a.""EmployeeId"", a.""CheckTime""
+                                ORDER BY (EXISTS (
+                                              SELECT 1 FROM ""DailyAttendances"" d
+                                              WHERE a.""Id"" IN (d.""CheckInRecordId"", d.""Block1CheckOutRecordId"", d.""Block2CheckInRecordId"", d.""CheckOutRecordId""))) DESC,
+                                         a.""StatusId"" DESC, a.""Id"")
+                        ) t
+                        WHERE t.""Id"" <> t.""KeeperId"";
+
+                        UPDATE ""DailyAttendances"" d SET ""CheckInRecordId"" = p.""KeeperId"" FROM punch_duplicates p WHERE d.""CheckInRecordId"" = p.""Id"";
+                        UPDATE ""DailyAttendances"" d SET ""Block1CheckOutRecordId"" = p.""KeeperId"" FROM punch_duplicates p WHERE d.""Block1CheckOutRecordId"" = p.""Id"";
+                        UPDATE ""DailyAttendances"" d SET ""Block2CheckInRecordId"" = p.""KeeperId"" FROM punch_duplicates p WHERE d.""Block2CheckInRecordId"" = p.""Id"";
+                        UPDATE ""DailyAttendances"" d SET ""CheckOutRecordId"" = p.""KeeperId"" FROM punch_duplicates p WHERE d.""CheckOutRecordId"" = p.""Id"";
+
+                        DELETE FROM ""AttendanceRecords"" a USING punch_duplicates p WHERE a.""Id"" = p.""Id"";
                     END IF;
                 END $$;
             ");
