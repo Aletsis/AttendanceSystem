@@ -151,51 +151,62 @@ try
 
     var app = builder.Build();
 
-    // ===== VERIFICAR Y APLICAR MIGRACIONES PENDIENTES =====
-    using (var scope = app.Services.CreateScope())
+    // ===== ESTADO DE MANTENIMIENTO PERSISTIDO =====
+    // Tras una restauración con fallo crítico la base puede tener datos sin validar: migrarla o sembrarla
+    // ocultaría el problema. Se arranca en mantenimiento para que el administrador restaure un respaldo.
+    var startupMaintenanceState = await app.Services.GetRequiredService<IRestoreStateService>().LoadPersistedStateAsync();
+    if (startupMaintenanceState == AttendanceSystem.Application.Common.MaintenanceState.Failed)
     {
-        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-        var logger = loggerFactory.CreateLogger("DatabaseMigration");
-
-        try
+        Log.Fatal("Restauración con fallo crítico pendiente: se omiten migraciones y datos iniciales, y Hangfire queda en pausa hasta restaurar un respaldo.");
+        await app.Services.GetRequiredService<IBackgroundJobControlService>().PauseBackgroundJobsAsync();
+    }
+    else
+    {
+        // ===== VERIFICAR Y APLICAR MIGRACIONES PENDIENTES =====
+        using (var scope = app.Services.CreateScope())
         {
-            var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("DatabaseMigration");
 
-            // Verificar si hay migraciones pendientes
-            var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
-
-            if (pendingMigrations.Any())
+            try
             {
-                logger.LogWarning("Se encontraron {Count} migraciones pendientes. Aplicando migraciones...", pendingMigrations.Count());
-                foreach (var migration in pendingMigrations)
+                var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+
+                // Verificar si hay migraciones pendientes
+                var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+
+                if (pendingMigrations.Any())
                 {
-                    logger.LogInformation("Migración pendiente: {Migration}", migration);
+                    logger.LogWarning("Se encontraron {Count} migraciones pendientes. Aplicando migraciones...", pendingMigrations.Count());
+                    foreach (var migration in pendingMigrations)
+                    {
+                        logger.LogInformation("Migración pendiente: {Migration}", migration);
+                    }
+
+                    // Aplicar migraciones
+                    await dbContext.Database.MigrateAsync();
+                    logger.LogInformation("Todas las migraciones se aplicaron correctamente");
                 }
-
-                // Aplicar migraciones
-                await dbContext.Database.MigrateAsync();
-                logger.LogInformation("Todas las migraciones se aplicaron correctamente");
+                else
+                {
+                    logger.LogInformation("La base de datos está actualizada. No hay migraciones pendientes");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                logger.LogInformation("La base de datos está actualizada. No hay migraciones pendientes");
+                logger.LogError(ex, "Error al verificar o aplicar migraciones de base de datos");
+                throw; // Detener la aplicación si hay un error crítico con las migraciones
             }
         }
-        catch (Exception ex)
+
+        // ===== INICIALIZAR DATOS DE IDENTITY =====
+        using (var scope = app.Services.CreateScope())
         {
-            logger.LogError(ex, "Error al verificar o aplicar migraciones de base de datos");
-            throw; // Detener la aplicación si hay un error crítico con las migraciones
+            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+            var logger = loggerFactory.CreateLogger("IdentityDataSeeder");
+            await AttendanceSystem.Blazor.Server.Data.IdentityDataSeeder.SeedAsync(app.Services, logger);
         }
     }
-
-    // ===== INICIALIZAR DATOS DE IDENTITY =====
-    using (var scope = app.Services.CreateScope())
-    {
-        var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-        var logger = loggerFactory.CreateLogger("IdentityDataSeeder");
-        await AttendanceSystem.Blazor.Server.Data.IdentityDataSeeder.SeedAsync(app.Services, logger);
-    }
-
 
     // ===== LOGGING MIDDLEWARE =====
     app.UseMiddleware<AdmsRequestLoggingMiddleware>();

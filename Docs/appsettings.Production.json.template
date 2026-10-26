@@ -1,6 +1,7 @@
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=SERVIDOR_POSTGRES;Port=5432;Database=AttendanceSystem;Username=USUARIO_APP;Password=PASSWORD_SEGURO;SSL Mode=Prefer;Trust Server Certificate=true;Pooling=true;Minimum Pool Size=5;Maximum Pool Size=100"
+    "AttendanceDb": "Host=SERVIDOR_POSTGRES;Port=5432;Database=AttendanceSystem;Username=USUARIO_APP;Password=PASSWORD_SEGURO;SSL Mode=Prefer;Trust Server Certificate=true;Pooling=true;Minimum Pool Size=5;Maximum Pool Size=100",
+    "HangfireDb": "Host=SERVIDOR_POSTGRES;Port=5432;Database=AttendanceSystem;Username=USUARIO_APP;Password=PASSWORD_SEGURO;SSL Mode=Prefer;Trust Server Certificate=true"
   },
   "Logging": {
     "LogLevel": {
@@ -44,5 +45,15 @@
     "EnableResponseCompression": true,
     "EnableResponseCaching": true,
     "CacheDurationSeconds": 300
+  },
+  "Backup": {
+    "PostgresBinPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
+    "KeepLastNBackups": 10,
+    "DumpStallTimeoutSeconds": 600,
+    "RestoreStallTimeoutSeconds": 900,
+    "DrainTimeoutSeconds": 60
+  },
+  "Maintenance": {
+    "PollIntervalSeconds": 5
   }
 }

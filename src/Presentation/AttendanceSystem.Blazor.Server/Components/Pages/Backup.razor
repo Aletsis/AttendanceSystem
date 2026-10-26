@@ -408,7 +408,7 @@
                                     </MudStack>
                                 </MudTd>
                                 <MudTd DataLabel="Tipo">
-                                    <MudBadge Color="@(context.BackupType == "Full" ? Color.Primary : Color.Secondary)">
+                                    <MudBadge Color="@(context.BackupType switch { "Full" => Color.Primary, BackupDto.SafetySnapshotType => Color.Warning, _ => Color.Secondary })">
                                         @context.BackupType
                                     </MudBadge>
                                 </MudTd>
