@@ -247,7 +247,7 @@ Al hacer clic en el botón de opciones o en **Ver Detalles** de cualquier reloj 
 
 * 🕐 **Sincronizar Hora:** Ajusta de forma inmediata la fecha y hora interna del reloj checador para que coincida exactamente con la del servidor, configurando además la zona horaria correcta (`UTC-6`) y desactivando horario de verano para evitar desfases en las checadas.
 * 🔄 **Probar Conexión:** Verifica el enlace de red y la respuesta de comunicación del reloj.
-* 📋 **Consultar Opciones (Solo ADMS):** Envía el comando `DATA QUERY tablename=options` para inspeccionar la tabla de variables y parámetros internos reportados por el dispositivo.
+* 📋 **Consultar Opciones (Solo ADMS):** Envía únicamente `INFO` para consultar información técnica y opciones del dispositivo. No solicita descargas de checadas, usuarios ni biometría; los envíos automáticos configurados en el reloj son independientes de esta consulta.
 * 🧹 **Borrar Registros:** Limpia la memoria interna de checadas del reloj (utilizar solo tras haber respaldado y descargado todas las asistencias).
 * ⚙️ **Reinicio de Fábrica:** Restaura los parámetros de fábrica del hardware.
 * 🔍 **Descubrimiento en Red:** Herramienta para escanear el segmento de red local y detectar automáticamente checadores ZKTeco conectados.
@@ -384,7 +384,7 @@ Permite parametrizar las variables operativas de la plataforma:
 * **Nombre de la Empresa y Razón Social.**
 * **Tolerancia Global de Entrada (Minutos):** Valor por defecto para turnos que no definan tolerancia propia.
 * **Tolerancia de Salida Anticipada (Minutos).**
-* **Directorio de Respaldos:** Ruta local donde se almacenarán las copias de seguridad automáticas de PostgreSQL.
+* **Respaldos Automáticos:** Active el interruptor **Habilitar Respaldos Automáticos** y elija la **Hora de Ejecución** para generar cada día un respaldo completo. Viene **desactivado** de fábrica. Los respaldos se guardan en el directorio configurado en el módulo de Respaldos (ver 7.2).
 * **Configuración de Correo Electrónico (SMTP):** Servidor, puerto, usuario, contraseña y SSL para el envío automático de notificaciones de asistencia y reportes.
 
 ---
@@ -392,11 +392,57 @@ Permite parametrizar las variables operativas de la plataforma:
 ### 7.2 Respaldo y Restauración de Base de Datos
 Ubicación: **Configuración $\rightarrow$ Respaldo y Restauración** (`/backup`) *(Solo Administrador)*
 
-Garantiza la seguridad y disponibilidad de la información histórica:
+Garantiza la seguridad y disponibilidad de la información histórica.
 
-* **Crear Respaldo Ahora:** Genera de forma instantánea una copia de seguridad comprimida (`.backup`) de la base de datos PostgreSQL.
-* **Listado de Respaldos:** Muestra los archivos disponibles con su tamaño y fecha de creación, permitiendo su **Descarga Directa** al equipo del usuario.
-* **Restaurar Respaldo:** Permite seleccionar un archivo de respaldo local o subir uno desde su computadora para restablecer el estado del sistema en caso de contingencia.
+#### Directorio de Almacenamiento
+Carpeta del servidor donde se guardan y se buscan los respaldos. Use **Seleccionar** para elegirla y **Guardar Directorio** para aplicarla.
+* Por defecto es la carpeta `Backups` dentro de la carpeta de la aplicación web (`C:\Program Files\AttendanceSystem\Web\Backups`).
+* **Recomendación:** use una carpeta en **otro disco** del servidor y copie los respaldos periódicamente fuera del servidor (otro equipo, NAS o almacenamiento externo). Un respaldo que sólo existe en el mismo disco que la base de datos no protege contra una falla de ese disco.
+
+#### Crear Respaldo
+Escriba opcionalmente una descripción y elija:
+* **Respaldo Completo** (`Full_Backup_AAAAMMDD_HHMMSS.zip`): base de datos más el archivo de configuración `appsettings.json` y una ficha con la descripción.
+* **Solo BD** (`DB_Backup_AAAAMMDD_HHMMSS.backup`): únicamente la base de datos.
+
+Cada respaldo se verifica al terminar; si no se puede leer, se descarta y se muestra el error.
+
+> [!WARNING]
+> El **Respaldo Completo** incluye `appsettings.json`, que contiene la contraseña de la base de datos. Guarde y comparta esos archivos con el mismo cuidado que una contraseña. La restauración sólo recupera la base de datos: la configuración incluida sirve como referencia para reinstalar, no se aplica sola.
+
+#### Retención (purga automática)
+Después de crear un respaldo, el sistema conserva los **10 respaldos más recientes** generados por él mismo (los archivos `Full_Backup_*` y `DB_Backup_*`) y elimina los anteriores. La cantidad se configura con `Backup:KeepLastNBackups` (ver Manual Técnico).
+* Los respaldos **subidos** o copiados a la carpeta con otro nombre **no se purgan**: elimínelos a mano cuando ya no se necesiten.
+* La fecha que se usa es la del nombre del archivo, no la de copia o subida.
+
+#### Listado de Respaldos
+Muestra los respaldos de la carpeta (`.zip`, `.backup` y `.bak`) con tipo, tamaño y fecha. Acciones por respaldo: **Descargar** al equipo, **Restaurar** y **Eliminar**.
+
+Un archivo de tipo **SafetySnapshot** (resaltado en amarillo) es la copia del estado previo que el sistema conserva cuando una restauración falla sin poder revertirse (ver más abajo). No lo elimine hasta haber recuperado el sistema.
+
+#### Cargar Respaldo al Servidor
+Sube un archivo `.zip`, `.backup` o `.bak` (hasta 1 GB) desde su equipo a la carpeta de respaldos para poder restaurarlo.
+* El archivo se revisa por completo antes de aparecer en la lista; si está dañado o no es un respaldo de PostgreSQL, se rechaza y no queda nada en la carpeta.
+* Si ya existe un respaldo con el mismo nombre, la carga se rechaza y el existente no se modifica: elimínelo o cambie el nombre del archivo.
+
+#### Restaurar un Respaldo
+**Restaurar reemplaza todos los datos actuales por los del respaldo.** Lo registrado después de la fecha del respaldo se pierde.
+
+1. Avise a los usuarios: durante la restauración el sistema **no acepta cambios** (en ningún equipo, incluidos los clientes de escritorio), los relojes ADMS reciben "servicio no disponible" y reenvían sus checadas después, y las tareas programadas se pausan.
+2. Haga clic en **Restaurar** sobre el respaldo y confirme. El panel en vivo muestra cada etapa:
+   * Validación del archivo.
+   * Espera a que terminen las operaciones en curso (hasta 60 s). Si alguna no termina, la restauración se cancela **sin modificar nada**; inténtelo de nuevo en unos minutos.
+   * **Snapshot de seguridad** del estado actual.
+   * Restauración de la base de datos en **una sola operación**: si falla en cualquier punto, la base de datos queda **exactamente como estaba**.
+   * Verificación del resultado y, si el respaldo es de una versión anterior del sistema, actualización automática de su estructura.
+3. Al terminar, **reinicie la aplicación** como se indica en pantalla.
+
+Sólo puede haber una restauración a la vez: si otro administrador (o un cliente de escritorio) ya está restaurando, la nueva se rechaza.
+
+**Resultados posibles:**
+* ✓ **Restauración completada:** el sistema ya trabaja con los datos del respaldo.
+* ✗ **"La base de datos no se modificó":** la restauración falló antes de aplicar cambios (archivo dañado, error del respaldo, operaciones en curso). Todo sigue como antes.
+* ✗ **"Fue revertida exitosamente a su estado original":** el respaldo se aplicó pero no superó la verificación, o es de una **versión más nueva** del sistema (actualice la aplicación antes de restaurarlo). El sistema volvió automáticamente al estado previo.
+* 🚨 **"FALLO CRÍTICO":** el respaldo se aplicó, no superó la verificación y tampoco se pudo volver al estado previo. Vea [Restauración con fallo crítico](#6-el-sistema-quedó-en-mantenimiento-tras-una-restauración-fallo-crítico).
 
 ---
 
@@ -415,7 +461,8 @@ Permite administrar el personal con acceso a la plataforma web:
 Ubicación: **Configuración $\rightarrow$ Hangfire** (`/hangfire`) *(Solo Administrador)*
 
 Abre el panel de control del motor de procesamiento en segundo plano **Hangfire**:
-* **Trabajos Recurrentes:** Muestra las tareas automatizadas (descarga programada de checadores cada 10 min, cálculo nocturno de asistencias y respaldo diario de base de datos a las 23:59).
+* **Trabajos Recurrentes:** Muestra las tareas automatizadas (descarga programada de checadores cada 10 min, cálculo nocturno de asistencias y, si se habilitó en **Configuración**, el respaldo automático `automated-database-backup` a la hora elegida).
+* **Durante una restauración** las tareas se pausan y se reanudan al terminar. Tras una restauración con fallo crítico permanecen en pausa hasta recuperar el sistema.
 * **Trabajos en Cola y Procesamiento:** Permite verificar si existen tareas pendientes, trabajos fallidos o reintentar sincronizaciones manualmente.
 
 ---
@@ -439,6 +486,19 @@ Abre el panel de control del motor de procesamiento en segundo plano **Hangfire*
 
 ### 4. Un empleado checó pero el sistema marca falta
 * Verifique si la marcación llegó a **Logs de Asistencia** (`/attendance/logs`). Si está registrada pero no calculada, vaya a **Cálculo de Asistencia** y ejecute el cálculo para esa fecha específica.
+
+### 5. Aparece "la base de datos está en modo de mantenimiento" al guardar
+* Hay una restauración en curso, iniciada desde este u otro equipo. Espere a que termine: el aviso desaparece solo en pocos segundos después de que concluya. Los relojes reenvían automáticamente las checadas de ese lapso.
+* Si el aviso dice **Failed** y no desaparece, vea el punto siguiente.
+
+### 6. El sistema quedó en mantenimiento tras una restauración (fallo crítico)
+Ocurre sólo si una restauración se aplicó, no superó la verificación y además no se pudo volver al estado previo. Para proteger los datos, el sistema se queda bloqueado **incluso después de reiniciar**: no acepta cambios, no ejecuta tareas programadas ni actualiza la base de datos. Sí permite consultar e iniciar sesión.
+
+Para recuperarlo:
+1. Un administrador entra a **Respaldo y Restauración** (`/backup`).
+2. En el listado aparece un archivo **SafetySnapshot** con la fecha de la restauración fallida: es el estado previo. Restáurelo (o restaure otro respaldo confiable).
+3. Al completarse la restauración, el bloqueo se levanta en todos los equipos y las tareas se reanudan. Reinicie la aplicación.
+4. Si la restauración del snapshot también falla, no reintente repetidamente: conserve el archivo y el mensaje de error, y contacte a soporte técnico (ver Manual Técnico, sección 4.4).
 
 ---
 

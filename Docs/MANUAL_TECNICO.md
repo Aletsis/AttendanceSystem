@@ -111,6 +111,11 @@ Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue
 
 * **Motor de Base de Datos:**
   * **PostgreSQL:** Versión mínima **14.x**, versión recomendada **16.x (x64)**.
+* **Herramientas cliente de PostgreSQL (respaldos y restauraciones):**
+  * `pg_dump`, `pg_restore` y `psql` deben existir en el servidor de la aplicación, **de la misma instalación** y de versión **igual o mayor** que el servidor de PostgreSQL. El instalador de PostgreSQL para Windows las incluye en `C:\Program Files\PostgreSQL\<versión>\bin`.
+  * Si la base de datos está en otro equipo, instale en el servidor de la aplicación sólo los *Command Line Tools* de PostgreSQL.
+  * Se localizan en este orden: `Backup:PostgresBinPath` (configuración), `C:\Program Files\PostgreSQL\{17..12}\bin` y el `PATH`. `psql` se toma de la misma carpeta que `pg_restore`: los scripts de versiones recientes usan metacomandos (`\restrict`) que un `psql` más antiguo no reconoce.
+* **Espacio para restaurar:** además del respaldo, una restauración necesita espacio para el snapshot de seguridad (del tamaño de un respaldo de la base actual, en la carpeta de respaldos) y, si el respaldo es `.zip`, para extraerlo en la carpeta temporal del usuario del servicio.
 * **.NET Runtimes:**
   * **Modo Autocontenido (Self-Hosted Kestrel - Recomendado):** El instalador Todo-en-Uno ya incluye los binarios autocontenidos de **.NET 10.0**, por lo que **no es necesario** instalar el .NET SDK ni Runtime por separado.
   * **Modo IIS:** Requiere el **ASP.NET Core Hosting Bundle 10.0.x** (proporciona el módulo nativo `AspNetCoreModuleV2` en IIS).
@@ -158,6 +163,7 @@ El instalador realiza las siguientes tareas críticas en el sistema operativo:
   * `{app}\Service`: Archivos del Windows Service de ZKTeco (compilado en x86 autocontenido).
   * `{app}\Database`: Scripts de creación de base de datos e inicialización.
   * `{app}\Logs` y `{app}\Backups`: Carpetas dedicadas a logs históricos y respaldos.
+    * **Nota:** la aplicación **no** usa `{app}\Backups` de forma predeterminada: su directorio de respaldos por defecto es `{app}\Web\Backups`. Configure `{app}\Backups` (o, mejor, una carpeta en otro disco) en **Respaldo y Restauración → Directorio de Almacenamiento**. En IIS, `configure_iis.bat` otorga permiso de modificación a `IIS_IUSRS` sobre `{app}\Backups`; cualquier otra carpeta necesita ese permiso para la identidad del AppPool.
 * **Configuración de PostgreSQL:**
   * Se crea un rol/usuario de base de datos exclusivo llamado `attendancesystem_user` con contraseña `Blanquita.123`.
   * Se crea la base de datos `"AttendanceSystem"`.
@@ -194,6 +200,7 @@ Al desinstalar la aplicación desde el panel de control:
 * Se remueven los registros COM del SDK de ZKTeco.
 * Se eliminan las reglas de firewall y las configuraciones de IIS (AppPool y sitio web).
 * **⚠️ ATENCIÓN:** El instalador **no** borra la base de datos PostgreSQL en PostgreSQL ni elimina la carpeta de backups para resguardar la información histórica de la empresa ante desinstalaciones accidentales. Si requiere una limpieza absoluta, deberá borrar manualmente la base de datos desde pgAdmin.
+  * Esto incluye los respaldos creados por la aplicación en `{app}\Web\Backups` (directorio predeterminado): el desinstalador sólo quita los archivos que instaló.
 
 ---
 
@@ -240,29 +247,121 @@ using (var scope = app.Services.CreateScope())
     await dbContext.Database.MigrateAsync();
 }
 ```
+* **Excepción — restauración con fallo crítico:** si el estado de mantenimiento guardado es `Failed` (ver 4.5), el arranque **omite** las migraciones y la creación del usuario inicial y deja Hangfire en pausa. Migrar o sembrar datos sobre una base que quedó sin validar ocultaría el problema.
+* **Restauraciones:** al restaurar un respaldo de una versión anterior, sus migraciones pendientes se aplican durante la propia restauración; un respaldo de una versión más nueva se rechaza (ver 4.4).
+
 Para realizar una migración manual desde la consola de desarrollo de .NET:
 ```powershell
 dotnet ef database update --project src/Infrastructure/AttendanceSystem.Infrastructure --startup-project src/Presentation/AttendanceSystem.Blazor.Server
 ```
 
-### 4.3 Respaldos Automatizados de PostgreSQL (pg_dump)
-Se proporciona un script automatizado para programar tareas de respaldo diarias a través del Programador de Tareas de Windows.
+### 4.3 Respaldos de PostgreSQL
 
-**Comando de respaldo diario:**
+Los respaldos se crean desde **Respaldo y Restauración** (`/backup`), manualmente o con el respaldo automático diario (**Configuración → Respaldos Automáticos**, tarea Hangfire `automated-database-backup`, tipo completo). Implementación: `BackupService` (`src/Infrastructure/AttendanceSystem.Infrastructure/Services/BackupService.cs`).
+
+**Formatos:**
+| Tipo | Archivo | Contenido |
+| :--- | :--- | :--- |
+| Completo | `Full_Backup_AAAAMMDD_HHMMSS.zip` | `database.backup` (pg_dump formato custom), `config/appsettings.json`, `metadata.json` |
+| Solo BD | `DB_Backup_AAAAMMDD_HHMMSS.backup` | pg_dump formato custom |
+| Snapshot de seguridad | `.safety_snapshot_AAAAMMDD_HHMMSS.backup` | estado previo a una restauración; sólo se conserva si ésta falla sin poder revertirse |
+
+**Comando que ejecuta la aplicación** (la contraseña se pasa por `PGPASSWORD`, nunca en la línea de comandos):
 ```cmd
-@echo off
-set PGPASSWORD=Blanquita.123
-"C:\Program Files\PostgreSQL\16\bin\pg_dump.exe" -h localhost -p 5432 -U attendancesystem_user -F c -b -v -f "C:\Program Files\AttendanceSystem\Backups\AttendanceSystem_Backup_%date:~10,4%%date:~4,2%%date:~7,2%.backup" "AttendanceSystem"
+pg_dump -h <host> -p <puerto> -U "<usuario>" -w --lock-wait-timeout=30000 -T "logs" -T "Logs" -N "system_maintenance" -F c -b -v -f "<archivo>" "<base>"
 ```
+* `-N system_maintenance`: el esquema del estado de mantenimiento pertenece al servidor, no a los datos; ni se respalda ni se restaura.
+* Cada respaldo se verifica con `pg_restore -l` antes de darlo por bueno; un dump fallido, cancelado o ilegible se borra y no cuenta para la retención.
+* Si dos respaldos coinciden en el mismo segundo, el segundo recibe un sufijo (`_2`) en vez de sobrescribir.
+
+**Retención:** tras cada respaldo se conservan los `Backup:KeepLastNBackups` más recientes (10 por defecto; `0` desactiva la purga). Sólo se purgan los archivos con nombre `Full_Backup_*`/`DB_Backup_*`, ordenados por la fecha de su nombre. Los subidos o copiados con otro nombre y los snapshots de seguridad no se purgan nunca.
+
+**Carga de respaldos** (`POST /api/backup/upload`, rol Administrador, hasta 1 GB, `.zip`/`.backup`/`.bak`): el archivo se escribe como `.upload_<guid>` oculto, se valida con `pg_restore -l` (también el `database.backup` de un `.zip`) y sólo entonces se renombra. Nunca sobrescribe un respaldo existente.
+
+**Copia fuera del servidor:** la aplicación no copia los respaldos a otro equipo. Programe esa copia (por ejemplo con `robocopy` en el Programador de Tareas) desde el directorio de respaldos hacia un NAS u otro servidor.
+
+**Configuración** (`appsettings.Production.json`):
+```json
+"Backup": {
+  "PostgresBinPath": "C:\\Program Files\\PostgreSQL\\16\\bin",
+  "KeepLastNBackups": 10,
+  "DumpStallTimeoutSeconds": 600,
+  "RestoreStallTimeoutSeconds": 900,
+  "DrainTimeoutSeconds": 60
+},
+"Maintenance": {
+  "PollIntervalSeconds": 5
+}
+```
+| Clave | Predeterminado | Uso |
+| :--- | :--- | :--- |
+| `Backup:PostgresBinPath` | — | Carpeta de `pg_dump`/`pg_restore`/`psql` si no están en la ruta estándar. |
+| `Backup:KeepLastNBackups` | `10` | Retención (ver arriba). |
+| `Backup:DumpStallTimeoutSeconds` | `600` (mín. 60) | Corta `pg_dump` si no avanza en ese tiempo. |
+| `Backup:RestoreStallTimeoutSeconds` | `900` (mín. 120) | Corta la restauración si no hay actividad; antes consulta `pg_stat_activity` para no cortar una sentencia larga (p. ej. un índice grande). |
+| `Backup:DrainTimeoutSeconds` | `60` (mín. 1) | Espera a que terminen las escrituras en curso antes de restaurar; si no terminan, la restauración se cancela sin cambios. |
+| `Maintenance:PollIntervalSeconds` | `5` | Cada cuánto cada proceso consulta el estado de mantenimiento de los demás (ver 4.5). `0` lo desactiva. |
 
 ### 4.4 Restauración de la Base de Datos
-Para restaurar un respaldo en caso de fallo catastrófico:
-```cmd
-set PGPASSWORD=Blanquita.123
-"C:\Program Files\PostgreSQL\16\bin\pg_restore.exe" -h localhost -p 5432 -U attendancesystem_user -d "AttendanceSystem" --clean --verbose "C:\Program Files\AttendanceSystem\Backups\nombre_archivo.backup"
-```
 
-### 4.5 Tareas de Mantenimiento de BD
+#### Desde la aplicación (procedimiento recomendado)
+Se inicia en **Respaldo y Restauración** (rol Administrador). Sólo acepta archivos que estén directamente dentro del directorio de respaldos. Etapas:
+
+1. **Bloqueo de mantenimiento:** se toma el bloqueo consultivo de PostgreSQL (ver 4.5). Si otro proceso lo tiene, o no se puede verificar, la restauración se rechaza. Desde aquí se rechazan escrituras en todos los procesos y las peticiones ADMS/API reciben `503` con `Retry-After: 30`.
+2. **Validación del archivo** con `pg_restore -l` (el `.zip` se extrae en `%TEMP%\AttendanceRestore_*`, que se borra siempre al terminar).
+3. **Drenaje** de escrituras en curso (`Backup:DrainTimeoutSeconds`) y **pausa de Hangfire**.
+4. **Snapshot de seguridad** con `pg_dump`, verificado.
+5. **Restauración atómica:** se terminan las demás conexiones a la base (salvo la del bloqueo) y se ejecuta, en **una sola transacción**:
+   ```text
+   pg_restore -f - --clean --if-exists -L <TOC sin system_maintenance> <archivo>  |  psql -X -q -v ON_ERROR_STOP=1
+   ```
+   precedido de `BEGIN; DROP SCHEMA public CASCADE; DROP SCHEMA hangfire CASCADE; CREATE SCHEMA public; ...` (con `lock_timeout` de 30 s). La aplicación envía el `COMMIT` sólo si `pg_restore` generó el script completo y sin errores. **Cualquier fallo antes del `COMMIT` (archivo truncado, error SQL, bloqueo, proceso cancelado o colgado) deja la base exactamente como estaba**, sin necesidad de rollback.
+6. **Validación posterior** (tablas esenciales) y **alineación de versión** comparando `__EFMigrationsHistory` con las migraciones de la aplicación:
+   * respaldo de una versión **anterior** → se aplican las migraciones pendientes;
+   * respaldo de una versión **más nueva** → se rechaza.
+7. Si la validación o la alineación fallan, **rollback automático** restaurando el snapshot con el mismo mecanismo atómico.
+8. Al terminar se libera el bloqueo, se reanuda Hangfire y se pide reiniciar la aplicación.
+
+**Requisitos de permisos:** el usuario de la cadena de conexión debe ser **dueño de la base de datos y de los esquemas `public` y `hangfire`** (así lo deja `configure_db.bat`/`init_db.sql`). No se requiere superusuario.
+
+#### Restauración con fallo crítico (estado `Failed`)
+Sólo ocurre si el respaldo se confirmó, no superó la validación posterior y además falló el rollback. Entonces:
+* El estado `Failed` se guarda en `system_maintenance.maintenance_lock` y **sobrevive a reinicios**: todos los procesos rechazan escrituras, el arranque omite migraciones y datos iniciales y Hangfire queda en pausa.
+* El snapshot se conserva y aparece en el listado como **SafetySnapshot**; el mensaje de error y el log incluyen su ruta.
+* **Para recuperar:** corrija la causa que indique el log y restaure el SafetySnapshot (u otro respaldo confiable) desde la página. Una restauración exitosa limpia el estado en todos los procesos.
+* **Liberación manual** (sólo si se verificó por otros medios que la base es correcta): detenga la aplicación web, los clientes de escritorio y el sitio de IIS, y ejecute
+  ```sql
+  UPDATE system_maintenance.maintenance_lock
+     SET state = 'Normal', owner_id = NULL, details = 'Liberado manualmente', updated_at = NOW()
+   WHERE id = 1;
+  ```
+
+#### Restauración manual desde consola (contingencia)
+Úsela sólo si la aplicación no puede arrancar. Con la aplicación, el servicio de IIS y los clientes de escritorio **detenidos**, y como superusuario (para recrear la base):
+```cmd
+set PGPASSWORD=<contraseña de postgres>
+set PGBIN=C:\Program Files\PostgreSQL\16\bin
+"%PGBIN%\dropdb.exe" -h localhost -U postgres --if-exists "AttendanceSystem"
+"%PGBIN%\createdb.exe" -h localhost -U postgres -O attendancesystem_user "AttendanceSystem"
+"%PGBIN%\psql.exe" -h localhost -U postgres -d "AttendanceSystem" -c "ALTER SCHEMA public OWNER TO attendancesystem_user;"
+set PGPASSWORD=<contraseña de attendancesystem_user>
+"%PGBIN%\pg_restore.exe" -h localhost -U attendancesystem_user -d "AttendanceSystem" --single-transaction --exit-on-error --no-owner "C:\ruta\respaldo.backup"
+"%PGBIN%\psql.exe" -h localhost -U attendancesystem_user -d "AttendanceSystem" -c "DROP SCHEMA IF EXISTS system_maintenance CASCADE;"
+```
+* Para un `.zip`, extraiga antes `database.backup`.
+* `--single-transaction` hace la restauración atómica; el último comando descarta el estado de mantenimiento que traen los respaldos generados por versiones anteriores a este cambio.
+* Al arrancar, la aplicación aplica las migraciones pendientes si el respaldo era de una versión anterior.
+
+### 4.5 Coordinación entre Procesos y Estado de Mantenimiento
+Varios procesos pueden usar la misma base: la aplicación web (uno o más workers de IIS) y los clientes de escritorio WPF. Cada uno tiene su propio `RestoreStateService`; se coordinan en PostgreSQL:
+* **Bloqueo consultivo** (`pg_try_advisory_lock(7235001)`), retenido durante toda la restauración por una conexión con `application_name = attendance_maintenance_lock`. Garantiza que sólo un proceso restaure a la vez y sirve como prueba de vida: si el proceso muere, PostgreSQL libera el bloqueo.
+* **Fila de estado** `system_maintenance.maintenance_lock` (`state`, `owner_id`, `instance_id`, `updated_at`, `details`), que cada proceso consulta cada `Maintenance:PollIntervalSeconds`:
+  * otro proceso restaurando (bloqueo vivo) o `Failed` → se bloquean escrituras, ADMS y workers;
+  * estado "en curso" **sin** bloqueo vivo (el proceso murió) → antes del `COMMIT` (`Preparing`, `Draining`, `Restoring`) se ignora porque la base no cambió; después (`Validating`, `Recovering`) se trata como `Failed`.
+
+Estados: `Normal` → `Preparing` → `Draining` → `Restoring` → `Validating` → `Normal`; en caso de rollback, `Recovering` → `Normal` o `Failed`.
+
+### 4.6 Tareas de Mantenimiento de BD
 Se sugiere ejecutar una tarea programada semanal en PostgreSQL para optimizar índices y liberar espacio muerto:
 ```sql
 -- Ejecutar en pgAdmin o psql
@@ -343,6 +442,7 @@ El sistema implementa medidas avanzadas de protección de datos de acuerdo con l
 * **Control de Acceso Basado en Roles (RBAC):**
   * **Administrador:** Acceso ilimitado a configuraciones, catálogos, registros de dispositivos y borrado de logs.
   * **Usuario:** Acceso a consulta de reportes, alta de empleados e incidencias. No puede registrar nuevos relojes checadores ni alterar parámetros de base de datos.
+* **Respaldos:** contienen todos los datos del sistema, y el respaldo completo incluye `appsettings.json` con la contraseña de la base de datos. Descarga, carga, restauración y eliminación están restringidas al rol Administrador; los respaldos se descargan por `GET /api/backup/download/{archivo}` y sólo se sirven archivos del directorio de respaldos. Proteja la carpeta y sus copias externas como información confidencial.
 * **Auditoría del Sistema:** Cada descarga, edición de empleado o configuración de turnos queda grabada con fecha, hora, usuario operador e IP de origen en la tabla de logs del sistema.
 
 ---
@@ -356,6 +456,8 @@ Los logs de la aplicación Blazor Server se guardan en la carpeta `{app}\logs\` 
 * `attendance-system-YYYYMMDD.log`: Contiene eventos del flujo normal del sistema (niveles `Information` y superior).
 * `attendance-system-errors-YYYYMMDD.log`: Contiene errores técnicos y excepciones críticas no controladas (niveles `Error` y `Fatal`). Se mantiene en disco durante 90 días por defecto.
 
+* Las restauraciones registran cada línea de `pg_restore` y `psql` con los prefijos `[pg_restore]` y `[psql]`, las transiciones de estado de mantenimiento y, ante un fallo crítico, la ruta del snapshot conservado (nivel `Fatal`/`Critical`).
+
 ### 8.2 Logs del Windows Service
 El servicio ZKTeco reporta directamente al visor de eventos de Windows:
 * **Visor de Eventos (`eventvwr.msc`)** $\rightarrow$ *Registros de Windows* $\rightarrow$ *Aplicación*.
@@ -368,12 +470,14 @@ El servicio ZKTeco reporta directamente al visor de eventos de Windows:
 
 Para instalar una nueva actualización de la aplicación:
 
-1. **Respaldar Base de Datos:** Realice un pg_dump de la base de datos de manera obligatoria.
+1. **Respaldar Base de Datos:** Cree un respaldo **Solo BD** desde **Respaldo y Restauración** (o con `pg_dump`, ver 4.3) y cópielo fuera del servidor. Es obligatorio.
 2. **Ejecutar Nuevo Instalador:** Al ejecutar el nuevo instalador `AttendanceSystem_Setup.exe` sobre una versión existente:
    * El instalador detectará la versión previa y llamará a la sección `CurStepChanged` con el paso `ssInstall`.
    * Detendrá automáticamente los servicios `AttendanceSystem.ZKTeco.Service` y liberará el IIS o Kestrel deteniendo los procesos web.
    * Sobrescribirá los ejecutables e iniciará los servicios automáticamente al finalizar.
 3. **Rollback (Retorno a versión anterior):** Si la actualización falla, detenga los servicios, desinstale la aplicación, reinstale el ejecutable de la versión anterior y restaure el respaldo de la base de datos generado en el paso 1.
+   * Use **ese** respaldo: la versión anterior rechaza los respaldos creados por la versión nueva (su esquema es más nuevo).
+   * Al revés sí funciona: la versión nueva acepta respaldos de versiones anteriores y les aplica las migraciones al restaurarlos.
 
 ---
 
@@ -392,5 +496,5 @@ Para instalar una nueva actualización de la aplicación:
   * Servicio Windows ZKTeco: `C:\Program Files\AttendanceSystem\Service`
   * Base de Datos y Scripts: `C:\Program Files\AttendanceSystem\Database`
   * Herramientas de Diagnóstico: `C:\Program Files\AttendanceSystem\Tools`
-  * Respaldos Locales: `C:\Program Files\AttendanceSystem\Backups`
+  * Respaldos Locales: `C:\Program Files\AttendanceSystem\Web\Backups` (predeterminado de la aplicación; configurable en **Respaldo y Restauración**). El instalador también crea `C:\Program Files\AttendanceSystem\Backups`, con permisos para IIS, para usarla como destino.
 
