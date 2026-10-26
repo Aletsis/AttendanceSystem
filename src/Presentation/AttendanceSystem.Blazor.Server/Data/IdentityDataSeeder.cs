@@ -1,7 +1,5 @@
 using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
 using AttendanceSystem.Domain.Entities;
-using AttendanceSystem.Infrastructure.Persistence;
 
 namespace AttendanceSystem.Blazor.Server.Data;
 
@@ -19,18 +17,10 @@ public static class IdentityDataSeeder
     {
         try
         {
+            // Las migraciones las aplica StartupMigrationService antes de sembrar.
             using var scope = serviceProvider.CreateScope();
-            var context = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
             var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-
-            // Aplicar migraciones pendientes
-            if ((await context.Database.GetPendingMigrationsAsync()).Any())
-            {
-                logger.LogInformation("Aplicando migraciones pendientes...");
-                await context.Database.MigrateAsync();
-                logger.LogInformation("Migraciones aplicadas exitosamente");
-            }
 
             // Crear roles si no existen
             var roles = AttendanceSystem.Application.Authorization.AppRoles.All;

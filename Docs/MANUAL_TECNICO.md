@@ -238,17 +238,39 @@ erDiagram
 * **SystemAlerts:** Alertas internas generadas por el sistema cuando ocurren desconexiones de hardware o errores en segundo plano.
 
 ### 4.2 Migraciones y Actualizaciones de Esquema
-El sistema aplica las migraciones de Entity Framework Core de forma automática en el arranque de la aplicación Blazor:
-```csharp
-// Program.cs
-using (var scope = app.Services.CreateScope())
-{
-    var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
-    await dbContext.Database.MigrateAsync();
-}
-```
-* **Excepción — restauración con fallo crítico:** si el estado de mantenimiento guardado es `Failed` (ver 4.5), el arranque **omite** las migraciones y la creación del usuario inicial y deja Hangfire en pausa. Migrar o sembrar datos sobre una base que quedó sin validar ocultaría el problema.
+La aplicación Blazor aplica las migraciones de Entity Framework Core al arrancar, antes de atender peticiones. Implementación: `StartupMigrationService` (`src/Infrastructure/AttendanceSystem.Infrastructure/Services/StartupMigrationService.cs`), invocado desde `Program.cs`. Los clientes WPF y el servicio ZKTeco nunca migran.
+
+**Secuencia de arranque:**
+1. **Conexión:** si PostgreSQL todavía no responde (p. ej. el servidor se reinició y PostgreSQL arranca después que IIS), se reintenta con espera creciente (`Database:StartupConnectAttempts`). Si la base no existe se crea vacía (desarrollo; el instalador ya la crea). Si tras los reintentos no hay conexión, la aplicación **se detiene** y el siguiente arranque lo vuelve a intentar.
+2. **Bloqueo entre procesos:** se toma el bloqueo consultivo `pg_try_advisory_lock(7235002)` con una conexión `application_name = attendance_migration_lock`. Un segundo worker de IIS (o un reciclado solapado) espera a que el primero termine y después encuentra la base al día. El bloqueo propio de EF sobre `__EFMigrationsHistory` no basta: dura una sola transacción. La alineación de esquema de una restauración (4.4) usa el mismo bloqueo.
+3. **Versión de la base:** si `__EFMigrationsHistory` contiene migraciones que esta versión no conoce (se reinstaló una versión anterior), **no se toca nada** y se arranca en mantenimiento.
+4. **Respaldo previo:** si hay migraciones pendientes y la base ya tenía migraciones aplicadas, se crea y verifica `PreMigration_Backup_<fecha>_<hora>.backup` en el directorio de respaldos. Aparece en la página de respaldos con la descripción *Estado previo a una actualización del esquema* y **la retención no lo borra**. Si el respaldo falla, **no se migra** y se arranca en mantenimiento. Una base recién creada no se respalda.
+5. **Migraciones:** cada comando tiene hasta `Database:MigrationTimeoutMinutes` (30 min); el valor por defecto de Npgsql (30 s) no alcanza para migraciones de datos sobre tablas grandes. Cada migración se confirma en su propia transacción: si una falla, la base queda en la última que terminó, nunca a medias, y se arranca en mantenimiento.
+6. **Datos iniciales** (roles y usuario `admin`) sólo si el esquema quedó al día.
+
+**Arranque en mantenimiento por el esquema:** en los tres casos anteriores (base más nueva, respaldo previo fallido, migración fallida) la aplicación arranca en estado `Failed` con `owner_id = 'StartupMigration'`: todos los procesos rechazan escrituras, ADMS/API responden `503`, Hangfire queda en pausa y no se crean datos iniciales. El log (`FTL`) indica la causa, la última migración aplicada y la ruta del respaldo previo. Para salir:
+* corrija la causa y **reinicie la aplicación**: a diferencia del `Failed` de una restauración, este estado se descarta al arrancar y se vuelve a intentar; o
+* restaure un respaldo desde la página de respaldos (por ejemplo el `PreMigration_Backup` si la migración dejó datos que no se quieren conservar); la restauración aplica las migraciones al terminar.
+
+**Otros casos:**
+* **Restauración con fallo crítico:** si el estado guardado es `Failed` por una restauración (ver 4.4), el arranque **omite** las migraciones y la creación del usuario inicial y deja Hangfire en pausa. Migrar o sembrar datos sobre una base que quedó sin validar ocultaría el problema.
+* **Restauración en curso en otro proceso:** se omiten migraciones y datos iniciales; la restauración deja el esquema al día al terminar.
 * **Restauraciones:** al restaurar un respaldo de una versión anterior, sus migraciones pendientes se aplican durante la propia restauración; un respaldo de una versión más nueva se rechaza (ver 4.4).
+* **IIS:** `web.config` sube `startupTimeLimit` de 120 s a 1800 s para que IIS no abandone una actualización larga; debe ser al menos `Database:MigrationTimeoutMinutes`.
+
+| Clave | Valor por defecto | Uso |
+|---|---|---|
+| `Database:MigrationTimeoutMinutes` | `30` (mín. 1) | Tiempo máximo de cada comando de migración y de la espera a que otro proceso termine de migrar. |
+| `Database:StartupConnectAttempts` | `6` | Intentos de conexión con PostgreSQL al arrancar. |
+| `Database:StartupConnectRetrySeconds` | `2` | Espera inicial entre intentos; se duplica hasta 15 s. |
+
+**Crear una migración (desarrollo):** genérela siempre con la herramienta, para que actualice el snapshot del modelo:
+```powershell
+dotnet ef migrations add <Nombre> --project src/Infrastructure/AttendanceSystem.Infrastructure --startup-project src/Presentation/AttendanceSystem.Blazor.Server
+```
+* EF aplica las migraciones **por orden de ID**. Varias migraciones existentes tienen fechas futuras (hasta `20261109120000`); mientras la fecha real no las supere, renombre la migración nueva (archivos y atributo `[Migration]`) con un ID posterior a la última.
+* `MigrationsConsistencyTests` falla si el modelo tiene cambios sin migración o si la migración más reciente no es la última por ID. EF también se niega a migrar si el modelo no coincide con el snapshot (`PendingModelChangesWarning`), lo que en producción dejaría la aplicación en mantenimiento.
+* Una migración que transforma o borra datos debe poder ejecutarse sobre tablas grandes y, si no tiene `Down`, decirlo en un comentario: el respaldo previo es la única vuelta atrás.
 
 Para realizar una migración manual desde la consola de desarrollo de .NET:
 ```powershell
@@ -350,7 +372,7 @@ set PGPASSWORD=<contraseña de attendancesystem_user>
 ```
 * Para un `.zip`, extraiga antes `database.backup`.
 * `--single-transaction` hace la restauración atómica; el último comando descarta el estado de mantenimiento que traen los respaldos generados por versiones anteriores a este cambio.
-* Al arrancar, la aplicación aplica las migraciones pendientes si el respaldo era de una versión anterior.
+* Al arrancar, la aplicación aplica las migraciones pendientes si el respaldo era de una versión anterior (con su respaldo previo, ver 4.2).
 
 ### 4.5 Coordinación entre Procesos y Estado de Mantenimiento
 Varios procesos pueden usar la misma base: la aplicación web (uno o más workers de IIS) y los clientes de escritorio WPF. Cada uno tiene su propio `RestoreStateService`; se coordinan en PostgreSQL:
@@ -360,6 +382,8 @@ Varios procesos pueden usar la misma base: la aplicación web (uno o más worker
   * estado "en curso" **sin** bloqueo vivo (el proceso murió) → antes del `COMMIT` (`Preparing`, `Draining`, `Restoring`) se ignora porque la base no cambió; después (`Validating`, `Recovering`) se trata como `Failed`.
 
 Estados: `Normal` → `Preparing` → `Draining` → `Restoring` → `Validating` → `Normal`; en caso de rollback, `Recovering` → `Normal` o `Failed`.
+
+`Failed` también lo usa el arranque cuando no puede poner el esquema al día (ver 4.2), con `owner_id = 'StartupMigration'`. Los demás procesos lo tratan igual que el de una restauración; la diferencia es que el siguiente arranque de la aplicación web lo descarta y vuelve a intentar la migración. Las migraciones se serializan con un bloqueo aparte (`7235002`, `application_name = attendance_migration_lock`).
 
 ### 4.6 Tareas de Mantenimiento de BD
 Se sugiere ejecutar una tarea programada semanal en PostgreSQL para optimizar índices y liberar espacio muerto:
@@ -470,11 +494,12 @@ El servicio ZKTeco reporta directamente al visor de eventos de Windows:
 
 Para instalar una nueva actualización de la aplicación:
 
-1. **Respaldar Base de Datos:** Cree un respaldo **Solo BD** desde **Respaldo y Restauración** (o con `pg_dump`, ver 4.3) y cópielo fuera del servidor. Es obligatorio.
+1. **Respaldar Base de Datos:** Cree un respaldo **Solo BD** desde **Respaldo y Restauración** (o con `pg_dump`, ver 4.3) y cópielo fuera del servidor. Es obligatorio: el respaldo automático previo a las migraciones (4.2) queda en el mismo servidor.
 2. **Ejecutar Nuevo Instalador:** Al ejecutar el nuevo instalador `AttendanceSystem_Setup.exe` sobre una versión existente:
    * El instalador detectará la versión previa y llamará a la sección `CurStepChanged` con el paso `ssInstall`.
    * Detendrá automáticamente los servicios `AttendanceSystem.ZKTeco.Service` y liberará el IIS o Kestrel deteniendo los procesos web.
    * Sobrescribirá los ejecutables e iniciará los servicios automáticamente al finalizar.
+   * El primer arranque de la aplicación web respalda la base y aplica las migraciones (4.2); con muchos datos puede tardar varios minutos. Si queda en mantenimiento, el log indica por qué.
 3. **Rollback (Retorno a versión anterior):** Si la actualización falla, detenga los servicios, desinstale la aplicación, reinstale el ejecutable de la versión anterior y restaure el respaldo de la base de datos generado en el paso 1.
    * Use **ese** respaldo: la versión anterior rechaza los respaldos creados por la versión nueva (su esquema es más nuevo).
    * Al revés sí funciona: la versión nueva acepta respaldos de versiones anteriores y les aplica las migraciones al restaurarlos.

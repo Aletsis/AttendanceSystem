@@ -22,6 +22,9 @@ public class RestoreStateService : IRestoreStateService, IDisposable
     /// <summary>Nombre de la conexión que retiene el bloqueo: la restauración no debe terminarla.</summary>
     public const string LockApplicationName = "attendance_maintenance_lock";
 
+    /// <summary>Propietario del mantenimiento que deja un arranque que no pudo poner el esquema al día.</summary>
+    public const string StartupMaintenanceOwner = "StartupMigration";
+
     private const long AdvisoryLockKey = 7235001;
 
     private readonly ILogger<RestoreStateService> _logger;
@@ -72,6 +75,14 @@ public class RestoreStateService : IRestoreStateService, IDisposable
             return CurrentState;
         }
 
+        if (row.State == MaintenanceState.Failed && row.Owner == StartupMaintenanceOwner)
+        {
+            // Lo dejó un arranque anterior y la base no se tocó después del fallo: este arranque vuelve a intentarlo.
+            _logger.LogWarning("El arranque anterior dejó el sistema en mantenimiento porque no pudo actualizar el esquema; se vuelve a intentar.");
+            await TryPersistStateToDatabaseAsync(MaintenanceState.Normal, null, "Mantenimiento del arranque anterior descartado para reintentar", cancellationToken);
+            return CurrentState;
+        }
+
         if (row.LockHeld && row.State != MaintenanceState.Failed)
         {
             // Otro proceso está restaurando ahora mismo: no es un resto de este proceso.
@@ -109,6 +120,19 @@ public class RestoreStateService : IRestoreStateService, IDisposable
             row.Owner ?? "desconocido");
         await TryPersistStateToDatabaseAsync(MaintenanceState.Normal, null, $"Restauración interrumpida en {row.State} descartada al arrancar", cancellationToken);
         return CurrentState;
+    }
+
+    public async Task EnterStartupMaintenanceAsync(string reason, CancellationToken cancellationToken = default)
+    {
+        lock (_lock)
+        {
+            _currentState = MaintenanceState.Failed;
+            _currentOwner = StartupMaintenanceOwner;
+        }
+
+        _logger.LogCritical("🚨 El sistema arranca en mantenimiento (Failed): {Reason} Restaure un respaldo desde la página de respaldos, " +
+            "o corrija la causa y reinicie la aplicación para volver a intentarlo.", reason);
+        await TryPersistStateToDatabaseAsync(MaintenanceState.Failed, StartupMaintenanceOwner, reason, cancellationToken);
     }
 
     public async Task<bool> TryAcquireRestoreLockAsync(string ownerId, string description, CancellationToken cancellationToken = default)

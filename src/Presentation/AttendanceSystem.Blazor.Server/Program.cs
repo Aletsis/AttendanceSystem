@@ -160,51 +160,35 @@ try
         Log.Fatal("Restauración con fallo crítico pendiente: se omiten migraciones y datos iniciales, y Hangfire queda en pausa hasta restaurar un respaldo.");
         await app.Services.GetRequiredService<IBackgroundJobControlService>().PauseBackgroundJobsAsync();
     }
+    else if (startupMaintenanceState != AttendanceSystem.Application.Common.MaintenanceState.Normal)
+    {
+        // La restauración en curso deja el esquema al día al terminar; migrar a la vez chocaría con pg_restore.
+        Log.Warning("Otro proceso está restaurando la base ({State}): se omiten migraciones y datos iniciales.", startupMaintenanceState);
+    }
     else
     {
         // ===== VERIFICAR Y APLICAR MIGRACIONES PENDIENTES =====
+        // Respaldo previo, bloqueo entre procesos y, si algo falla, arranque en mantenimiento (ver StartupMigrationService).
+        StartupMigrationResult migration;
         using (var scope = app.Services.CreateScope())
         {
-            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger("DatabaseMigration");
-
-            try
-            {
-                var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
-
-                // Verificar si hay migraciones pendientes
-                var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
-
-                if (pendingMigrations.Any())
-                {
-                    logger.LogWarning("Se encontraron {Count} migraciones pendientes. Aplicando migraciones...", pendingMigrations.Count());
-                    foreach (var migration in pendingMigrations)
-                    {
-                        logger.LogInformation("Migración pendiente: {Migration}", migration);
-                    }
-
-                    // Aplicar migraciones
-                    await dbContext.Database.MigrateAsync();
-                    logger.LogInformation("Todas las migraciones se aplicaron correctamente");
-                }
-                else
-                {
-                    logger.LogInformation("La base de datos está actualizada. No hay migraciones pendientes");
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "Error al verificar o aplicar migraciones de base de datos");
-                throw; // Detener la aplicación si hay un error crítico con las migraciones
-            }
+            migration = await scope.ServiceProvider.GetRequiredService<StartupMigrationService>().RunAsync();
         }
 
-        // ===== INICIALIZAR DATOS DE IDENTITY =====
-        using (var scope = app.Services.CreateScope())
+        if (migration.Outcome == StartupMigrationOutcome.Maintenance)
         {
-            var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-            var logger = loggerFactory.CreateLogger("IdentityDataSeeder");
-            await AttendanceSystem.Blazor.Server.Data.IdentityDataSeeder.SeedAsync(app.Services, logger);
+            Log.Fatal("El esquema no quedó al día: se omiten los datos iniciales y Hangfire queda en pausa. {Reason}", migration.Message);
+            await app.Services.GetRequiredService<IBackgroundJobControlService>().PauseBackgroundJobsAsync();
+        }
+        else
+        {
+            // ===== INICIALIZAR DATOS DE IDENTITY =====
+            using (var scope = app.Services.CreateScope())
+            {
+                var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
+                var logger = loggerFactory.CreateLogger("IdentityDataSeeder");
+                await AttendanceSystem.Blazor.Server.Data.IdentityDataSeeder.SeedAsync(app.Services, logger);
+            }
         }
     }
 
