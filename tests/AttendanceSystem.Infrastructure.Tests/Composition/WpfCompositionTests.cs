@@ -39,6 +39,11 @@ public class WpfCompositionTests
         services.AddSingleton<ICurrentUserService>(new MockCurrentUserService());
         services.AddSingleton<IAttendanceJobScheduler, MockJobScheduler>();
 
+        // Igual que App.xaml.cs: UserManager para iniciar sesión y administrar usuarios.
+        services.AddIdentityCore<AttendanceSystem.Domain.Entities.ApplicationUser>()
+            .AddRoles<Microsoft.AspNetCore.Identity.IdentityRole>()
+            .AddEntityFrameworkStores<AttendanceDbContext>();
+
         return services.BuildServiceProvider(new ServiceProviderOptions
         {
             ValidateScopes = true
@@ -73,6 +78,50 @@ public class WpfCompositionTests
         scope.ServiceProvider.GetService<AttendanceValidationService>().Should().NotBeNull();
         scope.ServiceProvider.GetService<IEmailService>().Should().NotBeNull();
         scope.ServiceProvider.GetService<IRestoreStateService>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WpfContainer_ResolvesFromTheRootWhatAppXamlRegistersAsInstances()
+    {
+        // App.xaml.cs toma estos servicios del contenedor raíz (ValidateScopes = true) para registrarlos en Prism; uno
+        // scoped impedía arrancar el cliente ("Cannot resolve scoped service ... from root provider").
+        using var sp = CreateWpfServiceProvider();
+
+        sp.GetRequiredService<ICurrentUserService>().Should().NotBeNull();
+        sp.GetRequiredService<IRestoreStateService>().Should().NotBeNull();
+        sp.GetRequiredService<IImportService>().Should().NotBeNull();
+        sp.GetRequiredService<IReportExportService>().Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WpfContainer_BuildsTheHandlerOfEveryMediatRRequest()
+    {
+        // Cada comando de WPF crea su manejador en un ámbito propio (WpfScopedMediator): ninguno debe tener
+        // dependencias sin registrar ni ciclos.
+        using var sp = CreateWpfServiceProvider();
+        using var scope = sp.CreateScope();
+        var requestTypes = typeof(ApplicationServiceExtensions).Assembly.GetTypes()
+            .Where(t => t is { IsAbstract: false, IsInterface: false, IsGenericTypeDefinition: false })
+            .SelectMany(t => t.GetInterfaces().Where(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IRequest<>))
+                .Select(i => (Request: t, Response: i.GetGenericArguments()[0])))
+            .ToList();
+        requestTypes.Should().NotBeEmpty();
+
+        var failures = new List<string>();
+        foreach (var (request, response) in requestTypes)
+        {
+            try
+            {
+                var handler = scope.ServiceProvider.GetService(typeof(IRequestHandler<,>).MakeGenericType(request, response));
+                if (handler == null) failures.Add($"{request.Name}: sin manejador");
+            }
+            catch (Exception ex)
+            {
+                failures.Add($"{request.Name}: {ex.GetBaseException().Message}");
+            }
+        }
+
+        failures.Should().BeEmpty();
     }
 
     [Fact]
