@@ -11,11 +11,14 @@
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Controls.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Fonts.xaml" />
                 <ResourceDictionary Source="pack://application:,,,/MahApps.Metro;component/Styles/Themes/Light.Blue.xaml" />
+                <ResourceDictionary Source="Themes/Theme.xaml" />
             </ResourceDictionary.MergedDictionaries>
             
             <!-- Global Converters -->
             <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
             <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
+            <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
+            <converters:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
             <converters:BooleanToStatusTextConverter x:Key="BooleanToStatusTextConverter" />
             <converters:BooleanToStatusBrushConverter x:Key="BooleanToStatusBrushConverter" />
             <converters:SuccessToIconConverter x:Key="SuccessToIconConverter" />

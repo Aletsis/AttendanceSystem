@@ -88,7 +88,6 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         public IEnumerable<DayOfWeek> DaysOfWeek => Enum.GetValues(typeof(DayOfWeek)).Cast<DayOfWeek>();
 
         public ICommand SaveSettingsCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand UploadLogoCommand { get; }
         public ICommand RemoveLogoCommand { get; }
         public ICommand SelectBackupFolderCommand { get; }
@@ -107,7 +106,6 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
             _configuration = configuration;
 
             SaveSettingsCommand = new DelegateCommand(async () => await ExecuteSaveSettingsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             UploadLogoCommand = new DelegateCommand(async () => await ExecuteUploadLogoAsync());
             RemoveLogoCommand = new DelegateCommand(() => CompanyLogo = null);
             SelectBackupFolderCommand = new DelegateCommand(ExecuteSelectBackupFolder);

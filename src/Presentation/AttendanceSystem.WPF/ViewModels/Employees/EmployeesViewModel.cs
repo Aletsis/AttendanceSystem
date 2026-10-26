@@ -132,7 +132,6 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public ICommand EditEmployeeCommand { get; }
         public ICommand DeleteEmployeeCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand ImportEmployeesCommand { get; }
         public ICommand ExportEmployeesCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
@@ -182,7 +181,6 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     await LoadEmployeesAsync();
             });
 
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportEmployeesCommand = new DelegateCommand(async () => await ExecuteImportEmployeesAsync());
             ExportEmployeesCommand = new DelegateCommand(async () => await ExecuteExportEmployeesAsync());
             DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());

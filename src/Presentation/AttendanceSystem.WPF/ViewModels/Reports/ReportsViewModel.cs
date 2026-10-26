@@ -51,7 +51,6 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
 
         public ICommand GenerateReportCommand { get; }
         public ICommand PreviewReportCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
 
         public ReportsViewModel(
             IFrameNavigationService navigationService,
@@ -64,7 +63,6 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
 
             GenerateReportCommand = new DelegateCommand(async () => await ExecuteGenerateReportAsync());
             PreviewReportCommand = new DelegateCommand(async () => await ExecutePreviewReportAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadFiltersAsync();
         }

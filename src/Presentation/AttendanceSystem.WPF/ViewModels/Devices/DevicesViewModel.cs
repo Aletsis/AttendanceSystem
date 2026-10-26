@@ -65,7 +65,6 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public ICommand TestConnectionCommand { get; }
         public ICommand DownloadLogsCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand SyncEmployeesCommand { get; }
         public ICommand ViewDetailsCommand { get; }
 
@@ -88,7 +87,6 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             SyncEmployeesCommand = new DelegateCommand(async () => await ExecuteSyncEmployeesAsync(), CanExecuteEdit).ObservesProperty(() => SelectedDevice);
             ViewDetailsCommand = new DelegateCommand(ExecuteViewDetails, CanExecuteEdit).ObservesProperty(() => SelectedDevice);
             RefreshCommand = new DelegateCommand(async () => await LoadDevicesAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadDevicesAsync();
         }

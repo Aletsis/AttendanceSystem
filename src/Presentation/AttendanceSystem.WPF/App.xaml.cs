@@ -1,4 +1,6 @@
 using System.Windows;
+using System.Windows.Threading;
+using AttendanceSystem.Application.Exceptions;
 using AttendanceSystem.WPF.Views;
 using AttendanceSystem.WPF.Services;
 using Prism.Ioc;
@@ -35,22 +37,50 @@ namespace AttendanceSystem.WPF
         public IConfiguration Configuration { get; private set; } = null!;
         private ServiceProvider? _serviceProvider;
 
+        protected override void OnStartup(StartupEventArgs e)
+        {
+            // Un error no controlado (p. ej. en el resultado de un diálogo) no debe cerrar la aplicación sin aviso.
+            DispatcherUnhandledException += OnDispatcherUnhandledException;
+            TaskScheduler.UnobservedTaskException += (_, args) =>
+            {
+                Log.Error(args.Exception, "Tarea en segundo plano con error no observado");
+                args.SetObserved();
+            };
+            AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+                Log.Fatal(args.ExceptionObject as Exception, "Error no controlado; la aplicación se cerrará");
+
+            base.OnStartup(e);
+        }
+
+        private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
+        {
+            var error = e.Exception is AggregateException { InnerException: { } inner } ? inner : e.Exception;
+            Log.Error(error, "Error no controlado en la interfaz");
+            var message = error is DatabaseMaintenanceException
+                ? "El sistema está en mantenimiento de la base de datos y no se pueden guardar cambios en este momento. Intente más tarde."
+                : $"Ocurrió un error inesperado: {error.Message}\n\nEl detalle quedó en el registro de la aplicación.";
+            MessageBox.Show(message, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            e.Handled = true;
+        }
+
         protected override Window CreateShell()
         {
-            var shell = Container.Resolve<ShellWindow>();
+            return Container.Resolve<ShellWindow>();
+        }
 
-            // Se arranca en el inicio de sesión: sin usuario los comandos no se restringen. Al entrar se navega al Dashboard.
-            var regionManager = Container.Resolve<IRegionManager>();
-            regionManager.RegisterViewWithRegion("MainRegion", typeof(Views.Auth.LoginView));
-
-            return shell;
+        protected override void OnInitialized()
+        {
+            base.OnInitialized();
+            // Se arranca en el inicio de sesión: sin usuario los comandos no se restringen. Al entrar se navega al inicio.
+            Container.Resolve<IFrameNavigationService>().ResetTo(FrameNavigationService.LoginViewName);
         }
 
         protected override void RegisterTypes(IContainerRegistry containerRegistry)
         {
             // Configuration
             var builder = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
+                // La carpeta del ejecutable, no la de trabajo: un acceso directo puede arrancar en otra carpeta.
+                .SetBasePath(AppContext.BaseDirectory)
                 .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
                 .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
             Configuration = builder.Build();
@@ -112,6 +142,7 @@ namespace AttendanceSystem.WPF
             containerRegistry.RegisterInstance<IRestoreStateService>(_serviceProvider.GetRequiredService<IRestoreStateService>());
             containerRegistry.RegisterSingleton<IFrameNavigationService, FrameNavigationService>();
             containerRegistry.RegisterSingleton<IMessageService, MessageService>();
+            containerRegistry.RegisterSingleton<ViewModels.ShellViewModel>();
 
             containerRegistry.RegisterInstance<IImportService>(_serviceProvider.GetRequiredService<IImportService>());
             containerRegistry.RegisterInstance<IReportExportService>(_serviceProvider.GetRequiredService<IReportExportService>());

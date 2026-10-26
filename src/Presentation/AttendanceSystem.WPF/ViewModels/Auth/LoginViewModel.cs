@@ -41,6 +41,7 @@ namespace AttendanceSystem.WPF.ViewModels.Auth
         {
             var passwordBox = parameter as PasswordBox;
             var password = passwordBox?.Password;
+            if (IsBusy) return;
 
             if (string.IsNullOrWhiteSpace(Username) || string.IsNullOrWhiteSpace(password))
             {
@@ -51,17 +52,22 @@ namespace AttendanceSystem.WPF.ViewModels.Auth
             SetBusy(true, "Iniciando sesión...");
             try
             {
-                var success = await _authService.LoginAsync(Username, password);
-                if (success)
+                var result = await _authService.LoginAsync(Username.Trim(), password);
+                // La contraseña no se conserva en la pantalla, ni siquiera si falla.
+                passwordBox?.Clear();
+
+                switch (result)
                 {
-                    // Navigate only if login succeeds
-                    // Use literal View Name if T is not registered with exact name or if relying on Prism
-                    // But assuming FrameNavigationService uses typeof(T).Name
-                    _navigationService.NavigateTo<Views.Dashboard.DashboardView>();
-                }
-                else
-                {
-                    await _messageService.ShowErrorAsync("Credenciales incorrectas.");
+                    case LoginResult.Success:
+                        // Se empieza con la región y el historial vacíos: nada de la sesión anterior queda a mano.
+                        _navigationService.ResetTo(nameof(Views.Dashboard.DashboardView));
+                        break;
+                    case LoginResult.LockedOut:
+                        await _messageService.ShowErrorAsync("Su cuenta ha sido bloqueada temporalmente por exceso de intentos fallidos.");
+                        break;
+                    default:
+                        await _messageService.ShowErrorAsync("Credenciales incorrectas.");
+                        break;
                 }
             }
             catch (Exception ex)

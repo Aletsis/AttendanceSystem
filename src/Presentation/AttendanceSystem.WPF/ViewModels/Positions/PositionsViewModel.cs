@@ -65,7 +65,6 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
         public ICommand EditPositionCommand { get; }
         public ICommand DeletePositionCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand ImportPositionsCommand { get; }
         public ICommand ExportPositionsCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
@@ -91,7 +90,6 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             DeletePositionCommand = new DelegateCommand(async () => await ExecuteDeletePositionAsync(), CanExecuteEdit)
                 .ObservesProperty(() => SelectedPosition);
             RefreshCommand = new DelegateCommand(async () => await LoadPositionsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportPositionsCommand = new DelegateCommand(async () => await ExecuteImportPositionsAsync());
             ExportPositionsCommand = new DelegateCommand(async () => await ExecuteExportPositionsAsync());
             DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());

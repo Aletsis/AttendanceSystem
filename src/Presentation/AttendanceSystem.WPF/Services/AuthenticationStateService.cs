@@ -13,8 +13,19 @@ namespace AttendanceSystem.WPF.Services
         IReadOnlyCollection<string> CurrentUserRoles { get; }
         /// <summary>Caso 13: permisos del usuario según sus roles (ver RolePermissions).</summary>
         bool HasPermission(string permission);
-        Task<bool> LoginAsync(string username, string password);
+        Task<LoginResult> LoginAsync(string username, string password);
         Task LogoutAsync();
+
+        /// <summary>Se dispara al iniciar o cerrar sesión (menú, usuario mostrado, permisos).</summary>
+        event EventHandler? SessionChanged;
+    }
+
+    public enum LoginResult
+    {
+        Success,
+        InvalidCredentials,
+        /// <summary>Bloqueada por intentos fallidos (misma política y mensaje que la versión web).</summary>
+        LockedOut
     }
 
     /// <summary>
@@ -32,6 +43,8 @@ namespace AttendanceSystem.WPF.Services
         public string? CurrentUserRole { get; private set; }
         public IReadOnlyCollection<string> CurrentUserRoles { get; private set; } = Array.Empty<string>();
 
+        public event EventHandler? SessionChanged;
+
         public bool HasPermission(string permission) =>
             IsAuthenticated && AttendanceSystem.Application.Authorization.RolePermissions.Grants(CurrentUserRoles, permission);
 
@@ -40,7 +53,7 @@ namespace AttendanceSystem.WPF.Services
             _scopeFactory = scopeFactory;
         }
 
-        public async Task<bool> LoginAsync(string username, string password)
+        public async Task<LoginResult> LoginAsync(string username, string password)
         {
             using var scope = _scopeFactory.CreateScope();
             var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
@@ -50,11 +63,11 @@ namespace AttendanceSystem.WPF.Services
                        ?? await userManager.FindByEmailAsync(username);
 
             if (user == null || !user.IsActive)
-                return false;
+                return LoginResult.InvalidCredentials;
 
             // H14: Validar si la cuenta está bloqueada por intentos fallidos previos
             if (await userManager.IsLockedOutAsync(user))
-                return false;
+                return LoginResult.LockedOut;
 
             var result = userManager.PasswordHasher.VerifyHashedPassword(
                 user, user.PasswordHash!, password);
@@ -63,7 +76,7 @@ namespace AttendanceSystem.WPF.Services
             {
                 // Incrementar contador de accesos fallidos (activa bloqueo si alcanza el límite)
                 await userManager.AccessFailedAsync(user);
-                return false;
+                return await userManager.IsLockedOutAsync(user) ? LoginResult.LockedOut : LoginResult.InvalidCredentials;
             }
 
             // Restablecer contador de accesos fallidos tras autenticación exitosa
@@ -80,7 +93,8 @@ namespace AttendanceSystem.WPF.Services
             CurrentUserRole = roles.FirstOrDefault();
             CurrentUserRoles = roles.ToList();
 
-            return true;
+            SessionChanged?.Invoke(this, EventArgs.Empty);
+            return LoginResult.Success;
         }
 
         public Task LogoutAsync()
@@ -90,6 +104,7 @@ namespace AttendanceSystem.WPF.Services
             CurrentUserName = null;
             CurrentUserRole = null;
             CurrentUserRoles = Array.Empty<string>();
+            SessionChanged?.Invoke(this, EventArgs.Empty);
             return Task.CompletedTask;
         }
     }

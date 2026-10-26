@@ -64,7 +64,6 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
         public ICommand EditDepartmentCommand { get; }
         public ICommand DeleteDepartmentCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand ImportDepartmentsCommand { get; }
         public ICommand ExportDepartmentsCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
@@ -90,7 +89,6 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             DeleteDepartmentCommand = new DelegateCommand(async () => await ExecuteDeleteDepartmentAsync(), CanExecuteEdit)
                 .ObservesProperty(() => SelectedDepartment);
             RefreshCommand = new DelegateCommand(async () => await LoadDepartmentsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportDepartmentsCommand = new DelegateCommand(async () => await ExecuteImportDepartmentsAsync());
             ExportDepartmentsCommand = new DelegateCommand(async () => await ExecuteExportDepartmentsAsync());
             DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());

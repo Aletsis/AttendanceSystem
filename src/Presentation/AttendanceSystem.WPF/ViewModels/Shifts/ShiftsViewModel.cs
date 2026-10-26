@@ -60,7 +60,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         public ICommand EditShiftCommand { get; }
         public ICommand DeleteShiftCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
 
         public ShiftsViewModel(
             IFrameNavigationService navigationService,
@@ -79,7 +78,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             DeleteShiftCommand = new DelegateCommand(async () => await ExecuteDeleteShiftAsync(), CanExecuteEdit)
                 .ObservesProperty(() => SelectedShift);
             RefreshCommand = new DelegateCommand(async () => await LoadShiftsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadShiftsAsync();
         }

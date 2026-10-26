@@ -125,7 +125,7 @@ namespace AttendanceSystem.WPF.ViewModels.Dashboard
         private async Task ExecuteLogoutAsync()
         {
             await _authService.LogoutAsync();
-            _navigationService.NavigateTo<Views.Auth.LoginView>();
+            _navigationService.ResetTo(FrameNavigationService.LoginViewName);
         }
     }
 }

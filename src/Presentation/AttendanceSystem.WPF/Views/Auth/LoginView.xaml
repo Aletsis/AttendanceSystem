@@ -28,7 +28,8 @@
             <Ellipse Width="300" Height="300" Fill="#F0F3F9" Canvas.Right="-50" Canvas.Bottom="-50"/>
         </Canvas>
 
-        <Grid VerticalAlignment="Center" HorizontalAlignment="Center">
+        <Grid VerticalAlignment="Center" HorizontalAlignment="Center"
+              FocusManager.FocusedElement="{Binding ElementName=UsernameBox}">
             <Border Background="White" 
                     CornerRadius="20" 
                     Padding="50" 
@@ -70,7 +71,8 @@
                                    FontWeight="SemiBold" 
                                    Foreground="#5A5C69" 
                                    Margin="0,0,0,8"/>
-                        <TextBox Text="{Binding Username}" 
+                        <TextBox x:Name="UsernameBox"
+                                 Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.ClearTextButton="True"
                                  mah:TextBoxHelper.Watermark="Ej: admin"
                                  FontSize="15"
@@ -101,6 +103,7 @@
                     <!-- Login Button -->
                     <Button Command="{Binding LoginCommand}"
                             CommandParameter="{Binding ElementName=PasswordBox}"
+                            IsDefault="True"
                             Background="{StaticResource LoginAccentGradient}"
                             Foreground="White"
                             BorderThickness="0"

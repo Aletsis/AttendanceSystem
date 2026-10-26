@@ -54,7 +54,6 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
         public ICommand CalculateAttendanceCommand { get; }
         public ICommand ExportCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
 
         public AttendanceViewModel(
             IFrameNavigationService navigationService,
@@ -73,7 +72,6 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             CalculateAttendanceCommand = new DelegateCommand(async () => await ExecuteCalculateAttendanceAsync());
             ExportCommand = new DelegateCommand(async () => await ExecuteExportAsync());
             RefreshCommand = new DelegateCommand(async () => await LoadAttendanceLogsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadAttendanceLogsAsync();
         }

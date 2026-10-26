@@ -63,7 +63,6 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
         public ICommand EditBranchCommand { get; }
         public ICommand DeleteBranchCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand ImportBranchesCommand { get; }
         public ICommand ExportBranchesCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
@@ -89,7 +88,6 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             DeleteBranchCommand = new DelegateCommand(async () => await ExecuteDeleteBranchAsync(), CanExecuteEdit)
                 .ObservesProperty(() => SelectedBranch);
             RefreshCommand = new DelegateCommand(async () => await LoadBranchesAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportBranchesCommand = new DelegateCommand(async () => await ExecuteImportBranchesAsync());
             ExportBranchesCommand = new DelegateCommand(async () => await ExecuteExportBranchesAsync());
             DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());

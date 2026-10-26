@@ -41,7 +41,6 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
         public ICommand DownloadBackupCommand { get; }
         public ICommand DeleteBackupCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
 
         public BackupViewModel(
             IFrameNavigationService navigationService,
@@ -59,7 +58,6 @@ namespace AttendanceSystem.WPF.ViewModels.Backup
             DownloadBackupCommand = new DelegateCommand<BackupDto>(async (b) => await ExecuteDownloadBackupAsync(b));
             DeleteBackupCommand = new DelegateCommand<BackupDto>(async (b) => await ExecuteDeleteBackupAsync(b));
             RefreshCommand = new DelegateCommand(async () => await LoadBackupsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadBackupsAsync();
         }
