@@ -305,7 +305,8 @@ public class AdmsController : ControllerBase
             table?.Equals("Transaction", StringComparison.OrdinalIgnoreCase) == true)
         {
             var lines = body.Split('\n', StringSplitOptions.RemoveEmptyEntries);
-            var processedCount = await ProcessAttLogs(lines, SN);
+            var downloadLogId = _admsCommandService.GetActiveDownloadLogId(SN);
+            var processedCount = await ProcessAttLogs(lines, SN, downloadLogId);
             if (processedCount < 0)
             {
                 return StatusCode(StatusCodes.Status500InternalServerError, "ERROR: Batch persistence failed\n");
@@ -346,7 +347,9 @@ public class AdmsController : ControllerBase
         [FromQuery] string SN,
         [FromQuery] string? tablename = null,
         [FromQuery] string? table = null,
-        [FromQuery] string? type = null)
+        [FromQuery] string? type = null,
+        [FromQuery] string? cmdid = null,
+        [FromQuery] int? count = null)
     {
         var device = await ValidateAuthorizedDeviceAsync(SN);
         if (device == null)
@@ -357,7 +360,8 @@ public class AdmsController : ControllerBase
         using var reader = new StreamReader(Request.Body);
         var body = await reader.ReadToEndAsync();
         var targetTable = tablename ?? table ?? "";
-        _logger.LogInformation("📥 POST querydata SN:{SN} table:{Table} type:{Type}", SN, targetTable, type);
+        _logger.LogInformation("📥 POST querydata SN:{SN} table:{Table} type:{Type} cmdid:{CmdId} count:{Count}",
+            SN, targetTable, type, cmdid ?? "null", count?.ToString() ?? "null");
 
         Response.Headers["Date"] = DateTime.UtcNow.ToString("ddd, dd MMM yyyy HH:mm:ss", CultureInfo.InvariantCulture) + " GMT";
 
@@ -376,7 +380,8 @@ public class AdmsController : ControllerBase
             targetTable.Equals("rtlog", StringComparison.OrdinalIgnoreCase))
         {
             var lines = body.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-            var processedCount = await ProcessAttLogs(lines, SN);
+            var downloadLogId = _admsCommandService.GetActiveDownloadLogId(SN, cmdid);
+            var processedCount = await ProcessAttLogs(lines, SN, downloadLogId, cmdid);
             if (processedCount < 0)
             {
                 return StatusCode(StatusCodes.Status500InternalServerError, "ERROR: Batch persistence failed\n");
@@ -533,7 +538,8 @@ public class AdmsController : ControllerBase
             if (lines.Length > 0)
             {
                 _logger.LogInformation("📥 ADMS: Procesando {Count} registros recibidos en cuerpo de devicecmd para SN: {SN}", lines.Length, sn);
-                await ProcessAttLogs(lines, sn);
+                var downloadLogId = _admsCommandService.GetActiveDownloadLogId(sn, id);
+                await ProcessAttLogs(lines, sn, downloadLogId, id);
             }
         }
 
@@ -542,6 +548,7 @@ public class AdmsController : ControllerBase
             if (!string.IsNullOrEmpty(id))
             {
                 var returnCode = int.TryParse(ret, out var r) ? r : -1;
+                var (sessionReceived, sessionNew) = _admsCommandService.GetAndCompleteDownloadSession(sn, id);
                 var logId = await _admsCommandService.AcknowledgeCommandExecutionAsync(sn, id, returnCode);
                 if (!logId.HasValue)
                 {
@@ -555,17 +562,22 @@ public class AdmsController : ControllerBase
                     {
                         if (returnCode >= 0 || returnCode == -2)
                         {
-                            // Return >= 0 o -2 = éxito o sin datos nuevos en el rango
-                            log.MarkAsSuccessful(0, 0);
+                            var totalDownloaded = sessionReceived > 0 ? sessionReceived : Math.Max(0, returnCode);
+                            var newRecords = sessionNew;
+
+                            log.MarkAsSuccessful(totalDownloaded, newRecords);
 
                             // Actualizar LastDownloadAt del dispositivo usando el ToDate solicitado
                             if (log.ToDate.HasValue)
                             {
-                                device.RecordSuccessfulDownload(0, log.ToDate);
+                                device.RecordSuccessfulDownload(newRecords, log.ToDate);
                                 await _deviceRepository.UpdateAsync(device);
                             }
 
-                            _logger.LogInformation("✅ ADMS: Descarga completada SN:{SerialNumber} CMD:{CommandId}", sn, id);
+                            _logger.LogInformation("✅ ADMS: Descarga completada SN:{SerialNumber} CMD:{CommandId}. Total: {Total}, Nuevos: {Nuevos}",
+                                sn, id, totalDownloaded, newRecords);
+
+                            _admsCommandService.NotifyDownloadCompleted(sn, log.Id.Value, isSuccess: true, totalDownloaded, newRecords, null);
                         }
                         else
                         {
@@ -582,6 +594,8 @@ public class AdmsController : ControllerBase
 
                             log.MarkAsFailed(friendlyError);
                             _logger.LogWarning("❌ ADMS: Dispositivo {SerialNumber} reportó error {ReturnCode} ({FriendlyError}) para comando {CommandId}", sn, ret, friendlyError, id);
+
+                            _admsCommandService.NotifyDownloadCompleted(sn, log.Id.Value, isSuccess: false, 0, 0, friendlyError);
                         }
 
                         await _downloadLogRepository.UpdateAsync(log);
@@ -596,7 +610,7 @@ public class AdmsController : ControllerBase
         }
         return Content("OK", "text/plain");
     }
-    private async Task<int> ProcessAttLogs(string[] lines, string SN)
+    private async Task<int> ProcessAttLogs(string[] lines, string SN, Guid? downloadLogId = null, string? commandId = null)
     {
         var device = await _deviceRepository.GetBySerialNumberAsync(SN);
         if (device == null) return 0;
@@ -819,11 +833,19 @@ public class AdmsController : ControllerBase
             }
         }
 
+        int insertedCount = 0;
         if (localLogs.Count > 0)
         {
+            // Caso 18: sin descarga ni comando en curso, el reloj empuja sus checadas al momento (tiempo real).
+            var arrival = downloadLogId == null && commandId == null
+                ? AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Realtime
+                : AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Redownload;
             var batchResult = await _mediator.Send(new RecordAttendanceBatchCommand(
                 device.Id.Value.ToString(),
-                localLogs));
+                localLogs,
+                DownloadLogId: downloadLogId,
+                Arrival: arrival,
+                DeviceSerial: SN));
 
             if (!batchResult.IsSuccess)
             {
@@ -836,6 +858,13 @@ public class AdmsController : ControllerBase
                 processed = 0;
                 return -1; // F01-P02 / H11: Indicar fallo explícito para no confirmar al terminal ni avanzar cursor
             }
+
+            insertedCount = batchResult.Value;
+        }
+
+        if (downloadLogId.HasValue || !string.IsNullOrEmpty(commandId))
+        {
+            _admsCommandService.RecordDownloadProgress(SN, commandId, totalReceived: processed, newInserted: insertedCount);
         }
 
         if (incidents.Count > 0 && _scopeFactory != null)

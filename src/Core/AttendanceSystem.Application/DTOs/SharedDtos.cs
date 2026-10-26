@@ -51,7 +51,9 @@ public sealed record DeviceDto(
     string? SdkVersion = null,
     string? MacAddress = null,
     string? TimeZoneId = null,
-    DateTime? LastActivityAt = null)
+    DateTime? LastActivityAt = null,
+    DateTime? AcceptPunchesFrom = null,
+    DateTime? CreatedAt = null)
 {
     public DeviceDto() : this(string.Empty, string.Empty, string.Empty, 4370, null, true, "Active", DeviceBrand.ZKTeco, DeviceDownloadMethod.Sdk, null, 0) { }
 }
@@ -108,7 +110,10 @@ public sealed record DownloadResultDto(
     List<string>? AffectedEmployeeIds = null,
     DeviceReadStatus ReadStatus = DeviceReadStatus.SuccessWithData,
     bool LogsCleared = false,
-    string? ClearErrorMessage = null);
+    string? ClearErrorMessage = null,
+    int QuarantinedCount = 0,
+    int AlreadyResolvedCount = 0,
+    string? ClockWarning = null);
 
 public sealed record BulkDownloadResultDto(
     int TotalDevices,
@@ -199,7 +204,10 @@ public sealed record SystemConfigurationDto(
     TimeSpan? LunchWindowEnd = null,
     int PaidLunchMinutes = 30,
     TimeSpan? NightLunchWindowStart = null,
-    TimeSpan? NightLunchWindowEnd = null)
+    TimeSpan? NightLunchWindowEnd = null,
+    bool LunchWindowEnabled = true,
+    int DoubleTapMinutes = 15,
+    AttendanceSystem.Domain.Services.PunchQuarantinePolicy? QuarantinePolicy = null)
 {
     public SystemConfigurationDto() : this(string.Empty, null, TimeSpan.Zero, TimeSpan.Zero, false, false, null, false) { }
 }

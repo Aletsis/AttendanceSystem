@@ -1,4 +1,5 @@
 @page "/shifts"
+@attribute [Authorize(Policy = Permissions.CatalogsView)]
 @using MediatR
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Domain.Enumerations
@@ -23,7 +24,9 @@
                       Clearable="true" Immediate="true" />
     </MudItem>
     <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Horario</MudButton>
+        <AuthorizeView Policy="@Permissions.ShiftsManage" Context="authContext">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Horario</MudButton>
+        </AuthorizeView>
     </MudItem>
 </MudGrid>
 
@@ -35,7 +38,7 @@
         <MudTh>Duración</MudTh>
         <MudTh>Tolerancia</MudTh>
         <MudTh>Tipo</MudTh>
-        <AuthorizeView Roles="Administrador" Context="authContext">
+        <AuthorizeView Policy="@Permissions.ShiftsManage" Context="authContext">
             <MudTh>Acciones</MudTh>
         </AuthorizeView>
     </HeaderContent>
@@ -62,7 +65,7 @@
                 : $"{context.ToleranceMinutes} min")
         </MudTd>
         <MudTd DataLabel="Tipo">@context.ShiftType</MudTd>
-        <AuthorizeView Roles="Administrador" Context="authContext">
+        <AuthorizeView Policy="@Permissions.ShiftsManage" Context="authContext">
             <MudTd DataLabel="Acciones">
                 <MudTooltip Text="Editar">
                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
@@ -165,8 +168,14 @@
         var dialog = await DialogService.ShowAsync<ShiftDialog>("Editar Turno", parameters, options);
         var result = await dialog.Result;
 
-        if (result != null && !result.Canceled && result.Data is UpdateShiftCommand command)
+        if (result != null && !result.Canceled && result.Data is UpdateShiftCommand edited)
         {
+             // Caso 15: el cambio aplica desde una fecha; hoy o pasada recalcula los días de quienes usan el horario.
+             var from = await EffectiveDateDialog.AskAsync(DialogService, "Aplicar cambio del horario",
+                 $"¿Desde qué fecha aplica el cambio de \"{edited.Name}\"?",
+                 date => Sender.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.GetShiftRecalculationImpactQuery(edited.Id, date)));
+             if (from == null) return;
+             var command = edited with { RecalculateFrom = from };
              var updateResult = await Sender.Send(command);
              if (updateResult.IsSuccess)
              {

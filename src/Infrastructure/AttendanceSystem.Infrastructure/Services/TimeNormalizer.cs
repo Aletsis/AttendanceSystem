@@ -39,6 +39,12 @@ public class TimeNormalizer : ITimeNormalizer
                     try { return TimeZoneInfo.FindSystemTimeZoneById(ianaId); } catch { }
                 }
 
+                if (AttendanceSystem.Domain.Services.TimeZoneEquivalents.TryFind(id, out var equivalent))
+                {
+                    _logger.LogInformation("Zona horaria '{TimeZoneId}' no existe en este sistema; se usa la equivalente '{Equivalent}'.", id, equivalent.Id);
+                    return equivalent;
+                }
+
                 _logger.LogWarning("Zona horaria '{TimeZoneId}' no encontrada en el sistema. Usando zona autoritativa por defecto '{DefaultTz}'.", id, DefaultAuthoritativeTimeZoneId);
                 return GetDefaultFallbackTimeZone();
             }

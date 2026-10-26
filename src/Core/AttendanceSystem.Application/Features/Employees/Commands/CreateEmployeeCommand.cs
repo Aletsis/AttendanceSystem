@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Employees.Commands;
 
+[RequiresPermission(Permissions.EmployeesCreate)]
 public sealed record CreateEmployeeCommand(
     string Id,
     string FirstName,
@@ -49,6 +50,10 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
     private readonly IShiftRepository _shiftRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<CreateEmployeeCommandHandler> _logger;
+    private readonly IPermissionService? _permissions;
+    private readonly IAttendanceRepository? _attendance;
+    private readonly IAttendanceConsolidationRepository? _consolidations;
+    private readonly IConsolidationWakeup? _wakeup;
 
     public CreateEmployeeCommandHandler(
         IEmployeeRepository employeeRepository,
@@ -57,8 +62,16 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
         IPositionRepository positionRepository,
         IShiftRepository shiftRepository,
         IUnitOfWork unitOfWork,
-        ILogger<CreateEmployeeCommandHandler> logger)
+        ILogger<CreateEmployeeCommandHandler> logger,
+        IPermissionService? permissions = null,
+        IAttendanceRepository? attendance = null,
+        IAttendanceConsolidationRepository? consolidations = null,
+        IConsolidationWakeup? wakeup = null)
     {
+        _permissions = permissions;
+        _attendance = attendance;
+        _consolidations = consolidations;
+        _wakeup = wakeup;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
         _departmentRepository = departmentRepository;
@@ -72,6 +85,11 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
     {
         try
         {
+            if (EmployeeFieldPermissions.ForCreate(_permissions, request.OvertimeAuthorized, request.DevicePrivilege) is { } denied)
+            {
+                return Result<EmployeeDto>.Failure(denied);
+            }
+
             var employeeId = EmployeeId.From(request.Id);
 
             // Verificar si el empleado ya existe
@@ -110,6 +128,11 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             if (!department.Positions.Any(p => p.Id == positionId))
             {
                 return Result<EmployeeDto>.Failure($"El puesto '{position.Name}' no pertenece al departamento '{department.Name}'");
+            }
+
+            if (EmployeeScheduleRules.Validate(request.ShiftType, request.ScheduleId) is { } scheduleError)
+            {
+                return Result<EmployeeDto>.Failure(scheduleError);
             }
 
             ShiftId? scheduleId = null;
@@ -158,6 +181,7 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
 
             _employeeRepository.Add(employee);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await RecalculateExistingPunchesAsync(employee, cancellationToken);
 
             var effectiveRestDays = employee.GetEffectiveRestDays();
 
@@ -192,7 +216,9 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
                 CardNumber = employee.CardNumber,
                 DevicePassword = employee.DevicePassword,
                 Photo = employee.Photo,
-                DevicePrivilege = employee.DevicePrivilege
+                DevicePrivilege = employee.DevicePrivilege,
+
+                StatusPeriods = employee.StatusPeriods.OrderByDescending(p => p.StartDate).Select(p => new StatusPeriodDto(p.Status, p.StartDate, p.EndDate)).ToList()
             };
 
             _logger.LogInformation("Empleado creado: {EmployeeId} - {FullName}", employee.Id.Value, employee.GetFullName());
@@ -209,6 +235,24 @@ public sealed class CreateEmployeeCommandHandler : IRequestHandler<CreateEmploye
             _logger.LogError(ex, "Error inesperado al crear empleado");
             return Result<EmployeeDto>.Failure("Error al crear el empleado");
         }
+    }
+
+    /// <summary>
+    /// Caso 14: si el reloj ya tenía marcajes de este ID (aviso de marcajes sin empleado), se calculan desde el ingreso.
+    /// </summary>
+    private async Task RecalculateExistingPunchesAsync(Employee employee, CancellationToken cancellationToken)
+    {
+        if (_attendance == null || _consolidations == null) return;
+        var today = DateTime.Today;
+        if (employee.HireDate.Date > today) return;
+
+        var punches = await _attendance.GetByDateRangeAsync(DateOnly.FromDateTime(employee.HireDate), DateOnly.FromDateTime(today), employee.Id, cancellationToken);
+        var first = punches.Where(r => !r.IsVoided).Select(r => r.GetWorkDate()).DefaultIfEmpty().Min();
+        if (first == default) return;
+
+        await _consolidations.RequestAsync(employee.Id, first.ToDateTime(TimeOnly.MinValue), today, cancellationToken);
+        _wakeup?.Signal();
+        _logger.LogInformation("Empleado {EmployeeId} dado de alta con marcajes previos desde {From:yyyy-MM-dd}: se recalcularán.", employee.Id.Value, first);
     }
 
     private static string GetDayName(int day) => day switch

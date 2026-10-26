@@ -137,7 +137,9 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
             CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
-        result.Error.Should().Contain(nameof(PersistenceFailureKind.Connection)).And.Contain("reintentable");
+        // Linux rechaza la conexión al puerto 1; Windows la deja vencer (Timeout). Ambas son recuperables y no duplicados.
+        result.Error.Should().Contain("reintentable").And.NotContain("duplicad");
+        result.Error.Should().Match(e => e.Contains(nameof(PersistenceFailureKind.Connection)) || e.Contains(nameof(PersistenceFailureKind.Timeout)));
     }
 
     #endregion
@@ -169,7 +171,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         {
             await using var context = _fixture.CreateDbContext();
             var handler = CreateManualAssign(context);
-            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), realExit.Id.Value.ToString(), "Salida"), CancellationToken.None);
+            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), realExit.Id.Value.ToString(), "Salida", Reason: "Prueba"), CancellationToken.None);
         });
 
         await WaitForAdvisoryWaitersAsync(1);
@@ -345,7 +347,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
             await using var context = _fixture.CreateDbContext();
             var handler = CreateManualAssign(context);
             await barrier.SignalAndWaitAsync();
-            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), record.Id.Value.ToString(), "Entrada", ExpectedRevision: 0), CancellationToken.None);
+            return await handler.Handle(new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), record.Id.Value.ToString(), "Entrada", ExpectedRevision: 0, Reason: "Prueba"), CancellationToken.None);
         }
 
         var results = await Task.WhenAll(DecideAsync(early), DecideAsync(late));
@@ -380,7 +382,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         await using (var context = _fixture.CreateDbContext())
         {
             var result = await CreateManualAssign(context).Handle(
-                new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), exit.Id.Value.ToString(), ManuallyAssignAttendanceCommandHandler.Unassign),
+                new ManuallyAssignAttendanceCommand(employee.Id.Value, DateOnly.FromDateTime(day), exit.Id.Value.ToString(), ManuallyAssignAttendanceCommandHandler.Unassign, Reason: "Prueba"),
                 CancellationToken.None);
             result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
         }
@@ -412,9 +414,10 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         var afternoon = Shift.Create("Vespertino historia", new TimeSpan(14, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Vespertino);
         var employee = Employee.Create(EmployeeId.From("EMP-PG-H01"), "Empleado", "Historia", null, null, new DateTime(2024, 1, 1), Gender.Male,
             branch.Id, department.Id, position.Id, ShiftType.Matutino, morning.Id, restDays: Array.Empty<WeekDay>());
-        employee.RecordAssignment(new DateTime(2026, 6, 10), afternoon.Id, ShiftType.Vespertino, branch.Id);
+        employee.RecordAssignment(new DateTime(2026, 6, 10), afternoon.Id, ShiftType.Vespertino, branch.Id, new[] { WeekDay.Sabado, WeekDay.Domingo });
         employee.Terminate(new DateTime(2026, 6, 20));
         employee.Rehire(new DateTime(2026, 7, 1));
+        employee.StartLeave(EmployeeStatus.Vacaciones, new DateTime(2026, 7, 6), new DateTime(2026, 7, 10));
 
         var daily = DailyAttendance.Create(employee.Id, new DateTime(2026, 6, 15), afternoon, null, null, false);
         daily.MarkOpenInterval("Intervalo abierto sin salida registrada desde las 13:00.");
@@ -435,8 +438,12 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         loaded.EmploymentPeriods.Should().HaveCount(2);
         loaded.IsActiveOn(new DateTime(2026, 6, 25)).Should().BeFalse("la interrupción entre períodos persiste");
         loaded.IsActiveOn(new DateTime(2026, 7, 2)).Should().BeTrue();
+        loaded.StatusPeriods.Should().ContainSingle(p => p.Status == EmployeeStatus.Vacaciones && p.EndDate == new DateTime(2026, 7, 10));
+        loaded.IsActiveOn(new DateTime(2026, 7, 8)).Should().BeFalse("las vacaciones persisten");
         loaded.AssignmentOn(new DateTime(2026, 6, 9)).ScheduleId.Should().Be(morning.Id);
         loaded.AssignmentOn(new DateTime(2026, 6, 10)).ScheduleId.Should().Be(afternoon.Id);
+        loaded.RestDaysOn(new DateTime(2026, 6, 9)).Should().BeEmpty("los descansos fechados persisten por vigencia");
+        loaded.RestDaysOn(new DateTime(2026, 6, 10)).Should().Equal(WeekDay.Domingo, WeekDay.Sabado);
 
         var storedDaily = await verify.DailyAttendances.SingleAsync(d => d.Id == daily.Id);
         storedDaily.HasOpenInterval.Should().BeTrue();
@@ -451,9 +458,12 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         var shift = Shift.Create("Matutino comida", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Matutino);
         shift.SetPaidLunchMinutes(45);
         var daily = DailyAttendance.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), shift, null, null, false);
-        daily.ApplyIntermediateAnalysis(lunchMinutesTaken: 55, lunchExcessMinutes: 10, hasTemporaryExits: false, temporaryExitMinutes: 0);
+        var lunch = new TemporaryExit(Guid.NewGuid(), new DateTime(2026, 6, 15, 13, 0, 0), new DateTime(2026, 6, 15, 13, 55, 0), 55, TemporaryExitStatus.Lunch, true);
+        var leave = new TemporaryExit(Guid.NewGuid(), new DateTime(2026, 6, 15, 10, 0, 0), new DateTime(2026, 6, 15, 10, 30, 0), 30, TemporaryExitStatus.Pending);
+        daily.ApplyIntermediateAnalysis(new[] { lunch, leave }, paidLunchMinutes: 45);
         var adjustment = AttendanceAdjustment.Create(EmployeeId.From("EMP-PG-L01"), new DateTime(2026, 6, 15), "rh");
-        adjustment.SetLunchExcessForgiven(true, "rh");
+        adjustment.ClassifyExit(leave.ExitRecordId, TemporaryExitStatus.ApprovedUnpaid, "rh");
+        adjustment.SetOvertimeConfiguration(true, false, "rh", authorizedMinutes: 60, forRawMinutes: 80);
         var excluded = AttendanceRecordId.CreateNew();
         adjustment.ExcludePunch(excluded, "rh");
 
@@ -466,6 +476,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
                 context.SystemConfigurations.Add(config);
             }
             config.UpdateLunchSettings(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40);
+            config.SetLunchWindowEnabled(false);
             config.UpdateNightLunchWindow(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0));
             context.Shifts.Add(shift);
             context.DailyAttendances.Add(daily);
@@ -475,16 +486,116 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
 
         await using var verify = _fixture.CreateDbContext();
         var storedConfig = await verify.SystemConfigurations.FirstAsync();
-        storedConfig.LunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40));
-        storedConfig.NightLunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0), 40));
+        storedConfig.LunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(13, 0, 0), new TimeSpan(16, 0, 0), 40, WindowEnabled: false));
+        storedConfig.NightLunchPolicy.Should().Be(new LunchPolicy(new TimeSpan(23, 30, 0), new TimeSpan(3, 0, 0), 40, WindowEnabled: false));
         (await verify.Shifts.SingleAsync(s => s.Id == shift.Id)).PaidLunchMinutes.Should().Be(45);
         var storedDaily = await verify.DailyAttendances.SingleAsync(d => d.Id == daily.Id);
         storedDaily.LunchMinutesTaken.Should().Be(55);
         storedDaily.LunchExcessMinutes.Should().Be(10);
         storedDaily.LunchBreakMinutesApplied.Should().Be(10);
+        storedDaily.PaidLunchMinutes.Should().Be(45);
+        storedDaily.DeductedExitMinutes.Should().Be(30);
+        storedDaily.TemporaryExits.Should().Equal(lunch, leave);
         var storedAdjustment = await verify.AttendanceAdjustments.SingleAsync(a => a.Id == adjustment.Id);
-        storedAdjustment.LunchExcessForgiven.Should().BeTrue();
+        storedAdjustment.ExitClassifications.Should().ContainKey(leave.ExitRecordId).WhoseValue.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
         storedAdjustment.ExcludedRecordIds().Should().ContainSingle().Which.Should().Be(excluded);
+        storedAdjustment.AuthorizedOvertimeMinutes.Should().Be(60);
+        storedAdjustment.AuthorizedOvertimeForRawMinutes.Should().Be(80);
+    }
+
+    [Fact]
+    public async Task ManualPunchAudit_AndHistoryEvents_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var employeeId = EmployeeId.From("EMP-PG-M13");
+        var registeredAt = new DateTime(2026, 6, 16, 18, 5, 0, DateTimeKind.Utc);
+        var record = AttendanceRecord.Create(employeeId, DeviceId.From("MANUAL"), new DateTime(2026, 6, 16, 15, 0, 0, DateTimeKind.Utc),
+            VerifyMethod.Manual, CheckType.CheckIn, source: AttendanceRecord.ManualSource);
+        record.RecordManualCapture("ana.rh", "Olvidó checar", registeredAt);
+        var entry = AttendanceAdjustmentHistory.Event(employeeId, new DateTime(2026, 6, 16), "MarcajeManual", "", "marcaje manual 16/06/2026 09:00",
+            "Olvidó checar", "ana.rh", registeredAt);
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            context.AttendanceRecords.Add(record);
+            context.AttendanceAdjustmentHistory.Add(entry);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var stored = await verify.AttendanceRecords.SingleAsync(r => r.Id == record.Id);
+        stored.IsManual.Should().BeTrue();
+        stored.RegisteredBy.Should().Be("ana.rh");
+        stored.Reason.Should().Be("Olvidó checar");
+        stored.RegisteredAt.Should().Be(registeredAt);
+        var storedEntry = await verify.AttendanceAdjustmentHistory.SingleAsync(h => h.Id == entry.Id);
+        storedEntry.AdjustmentId.Should().Be(Guid.Empty);
+        storedEntry.Reason.Should().Be("Olvidó checar");
+    }
+
+    [Fact]
+    public async Task PeriodClosures_AndPunchReceivedAt_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var closure = AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure.Close(
+            new DateTime(2026, 5, 4), new DateTime(2026, 5, 10), "rh", automatic: true);
+        closure.Reopen("admin", "Faltó un marcaje");
+        var record = AttendanceRecord.Create(EmployeeId.From("EMP-PG-C17"), DeviceId.From("DEV-C17"), new DateTime(2026, 5, 5, 15, 0, 0, DateTimeKind.Utc),
+            VerifyMethod.Fingerprint, CheckType.CheckIn);
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            context.AttendancePeriodClosures.Add(closure);
+            context.AttendanceRecords.Add(record);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var stored = await verify.AttendancePeriodClosures.SingleAsync(c => c.Id == closure.Id);
+        stored.StartDate.Should().Be(new DateTime(2026, 5, 4));
+        stored.Automatic.Should().BeTrue();
+        stored.IsActive.Should().BeFalse();
+        stored.ReopenReason.Should().Be("Faltó un marcaje");
+        (await verify.AttendanceRecords.SingleAsync(r => r.Id == record.Id)).ReceivedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public async Task QuarantineRules_Incidents_AndDeviceMinimumDate_RoundTrip()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        var device = AttendanceSystem.Domain.Aggregates.DeviceAggregate.Device.Create("DEV-PG-Q18", "Reloj Q18", "10.0.0.18", 4370, timeZoneId: "UTC");
+        device.SetAcceptPunchesFrom(new DateTime(2025, 1, 1));
+        var punch = QuarantinedPunch.Create("EMP-Q18", device.Id, new DateTime(2026, 5, 4, 8, 0, 0), "UTC", 1, 0, "ADMS",
+            "Reloj atrasado", AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.RuleRealtimeLag, 720);
+        var incident = DeviceClockIncident.Create(device.Id, new DateTime(2026, 5, 3, 20, 0, 0), new DateTime(2026, 5, 4, 9, 0, 0), 720, "Atrasado 12 h");
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            var config = await context.SystemConfigurations.FirstOrDefaultAsync();
+            if (config == null)
+            {
+                config = SystemConfiguration.CreateDefault();
+                context.SystemConfigurations.Add(config);
+            }
+            config.UpdateQuarantinePolicy(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2));
+            context.Devices.Add(device);
+            context.QuarantinedPunches.Add(punch);
+            context.DeviceClockIncidents.Add(incident);
+            await context.SaveChangesAsync();
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        (await verify.SystemConfigurations.FirstAsync()).QuarantinePolicy.Should().Be(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2));
+        (await verify.Devices.SingleAsync(d => d.Id == device.Id)).AcceptPunchesFrom.Should().Be(new DateTime(2025, 1, 1));
+        var storedPunch = await verify.QuarantinedPunches.SingleAsync(q => q.Id == punch.Id);
+        storedPunch.Rule.Should().Be(AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.RuleRealtimeLag);
+        storedPunch.SuggestedOffsetMinutes.Should().Be(720);
+        var storedIncident = await verify.DeviceClockIncidents.SingleAsync(i => i.Id == incident.Id);
+        storedIncident.Contains(new DateTime(2026, 5, 4, 1, 0, 0)).Should().BeTrue();
+        storedIncident.OffsetMinutes.Should().Be(720);
     }
 
     [Fact]
@@ -670,6 +781,9 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         }
 
         public void Detach(AttendanceRecord record) => _inner.Detach(record);
+        public Task<AttendanceRecord?> GetLatestByDeviceAsync(DeviceId deviceId, CancellationToken cancellationToken = default) => _inner.GetLatestByDeviceAsync(deviceId, cancellationToken);
+        public Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) => _inner.GetReceivedAfterAsync(receivedAfterUtc, fromDate, toDate, cancellationToken);
+        public Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) => _inner.GetPunchDaySummaryAsync(fromDate, toDate, cancellationToken);
         public Task<AttendanceRecord?> GetByIdAsync(AttendanceRecordId id, CancellationToken cancellationToken = default) => _inner.GetByIdAsync(id, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetByDateRangeAsync(DateOnly startDate, DateOnly endDate, EmployeeId? employeeId = null, CancellationToken cancellationToken = default) => _inner.GetByDateRangeAsync(startDate, endDate, employeeId, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetByDeviceAndDateRangeAsync(DeviceId deviceId, DateTime startDateTime, DateTime endDateTime, CancellationToken cancellationToken = default) => _inner.GetByDeviceAndDateRangeAsync(deviceId, startDateTime, endDateTime, cancellationToken);

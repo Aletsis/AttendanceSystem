@@ -9,10 +9,12 @@ using AttendanceSystem.Application.Features.Attendance.Decisions;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift;
 
+[RequiresPermission(Permissions.AttendanceAdjust)]
 public sealed record UpdateDailyShiftCommand(
     string EmployeeId,
     DateOnly Date,
-    Guid ShiftId) : IRequest<Result>;
+    Guid ShiftId,
+    string? Reason = null) : IRequest<Result>;
 
 /// <summary>
 /// Cambia el turno de una jornada como decisión manual persistente (F05-02) y la reconstruye con el motor
@@ -53,7 +55,7 @@ public sealed class UpdateDailyShiftCommandHandler : IRequestHandler<UpdateDaily
             employeeId,
             request.Date.ToDateTime(TimeOnly.MinValue),
             "Turno",
-            $"Cambio manual de turno a {shift.Name}",
+            request.Reason ?? $"Cambio manual de turno a {shift.Name}",
             expectedRevision: null,
             (context, adjustment) =>
             {

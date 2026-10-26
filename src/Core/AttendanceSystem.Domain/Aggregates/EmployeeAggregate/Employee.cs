@@ -50,6 +50,13 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     private readonly List<EmploymentPeriod> _employmentPeriods = new();
     public IReadOnlyCollection<EmploymentPeriod> EmploymentPeriods => _employmentPeriods.AsReadOnly();
 
+    // Caso 16: vacaciones, incapacidades y bajas temporales con fechas.
+    private readonly List<StatusPeriod> _statusPeriods = new();
+    public IReadOnlyCollection<StatusPeriod> StatusPeriods => _statusPeriods.AsReadOnly();
+
+    public static bool IsLeaveStatus(EmployeeStatus status) =>
+        status is EmployeeStatus.Vacaciones or EmployeeStatus.Incapacidad or EmployeeStatus.BajaTemporal;
+
     private readonly List<ScheduleAssignment> _scheduleAssignments = new();
     public IReadOnlyCollection<ScheduleAssignment> ScheduleAssignments => _scheduleAssignments.AsReadOnly();
 
@@ -111,10 +118,11 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             RestDay = primaryRestDay,
             RestDays = configuredRestDays,
             OvertimeAuthorized = overtimeAuthorized,
-            OvertimeCalculationMethod = overtimeCalculationMethod,
-            OvertimeCapType = overtimeCapType,
-            OvertimeCapMinutes = overtimeCapMinutes,
-            CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry,
+            // Caso 12: sin extras autorizadas no hay redondeo, topes ni extras antes de la entrada; RH decide por día.
+            OvertimeCalculationMethod = overtimeAuthorized ? overtimeCalculationMethod : OvertimeCalculationMethod.NoRounding,
+            OvertimeCapType = overtimeAuthorized ? overtimeCapType : OvertimeCapType.None,
+            OvertimeCapMinutes = overtimeAuthorized ? overtimeCapMinutes : null,
+            CalculateOvertimeBeforeEntry = overtimeAuthorized && AllowsOvertimeBeforeEntry(shiftType) && calculateOvertimeBeforeEntry,
             CardNumber = cardNumber,
             DevicePassword = devicePassword,
             Photo = photo,
@@ -124,7 +132,7 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         };
 
         employee._employmentPeriods.Add(new EmploymentPeriod(hireDate));
-        employee._scheduleAssignments.Add(new ScheduleAssignment(hireDate, scheduleId, shiftType, branchId));
+        employee._scheduleAssignments.Add(new ScheduleAssignment(hireDate, scheduleId, shiftType, branchId, employee.GetEffectiveRestDays()));
         return employee;
     }
 
@@ -183,7 +191,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         string? photo = null,
         DevicePrivilege devicePrivilege = DevicePrivilege.User,
         IEnumerable<WeekDay>? restDays = null,
-        DateTime? effectiveFrom = null)
+        DateTime? effectiveFrom = null,
+        DateTime? effectiveTo = null)
     {
         ValidateName(firstName, nameof(firstName));
         ValidateName(lastName, nameof(lastName));
@@ -194,16 +203,32 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         // Sin fecha explícita rige hoy, o el ingreso si aún no ocurre.
         var from = (effectiveFrom ?? (DateTime.Today < hireDate.Date ? hireDate : DateTime.Today)).Date;
 
-        // F06-08: los cambios de horario, tipo o sucursal y de alta/baja quedan como vigencias desde la fecha indicada.
+        // F06-08: los cambios de horario, tipo, sucursal, días de descanso y de alta/baja quedan como vigencias desde
+        // la fecha indicada.
+        var newRestDays = ResolveRestDays(restDays, restDay);
         DateTime? recalculateFrom = null;
-        if (RecordAssignment(from, scheduleId, shiftType, branchId)) recalculateFrom = from;
+        if (RecordAssignment(from, scheduleId, shiftType, branchId, newRestDays)) recalculateFrom = from;
         if (HireDate.Date != hireDate.Date)
         {
             var earliest = hireDate.Date < HireDate.Date ? hireDate.Date : HireDate.Date;
             MoveHireDate(hireDate);
             recalculateFrom = recalculateFrom is { } r && r < earliest ? r : earliest;
         }
-        if (Status != status)
+        if (IsLeaveStatus(status) && (status != Status || effectiveTo.HasValue))
+        {
+            // Caso 16: vacaciones, incapacidad o baja temporal del período indicado (puede ser futuro).
+            if (Status == EmployeeStatus.Baja)
+                throw new DomainException("Reingrese al empleado antes de registrar vacaciones, incapacidad o baja temporal");
+            StartLeave(status, from, effectiveTo);
+            recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
+        }
+        else if (status == EmployeeStatus.Alta && IsLeaveStatus(Status))
+        {
+            // Regreso a Alta: termina la pausa vigente el día anterior.
+            EndLeave(from);
+            recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
+        }
+        else if (Status != status)
         {
             if (from > DateTime.Today)
                 throw new DomainException("La baja o el reingreso no pueden registrarse con fecha futura");
@@ -218,27 +243,8 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
         }
 
-        var configuredRestDays = restDays?.Distinct().ToList();
-        if (configuredRestDays != null && configuredRestDays.Any())
-        {
-            RestDays = configuredRestDays;
-            RestDay = configuredRestDays.FirstOrDefault();
-        }
-        else if (restDays != null)
-        {
-            RestDays = new List<WeekDay>();
-            RestDay = restDay;
-        }
-        else if (restDay.HasValue)
-        {
-            RestDays = new List<WeekDay> { restDay.Value };
-            RestDay = restDay;
-        }
-        else
-        {
-            RestDays = new List<WeekDay>();
-            RestDay = null;
-        }
+        RestDays = newRestDays;
+        RestDay = newRestDays.Count > 0 ? newRestDays[0] : null;
 
         FirstName = firstName;
         LastName = lastName;
@@ -246,23 +252,38 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         PhoneNumber = phoneNumber;
         HireDate = hireDate;
         Gender = gender;
-        Status = status;
+        RefreshStatus(DateTime.Today);
         BranchId = branchId;
         DepartmentId = departmentId;
         PositionId = positionId;
         ShiftType = shiftType;
         ScheduleId = scheduleId;
         OvertimeAuthorized = overtimeAuthorized;
-        OvertimeCalculationMethod = overtimeCalculationMethod;
-        OvertimeCapType = overtimeCapType;
-        OvertimeCapMinutes = overtimeCapMinutes;
-        CalculateOvertimeBeforeEntry = calculateOvertimeBeforeEntry;
+        // Caso 12: sin extras autorizadas no hay redondeo, topes ni extras antes de la entrada; RH decide por día.
+        OvertimeCalculationMethod = overtimeAuthorized ? overtimeCalculationMethod : OvertimeCalculationMethod.NoRounding;
+        OvertimeCapType = overtimeAuthorized ? overtimeCapType : OvertimeCapType.None;
+        OvertimeCapMinutes = overtimeAuthorized ? overtimeCapMinutes : null;
+        CalculateOvertimeBeforeEntry = overtimeAuthorized && AllowsOvertimeBeforeEntry(shiftType) && calculateOvertimeBeforeEntry;
         CardNumber = cardNumber;
         DevicePassword = devicePassword;
         Photo = photo ?? Photo;
         DevicePrivilege = devicePrivilege;
         return recalculateFrom;
     }
+
+    /// <summary>Días de descanso efectivos de una actualización: la lista, o el día principal heredado si viene vacía.</summary>
+    private static List<WeekDay> ResolveRestDays(IEnumerable<WeekDay>? restDays, WeekDay? restDay)
+    {
+        var configured = restDays?.Distinct().ToList();
+        if (configured is { Count: > 0 }) return configured;
+        return restDay.HasValue ? new List<WeekDay> { restDay.Value } : new List<WeekDay>();
+    }
+
+    /// <summary>Descanso según los días vigentes en <paramref name="date"/> (no los actuales).</summary>
+    public bool IsRestDayOn(DateTime date) => RestDaysOn(date).Contains((WeekDay)(int)date.DayOfWeek);
+
+    /// <summary>Días de descanso vigentes en una fecha; los actuales si la vigencia es anterior a que se fecharan.</summary>
+    public IReadOnlyList<WeekDay> RestDaysOn(DateTime date) => EffectiveAssignment(date)?.RestDays ?? GetEffectiveRestDays();
 
     public bool IsRestDay(DayOfWeek dayOfWeek)
     {
@@ -309,6 +330,9 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     {
         var open = _employmentPeriods.LastOrDefault(p => !p.EndDate.HasValue);
         open?.Close(terminationDate);
+        // Las pausas no pasan de la baja.
+        _statusPeriods.RemoveAll(p => p.StartDate > terminationDate.Date);
+        foreach (var period in _statusPeriods.Where(p => !p.EndDate.HasValue || p.EndDate > terminationDate.Date)) period.Close(terminationDate);
         TerminationDate = terminationDate.Date;
         Status = EmployeeStatus.Baja;
     }
@@ -331,7 +355,72 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         Status = EmployeeStatus.Alta;
     }
 
-    public bool IsActiveOn(DateTime date)
+    /// <summary>
+    /// Se calcula asistencia ese día: hay relación laboral y no está de vacaciones, incapacidad o baja temporal
+    /// (caso 16). Los reportes sólo muestran los días activos.
+    /// </summary>
+    public bool IsActiveOn(DateTime date) => IsEmployedOn(date) && LeaveOn(date) == null;
+
+    /// <summary>Pausa (vacaciones, incapacidad o baja temporal) que incluye la fecha.</summary>
+    public StatusPeriod? LeaveOn(DateTime date) => _statusPeriods.FirstOrDefault(p => p.Contains(date));
+
+    /// <summary>Estado del empleado en una fecha: Baja fuera de la relación laboral, la pausa vigente o Alta.</summary>
+    public EmployeeStatus StatusOn(DateTime date) =>
+        !IsEmployedOn(date) ? EmployeeStatus.Baja : LeaveOn(date)?.Status ?? EmployeeStatus.Alta;
+
+    /// <summary>
+    /// Caso 16: actualiza el estado guardado al de hoy (al terminar unas vacaciones vuelve solo a Alta). La baja sólo
+    /// cambia con un reingreso. Devuelve si cambió.
+    /// </summary>
+    public bool RefreshStatus(DateTime today)
+    {
+        if (Status == EmployeeStatus.Baja) return false;
+        var current = LeaveOn(today)?.Status ?? EmployeeStatus.Alta;
+        if (current == Status) return false;
+        Status = current;
+        return true;
+    }
+
+    /// <summary>
+    /// Caso 16: registra vacaciones, incapacidad o baja temporal [desde, hasta]; sin hasta, hasta regresar a Alta. Lo
+    /// que se traslape con otra pausa la reemplaza en esos días.
+    /// </summary>
+    public void StartLeave(EmployeeStatus status, DateTime from, DateTime? to)
+    {
+        if (!IsLeaveStatus(status)) throw new DomainException("Sólo vacaciones, incapacidad o baja temporal se registran por período");
+        if (to.HasValue && to.Value.Date < from.Date) throw new DomainException("La fecha final no puede ser anterior a la inicial");
+        if (!IsEmployedOn(from)) throw new DomainException($"El {from:dd/MM/yyyy} el empleado no está dado de alta");
+
+        foreach (var other in _statusPeriods.Where(p => p.Overlaps(from, to)).ToList())
+        {
+            var tailStart = to?.Date.AddDays(1);
+            var keepsTail = tailStart.HasValue && (!other.EndDate.HasValue || other.EndDate.Value >= tailStart.Value);
+            if (keepsTail && other.StartDate < from.Date)
+            {
+                _statusPeriods.Add(new StatusPeriod(other.Status, tailStart!.Value, other.EndDate));
+                other.Close(from.Date.AddDays(-1));
+            }
+            else if (keepsTail) other.MoveStart(tailStart!.Value);
+            else if (other.StartDate < from.Date) other.Close(from.Date.AddDays(-1));
+            else _statusPeriods.Remove(other);
+        }
+        _statusPeriods.Add(new StatusPeriod(status, from, to));
+        RefreshStatus(DateTime.Today);
+    }
+
+    /// <summary>Caso 16: regresa a Alta desde la fecha: la pausa que la incluye termina el día anterior.</summary>
+    public void EndLeave(DateTime returnDate)
+    {
+        var period = _statusPeriods.FirstOrDefault(p => p.Contains(returnDate))
+                     ?? _statusPeriods.Where(p => !p.EndDate.HasValue && p.StartDate <= returnDate.Date).OrderByDescending(p => p.StartDate).FirstOrDefault()
+                     ?? throw new DomainException($"El {returnDate:dd/MM/yyyy} el empleado no está de vacaciones, incapacidad ni baja temporal");
+        if (period.StartDate >= returnDate.Date) _statusPeriods.Remove(period);
+        else period.Close(returnDate.Date.AddDays(-1));
+        RefreshStatus(DateTime.Today);
+    }
+
+    /// <summary>Hay relación laboral ese día (F06-08), aunque esté de vacaciones o incapacidad.</summary>
+    public bool IsEmployedOn(DateTime date)
     {
         if (_employmentPeriods.Count > 0)
         {
@@ -348,8 +437,20 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         return true;
     }
 
-    /// <summary>Hubo relación laboral en algún día de [inicio, fin].</summary>
+    /// <summary>Algún día de [inicio, fin] es activo: hay relación laboral y no está en pausa (caso 16).</summary>
     public bool IsActiveDuring(DateTime start, DateTime end)
+    {
+        if (!IsEmployedDuring(start, end)) return false;
+        if (_statusPeriods.Count == 0) return true;
+        for (var day = start.Date; day <= end.Date; day = day.AddDays(1))
+        {
+            if (IsActiveOn(day)) return true;
+        }
+        return false;
+    }
+
+    /// <summary>Hubo relación laboral en algún día de [inicio, fin].</summary>
+    public bool IsEmployedDuring(DateTime start, DateTime end)
     {
         if (_employmentPeriods.Count > 0)
         {
@@ -375,33 +476,52 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     /// <summary>F06-08: horario, tipo y sucursal vigentes en una fecha (la asignación actual si no hay historia).</summary>
     public (ShiftId? ScheduleId, ShiftType? ShiftType, BranchId BranchId) AssignmentOn(DateTime date)
     {
-        var effective = _scheduleAssignments
-            .Where(a => a.EffectiveFrom <= date.Date)
-            .OrderByDescending(a => a.EffectiveFrom)
-            .FirstOrDefault()
-            ?? _scheduleAssignments.OrderBy(a => a.EffectiveFrom).FirstOrDefault();
-
+        var effective = EffectiveAssignment(date);
         return effective == null
             ? (ScheduleId, ShiftType, BranchId)
             : (effective.ScheduleId, effective.ShiftType, effective.BranchId);
     }
 
-    /// <summary>Registra una asignación vigente desde <paramref name="effectiveFrom"/>; devuelve si cambió algo.</summary>
-    public bool RecordAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId)
+    private ScheduleAssignment? EffectiveAssignment(DateTime date) =>
+        _scheduleAssignments
+            .Where(a => a.EffectiveFrom <= date.Date)
+            .OrderByDescending(a => a.EffectiveFrom)
+            .FirstOrDefault()
+        ?? _scheduleAssignments.OrderBy(a => a.EffectiveFrom).FirstOrDefault();
+
+    /// <summary>
+    /// Registra una asignación vigente desde <paramref name="effectiveFrom"/>; devuelve si cambió algo. Las
+    /// vigencias posteriores se conservan: el cambio rige hasta la siguiente. Sin <paramref name="restDays"/> se
+    /// conservan los días de descanso vigentes en esa fecha.
+    /// </summary>
+    public bool RecordAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId, IEnumerable<WeekDay>? restDays = null)
     {
         if (_scheduleAssignments.Count == 0)
         {
             // Sin historia previa: la configuración actual rige desde el ingreso (límite documentado).
-            _scheduleAssignments.Add(new ScheduleAssignment(HireDate, ScheduleId, ShiftType, BranchId));
+            _scheduleAssignments.Add(new ScheduleAssignment(HireDate, ScheduleId, ShiftType, BranchId, GetEffectiveRestDays()));
         }
 
-        var current = AssignmentOn(effectiveFrom);
-        if (current.ScheduleId == scheduleId && current.ShiftType == shiftType && current.BranchId == branchId) return false;
+        var current = EffectiveAssignment(effectiveFrom)!;
+        restDays ??= current.RestDays ?? GetEffectiveRestDays();
+        if (current.SameAs(scheduleId, shiftType, branchId, restDays)) return false;
 
         var sameDay = _scheduleAssignments.FirstOrDefault(a => a.EffectiveFrom == effectiveFrom.Date);
-        if (sameDay != null) sameDay.Replace(scheduleId, shiftType, branchId);
-        else _scheduleAssignments.Add(new ScheduleAssignment(effectiveFrom, scheduleId, shiftType, branchId));
+        if (sameDay != null) sameDay.Replace(scheduleId, shiftType, branchId, restDays);
+        else _scheduleAssignments.Add(new ScheduleAssignment(effectiveFrom, scheduleId, shiftType, branchId, restDays));
         return true;
+    }
+
+    /// <summary>
+    /// El empleado pasa a turno rotativo desde <paramref name="effectiveFrom"/> (al generarle un roster); conserva
+    /// horario, sucursal y descansos. Devuelve si cambió algo.
+    /// </summary>
+    public bool BecomeRotating(DateTime effectiveFrom)
+    {
+        var (scheduleId, _, branchId) = AssignmentOn(effectiveFrom);
+        var changed = RecordAssignment(effectiveFrom, scheduleId, Enumerations.ShiftType.Rotativo, branchId);
+        if (effectiveFrom.Date <= DateTime.Today) ShiftType = Enumerations.ShiftType.Rotativo;
+        return changed;
     }
 
     private void MoveHireDate(DateTime hireDate)
@@ -412,18 +532,14 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         if (firstAssignment != null && _scheduleAssignments.Count == 1)
         {
             _scheduleAssignments.Clear();
-            _scheduleAssignments.Add(new ScheduleAssignment(hireDate, firstAssignment.ScheduleId, firstAssignment.ShiftType, firstAssignment.BranchId));
+            _scheduleAssignments.Add(new ScheduleAssignment(hireDate, firstAssignment.ScheduleId, firstAssignment.ShiftType, firstAssignment.BranchId,
+                firstAssignment.RestDays ?? GetEffectiveRestDays().ToList()));
         }
     }
 
     public void SetStatus(EmployeeStatus status)
     {
         Status = status;
-    }
-
-    public void SetShiftType(ShiftType? shiftType)
-    {
-        ShiftType = shiftType;
     }
 
     public void SetCreatedAudit(DateTime createdAt, string? createdBy)
@@ -439,6 +555,12 @@ public sealed class Employee : AggregateRoot<EmployeeId>
     }
 
     public string GetFullName() => $"{FirstName} {LastName}";
+
+    /// <summary>
+    /// Caso 12: el horario flexible ya define desde cuándo cuenta el tiempo (ventana de entrada), así que no admite
+    /// extras antes de la entrada.
+    /// </summary>
+    public static bool AllowsOvertimeBeforeEntry(ShiftType? shiftType) => shiftType != Enumerations.ShiftType.Flexible;
 
     private static void ValidateName(string name, string paramName)
     {

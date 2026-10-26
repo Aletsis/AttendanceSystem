@@ -53,12 +53,22 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     public DateTime? Block2CheckInTimeOverride { get; private set; }
 
     // Clasificación manual de salidas temporales e incidencias
+    /// <summary>Clasificación anterior al caso 11, de todas las salidas del día; la de cada salida tiene prioridad.</summary>
     public TemporaryExitStatus? TemporaryExitStatus { get; private set; }
     public string? TemporaryExitNote { get; private set; }
+
+    /// <summary>Caso 11: clasificación de RH de cada salida, por el marcaje de salida.</summary>
+    public Dictionary<Guid, TemporaryExitStatus> ExitClassifications { get; private set; } = new();
 
     // Overrides de configuración de horas extras
     public bool? OvertimeAuthorizedOverride { get; private set; }
     public bool? CalculateOvertimeBeforeEntryOverride { get; private set; }
+    /// <summary>
+    /// Caso 12: minutos que RH autorizó (el excedente completo o bloques de 30 min) para el excedente
+    /// <see cref="AuthorizedOvertimeForRawMinutes"/>; si el excedente cambia al recalcular, la autorización ya no aplica.
+    /// </summary>
+    public int? AuthorizedOvertimeMinutes { get; private set; }
+    public int? AuthorizedOvertimeForRawMinutes { get; private set; }
 
     /// <summary>
     /// F06-05 (4a): marcajes intermedios excluidos por RH (sin posición). Quedan reservados por la jornada como
@@ -66,7 +76,10 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     /// </summary>
     public List<Guid> ExcludedPunches { get; private set; } = new();
 
-    /// <summary>F06-05: RH perdona el exceso de comida (no se descuenta).</summary>
+    /// <summary>
+    /// Decisión anterior al caso 11 (RH perdonó la comida). Se conserva para las jornadas que la tenían: equivale a
+    /// clasificar la comida automática como permiso con goce.
+    /// </summary>
     public bool LunchExcessForgiven { get; private set; }
 
     // Auditoría
@@ -271,8 +284,10 @@ public sealed class AttendanceAdjustment : Entity<Guid>
             $"descanso={(IsRestDayOverride?.ToString() ?? "auto")}",
             $"turno={(ShiftIdOverride?.Value.ToString() ?? "auto")}",
             $"salidaTemporal={(TemporaryExitStatus?.ToString() ?? "auto")}",
+            $"salidas=[{string.Join(",", ExitClassifications.OrderBy(c => c.Key).Select(c => $"{c.Key}:{c.Value}"))}]",
             $"extrasAutorizadas={(OvertimeAuthorizedOverride?.ToString() ?? "auto")}",
             $"extrasAntesEntrada={(CalculateOvertimeBeforeEntryOverride?.ToString() ?? "auto")}",
+            $"extrasMinutos={(AuthorizedOvertimeMinutes is { } m ? $"{m}/{AuthorizedOvertimeForRawMinutes}" : "auto")}",
             $"excesoComidaPerdonado={LunchExcessForgiven}",
             $"excluidos=[{string.Join(",", ExcludedPunches.OrderBy(g => g))}]"
         }));
@@ -296,20 +311,58 @@ public sealed class AttendanceAdjustment : Entity<Guid>
     {
         OvertimeAuthorizedOverride = null;
         CalculateOvertimeBeforeEntryOverride = null;
+        AuthorizedOvertimeMinutes = null;
+        AuthorizedOvertimeForRawMinutes = null;
         Touch(updatedBy, reason);
     }
 
-    public void SetOvertimeConfiguration(bool overtimeAuthorized, bool calculateOvertimeBeforeEntry, string updatedBy)
+    public void SetOvertimeConfiguration(bool overtimeAuthorized, bool calculateOvertimeBeforeEntry, string updatedBy,
+        int? authorizedMinutes = null, int? forRawMinutes = null)
     {
+        if (authorizedMinutes.HasValue != forRawMinutes.HasValue ||
+            (authorizedMinutes is { } minutes && (!overtimeAuthorized || !DailyAttendance.IsValidOvertimeAuthorization(minutes, forRawMinutes!.Value))))
+            throw new DomainException(DailyAttendance.InvalidOvertimeAuthorizationMessage);
         OvertimeAuthorizedOverride = overtimeAuthorized;
         CalculateOvertimeBeforeEntryOverride = calculateOvertimeBeforeEntry;
+        AuthorizedOvertimeMinutes = authorizedMinutes;
+        AuthorizedOvertimeForRawMinutes = forRawMinutes;
         Touch(updatedBy, "Actualización de configuración de horas extras");
     }
 
-    public void SetLunchExcessForgiven(bool forgiven, string updatedBy, string? reason = null)
+    /// <summary>
+    /// Caso 14: el marcaje corregido reemplaza al original en todas las decisiones (posición, exclusión y clasificación
+    /// de salida). Devuelve si alguna lo usaba.
+    /// </summary>
+    public bool ReplaceRecord(AttendanceRecordId original, AttendanceRecordId replacement, DateTime replacementTime, string updatedBy)
     {
-        LunchExcessForgiven = forgiven;
-        Touch(updatedBy, reason ?? (forgiven ? "Exceso de comida perdonado" : "Exceso de comida descontado"));
+        var changed = false;
+        foreach (var position in AllPositions.Where(p => OverrideRecord(p) == original).ToList())
+        {
+            var kind = OverrideKind(position);
+            SetPosition(position, kind, replacement, kind == PositionOverrideKind.Assigned ? replacementTime : null);
+            changed = true;
+        }
+        if (ExcludedPunches.Remove(original.Value))
+        {
+            ExcludedPunches.Add(replacement.Value);
+            changed = true;
+        }
+        if (ExitClassifications.Remove(original.Value, out var status))
+        {
+            ExitClassifications[replacement.Value] = status;
+            changed = true;
+        }
+        if (changed) Touch(updatedBy, "Marcaje corregido");
+        return changed;
+    }
+
+    /// <summary>Caso 11: clasifica una salida (por su marcaje de salida); null retira la decisión.</summary>
+    public void ClassifyExit(Guid exitRecordId, TemporaryExitStatus? status, string updatedBy, string? note = null)
+    {
+        if (status is { } value) ExitClassifications[exitRecordId] = value;
+        else ExitClassifications.Remove(exitRecordId);
+        if (!string.IsNullOrWhiteSpace(note)) TemporaryExitNote = note;
+        Touch(updatedBy, status is { } s ? $"Clasificación de salida temporal a {s}" : "Clasificación de salida retirada");
     }
 
     private void Touch(string updatedBy, string? reason)

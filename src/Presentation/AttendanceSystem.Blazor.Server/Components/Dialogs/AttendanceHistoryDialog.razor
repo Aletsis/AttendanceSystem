@@ -1,0 +1,80 @@
+@* Caso 13: historial de ajustes de la jornada (quién, cuándo, qué y por qué). *@
+@using AttendanceSystem.Application.Features.Attendance.Decisions
+@inject ISender Sender
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle1" Class="mb-2">@EmployeeName — @Date.ToString("dd/MM/yyyy")</MudText>
+        @if (_entries == null)
+        {
+            <MudProgressLinear Indeterminate="true" />
+        }
+        else if (_entries.Count == 0)
+        {
+            <MudText>La jornada no tiene ajustes manuales.</MudText>
+        }
+        else
+        {
+            <MudTable Items="_entries" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Fecha</MudTh>
+                    <MudTh>Usuario</MudTh>
+                    <MudTh>Movimiento</MudTh>
+                    <MudTh>Motivo</MudTh>
+                    <MudTh></MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd DataLabel="Fecha">@context.ChangedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudTd>
+                    <MudTd DataLabel="Usuario">@context.ChangedBy</MudTd>
+                    <MudTd DataLabel="Movimiento">@context.Action</MudTd>
+                    <MudTd DataLabel="Motivo">@(context.Reason ?? "—")</MudTd>
+                    <MudTd>
+                        <MudIconButton Icon="@(_expanded.Contains(context) ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)"
+                                       Size="Size.Small" OnClick="@(() => Toggle(context))" title="Ver detalle" />
+                    </MudTd>
+                </RowTemplate>
+                <ChildRowContent>
+                    @if (_expanded.Contains(context))
+                    {
+                        <MudTr>
+                            <td colspan="5">
+                                <MudText Typo="Typo.caption"><b>Antes:</b> @(string.IsNullOrEmpty(context.Before) ? "—" : context.Before)</MudText>
+                                <MudText Typo="Typo.caption"><b>Después:</b> @(string.IsNullOrEmpty(context.After) ? "—" : context.After)</MudText>
+                            </td>
+                        </MudTr>
+                    }
+                </ChildRowContent>
+            </MudTable>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Color="Color.Primary" OnClick="@(() => MudDialog.Close())">Cerrar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string EmployeeId { get; set; } = string.Empty;
+    [Parameter] public string EmployeeName { get; set; } = string.Empty;
+    [Parameter] public DateOnly Date { get; set; }
+
+    private IReadOnlyList<AttendanceHistoryEntryDto>? _entries;
+    private readonly HashSet<AttendanceHistoryEntryDto> _expanded = new();
+
+    protected override async Task OnInitializedAsync() =>
+        _entries = await Sender.Send(new GetAttendanceHistoryQuery(EmployeeId, Date));
+
+    private void Toggle(AttendanceHistoryEntryDto entry)
+    {
+        if (!_expanded.Remove(entry)) _expanded.Add(entry);
+    }
+
+    public static Task ShowAsync(IDialogService dialogs, string employeeId, string employeeName, DateOnly date) =>
+        dialogs.ShowAsync<AttendanceHistoryDialog>("Historial de ajustes", new DialogParameters<AttendanceHistoryDialog>
+        {
+            { x => x.EmployeeId, employeeId },
+            { x => x.EmployeeName, employeeName },
+            { x => x.Date, date }
+        }, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true });
+}

@@ -63,16 +63,16 @@
                             <MudTextField @bind-Value="LastName" Label="Apellido" Required="true" RequiredError="El apellido es requerido" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudDatePicker @bind-Date="_hireDate" Label="Fecha de Contratación" Required="@(!IsSelectedBranchExternal)" Editable="true" Mask="@(new DateMask("dd/MM/yyyy"))" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
+                            <MudDatePicker @bind-Date="_hireDate" Label="Fecha de Contratación" Required="@(!IsSelectedBranchExternal)" Editable="true" Mask="@(new DateMask("dd/MM/yyyy"))" Disabled="@(IsSelectedBranchExternal)" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="Email" Label="Email" InputType="InputType.Email" Disabled="@(!_canEditAll)" />
+                            <MudTextField @bind-Value="Email" Label="Email" InputType="InputType.Email" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudTextField @bind-Value="PhoneNumber" Label="Teléfono" Disabled="@(!_canEditAll)" />
+                            <MudTextField @bind-Value="PhoneNumber" Label="Teléfono" />
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="GenderEnum" @bind-Value="Gender" Label="Sexo" Required="@(!IsSelectedBranchExternal)" RequiredError="El sexo es requerido" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                            <MudSelect T="GenderEnum" @bind-Value="Gender" Label="Sexo" Required="@(!IsSelectedBranchExternal)" RequiredError="El sexo es requerido" Disabled="@(IsSelectedBranchExternal)">
                                 @foreach (var gender in Enum.GetValues<GenderEnum>())
                                 {
                                     <MudSelectItem T="GenderEnum" Value="@gender">@(gender == GenderEnum.Male ? "Masculino" : "Femenino")</MudSelectItem>
@@ -80,10 +80,12 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true">
-                                @foreach (var status in Enum.GetValues<StatusEnum>())
+                            <MudSelect T="StatusEnum" @bind-Value="Status" Label="Estatus" Required="true"
+                                       Disabled="@(IsLeave(_originalStatus) && !_canManageLeave)"
+                                       HelperText="@(IsLeave(Status) ? "En vacaciones, incapacidad o baja temporal no se calcula asistencia ni aparece en reportes." : null)">
+                                @foreach (var status in Enum.GetValues<StatusEnum>().Where(s => _canManageLeave || !IsLeave(s) || s == _originalStatus))
                                 {
-                                    <MudSelectItem T="StatusEnum" Value="@status">@status.ToString()</MudSelectItem>
+                                    <MudSelectItem T="StatusEnum" Value="@status">@StatusName(status)</MudSelectItem>
                                 }
                             </MudSelect>
                         </MudItem>
@@ -92,7 +94,7 @@
                 <MudTabPanel Text="Puesto">
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid" Value="BranchId" ValueChanged="OnBranchChanged" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida" Disabled="@(!_canEditAll)">
+                            <MudSelect T="Guid" Value="BranchId" ValueChanged="OnBranchChanged" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida">
                                 @foreach (var branch in _branches)
                                 {
                                     <MudSelectItem T="Guid" Value="@branch.Id">@branch.Name</MudSelectItem>
@@ -124,7 +126,7 @@
                     }
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="ShiftTypeEnum?" Value="_selectedShiftType" ValueChanged="OnShiftTypeChanged" Label="Turno" Clearable="true" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                            <MudSelect T="ShiftTypeEnum?" Value="_selectedShiftType" ValueChanged="OnShiftTypeChanged" Label="Turno" Required="@(!IsSelectedBranchExternal)" RequiredError="El turno es requerido" Disabled="@(!_canEditSchedule || IsSelectedBranchExternal)">
                                 @foreach (var type in AvailableShiftTypes)
                                 {
                                     <MudSelectItem T="ShiftTypeEnum?" Value="@type">@GetShiftTypeName(type)</MudSelectItem>
@@ -181,17 +183,17 @@
                                             ? "Este empleado trabajará bajo un esquema de turnos rotativos. Configure los parámetros para generar su calendario de turnos al guardar." 
                                             : "Configure los parámetros para generar o actualizar el esquema rotativo del empleado.")
                                     </MudAlert>
-                                    <RotationSchemeConfigForm Model="_rotationModel" Shifts="_shifts" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
+                                    <RotationSchemeConfigForm Model="_rotationModel" Shifts="_shifts" Disabled="@(!_canEditSchedule || IsSelectedBranchExternal)" />
                                 </MudItem>
                                 <MudItem xs="12">
-                                    <MudCheckBox @bind-Value="_applyRotationScheme" Label="Generar / Actualizar proyección de turnos automáticamente al guardar" Color="Color.Primary" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
+                                    <MudCheckBox @bind-Value="_applyRotationScheme" Label="Generar / Actualizar proyección de turnos automáticamente al guardar" Color="Color.Primary" Disabled="@(!_canEditSchedule || IsSelectedBranchExternal)" />
                                 </MudItem>
                             }
                         }
                         else
                         {
                             <MudItem xs="12" sm="6">
-                                <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Clearable="true" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditAll || IsSelectedBranchExternal)">
+                                <MudSelect T="Guid?" @bind-Value="ScheduleId" Label="Horario" Required="@(!IsSelectedBranchExternal)" RequiredError="El horario es requerido" HelperText="Mostrar solo los que coincidan con el turno seleccionado" Disabled="@(!_selectedShiftType.HasValue || !_canEditSchedule || IsSelectedBranchExternal)">
                                     @foreach (var shift in FilteredSchedules)
                                     {
                                         <MudSelectItem T="Guid?" Value="@shift.Id">@shift.Name</MudSelectItem>
@@ -199,7 +201,7 @@
                                 </MudSelect>
                             </MudItem>
                             <MudItem xs="12" sm="6">
-                                <MudSelect T="WeekDayEnum" MultiSelection="true" @bind-SelectedValues="_selectedRestDays" Label="Día(s) de Descanso" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetRestDaysSelectionText))" Clearable="true" AnchorOrigin="Origin.BottomCenter" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                                <MudSelect T="WeekDayEnum" MultiSelection="true" @bind-SelectedValues="_selectedRestDays" Label="Día(s) de Descanso" MultiSelectionTextFunc="@(new Func<IReadOnlyList<string>, string>(GetRestDaysSelectionText))" Clearable="true" AnchorOrigin="Origin.BottomCenter" Disabled="@(!_canEditSchedule || IsSelectedBranchExternal)">
                                     @foreach (var day in Enum.GetValues<WeekDayEnum>())
                                     {
                                         <MudSelectItem T="WeekDayEnum" Value="@day">@GetWeekDaySpanish(day)</MudSelectItem>
@@ -209,13 +211,17 @@
                         }
 
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudCheckBox @bind-Value="OvertimeAuthorized" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditAll || IsSelectedBranchExternal)" />
+                            <MudCheckBox T="bool" Value="OvertimeAuthorized" ValueChanged="OnOvertimeAuthorizedChanged" Label="Autorizar Horas Extras" Color="Color.Primary" Disabled="@(!_canEditOvertime || IsSelectedBranchExternal)" />
                         </MudItem>
+                        @* Caso 12: el horario flexible ya define desde cuándo cuenta el tiempo. *@
+                        @if (AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.AllowsOvertimeBeforeEntry(_selectedShiftType))
+                        {
                         <MudItem xs="12" sm="6" Class="d-flex align-center">
-                            <MudCheckBox @bind-Value="CalculateOvertimeBeforeEntry" Label="Calcular Tiempo Extra Antes de Entrada" Color="Color.Secondary" Disabled="@(!OvertimeAuthorized || !_canEditAll || IsSelectedBranchExternal)" />
+                            <MudCheckBox @bind-Value="CalculateOvertimeBeforeEntry" Label="Calcular Tiempo Extra Antes de Entrada" Color="Color.Secondary" Disabled="@(!OvertimeAuthorized || !_canEditOvertime || IsSelectedBranchExternal)" />
                         </MudItem>
+                        }
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized || !_canEditAll || IsSelectedBranchExternal)">
+                            <MudSelect T="OvertimeEnum" @bind-Value="OvertimeCalculationMethod" Label="Cálculo Tiempo Extra" Required="true" Disabled="@(!OvertimeAuthorized || !_canEditOvertime || IsSelectedBranchExternal)">
                                 @foreach (var method in Enum.GetValues<OvertimeEnum>())
                                 {
                                     <MudSelectItem T="OvertimeEnum" Value="@method">
@@ -231,7 +237,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="OvertimeCapEnum" @bind-Value="OvertimeCapType" Label="Tope Tiempo Extra" Disabled="@(!_canEditAll || IsSelectedBranchExternal)">
+                            <MudSelect T="OvertimeCapEnum" @bind-Value="OvertimeCapType" Label="Tope Tiempo Extra" Disabled="@(!_canEditOvertime || IsSelectedBranchExternal)">
                                 @foreach (var type in Enum.GetValues<OvertimeCapEnum>())
                                 {
                                     <MudSelectItem T="OvertimeCapEnum" Value="@type">
@@ -247,7 +253,7 @@
                             </MudSelect>
                         </MudItem>
                         <MudItem xs="12" sm="6">
-                            <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None || !_canEditAll || IsSelectedBranchExternal)" Min="0" />
+                            <MudNumericField @bind-Value="OvertimeCapMinutes" Label="Minutos Tope" Disabled="@(OvertimeCapType == OvertimeCapEnum.None || !_canEditOvertime || IsSelectedBranchExternal)" Min="0" />
                         </MudItem>
                     </MudGrid>
                 </MudTabPanel>
@@ -269,8 +275,14 @@
                     <MudText Typo="Typo.subtitle2" Class="mb-2">@EffectiveFromTitle</MudText>
                     <MudDatePicker @bind-Date="_effectiveFrom" Label="@EffectiveFromLabel" Required="true" Editable="true"
                                    Mask="@(new DateMask("dd/MM/yyyy"))" MinDate="_hireDate"
-                                   MaxDate="@(Status != _originalStatus ? DateTime.Today : null)"
+                                   MaxDate="@(Status != _originalStatus && !StartsLeave ? DateTime.Today : null)"
                                    HelperText="Si la fecha es pasada, las jornadas desde esa fecha se recalculan automáticamente." />
+                    @if (StartsLeave)
+                    {
+                        <MudDatePicker @bind-Date="_effectiveTo" Label="Hasta (opcional)" Editable="true" Clearable="true" Class="mt-2"
+                                       Mask="@(new DateMask("dd/MM/yyyy"))" MinDate="_effectiveFrom"
+                                       HelperText="Último día del período; al día siguiente regresa solo a Alta. Sin fecha: hasta que RH lo regrese a Alta." />
+                    }
                 </MudPaper>
             }
         }
@@ -319,24 +331,42 @@
     private ShiftTypeEnum? _originalShiftType;
     private Guid? _originalScheduleId;
     private StatusEnum _originalStatus;
+    private HashSet<WeekDayEnum> _originalRestDays = new();
 
     private bool _originalsCaptured;
 
     private bool HasDatedChange => _isEditing && _originalsCaptured &&
         (BranchId != _originalBranchId || _selectedShiftType != _originalShiftType ||
-         ScheduleId != _originalScheduleId || Status != _originalStatus);
+         ScheduleId != _originalScheduleId || Status != _originalStatus || !_originalRestDays.SetEquals(_selectedRestDays));
+
+    // Caso 16: vacaciones, incapacidad y baja temporal son períodos con fechas; sólo RH y Administrador los registran.
+    private static bool IsLeave(StatusEnum status) => AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(status);
+    private bool StartsLeave => Status != _originalStatus && IsLeave(Status);
+    private bool ReturnsFromLeave => Status == StatusEnum.Alta && IsLeave(_originalStatus);
+    private bool _canManageLeave;
+    private DateTime? _effectiveTo;
+
+    private static string StatusName(StatusEnum status) => status switch
+    {
+        StatusEnum.BajaTemporal => "Baja temporal",
+        _ => status.ToString()
+    };
 
     private string EffectiveFromTitle => Status != _originalStatus
-        ? (Status == StatusEnum.Baja ? "Fecha de la baja" : "Fecha del reingreso")
-        : "Vigencia del cambio de horario, turno o sucursal";
+        ? (StartsLeave ? $"Período de {StatusName(Status).ToLowerInvariant()}"
+            : ReturnsFromLeave ? "Regreso a trabajar"
+            : Status == StatusEnum.Baja ? "Fecha de la baja" : "Fecha del reingreso")
+        : "Vigencia del cambio de horario, turno, sucursal o días de descanso";
 
-    private string EffectiveFromLabel => Status != _originalStatus && Status == StatusEnum.Baja
-        ? "Último día laborado"
+    private string EffectiveFromLabel => Status != _originalStatus
+        ? (StartsLeave ? "Desde" : ReturnsFromLeave ? "Regresa a trabajar el" : Status == StatusEnum.Baja ? "Último día laborado" : "Vigente desde")
         : "Vigente desde";
     private bool _loading = true;
-    private bool _isAdmin;
+    private bool _canEditOvertime;
+    private bool _hasSchedulePermission;
     private bool _isEditing => !string.IsNullOrEmpty(EmployeeId) || ExternalEmployeeId.HasValue;
-    private bool _canEditAll => _isAdmin || !_isEditing;
+    // Caso 13: el alta lleva horario; cambiarlo después es de RH y Administrador.
+    private bool _canEditSchedule => _hasSchedulePermission || !_isEditing;
     private bool IsSelectedBranchExternal => _branches.FirstOrDefault(b => b.Id == BranchId)?.IsExternal ?? false;
     private ShiftTypeEnum? _selectedShiftType;
     private IReadOnlyCollection<WeekDayEnum> _selectedRestDays = new HashSet<WeekDayEnum>();
@@ -376,8 +406,9 @@
 
     protected override async Task OnInitializedAsync()
     {
-        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
-        _isAdmin = authState.User.IsInRole("Administrador");
+        _hasSchedulePermission = await UiPermissions.HasAsync(Permissions.EmployeesEditSchedule);
+        _canEditOvertime = await UiPermissions.HasAsync(Permissions.EmployeesEditOvertime);
+        _canManageLeave = await UiPermissions.HasAsync(Permissions.EmployeesLeave);
 
         _hireDate = HireDate;
         
@@ -403,14 +434,14 @@
         
         if (ShiftType.HasValue)
         {
-            _selectedShiftType = ShiftType.Value == ShiftTypeEnum.Continuo ? ShiftTypeEnum.Flexible : ShiftType;
+            _selectedShiftType = ShiftType;
         }
         else if (ScheduleId.HasValue)
         {
             var currentSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
             if (currentSchedule != null)
             {
-                _selectedShiftType = currentSchedule.ShiftType == ShiftTypeEnum.Continuo ? ShiftTypeEnum.Flexible : currentSchedule.ShiftType;
+                _selectedShiftType = currentSchedule.ShiftType;
             }
         }
 
@@ -424,12 +455,25 @@
         _originalShiftType = _selectedShiftType;
         _originalScheduleId = ScheduleId;
         _originalStatus = Status;
+        _originalRestDays = _selectedRestDays.ToHashSet();
         _originalsCaptured = true;
+    }
+
+    /// <summary>Caso 12: sin extras autorizadas no se configuran redondeo, topes ni extras antes de la entrada.</summary>
+    private void OnOvertimeAuthorizedChanged(bool authorized)
+    {
+        OvertimeAuthorized = authorized;
+        if (authorized) return;
+        CalculateOvertimeBeforeEntry = false;
+        OvertimeCalculationMethod = OvertimeEnum.NoRounding;
+        OvertimeCapType = OvertimeCapEnum.None;
+        OvertimeCapMinutes = null;
     }
 
     private void OnShiftTypeChanged(ShiftTypeEnum? newType)
     {
         _selectedShiftType = newType;
+        if (!AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.AllowsOvertimeBeforeEntry(newType)) CalculateOvertimeBeforeEntry = false;
         if (_selectedShiftType == ShiftTypeEnum.Rotativo)
         {
             _applyRotationScheme = true;
@@ -605,15 +649,41 @@
                 return;
             }
 
+            if (StartsLeave && _effectiveTo.HasValue && _effectiveTo.Value.Date < _effectiveFrom!.Value.Date)
+            {
+                Snackbar.Add("La fecha final no puede ser anterior a la inicial", Severity.Warning);
+                return;
+            }
+
             if (!_filteredPositions.Any(p => p.Id == PositionId))
             {
                 Snackbar.Add("El puesto seleccionado no pertenece al departamento seleccionado", Severity.Warning);
                 return;
             }
 
+            // Caso 10: ningún empleado queda sin turno.
+            if (!_selectedShiftType.HasValue)
+            {
+                Snackbar.Add("Seleccione el turno del empleado", Severity.Warning);
+                return;
+            }
+
             // Validar turno rotativo vs fijo
             if (_selectedShiftType == ShiftTypeEnum.Rotativo)
             {
+                bool hasRoster = _existingRoster != null && _existingRoster.HasRoster;
+                if (!hasRoster && !_applyRotationScheme)
+                {
+                    Snackbar.Add("Un empleado rotativo necesita su esquema: marque la opción para generar la proyección de turnos", Severity.Warning);
+                    return;
+                }
+
+                // Quien pasa a ser rotativo sigue su roster desde la vigencia del cambio: el esquema empieza ese día.
+                if (_originalShiftType != ShiftTypeEnum.Rotativo && HasDatedChange && _effectiveFrom.HasValue)
+                {
+                    _rotationModel.StartDate = _effectiveFrom.Value.Date;
+                }
+
                 if (_applyRotationScheme)
                 {
                     var validation = _rotationModel.Validate();
@@ -626,6 +696,12 @@
             }
             else
             {
+                if (!ScheduleId.HasValue)
+                {
+                    Snackbar.Add("Seleccione el horario del empleado", Severity.Warning);
+                    return;
+                }
+
                 if (ScheduleId.HasValue && _selectedShiftType.HasValue)
                 {
                     var selectedSchedule = _shifts.FirstOrDefault(s => s.Id == ScheduleId.Value);
@@ -785,7 +861,8 @@
                     Photo,
                     DevicePrivilege,
                     effectiveRestDays,
-                    HasDatedChange ? _effectiveFrom : null);
+                    HasDatedChange ? _effectiveFrom : null,
+                    StartsLeave ? _effectiveTo : null);
             }
             else
             {

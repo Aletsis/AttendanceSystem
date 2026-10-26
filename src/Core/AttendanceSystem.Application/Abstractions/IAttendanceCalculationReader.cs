@@ -77,7 +77,7 @@ public sealed class RepositoryCalculationReader : IAttendanceCalculationReader
             employees = employees.Where(e => set.Contains(e.Id));
         }
         return employees
-            .Where(e => e.IsActiveDuring(start, end) && (branchId == null || e.WasInBranchDuring(branchId, start, end)))
+            .Where(e => e.IsEmployedDuring(start, end) && (branchId == null || e.WasInBranchDuring(branchId, start, end)))
             .ToList();
     }
 
@@ -96,7 +96,8 @@ public sealed class RepositoryCalculationReader : IAttendanceCalculationReader
             dailies.AddRange((await _dailies.GetByDateRangeAsync(claimFrom, claimTo, null, id, cancellationToken)) ?? new List<DailyAttendance>());
             rosters.AddRange((await _rosters.GetByDateRangeAsync(from, to, null, id, cancellationToken)) ?? Array.Empty<ShiftRoster>());
             adjustments.AddRange((await _adjustments.GetByDateRangeAsync(claimFrom, claimTo, null, id, cancellationToken)) ?? Array.Empty<AttendanceAdjustment>());
-            var employeeRecords = (await _records.GetByDateRangeAsync(DateOnly.FromDateTime(from), DateOnly.FromDateTime(claimTo), id, cancellationToken)) ?? Array.Empty<AttendanceRecord>();
+            var employeeRecords = ((await _records.GetByDateRangeAsync(DateOnly.FromDateTime(from), DateOnly.FromDateTime(claimTo), id, cancellationToken)) ?? Array.Empty<AttendanceRecord>())
+                .Where(r => !r.IsVoided).ToList();
             records.AddRange(employeeRecords);
             assignments.AddRange((await _assignments.GetByEmployeeAndWorkDateRangeAsync(id, DateOnly.FromDateTime(claimFrom), DateOnly.FromDateTime(claimTo), cancellationToken)) ?? Array.Empty<PunchAssignment>());
             if (employeeRecords.Count > 0)
@@ -114,7 +115,7 @@ public sealed class RepositoryCalculationReader : IAttendanceCalculationReader
         foreach (var id in recordIds)
         {
             var record = await _records.GetByIdAsync(id, cancellationToken);
-            if (record != null) result.Add(record);
+            if (record is { IsVoided: false }) result.Add(record);
         }
         return result;
     }

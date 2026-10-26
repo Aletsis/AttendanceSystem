@@ -188,4 +188,54 @@ public class DownloadFromDeviceSafetyTests
         // H03: Verifica que ClearLogsAsync fue invocado estrictamente con el rango acotado [minDate, maxDate]
         _deviceClientMock.Verify(c => c.ClearLogsAsync("1", minDate, maxDate, It.IsAny<CancellationToken>()), Times.Once());
     }
+    [Theory]
+    [InlineData("att", "ATTLOG", false, false)]
+    [InlineData("acc", "Transaction", false, false)]
+    [InlineData("att", "ATTLOG", true, false)]
+    [InlineData("acc", "Transaction", true, false)]
+    [InlineData("att", "ATTLOG", false, true)]
+    public async Task Adms_QueriesOnlyAttendance_WithoutResettingPushCursors(
+        string mode, string table, bool fullSync, bool withoutEnd)
+    {
+        var device = Device.Create("1", "ADMS", "192.168.1.200", 4370,
+            DeviceBrand.ZKTeco, downloadMethod: DeviceDownloadMethod.Adms, serialNumber: "SN123");
+        device.SetDeviceType(mode);
+        _deviceRepositoryMock.Setup(r => r.GetByIdAsync(device.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(device);
+        var from = new DateTime(2026, 1, 1);
+        var to = new DateTime(2026, 1, 2, 23, 59, 59);
+        _timeNormalizerMock.Setup(t => t.ToCivilTime(It.IsAny<DateTime>(), It.IsAny<string>()))
+            .Returns(to);
+
+        var result = await _handler.Handle(new DownloadFromDeviceCommand("1", from,
+            withoutEnd ? null : to, ForceFullSync: fullSync), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        var expected = fullSync
+            ? $"DATA QUERY tablename={table},fields=*"
+            : $"DATA QUERY tablename={table},starttime=2026-01-01 00:00:00,endtime=2026-01-02 23:59:59";
+        _admsCommandServiceMock.Verify(s => s.EnqueueCommand("SN123", expected,
+            It.Is<Guid?>(id => id.HasValue)), Times.Once);
+        _admsCommandServiceMock.VerifyNoOtherCalls();
+        _deviceRepositoryMock.Verify(r => r.ResetAttLogTimestampAsync(It.IsAny<string>(),
+            It.IsAny<CancellationToken>()), Times.Never);
+        _deviceRepositoryMock.Verify(r => r.UpdateLastAttLogTimestampAsync(It.IsAny<string>(),
+            It.IsAny<DateTime>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task Adms_InvalidRange_DoesNotSendCommands()
+    {
+        var device = Device.Create("1", "ADMS", "192.168.1.200", 4370,
+            DeviceBrand.ZKTeco, downloadMethod: DeviceDownloadMethod.Adms, serialNumber: "SN123");
+        _deviceRepositoryMock.Setup(r => r.GetByIdAsync(device.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(device);
+
+        var result = await _handler.Handle(new DownloadFromDeviceCommand("1",
+            new DateTime(2026, 1, 3), new DateTime(2026, 1, 2)), CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        _admsCommandServiceMock.VerifyNoOtherCalls();
+    }
+
 }

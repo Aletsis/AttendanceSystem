@@ -20,10 +20,14 @@ public record ProcessSplitAttendanceCommand(
     AttendanceAdjustment? Adjustment = null,
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
-    DateTime? EarlyEntryStart = null) : IRequest;
+    DateTime? EarlyEntryStart = null,
+    LunchPolicy? Lunch = null) : IRequest;
 
 public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplitAttendanceCommand>
 {
+    // Caso 14: configurable (Configuración → Tiempos y periodos); se toma de la política de la petición.
+    private int DoubleTapThresholdMinutes = LunchPolicy.DoubleTapMaxMinutes;
+
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly ILogger<ProcessSplitAttendanceCommandHandler> _logger;
@@ -40,6 +44,7 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
 
     public async Task Handle(ProcessSplitAttendanceCommand request, CancellationToken cancellationToken)
     {
+        DoubleTapThresholdMinutes = (request.Lunch ?? LunchPolicy.Default).DoubleTapMinutes;
         if (!request.Shift.SecondBlockStartTime.HasValue || !request.Shift.SecondBlockEndTime.HasValue)
         {
             // F05-04: antes se retornaba sin crear la jornada y se perdía el ajuste. Se registra como un solo
@@ -56,18 +61,6 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             ? request.Date.Date.AddDays(1).Add(request.Shift.SecondBlockEndTime.Value)
             : request.Date.Date.Add(request.Shift.SecondBlockEndTime.Value);
 
-        // Punto medio entre la salida del bloque 1 y la entrada del bloque 2
-        var midpoint = schedB1Out.AddTicks((schedB2In - schedB1Out).Ticks / 2);
-
-        // Separar registros pendientes en bloque 1 y bloque 2
-        var pendingRecords = PunchAssignmentPolicy.Chronological(request.Records
-            .Where(r => r.Status == AttendanceStatus.Pending))
-            .ToList();
-
-        var b1Records = pendingRecords
-            .Where(r => r.GetCivilTime(request.TimeZoneId) < midpoint)
-            .ToList();
-
         // Límite superior para el Bloque 2: permite salidas con horas extra en la madrugada del día siguiente
         // sin invadir la ventana de entrada de la jornada del día siguiente.
         var tomorrowB1In = request.Date.Date.AddDays(1).Add(request.Shift.StartTime);
@@ -77,76 +70,51 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             ? (maxB2EndBySched < maxB2CutoffTomorrow ? maxB2EndBySched : maxB2CutoffTomorrow)
             : maxB2EndBySched;
 
-        var b2Records = pendingRecords
-            .Where(r => r.GetCivilTime(request.TimeZoneId) >= midpoint && r.GetCivilTime(request.TimeZoneId) <= b2Cutoff)
+        // Posiciones en orden: entrada B1, salida B1, entrada B2, salida B2.
+        var slots = new[] { schedB1In, schedB1Out, schedB2In, schedB2Out };
+
+        var punches = PunchAssignmentPolicy.Chronological(request.Records
+            .Where(r => r.Status == AttendanceStatus.Pending && r.GetCivilTime(request.TimeZoneId) <= b2Cutoff))
             .ToList();
+        punches = await CollapseDoubleTapsAsync(punches, slots, request, cancellationToken);
 
-        AttendanceRecord? b1InRecord = null;
-        AttendanceRecord? b1OutRecord = null;
-        AttendanceRecord? b2InRecord = null;
-        AttendanceRecord? b2OutRecord = null;
-
-        // --- Procesamiento Bloque 1 ---
-        if (b1Records.Count >= 2)
+        // Caso 8 (a/b): ya no se separa por el punto medio del descanso. Con 4 marcajes o más, el primero y el último
+        // son la entrada del bloque 1 y la salida del bloque 2, y el descanso es el par seguido de marcajes más
+        // cercano a la salida del bloque 1 y la entrada del bloque 2. Con menos, cada marcaje va, en orden, a la
+        // posición más cercana (empate: la anterior); las que sobran quedan faltantes.
+        var assigned = new AttendanceRecord?[4];
+        var middleB1 = new List<AttendanceRecord>();
+        var middleB2 = new List<AttendanceRecord>();
+        if (punches.Count >= 4)
         {
-            b1InRecord = b1Records.First();
-            b1OutRecord = b1Records.Last();
-
-            var middleB1 = b1Records.Skip(1).Take(b1Records.Count - 2).ToList();
-            foreach (var mid in middleB1)
+            int breakIndex = 1;
+            double bestCost = double.MaxValue;
+            for (int i = 1; i + 1 <= punches.Count - 2; i++)
             {
-                request.Draft?.Intermediate(mid);
-                mid.MarkAsProcessed();
-                await _attendanceRepo.UpdateAsync(mid, cancellationToken);
+                var cost = Distance(punches[i], slots[1], request) + Distance(punches[i + 1], slots[2], request);
+                if (cost < bestCost)
+                {
+                    bestCost = cost;
+                    breakIndex = i;
+                }
             }
+            assigned[0] = punches[0];
+            assigned[1] = punches[breakIndex];
+            assigned[2] = punches[breakIndex + 1];
+            assigned[3] = punches[^1];
+            middleB1.AddRange(punches.Skip(1).Take(breakIndex - 1));
+            middleB2.AddRange(punches.Skip(breakIndex + 2).Take(punches.Count - breakIndex - 3));
         }
-        else if (b1Records.Count == 1)
+        else if (punches.Count > 0)
         {
-            var single = b1Records[0];
-            var civilTime = single.GetCivilTime(request.TimeZoneId);
-            var diffIn = Math.Abs((civilTime - schedB1In).TotalMinutes);
-            var diffOut = Math.Abs((civilTime - schedB1Out).TotalMinutes);
-
-            if (diffIn <= diffOut)
-            {
-                b1InRecord = single;
-            }
-            else
-            {
-                b1OutRecord = single;
-            }
+            var best = NearestOrderedSlots(punches, slots, request);
+            for (int i = 0; i < punches.Count; i++) assigned[best[i]] = punches[i];
         }
 
-        // --- Procesamiento Bloque 2 ---
-        if (b2Records.Count >= 2)
-        {
-            b2InRecord = b2Records.First();
-            b2OutRecord = b2Records.Last();
-
-            var middleB2 = b2Records.Skip(1).Take(b2Records.Count - 2).ToList();
-            foreach (var mid in middleB2)
-            {
-                request.Draft?.Intermediate(mid);
-                mid.MarkAsProcessed();
-                await _attendanceRepo.UpdateAsync(mid, cancellationToken);
-            }
-        }
-        else if (b2Records.Count == 1)
-        {
-            var single = b2Records[0];
-            var civilTime = single.GetCivilTime(request.TimeZoneId);
-            var diffIn = Math.Abs((civilTime - schedB2In).TotalMinutes);
-            var diffOut = Math.Abs((civilTime - schedB2Out).TotalMinutes);
-
-            if (diffIn <= diffOut)
-            {
-                b2InRecord = single;
-            }
-            else
-            {
-                b2OutRecord = single;
-            }
-        }
+        var b1InRecord = assigned[0];
+        var b1OutRecord = assigned[1];
+        var b2InRecord = assigned[2];
+        var b2OutRecord = assigned[3];
 
         // Marcar registros asignados como procesados e inferir tipo
         if (b1InRecord != null)
@@ -202,6 +170,41 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
             dailyAttendance.SetBlock2CheckIn(b2InRecord.CheckTime, b2InRecord.Id);
         }
 
+        // Caso 8 (c): los marcajes a mitad de un bloque siguen la regla del turno fijo (salidas temporales, dobles
+        // toques e incidencias), sin comida: el descanso entre bloques hace de comida.
+        // Sin ventana: ninguna ausencia es comida automática, pero RH puede clasificarla como comida (minutos con goce).
+        var lunch = (request.Lunch ?? LunchPolicy.Default).ForShift(request.Shift.PaidLunchMinutes) with { WindowEnabled = false };
+        var exits = new List<TemporaryExit>();
+        var orphans = new List<DateTime>();
+        foreach (var (middle, blockIn, blockOut) in new[] { (middleB1, b1InRecord, b1OutRecord), (middleB2, b2InRecord, b2OutRecord) })
+        {
+            if (middle.Count == 0) continue;
+            var doubleTaps = middle
+                .Where(r => (blockIn != null && (r.CheckTime - blockIn.CheckTime).TotalMinutes <= DoubleTapThresholdMinutes) ||
+                            (blockOut != null && (blockOut.CheckTime - r.CheckTime).TotalMinutes <= DoubleTapThresholdMinutes))
+                .ToList();
+            foreach (var doubleTap in doubleTaps) request.Draft?.DoubleTap(doubleTap);
+
+            var analysis = IntermediatePunchAnalysis.Analyze(
+                PunchAssignmentPolicy.Chronological(middle.Except(doubleTaps)).ToList(), lunch, request.TimeZoneId, request.Draft);
+            exits.AddRange(analysis.Exits);
+            orphans.AddRange(analysis.Orphans);
+
+            foreach (var record in middle)
+            {
+                record.MarkAsProcessed();
+                await _attendanceRepo.UpdateAsync(record, cancellationToken);
+            }
+        }
+        if (exits.Count > 0 || orphans.Count > 0)
+        {
+            dailyAttendance.ApplyIntermediateAnalysis(exits, lunch.PaidMinutes);
+            foreach (var orphan in orphans)
+            {
+                dailyAttendance.AddCalculationIssue(IntermediatePunchAnalysis.OrphanIssue(orphan));
+            }
+        }
+
         if (request.Adjustment != null)
         {
             dailyAttendance.ApplyAdjustment(request.Adjustment);
@@ -209,6 +212,78 @@ public class ProcessSplitAttendanceCommandHandler : IRequestHandler<ProcessSplit
 
         _dailyRepo.Add(dailyAttendance);
         request.Draft?.Complete(dailyAttendance);
+    }
+
+    private static double Distance(AttendanceRecord record, DateTime slot, ProcessSplitAttendanceCommand request) =>
+        Math.Abs((record.GetCivilTime(request.TimeZoneId) - slot).TotalMinutes);
+
+    /// <summary>
+    /// Asigna hasta 3 marcajes a posiciones distintas en orden cronológico con la menor distancia total a sus horas
+    /// programadas; con empate gana la combinación de posiciones más tempranas (14:00 entre 13:00 y 15:00 es salida B1).
+    /// </summary>
+    private static int[] NearestOrderedSlots(IReadOnlyList<AttendanceRecord> punches, DateTime[] slots, ProcessSplitAttendanceCommand request)
+    {
+        int[]? best = null;
+        double bestCost = double.MaxValue;
+        foreach (var combination in Combinations(slots.Length, punches.Count))
+        {
+            var cost = combination.Select((slot, i) => Distance(punches[i], slots[slot], request)).Sum();
+            if (cost < bestCost)
+            {
+                bestCost = cost;
+                best = combination;
+            }
+        }
+        return best!;
+    }
+
+    /// <summary>Combinaciones crecientes de <paramref name="k"/> posiciones entre <paramref name="n"/>, en orden lexicográfico.</summary>
+    private static IEnumerable<int[]> Combinations(int n, int k, int start = 0)
+    {
+        if (k == 0)
+        {
+            yield return Array.Empty<int>();
+            yield break;
+        }
+        for (int i = start; i <= n - k; i++)
+        {
+            foreach (var rest in Combinations(n, k - 1, i + 1))
+            {
+                yield return new[] { i }.Concat(rest).ToArray();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Como en turno fijo: marcajes seguidos a no más de 15 min son dobles toques de uno solo. Se conserva el primero, o
+    /// el último si el grupo está más cerca de una salida (B1 o B2) que de una entrada.
+    /// </summary>
+    private async Task<List<AttendanceRecord>> CollapseDoubleTapsAsync(
+        List<AttendanceRecord> punches, DateTime[] slots, ProcessSplitAttendanceCommand request, CancellationToken cancellationToken)
+    {
+        var result = new List<AttendanceRecord>();
+        int index = 0;
+        while (index < punches.Count)
+        {
+            var group = new List<AttendanceRecord> { punches[index] };
+            while (index + group.Count < punches.Count &&
+                   (punches[index + group.Count].CheckTime - group[^1].CheckTime).TotalMinutes <= DoubleTapThresholdMinutes)
+            {
+                group.Add(punches[index + group.Count]);
+            }
+            index += group.Count;
+
+            var nearestSlot = Enumerable.Range(0, slots.Length).MinBy(i => Distance(group[0], slots[i], request));
+            var kept = nearestSlot % 2 == 1 ? group[^1] : group[0];
+            result.Add(kept);
+            foreach (var doubleTap in group.Where(r => r != kept))
+            {
+                request.Draft?.DoubleTap(doubleTap);
+                doubleTap.MarkAsProcessed();
+                await _attendanceRepo.UpdateAsync(doubleTap, cancellationToken);
+            }
+        }
+        return result;
     }
 
     private async Task HandleSingleBlockAsync(ProcessSplitAttendanceCommand request, CancellationToken cancellationToken)

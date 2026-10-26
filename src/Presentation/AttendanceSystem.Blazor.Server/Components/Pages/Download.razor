@@ -1,5 +1,6 @@
 @page "/attendance/download"
 @page "/attendance/download-logs"
+@attribute [Authorize(Policy = Permissions.DevicesDownload)]
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Devices.Queries.GetActiveDevices
 @using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices
@@ -11,6 +12,8 @@
 @inject ISnackbar Snackbar
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject IDialogService DialogService
+@inject AttendanceSystem.Application.Abstractions.IAdmsCommandService AdmsCommandService
+@implements IAsyncDisposable
 @using AttendanceSystem.Blazor.Server.Components.Dialogs
 
 
@@ -34,12 +37,14 @@
                             <MudDatePicker Label="Hasta (Opcional)" @bind-Date="_downloadToDate" Disabled="@_forceFullSync" HelperText="@(_forceFullSync ? "Deshabilitado (descarga completa)" : "Si vacío: hasta hoy")" />
                         </MudItem>
                         <MudItem xs="12" sm="2" Class="d-flex align-center">
-                            <MudTooltip Text="Solicita al reloj todos los registros históricos de su memoria y reinicia el watermark">
-                                <MudCheckBox @bind-Value="_forceFullSync" Color="Color.Warning" Label="Re-descargar Todo" Dense="true" />
-                            </MudTooltip>
+                            <AuthorizeView Policy="@Permissions.DevicesForceFullDownload" Context="authContext">
+                                <MudTooltip Text="Solicita al reloj todos los registros históricos de su memoria y reinicia el watermark">
+                                    <MudCheckBox @bind-Value="_forceFullSync" Color="Color.Warning" Label="Re-descargar Todo" Dense="true" />
+                                </MudTooltip>
+                            </AuthorizeView>
                         </MudItem>
                     </MudGrid>
-                    <AuthorizeView Roles="Administrador" Context="authContext">
+                    <AuthorizeView Policy="@Permissions.DevicesDownloadAll" Context="authContext">
                     <MudButton Variant="Variant.Filled" Color="@(_forceFullSync ? Color.Warning : Color.Primary)" OnClick="DownloadFromAllDevices" Disabled="@IsBusy">
                         @if (_isDownloadingAll)
                         {
@@ -60,7 +65,7 @@
                         <MudGrid Class="mt-2">
                              @foreach (var device in _devices)
                             {
-                                var isDownloadingThis = _downloadingDeviceId == device.DeviceId;
+                                var isDownloadingThis = IsDeviceDownloading(device.DeviceId);
                                 var isAdms = device.DownloadMethod == DeviceDownloadMethod.Adms;
                                 <MudItem>
                                     <MudChip T="string"
@@ -68,7 +73,7 @@
                                         Color="@(isAdms ? Color.Info : Color.Primary)"
                                         Variant="@(isAdms ? Variant.Outlined : Variant.Filled)"
                                         OnClick="@(() => DownloadFromDevice(device.DeviceId))"
-                                        Disabled="@IsBusy">
+                                        Disabled="@(_isDownloadingAll || isDownloadingThis)">
                                         @if (isDownloadingThis)
                                         {
                                             <MudProgressCircular Class="ms-n1 mr-1" Size="Size.Small" Indeterminate="true"/>
@@ -213,11 +218,67 @@
     private DateTime? _logsToDate;
     private List<DownloadLog> _logs = new();
     private Dictionary<string, string> _deviceNames = new();
+    private CancellationTokenSource? _cts;
+
+    private bool IsDeviceDownloading(string deviceId)
+    {
+        if (_downloadingDeviceId == deviceId) return true;
+        return _logs.Any(l => l.DeviceId.Value == deviceId && !l.CompletedAt.HasValue);
+    }
+
+    private bool HasActiveDownloads()
+    {
+        return !string.IsNullOrEmpty(_downloadingDeviceId) || _logs.Any(l => !l.CompletedAt.HasValue);
+    }
 
     protected override async Task OnInitializedAsync()
     {
         await LoadDeviceNames();
         await LoadLogs();
+        AdmsCommandService.OnDownloadStatusChanged += HandleAdmsDownloadStatusChanged;
+        _cts = new CancellationTokenSource();
+        _ = StartPeriodicRefreshAsync(_cts.Token);
+    }
+
+    private void HandleAdmsDownloadStatusChanged(string sn, Guid downloadLogId, bool isSuccess, int totalDownloaded, int newRecords, string? error)
+    {
+        _ = InvokeAsync(async () =>
+        {
+            await LoadLogs(silent: true);
+            var dev = _devices.FirstOrDefault(d => string.Equals(d.SerialNumber, sn, StringComparison.OrdinalIgnoreCase));
+            var devName = dev?.Name ?? sn;
+
+            if (isSuccess)
+            {
+                Snackbar.Add($"Descarga de {devName} completada: {totalDownloaded} registros ({newRecords} nuevos)", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Descarga de {devName} falló: {error ?? "Error del dispositivo"}", Severity.Error);
+            }
+
+            StateHasChanged();
+        });
+    }
+
+    private async Task StartPeriodicRefreshAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(3));
+        try
+        {
+            while (!token.IsCancellationRequested && await timer.WaitForNextTickAsync(token))
+            {
+                if (HasActiveDownloads() || _isDownloadingAll)
+                {
+                    await LoadLogs(silent: true);
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Normal al desmontar el componente
+        }
     }
 
     private async Task LoadDeviceNames()
@@ -237,7 +298,7 @@
         {
             bool? confirmed = await DialogService.ShowMessageBoxAsync(
                 "Confirmar Sincronización Completa",
-                "¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de todos los dispositivos? Esta acción reiniciará el stamp de sincronización. Los registros duplicados se omitirán automáticamente.",
+                "¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de todos los dispositivos? Los registros duplicados se omitirán automáticamente.",
                 yesText: "Sí, Sincronizar Todo", cancelText: "Cancelar");
 
             if (confirmed != true) return;
@@ -266,7 +327,7 @@
              if (result.IsSuccess)
              {
                  Snackbar.Add("Descarga completada / órdenes encoladas", Severity.Success);
-                 await LoadLogs(); // Refresh logs
+                 await LoadLogs(silent: true);
              }
              else
              {
@@ -286,7 +347,7 @@
             var devName = GetDeviceName(deviceId);
             bool? confirmed = await DialogService.ShowMessageBoxAsync(
                 "Confirmar Sincronización Completa",
-                $"¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de '{devName}'? Esta acción reiniciará el stamp de sincronización en el reloj. Los registros duplicados se omitirán automáticamente.",
+                $"¿Está seguro de que desea forzar la descarga de TODOS los registros históricos de '{devName}'? Los registros duplicados se omitirán automáticamente.",
                 yesText: "Sí, Sincronizar Todo", cancelText: "Cancelar");
 
             if (confirmed != true) return;
@@ -316,8 +377,22 @@
 
             if (result.IsSuccess)
             {
-                 Snackbar.Add($"Descarga de {GetDeviceName(deviceId)} solicitada / completada", Severity.Success);
-                 await LoadLogs(); // Refresh logs
+                 var isAdms = _devices.FirstOrDefault(d => d.DeviceId == deviceId)?.DownloadMethod == DeviceDownloadMethod.Adms;
+                 if (isAdms)
+                 {
+                     Snackbar.Add($"Descarga de {GetDeviceName(deviceId)} encolada vía ADMS. Esperando respuesta del reloj...", Severity.Info);
+                 }
+                 else
+                 {
+                     Snackbar.Add($"Descarga de {GetDeviceName(deviceId)} completada", Severity.Success);
+                     // Caso 18: avisos de la cuarentena.
+                     if (result.Value.ClockWarning is { } clockWarning) Snackbar.Add(clockWarning, Severity.Warning);
+                     if (result.Value.QuarantinedCount > 0)
+                         Snackbar.Add($"{result.Value.QuarantinedCount} marcaje(s) con hora sospechosa quedaron en cuarentena (Hora de relojes).", Severity.Warning);
+                     if (result.Value.AlreadyResolvedCount > 0)
+                         Snackbar.Add($"{result.Value.AlreadyResolvedCount} marcaje(s) ya resueltos en cuarentena; no se ingresaron de nuevo.", Severity.Info);
+                 }
+                 await LoadLogs(silent: true);
             }
             else
             {
@@ -330,9 +405,14 @@
         }
     }
 
-    private async Task LoadLogs()
+    private async Task LoadLogs() => await LoadLogs(silent: false);
+
+    private async Task LoadLogs(bool silent = false)
     {
-        _isLoadingLogs = true;
+        if (!silent)
+        {
+            _isLoadingLogs = true;
+        }
         try
         {
             DateTime? toDateAdjusted = _logsToDate.HasValue ? _logsToDate.Value.AddDays(1).AddTicks(-1) : null;
@@ -341,18 +421,24 @@
             {
                 _logs = result.Value.ToList();
             }
-            else
+            else if (!silent)
             {
                  Snackbar.Add($"Error al cargar logs: {result.Error}", Severity.Error);
             }
         }
         catch (Exception ex)
         {
-             Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+            if (!silent)
+            {
+                 Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+            }
         }
         finally
         {
-            _isLoadingLogs = false;
+            if (!silent)
+            {
+                _isLoadingLogs = false;
+            }
         }
     }
 
@@ -381,5 +467,13 @@
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
 
         await DialogService.ShowAsync<DownloadLogDetailsDialog>("Detalles de Descarga", parameters, options);
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        AdmsCommandService.OnDownloadStatusChanged -= HandleAdmsDownloadStatusChanged;
+        _cts?.Cancel();
+        _cts?.Dispose();
+        return ValueTask.CompletedTask;
     }
 }

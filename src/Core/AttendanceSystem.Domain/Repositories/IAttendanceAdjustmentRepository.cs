@@ -17,6 +17,9 @@ public interface IAttendanceAdjustmentRepository
         EmployeeId? employeeId = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Ajustes de RH que fuerzan el horario (impide borrarlo).</summary>
+    Task<int> CountByShiftOverrideAsync(ShiftId shiftId, CancellationToken cancellationToken = default);
+
     Task AddAsync(AttendanceAdjustment adjustment, CancellationToken cancellationToken = default);
     void Update(AttendanceAdjustment adjustment);
     void Remove(AttendanceAdjustment adjustment);

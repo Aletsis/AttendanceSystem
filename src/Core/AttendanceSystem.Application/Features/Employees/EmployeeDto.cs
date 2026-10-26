@@ -46,4 +46,9 @@ public sealed record EmployeeDto
     public string? CreatedBy { get; init; }
     public DateTime? UpdatedAt { get; init; }
     public string? UpdatedBy { get; init; }
+
+    /// <summary>Caso 16: vacaciones, incapacidades y bajas temporales, de la más reciente a la más antigua.</summary>
+    public List<StatusPeriodDto> StatusPeriods { get; init; } = new();
 }
+
+public sealed record StatusPeriodDto(EmployeeStatus Status, DateTime StartDate, DateTime? EndDate);

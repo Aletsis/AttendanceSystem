@@ -1,0 +1,115 @@
+@page "/attendance/periods"
+@attribute [Authorize(Policy = Permissions.AttendanceClosePeriod)]
+@using AttendanceSystem.Application.Features.Attendance.PeriodClosure
+@inject ISender Sender
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+
+<PageTitle>Cierre de periodos</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Cierre de periodos</MudText>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Un periodo cerrado congela la asistencia que se entregó: sus días ya no se recalculan ni aceptan ajustes. Los periodos se cierran
+    solos @PeriodClosureService.AutomaticCloseAfterDays días después de terminar; un periodo reabierto se vuelve a cerrar a mano.
+    Los marcajes que lleguen después del cierre aparecen en "Marcajes sin empleado".
+</MudText>
+
+@if (_rows == null)
+{
+    <MudProgressLinear Indeterminate="true" />
+}
+else
+{
+    <MudTable Items="_rows" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+        <HeaderContent>
+            <MudTh>Periodo</MudTh>
+            <MudTh>Estado</MudTh>
+            <MudTh>Detalle</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Periodo">@context.Start.ToString("dd/MM/yyyy") – @context.End.ToString("dd/MM/yyyy")</MudTd>
+            <MudTd DataLabel="Estado">
+                @switch (context.State)
+                {
+                    case PeriodState.InProgress:
+                        <MudChip T="string" Size="Size.Small" Color="Color.Info">En curso</MudChip>
+                        break;
+                    case PeriodState.Open:
+                        <MudChip T="string" Size="Size.Small" Color="Color.Warning">Abierto</MudChip>
+                        break;
+                    default:
+                        <MudChip T="string" Size="Size.Small" Color="Color.Success">Cerrado</MudChip>
+                        break;
+                }
+            </MudTd>
+            <MudTd DataLabel="Detalle">
+                @if (context.State == PeriodState.Closed)
+                {
+                    <MudText Typo="Typo.caption" Class="d-block">
+                        @(context.Automatic ? "Cierre automático" : $"Cerrado por {context.ClosedBy}") el @context.ClosedAt?.ToLocalTime().ToString("dd/MM/yyyy HH:mm")
+                    </MudText>
+                }
+                else if (context.AutomaticCloseOn is { } auto)
+                {
+                    <MudText Typo="Typo.caption" Class="d-block">Se cierra solo el @auto.ToString("dd/MM/yyyy")</MudText>
+                }
+                @if (context.LastReopenedAt is { } reopened)
+                {
+                    <MudText Typo="Typo.caption" Class="d-block">Reabierto por @context.LastReopenedBy el @reopened.ToLocalTime().ToString("dd/MM/yyyy HH:mm"): @context.LastReopenReason</MudText>
+                }
+            </MudTd>
+            <MudTd>
+                @if (context.CanClose)
+                {
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Lock" OnClick="@(() => CloseAsync(context))">Cerrar</MudButton>
+                }
+                @if (context.CanReopen)
+                {
+                    <AuthorizeView Policy="@Permissions.AttendanceReopenPeriod" Context="authContext">
+                        <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" StartIcon="@Icons.Material.Filled.LockOpen" OnClick="@(() => ReopenAsync(context))">Reabrir</MudButton>
+                    </AuthorizeView>
+                }
+            </MudTd>
+        </RowTemplate>
+    </MudTable>
+}
+
+@code {
+    private IReadOnlyList<PeriodClosureRowDto>? _rows;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync() => _rows = await Sender.Send(new GetPeriodClosuresQuery());
+
+    private async Task CloseAsync(PeriodClosureRowDto row)
+    {
+        var pending = await Sender.Send(new GetPeriodPendingSummaryQuery(row.Start, row.End));
+        var message = pending.IsEmpty
+            ? "El periodo no tiene pendientes."
+            : $"Pendientes del periodo: {pending.DaysWithIssues} día(s) con incidencias de cálculo, {pending.DaysWithPendingExits} con salidas sin clasificar, " +
+              $"{pending.DaysWithUnauthorizedOvertime} con extras sin autorizar y {pending.UnmatchedPunchIds} ID(s) con marcajes que no cuentan.";
+        var confirmed = await DialogService.ShowMessageBoxAsync(
+            $"Cerrar el periodo del {row.Start:dd/MM/yyyy} al {row.End:dd/MM/yyyy}",
+            $"{message} Al cerrarlo, sus días ya no se recalculan ni aceptan ajustes. ¿Cerrar?",
+            yesText: "Cerrar periodo", cancelText: "Cancelar");
+        if (confirmed != true) return;
+
+        var result = await Sender.Send(new ClosePeriodCommand(row.Start, row.End));
+        if (result.IsSuccess) Snackbar.Add("Periodo cerrado.", Severity.Success);
+        else Snackbar.Add(result.Error, Severity.Error);
+        await LoadAsync();
+    }
+
+    private async Task ReopenAsync(PeriodClosureRowDto row)
+    {
+        var reason = await ReasonDialog.AskAsync(DialogService, "Reabrir periodo",
+            $"Del {row.Start:dd/MM/yyyy} al {row.End:dd/MM/yyyy}. Sus días volverán a aceptar ajustes y recálculos.");
+        if (reason == null || row.ClosureId is not { } id) return;
+
+        var result = await Sender.Send(new ReopenPeriodCommand(id, reason));
+        if (result.IsSuccess) Snackbar.Add("Periodo reabierto. Ciérrelo de nuevo al terminar de corregir.", Severity.Success);
+        else Snackbar.Add(result.Error, Severity.Error);
+        await LoadAsync();
+    }
+}

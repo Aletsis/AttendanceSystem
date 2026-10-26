@@ -1,5 +1,6 @@
 using System;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
 namespace AttendanceSystem.Application.DTOs;
 
@@ -18,13 +19,29 @@ public sealed record AttendanceReportViewDto
     public DateTime? ActualCheckIn { get; init; }
     public DateTime? ActualCheckOut { get; init; }
     public int LateMinutes { get; init; }
+    public int EarlyDepartureMinutes { get; init; }
     public int OvertimeMinutes { get; init; }
+    /// <summary>Caso 12: excedente sobre la jornada antes de autorización, redondeo y topes.</summary>
+    public int RawOvertimeMinutes { get; init; }
+    /// <summary>Autorización de extras de la jornada (incluye la decisión diaria de RH).</summary>
+    public bool OvertimeAuthorized { get; init; }
+    public bool CalculateOvertimeBeforeEntry { get; init; }
+    /// <summary>Caso 12: lo que RH autorizó del día; null = sin cantidad.</summary>
+    public int? AuthorizedOvertimeMinutes { get; init; }
+    /// <summary>Caso 12: el excedente cambió desde la autorización de RH; hay que autorizarlo de nuevo.</summary>
+    public bool OvertimeAuthorizationOutdated { get; init; }
+    /// <summary>Caso 13: revisión de la decisión de la jornada que se mostró (0 sin decisión).</summary>
+    public int AdjustmentRevision { get; init; }
+    /// <summary>Autorización general del empleado: la decisión por día sólo se ofrece a quien no la tiene.</summary>
+    public bool EmployeeOvertimeAuthorized { get; init; }
 
     public bool IsAbsent { get; init; }
     public bool IsRestDay { get; init; }
     public bool WorkedOnRestDay { get; init; }
     public bool MissingCheckIn { get; init; }
     public bool MissingCheckOut { get; init; }
+    /// <summary>Al menos un marcaje en la jornada (<c>DailyAttendance.HasPunches</c>).</summary>
+    public bool HasPunches { get; init; }
 
     // --- Turnos Partidos / Doble Turno ---
     public ShiftType? ShiftType { get; init; }
@@ -38,9 +55,18 @@ public sealed record AttendanceReportViewDto
     // --- Salidas Temporales Detectadas ---
     public bool HasTemporaryExits { get; init; }
     public int TemporaryExitMinutes { get; init; }
-    /// <summary>0=Pending, 1=ApprovedPaid, 2=ApprovedUnpaid, 3=Dismissed</summary>
+    /// <summary>Resumen: 0=Pending, 1=ApprovedPaid, 2=ApprovedUnpaid, 3=Dismissed (pendiente si alguna salida lo está).</summary>
     public int TemporaryExitStatus { get; init; }
+    /// <summary>Caso 11: cada salida (incluidas las comidas) para clasificarla por separado.</summary>
+    public IReadOnlyList<TemporaryExitDto> TemporaryExits { get; init; } = Array.Empty<TemporaryExitDto>();
+    /// <summary>Notas de la jornada tal como las define <c>DailyAttendance.Notes</c>.</summary>
+    public IReadOnlyList<string> Notes { get; init; } = Array.Empty<string>();
     public string? AttendanceNote { get; init; }
+
+    // --- Comida ---
+    public int LunchMinutesTaken { get; init; }
+    /// <summary>Excedente de comida sobre los minutos con goce: lo que se descuenta.</summary>
+    public int LunchDeductibleMinutes { get; init; }
 
     public OvertimeCalculationMethod OvertimeCalculationMethod { get; init; }
     public int TotalWorkedMinutes { get; init; }
@@ -53,3 +79,6 @@ public sealed record AttendanceReportViewDto
     /// </summary>
     public int RoundedOvertimeMinutes => Math.Max(0, OvertimeMinutes);
 }
+
+/// <summary>Una salida de la jornada (hora civil) con su clasificación (caso 11).</summary>
+public sealed record TemporaryExitDto(Guid ExitRecordId, DateTime ExitTime, DateTime ReturnTime, int Minutes, TemporaryExitStatus Status, bool IsAutomaticLunch);

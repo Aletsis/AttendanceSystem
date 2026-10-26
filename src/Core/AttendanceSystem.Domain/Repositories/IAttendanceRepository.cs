@@ -36,6 +36,15 @@ public interface IAttendanceRepository
     /// </summary>
     void Detach(AttendanceRecord record);
 
+    /// <summary>Caso 18: el marcaje vigente más reciente (por hora reportada) de un reloj; null si no tiene.</summary>
+    Task<AttendanceRecord?> GetLatestByDeviceAsync(DeviceId deviceId, CancellationToken cancellationToken = default);
+
+    /// <summary>Caso 17: marcajes vigentes recibidos después de un instante con fecha laboral en el rango.</summary>
+    Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default);
+
+    /// <summary>Caso 14: marcajes vigentes por empleado, fecha laboral y reloj en el rango (para detectar los que no cuentan).</summary>
+    Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default);
+
     Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(
         EmployeeId employeeId,
         DateTime checkTime,
@@ -61,3 +70,6 @@ public interface IAttendanceRepository
     Task<IReadOnlyList<AttendanceRecord>> GetAllAsync(
         CancellationToken cancellationToken = default);
 }
+
+/// <summary>Marcajes vigentes de un empleado en una fecha laboral desde un reloj.</summary>
+public sealed record PunchDaySummary(EmployeeId EmployeeId, DateOnly WorkDate, DeviceId DeviceId, int Count);

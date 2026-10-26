@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Backup.Commands;
 
+[RequiresPermission(Permissions.BackupsManage)]
 public record UploadBackupCommand(
     string FileName,
     Stream ContentStream

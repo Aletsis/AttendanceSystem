@@ -5,6 +5,7 @@ using AttendanceSystem.Domain.ValueObjects;
 namespace AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance;
 
 /// <param name="EmployeeIds">F07-08: conjunto de empleados (p. ej. las solicitudes reclamadas por el consumidor).</param>
+[RequiresPermission(Permissions.AttendanceCalculate)]
 public record ProcessDailyAttendanceCommand(
     DateTime StartDate,
     DateTime EndDate,

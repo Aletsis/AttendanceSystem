@@ -32,7 +32,8 @@ public static class TimeZoneCatalog
     {
         if (string.IsNullOrWhiteSpace(timeZoneId)) return false;
         if (TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId.Trim(), out _)) return true;
-        return TimeZoneInfo.TryConvertIanaIdToWindowsId(timeZoneId.Trim(), out var windowsId) && TimeZoneInfo.TryFindSystemTimeZoneById(windowsId, out _);
+        if (TimeZoneInfo.TryConvertIanaIdToWindowsId(timeZoneId.Trim(), out var windowsId) && TimeZoneInfo.TryFindSystemTimeZoneById(windowsId, out _)) return true;
+        return AttendanceSystem.Domain.Services.TimeZoneEquivalents.TryFind(timeZoneId, out _);
     }
 
     /// <summary>Texto para mostrar: nombre del catálogo (o el id) con su desfase actual.</summary>

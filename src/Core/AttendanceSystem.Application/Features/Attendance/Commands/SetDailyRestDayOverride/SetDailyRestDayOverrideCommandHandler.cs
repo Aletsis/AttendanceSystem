@@ -9,9 +9,9 @@ namespace AttendanceSystem.Application.Features.Attendance.Commands.SetDailyRest
 /// <summary>
 /// Marca o desmarca la jornada como descanso con el protocolo común de decisiones (F05-02): se guarda en
 /// el ajuste, se audita y el cálculo la aplica. Si un recálculo reemplazó la jornada mostrada en pantalla
-/// (identificador distinto), no se aplica y se devuelve <c>false</c>.
+/// (identificador distinto), no se aplica y se devuelve el fallo para recargar.
 /// </summary>
-public class SetDailyRestDayOverrideCommandHandler : IRequestHandler<SetDailyRestDayOverrideCommand, bool>
+public class SetDailyRestDayOverrideCommandHandler : IRequestHandler<SetDailyRestDayOverrideCommand, Result<AttendanceDecisionOutcome>>
 {
     private readonly IDailyAttendanceRepository _repository;
     private readonly AttendanceDecisionService _decisions;
@@ -22,17 +22,17 @@ public class SetDailyRestDayOverrideCommandHandler : IRequestHandler<SetDailyRes
         _decisions = decisions;
     }
 
-    public async Task<bool> Handle(SetDailyRestDayOverrideCommand request, CancellationToken cancellationToken)
+    public async Task<Result<AttendanceDecisionOutcome>> Handle(SetDailyRestDayOverrideCommand request, CancellationToken cancellationToken)
     {
         var id = DailyAttendanceId.From(request.DailyAttendanceId);
         var located = await _repository.GetByIdAsync(id, cancellationToken);
-        if (located == null) return false;
+        if (located == null) return Result<AttendanceDecisionOutcome>.Failure("La jornada se recalculó mientras se editaba. Recargue e intente de nuevo.");
 
-        var result = await _decisions.DecideAsync(
+        return await _decisions.DecideAsync(
             located.EmployeeId,
             located.Date,
             "Descanso",
-            request.IsRestDay ? "Marcado como descanso" : "Marcado como laborable",
+            request.Reason ?? (request.IsRestDay ? "Marcado como descanso" : "Marcado como laborable"),
             expectedRevision: null,
             async (context, adjustment) =>
             {
@@ -46,7 +46,5 @@ public class SetDailyRestDayOverrideCommandHandler : IRequestHandler<SetDailyRes
                 return Result.Success();
             },
             cancellationToken);
-
-        return result.IsSuccess;
     }
 }

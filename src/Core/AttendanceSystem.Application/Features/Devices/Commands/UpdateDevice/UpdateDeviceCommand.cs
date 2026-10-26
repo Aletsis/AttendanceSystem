@@ -5,6 +5,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.UpdateDevice;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public sealed record UpdateDeviceCommand(
     Guid Id,
     string Name,
@@ -17,7 +18,10 @@ public sealed record UpdateDeviceCommand(
     string? SerialNumber = null,
     string? Username = null,
     string? Password = null,
-    string? TimeZoneId = null) : IRequest<Result>;
+    string? TimeZoneId = null,
+    // Caso 18 (R1): fecha mínima aceptada de sus marcajes; null = alta del reloj menos los días configurados.
+    DateTime? AcceptPunchesFrom = null,
+    bool UpdateAcceptPunchesFrom = false) : IRequest<Result>;
 
 public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCommand, Result>
 {
@@ -71,6 +75,8 @@ public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCom
             request.Username,
             request.Password,
             timeZoneId);
+
+        if (request.UpdateAcceptPunchesFrom) device.SetAcceptPunchesFrom(request.AcceptPunchesFrom);
 
         _logger.LogInformation("Dispositivo actualizado en memoria. SN actual en entidad: '{SerialNumber}'",
             device.HardwareInfo.SerialNumber);

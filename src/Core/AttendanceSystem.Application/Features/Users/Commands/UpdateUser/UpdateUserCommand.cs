@@ -4,6 +4,7 @@ using AttendanceSystem.Domain.Entities;
 
 namespace AttendanceSystem.Application.Features.Users.Commands.UpdateUser;
 
+[RequiresPermission(Permissions.UsersManage)]
 public sealed record UpdateUserCommand(
     string UserId,
     string Email,

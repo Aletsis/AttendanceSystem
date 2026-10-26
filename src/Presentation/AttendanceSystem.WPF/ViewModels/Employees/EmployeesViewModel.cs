@@ -548,8 +548,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     var branchesResult = await _mediator.Send(new GetBranchesQuery());
                     var departmentsResult = await _mediator.Send(new GetDepartmentsQuery());
                     var positionsResult = await _mediator.Send(new GetPositionsQuery());
+                    var shiftsResult = await _mediator.Send(new GetShiftsQuery());
 
-                    if (!branchesResult.IsSuccess || !departmentsResult.IsSuccess || !positionsResult.IsSuccess)
+                    if (!branchesResult.IsSuccess || !departmentsResult.IsSuccess || !positionsResult.IsSuccess || !shiftsResult.IsSuccess)
                     {
                         await _messageService.ShowErrorAsync("Error al cargar catálogos para asociar empleados.");
                         return;
@@ -558,6 +559,11 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     var branchMap = branchesResult.Value.ToDictionary(b => b.Name.Trim().ToLowerInvariant(), b => b.Id);
                     var deptMap = departmentsResult.Value.ToDictionary(d => d.Name.Trim().ToLowerInvariant(), d => d.Id);
                     var posMap = positionsResult.Value.ToDictionary(p => p.Name.Trim().ToLowerInvariant(), p => p.Id);
+                    // Caso 10: cada empleado entra con el horario indicado; su turno es el del horario.
+                    var shiftMap = shiftsResult.Value
+                        .Where(s => s.ShiftType != ShiftType.Rotativo)
+                        .GroupBy(s => s.Name.Trim().ToLowerInvariant())
+                        .ToDictionary(g => g.Key, g => g.First());
 
                     using var stream = File.OpenRead(openFileDialog.FileName);
                     var result = await _importService.ParseEmployeesAsync(stream);
@@ -571,7 +577,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         {
                             if (!branchMap.TryGetValue((item.BranchName ?? string.Empty).Trim().ToLowerInvariant(), out var branchId) ||
                                 !deptMap.TryGetValue((item.DepartmentName ?? string.Empty).Trim().ToLowerInvariant(), out var deptId) ||
-                                !posMap.TryGetValue((item.PositionName ?? string.Empty).Trim().ToLowerInvariant(), out var posId))
+                                !posMap.TryGetValue((item.PositionName ?? string.Empty).Trim().ToLowerInvariant(), out var posId) ||
+                                !shiftMap.TryGetValue((item.ScheduleName ?? string.Empty).Trim().ToLowerInvariant(), out var schedule))
                             {
                                 failCount++;
                                 continue;
@@ -590,8 +597,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                                 branchId.ToString(),
                                 deptId.ToString(),
                                 posId.ToString(),
-                                null,
-                                null,
+                                schedule.ShiftType,
+                                schedule.Id.ToString(),
                                 null,
                                 false,
                                 OvertimeCalculationMethod.NoRounding,

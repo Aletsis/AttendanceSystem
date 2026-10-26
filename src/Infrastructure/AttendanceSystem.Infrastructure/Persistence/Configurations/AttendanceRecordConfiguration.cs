@@ -90,12 +90,39 @@ public class AttendanceRecordConfiguration : IEntityTypeConfiguration<Attendance
             .HasColumnType("int")
             .IsRequired(false);
 
+        builder.Property(x => x.RegisteredBy)
+            .HasMaxLength(256)
+            .IsRequired(false);
+
+        builder.Property(x => x.RegisteredAt)
+            .IsRequired(false);
+
+        builder.Property(x => x.Reason)
+            .HasMaxLength(500)
+            .IsRequired(false);
+
+        builder.Ignore(x => x.IsManual);
+        builder.Ignore(x => x.IsVoided);
+
+        builder.Property(x => x.VoidedAt).IsRequired(false);
+        builder.Property(x => x.ReceivedAt).IsRequired(false);
+        builder.Property(x => x.VoidedBy).HasMaxLength(256).IsRequired(false);
+        builder.Property(x => x.VoidReason).HasMaxLength(500).IsRequired(false);
+        builder.Property(x => x.ReplacedByRecordId)
+            .HasConversion(id => id == null ? (Guid?)null : id.Value, value => value == null ? null : AttendanceRecordId.From(value.Value))
+            .IsRequired(false);
+        builder.Property(x => x.ReplacesRecordId)
+            .HasConversion(id => id == null ? (Guid?)null : id.Value, value => value == null ? null : AttendanceRecordId.From(value.Value))
+            .IsRequired(false);
+
         // Ignorar eventos de dominio (no se persisten en esta tabla)
         builder.Ignore(x => x.DomainEvents);
 
         // H09: Restricción única de marcaje para prevenir duplicados técnicos en base de datos
+        // Caso 14: única entre los marcajes vigentes; un anulado y su corregido (u otro corregido) pueden compartir instante.
         builder.HasIndex(x => new { x.EmployeeId, x.CheckTime })
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"VoidedAt\" IS NULL");
 
         builder.HasIndex(x => new { x.EmployeeId, x.WorkDate });
         builder.HasIndex(x => x.DeviceId);

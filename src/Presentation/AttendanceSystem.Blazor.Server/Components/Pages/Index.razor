@@ -10,6 +10,7 @@
 @using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
 @using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport
+@using AttendanceSystem.Application.Features.Shifts.Commands.CheckScheduleIntegrity
 @inject IMediator Mediator
 
 <PageTitle>Sistema de Asistencia</PageTitle>
@@ -136,6 +137,34 @@
             </MudItem>
         </MudGrid>
 
+        <!-- Caso 10: configuración de horarios que dejaría días sin turno -->
+        @if (_scheduleAlerts.Any())
+        {
+            <MudCard Elevation="3" Style="border-left: 4px solid var(--mud-palette-error); border-radius: 12px;" Class="mb-6">
+                <MudCardHeader>
+                    <CardHeaderContent>
+                        <MudText Typo="Typo.h6">
+                            <MudIcon Icon="@Icons.Material.Filled.EventBusy" Class="mr-2" Color="Color.Error" />
+                            Horarios por corregir (@_scheduleAlerts.Count)
+                        </MudText>
+                        <MudText Typo="Typo.caption">Configuración que deja o dejaría días sin turno. Las alertas se resuelven solas al corregirla.</MudText>
+                    </CardHeaderContent>
+                    <CardHeaderActions>
+                        <MudButton Variant="Variant.Text" Color="Color.Error" StartIcon="@Icons.Material.Filled.Refresh"
+                                   Disabled="_checkingSchedules" OnClick="CheckSchedulesNow">Revisar ahora</MudButton>
+                    </CardHeaderActions>
+                </MudCardHeader>
+                <MudCardContent Class="pt-0">
+                    <MudList T="string" Dense="true" ReadOnly="true">
+                        @foreach (var alert in _scheduleAlerts)
+                        {
+                            <MudListItem T="string" Icon="@Icons.Material.Filled.ErrorOutline" IconColor="Color.Error" Text="@alert.Message" />
+                        }
+                    </MudList>
+                </MudCardContent>
+            </MudCard>
+        }
+
         <!-- ⚠️ Alertas de Permisos Temporales Pendientes -->
         @if (_pendingExitAlerts.Any())
         {
@@ -178,76 +207,94 @@
             </MudCard>
         }
 
+        @if (_unmatchedPunches > 0)
+        {
+            <MudAlert Severity="Severity.Warning" Class="mb-4" Variant="Variant.Outlined">
+                Hay @_unmatchedPunches ID(s) con marcajes que no cuentan en la asistencia (no registrados, antes del ingreso, después de la baja o durante vacaciones o incapacidad).
+                <MudLink Href="/employees/unmatched-punches" Class="ml-2">Revisar</MudLink>
+            </MudAlert>
+        }
+
         <!-- Gestión de Personal -->
         <MudText Typo="Typo.h5" Class="mb-3">
             <MudIcon Icon="@Icons.Material.Filled.People" Class="mr-2" />
             Gestión de Personal
         </MudText>
         <MudGrid Spacing="2" Class="mb-6">
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Large" Color="Color.Primary" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Empleados</MudText>
-                        <MudText Typo="Typo.body2">Gestiona el registro de empleados</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/employees" FullWidth="true">Ir a Empleados</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.EmployeesView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.PersonAdd" Size="Size.Large" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Empleados</MudText>
+                            <MudText Typo="Typo.body2">Gestiona el registro de empleados</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/employees" FullWidth="true">Ir a Empleados</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Large" Color="Color.Info" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Sucursales</MudText>
-                        <MudText Typo="Typo.body2">Administra las sucursales</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/branches" FullWidth="true">Ir a Sucursales</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.CatalogsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Business" Size="Size.Large" Color="Color.Info" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Sucursales</MudText>
+                            <MudText Typo="Typo.body2">Administra las sucursales</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/branches" FullWidth="true">Ir a Sucursales</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Large" Color="Color.Warning" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Departamentos</MudText>
-                        <MudText Typo="Typo.body2">Gestiona departamentos</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/departments" FullWidth="true">Ir a Departamentos</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.CatalogsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.AccountTree" Size="Size.Large" Color="Color.Warning" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Departamentos</MudText>
+                            <MudText Typo="Typo.body2">Gestiona departamentos</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/departments" FullWidth="true">Ir a Departamentos</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Work" Size="Size.Large" Color="Color.Tertiary" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Puestos</MudText>
-                        <MudText Typo="Typo.body2">Administra puestos de trabajo</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/positions" FullWidth="true">Ir a Puestos</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.CatalogsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Work" Size="Size.Large" Color="Color.Tertiary" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Puestos</MudText>
+                            <MudText Typo="Typo.body2">Administra puestos de trabajo</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/positions" FullWidth="true">Ir a Puestos</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Large" Color="Color.Secondary" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Horarios</MudText>
-                        <MudText Typo="Typo.body2">Configura turnos y horarios</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/shifts" FullWidth="true">Ir a Horarios</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.CatalogsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Schedule" Size="Size.Large" Color="Color.Secondary" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Horarios</MudText>
+                            <MudText Typo="Typo.body2">Configura turnos y horarios</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/shifts" FullWidth="true">Ir a Horarios</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
         </MudGrid>
         
         <!-- Dispositivos y Descargas -->
@@ -256,70 +303,80 @@
             Dispositivos y Descargas
         </MudText>
         <MudGrid Spacing="2" Class="mb-6">
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.DeviceHub" Size="Size.Large" Color="Color.Success" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Dispositivos</MudText>
-                        <MudText Typo="Typo.body2">Gestiona dispositivos biométricos</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/devices" FullWidth="true">Ir a Dispositivos</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.DevicesManage" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.DeviceHub" Size="Size.Large" Color="Color.Success" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Dispositivos</MudText>
+                            <MudText Typo="Typo.body2">Gestiona dispositivos biométricos</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/devices" FullWidth="true">Ir a Dispositivos</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
 
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.MonitorHeart" Size="Size.Large" Color="Color.Info" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Estado de Dispositivos</MudText>
-                        <MudText Typo="Typo.body2">Monitoreo y memoria en tiempo real</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/device-status" FullWidth="true">Ir a Monitoreo</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.DevicesManage" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.MonitorHeart" Size="Size.Large" Color="Color.Info" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Estado de Dispositivos</MudText>
+                            <MudText Typo="Typo.body2">Monitoreo y memoria en tiempo real</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/device-status" FullWidth="true">Ir a Monitoreo</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Large" Color="Color.Primary" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Descargar Registros</MudText>
-                        <MudText Typo="Typo.body2">Descarga logs de dispositivos</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/download" FullWidth="true">Ir a Descargas</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.DevicesDownload" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Download" Size="Size.Large" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Descargar Registros</MudText>
+                            <MudText Typo="Typo.body2">Descarga logs de dispositivos</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/download" FullWidth="true">Ir a Descargas</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Large" Color="Color.Info" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Registros Manuales</MudText>
-                        <MudText Typo="Typo.body2">Gestiona registros manuales</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/manual-logs" FullWidth="true">Ir a Registros</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.AttendanceManualPunch" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.EditNote" Size="Size.Large" Color="Color.Info" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Registros Manuales</MudText>
+                            <MudText Typo="Typo.body2">Gestiona registros manuales</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/manual-logs" FullWidth="true">Ir a Registros</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Calculate" Size="Size.Large" Color="Color.Warning" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Calcular Asistencia</MudText>
-                        <MudText Typo="Typo.body2">Procesa registros de asistencia</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/calculation" FullWidth="true">Ir a Cálculo</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.AttendanceCalculate" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Calculate" Size="Size.Large" Color="Color.Warning" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Calcular Asistencia</MudText>
+                            <MudText Typo="Typo.body2">Procesa registros de asistencia</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/calculation" FullWidth="true">Ir a Cálculo</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
         </MudGrid>
         
         <!-- Reportes y Análisis -->
@@ -328,70 +385,80 @@
             Reportes y Análisis
         </MudText>
         <MudGrid Spacing="2" Class="mb-6">
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Large" Color="Color.Primary" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Reporte de Asistencia</MudText>
-                        <MudText Typo="Typo.body2">Consulta asistencia diaria</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/reports" FullWidth="true">Ir a Reportes</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.ReportsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.TableChart" Size="Size.Large" Color="Color.Primary" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Reporte de Asistencia</MudText>
+                            <MudText Typo="Typo.body2">Consulta asistencia diaria</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/reports" FullWidth="true">Ir a Reportes</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Large" Color="Color.Success" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Reportes Avanzados</MudText>
-                        <MudText Typo="Typo.body2">Análisis de incidencias</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/advanced-reports" FullWidth="true">Ir a Avanzados</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.ReportsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Analytics" Size="Size.Large" Color="Color.Success" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Reportes Avanzados</MudText>
+                            <MudText Typo="Typo.body2">Análisis de incidencias</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/advanced-reports" FullWidth="true">Ir a Avanzados</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Large" Color="Color.Info" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Logs de Asistencia</MudText>
-                        <MudText Typo="Typo.body2">Revisa logs sin procesar</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/logs" FullWidth="true">Ir a Logs</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.AttendanceView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.ListAlt" Size="Size.Large" Color="Color.Info" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Logs de Asistencia</MudText>
+                            <MudText Typo="Typo.body2">Revisa logs sin procesar</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/logs" FullWidth="true">Ir a Logs</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Insights" Size="Size.Large" Color="Color.Secondary" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Análisis de Ausentismo</MudText>
-                        <MudText Typo="Typo.body2">Identifica patrones de faltas</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/absenteeism-analysis" FullWidth="true">Ir a Análisis</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.ReportsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Insights" Size="Size.Large" Color="Color.Secondary" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Análisis de Ausentismo</MudText>
+                            <MudText Typo="Typo.body2">Identifica patrones de faltas</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/absenteeism-analysis" FullWidth="true">Ir a Análisis</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
             
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.AccessTime" Size="Size.Large" Color="Color.Warning" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Análisis de Retardos</MudText>
-                        <MudText Typo="Typo.body2">Identifica patrones de retardos</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/tardiness-analysis" FullWidth="true">Ir a Análisis</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.ReportsView" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.AccessTime" Size="Size.Large" Color="Color.Warning" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Análisis de Retardos</MudText>
+                            <MudText Typo="Typo.body2">Identifica patrones de retardos</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/attendance/tardiness-analysis" FullWidth="true">Ir a Análisis</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
         </MudGrid>
         
         <!-- Configuración -->
@@ -400,18 +467,20 @@
             Configuración
         </MudText>
         <MudGrid Spacing="2" Class="mb-6">
-            <MudItem xs="12" sm="6" md="4" lg="3">
-                <MudCard Elevation="2" Class="hover-card">
-                    <MudCardContent>
-                        <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Large" Color="Color.Secondary" />
-                        <MudText Typo="Typo.h6" Class="mt-2">Configuración</MudText>
-                        <MudText Typo="Typo.body2">Ajustes del sistema</MudText>
-                    </MudCardContent>
-                    <MudCardActions>
-                        <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/settings" FullWidth="true">Ir a Configuración</MudButton>
-                    </MudCardActions>
-                </MudCard>
-            </MudItem>
+            <AuthorizeView Policy="@Permissions.SettingsManage" Context="authContext">
+                <MudItem xs="12" sm="6" md="4" lg="3">
+                    <MudCard Elevation="2" Class="hover-card">
+                        <MudCardContent>
+                            <MudIcon Icon="@Icons.Material.Filled.Tune" Size="Size.Large" Color="Color.Secondary" />
+                            <MudText Typo="Typo.h6" Class="mt-2">Configuración</MudText>
+                            <MudText Typo="Typo.body2">Ajustes del sistema</MudText>
+                        </MudCardContent>
+                        <MudCardActions>
+                            <MudButton Variant="Variant.Text" Color="Color.Primary" Href="/settings" FullWidth="true">Ir a Configuración</MudButton>
+                        </MudCardActions>
+                    </MudCard>
+                </MudItem>
+            </AuthorizeView>
         </MudGrid>
     }
     else
@@ -422,6 +491,7 @@
 
 @code {
     private bool _isLoading = true;
+    private int _unmatchedPunches;
     private int _totalEmployees;
     private int _totalDevices;
     private int _totalBranches;
@@ -443,6 +513,23 @@
     private int _totalPendingExits;
 
     private SystemConfigurationDto? _config;
+
+    private IReadOnlyList<ScheduleAlertDto> _scheduleAlerts = Array.Empty<ScheduleAlertDto>();
+    private bool _checkingSchedules;
+
+    private async Task CheckSchedulesNow()
+    {
+        _checkingSchedules = true;
+        try
+        {
+            await Mediator.Send(new CheckScheduleIntegrityCommand());
+            _scheduleAlerts = await Mediator.Send(new GetScheduleAlertsQuery()) ?? Array.Empty<ScheduleAlertDto>();
+        }
+        finally
+        {
+            _checkingSchedules = false;
+        }
+    }
 
     private double GetComplianceRate()
     {
@@ -470,6 +557,19 @@
     protected override async Task OnInitializedAsync()
     {
         await LoadStats();
+        try
+        {
+            if (await UiPermissions.HasAsync(Permissions.EmployeesView))
+            {
+                var to = DateOnly.FromDateTime(DateTime.Today);
+                var from = to.AddDays(-AttendanceSystem.Application.Features.Attendance.Queries.GetUnmatchedPunches.GetUnmatchedPunchesQueryHandler.DefaultLookbackDays);
+                _unmatchedPunches = (await Mediator.Send(new AttendanceSystem.Application.Features.Attendance.Queries.GetUnmatchedPunches.GetUnmatchedPunchesQuery(from, to)))?.Count ?? 0;
+            }
+        }
+        catch
+        {
+            _unmatchedPunches = 0;
+        }
     }
 
     private async Task LoadStats()
@@ -500,6 +600,8 @@
 
             var configResult = await Mediator.Send(new GetSystemConfigurationQuery());
             _config = configResult.Value;
+
+            _scheduleAlerts = await Mediator.Send(new GetScheduleAlertsQuery()) ?? Array.Empty<ScheduleAlertDto>();
 
             // --- Permisos temporales pendientes de hoy ---
             var todayReport = await Mediator.Send(new GetAttendanceReportQuery(

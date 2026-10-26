@@ -25,6 +25,9 @@ public record ProcessRegularAttendanceCommand(
 
 public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessRegularAttendanceCommand>
 {
+    // Caso 14: configurable (Configuración → Tiempos y periodos); se toma de la política de la petición.
+    private int DoubleTapThresholdMinutes = LunchPolicy.DoubleTapMaxMinutes;
+
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly ILogger<ProcessRegularAttendanceCommandHandler> _logger;
@@ -41,28 +44,55 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
 
     public async Task Handle(ProcessRegularAttendanceCommand request, CancellationToken cancellationToken)
     {
+        DoubleTapThresholdMinutes = (request.Lunch ?? LunchPolicy.Default).DoubleTapMinutes;
         DateTime? checkIn = null;
         DateTime? checkOut = null;
         AttendanceRecord? checkInRecord = null;
         AttendanceRecord? checkOutRecord = null;
-        (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
+        (IReadOnlyList<TemporaryExit> Exits, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
 
         var targetDateOnly = DateOnly.FromDateTime(request.Date);
         var pendingDayRecords = PunchAssignmentPolicy.Chronological(request.Records
             .Where(r => r.Status == AttendanceStatus.Pending && JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart)))
             .ToList();
 
-        if (pendingDayRecords.Count >= 1)
+        // Marcajes a no más de 15 min del primero son dobles toques: la jornada tiene un solo marcaje útil.
+        if (pendingDayRecords.Count >= 2 &&
+            (pendingDayRecords.Last().CheckTime - pendingDayRecords.First().CheckTime).TotalMinutes <= DoubleTapThresholdMinutes)
+        {
+            var keepLast = IsNearerToScheduledExit(pendingDayRecords.First(), request);
+            var kept = keepLast ? pendingDayRecords.Last() : pendingDayRecords.First();
+            foreach (var doubleTap in pendingDayRecords.Where(r => r != kept))
+            {
+                request.Draft?.DoubleTap(doubleTap);
+                doubleTap.MarkAsProcessed();
+                await _attendanceRepo.UpdateAsync(doubleTap, cancellationToken);
+            }
+            pendingDayRecords = new List<AttendanceRecord> { kept };
+        }
+
+        if (pendingDayRecords.Count == 1)
+        {
+            // Un solo marcaje: es la entrada o la salida según cuál de las dos programadas tenga más cerca (empate: salida).
+            var single = pendingDayRecords[0];
+            if (IsNearerToScheduledExit(single, request))
+            {
+                checkOutRecord = single;
+                checkOut = single.CheckTime;
+            }
+            else
+            {
+                checkInRecord = single;
+                checkIn = single.CheckTime;
+            }
+        }
+        else if (pendingDayRecords.Count >= 2)
         {
             // PASO 1: Primer registro = Entrada oficial, Último = Salida oficial
             checkInRecord = pendingDayRecords.First();
             checkIn = checkInRecord.CheckTime;
-
-            if (pendingDayRecords.Count >= 2)
-            {
-                checkOutRecord = pendingDayRecords.Last();
-                checkOut = checkOutRecord.CheckTime;
-            }
+            checkOutRecord = pendingDayRecords.Last();
+            checkOut = checkOutRecord.CheckTime;
 
             // PASO 2: Registros intermedios (entre entrada y salida)
             var middleRecords = pendingDayRecords.Count >= 3
@@ -72,15 +102,13 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
             if (middleRecords.Any())
             {
                 // PASO 2A: Pre-filtro — descartar dobles toques por proximidad a los extremos
-                const int doubleTapThresholdMinutes = 15;
-
                 var entryDoubleTaps = middleRecords
-                    .Where(r => (r.CheckTime - checkIn!.Value).TotalMinutes <= doubleTapThresholdMinutes)
+                    .Where(r => (r.CheckTime - checkIn!.Value).TotalMinutes <= DoubleTapThresholdMinutes)
                     .ToList();
 
                 var exitDoubleTaps = checkOut.HasValue
                     ? middleRecords
-                        .Where(r => (checkOut.Value - r.CheckTime).TotalMinutes <= doubleTapThresholdMinutes)
+                        .Where(r => (checkOut.Value - r.CheckTime).TotalMinutes <= DoubleTapThresholdMinutes)
                         .ToList()
                     : new List<AttendanceRecord>();
 
@@ -146,14 +174,12 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
         if (intermediateAnalysis.HasValue)
         {
             dailyAttendance.ApplyIntermediateAnalysis(
-                intermediateAnalysis.Value.LunchMinutes,
-                intermediateAnalysis.Value.LunchExcess,
-                intermediateAnalysis.Value.HasTempExits,
-                intermediateAnalysis.Value.TempMinutes);
+                intermediateAnalysis.Value.Exits,
+                (request.Lunch ?? LunchPolicy.Default).ForShift(request.Shift.PaidLunchMinutes).PaidMinutes);
             // F06-05 (4a): marcaje intermedio sin pareja: incidencia visible para revisión, sin descuento.
             foreach (var orphan in intermediateAnalysis.Value.Orphans)
             {
-                dailyAttendance.AddCalculationIssue($"Marcaje intermedio sin pareja a las {orphan:HH:mm}: revisar.");
+                dailyAttendance.AddCalculationIssue(IntermediatePunchAnalysis.OrphanIssue(orphan));
             }
         }
 
@@ -164,5 +190,13 @@ public class ProcessRegularAttendanceCommandHandler : IRequestHandler<ProcessReg
 
         _dailyRepo.Add(dailyAttendance);
         request.Draft?.Complete(dailyAttendance);
+    }
+
+    private static bool IsNearerToScheduledExit(AttendanceRecord record, ProcessRegularAttendanceCommand request)
+    {
+        var civil = record.GetCivilTime(request.TimeZoneId);
+        var scheduledIn = request.Date.Date.Add(request.Shift.StartTime);
+        var scheduledOut = scheduledIn.Add(request.Shift.WorkHours);
+        return (scheduledOut - civil).Duration() <= (civil - scheduledIn).Duration();
     }
 }

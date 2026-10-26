@@ -1,0 +1,42 @@
+@using AttendanceSystem.Application.DTOs
+
+<MudDialog>
+    <DialogContent>
+        <MudText Class="mb-4">Día <b>@Date.ToString("dd/MM/yyyy (ddd)")</b>: elija el turno o márquelo como descanso.</MudText>
+        <MudSwitch T="bool" @bind-Value="_isRestDay" Label="Día de descanso" Color="Color.Primary" />
+        <MudSelect T="Guid" Label="Turno" @bind-Value="_shiftId" Disabled="_isRestDay" Required="@(!_isRestDay)" AnchorOrigin="Origin.BottomCenter" Class="mt-2">
+            @foreach (var shift in Shifts)
+            {
+                <MudSelectItem Value="@shift.Id">@shift.Name (@shift.StartTime.ToString(@"hh\:mm") - @shift.EndTime.ToString(@"hh\:mm"))</MudSelectItem>
+            }
+        </MudSelect>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit" Disabled="@(!_isRestDay && _shiftId == Guid.Empty)">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public DateTime Date { get; set; }
+    [Parameter] public Guid? ShiftId { get; set; }
+    [Parameter] public bool IsRestDay { get; set; }
+    [Parameter] public List<ShiftDto> Shifts { get; set; } = new();
+
+    private Guid _shiftId;
+    private bool _isRestDay;
+
+    protected override void OnInitialized()
+    {
+        _shiftId = ShiftId ?? Guid.Empty;
+        _isRestDay = IsRestDay;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(new RosterDayResult(_isRestDay ? null : _shiftId, _isRestDay)));
+
+    public record RosterDayResult(Guid? ShiftId, bool IsRestDay);
+}

@@ -3,6 +3,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Backup.Commands;
 
+[RequiresPermission(Permissions.BackupsManage)]
 public record CreateBackupCommand(
     string BackupType, // "Full" o "DatabaseOnly"
     string? Description = null

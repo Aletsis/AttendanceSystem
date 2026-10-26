@@ -4,6 +4,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.CloudSync.Commands.TestCloudConnection;
 
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record TestCloudConnectionCommand(string? ConnectionString = null) : IRequest<Result<bool>>;
 
 public sealed class TestCloudConnectionCommandHandler : IRequestHandler<TestCloudConnectionCommand, Result<bool>>

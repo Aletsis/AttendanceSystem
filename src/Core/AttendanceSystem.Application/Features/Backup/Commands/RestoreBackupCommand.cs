@@ -3,6 +3,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Backup.Commands;
 
+[RequiresPermission(Permissions.BackupsManage)]
 public record RestoreBackupCommand(
     string BackupFilePath,
     IProgress<RestoreProgressReport>? Progress = null

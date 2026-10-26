@@ -27,8 +27,38 @@ public sealed class EmploymentPeriod : Entity<Guid>
 }
 
 /// <summary>
-/// Asignación laboral vigente desde una fecha (F06-08): horario, tipo de turno y sucursal. El cálculo de una
-/// fecha usa la asignación con la mayor <see cref="EffectiveFrom"/> que no la supere.
+/// Caso 16: pausa dentro de la relación laboral (vacaciones, incapacidad o baja temporal) [inicio, fin]; sin fin =
+/// hasta que RH regrese al empleado a Alta. En esos días no se calcula asistencia ni aparece en los reportes.
+/// </summary>
+public sealed class StatusPeriod : Entity<Guid>
+{
+    public Enumerations.EmployeeStatus Status { get; private set; }
+    public DateTime StartDate { get; private set; }
+    public DateTime? EndDate { get; private set; }
+
+    private StatusPeriod() { }
+
+    internal StatusPeriod(Enumerations.EmployeeStatus status, DateTime startDate, DateTime? endDate)
+    {
+        Id = Guid.NewGuid();
+        Status = status;
+        StartDate = startDate.Date;
+        EndDate = endDate?.Date;
+    }
+
+    public bool Contains(DateTime date) => date.Date >= StartDate && (!EndDate.HasValue || date.Date <= EndDate.Value);
+
+    public bool Overlaps(DateTime start, DateTime? end) =>
+        (!end.HasValue || StartDate <= end.Value.Date) && (!EndDate.HasValue || EndDate.Value >= start.Date);
+
+    internal void Close(DateTime endDate) => EndDate = endDate.Date;
+
+    internal void MoveStart(DateTime startDate) => StartDate = startDate.Date;
+}
+
+/// <summary>
+/// Asignación laboral vigente desde una fecha (F06-08): horario, tipo de turno, sucursal y días de descanso. El
+/// cálculo de una fecha usa la asignación con la mayor <see cref="EffectiveFrom"/> que no la supere.
 /// </summary>
 public sealed class ScheduleAssignment : Entity<Guid>
 {
@@ -36,25 +66,32 @@ public sealed class ScheduleAssignment : Entity<Guid>
     public ShiftId? ScheduleId { get; private set; }
     public ShiftType? ShiftType { get; private set; }
     public BranchId BranchId { get; private set; } = null!;
+    /// <summary>Días de descanso vigentes; null en vigencias anteriores a que se fecharan (rigen los actuales).</summary>
+    public List<WeekDay>? RestDays { get; private set; }
 
     private ScheduleAssignment() { }
 
-    internal ScheduleAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId)
+    internal ScheduleAssignment(DateTime effectiveFrom, ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId, IEnumerable<WeekDay> restDays)
     {
         Id = Guid.NewGuid();
         EffectiveFrom = effectiveFrom.Date;
         ScheduleId = scheduleId;
         ShiftType = shiftType;
         BranchId = branchId;
+        RestDays = Normalize(restDays);
     }
 
-    internal bool SameAs(ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId) =>
-        ScheduleId == scheduleId && ShiftType == shiftType && BranchId == branchId;
+    internal bool SameAs(ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId, IEnumerable<WeekDay> restDays) =>
+        ScheduleId == scheduleId && ShiftType == shiftType && BranchId == branchId &&
+        RestDays != null && RestDays.SequenceEqual(Normalize(restDays));
 
-    internal void Replace(ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId)
+    internal void Replace(ShiftId? scheduleId, ShiftType? shiftType, BranchId branchId, IEnumerable<WeekDay> restDays)
     {
         ScheduleId = scheduleId;
         ShiftType = shiftType;
         BranchId = branchId;
+        RestDays = Normalize(restDays);
     }
+
+    private static List<WeekDay> Normalize(IEnumerable<WeekDay> restDays) => restDays.Distinct().OrderBy(d => (int)d).ToList();
 }

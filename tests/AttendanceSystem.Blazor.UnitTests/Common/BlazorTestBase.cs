@@ -17,6 +17,7 @@ public abstract class BlazorTestBase : TestContext
     protected Mock<IImportService> ImportServiceMock { get; }
     protected Mock<IReportExportService> ExportServiceMock { get; }
     protected Mock<IEmailService> EmailServiceMock { get; }
+    protected Mock<IAdmsCommandService> AdmsCommandServiceMock { get; }
 
     protected BlazorTestBase()
     {
@@ -29,12 +30,16 @@ public abstract class BlazorTestBase : TestContext
         var authContext = this.AddTestAuthorization();
         authContext.SetAuthorized("TestUser");
         authContext.SetRoles("Administrador", "Supervisor", "Usuario");
+        // Caso 13: el administrador tiene todos los permisos (políticas) de la interfaz.
+        authContext.SetPolicies(AttendanceSystem.Application.Authorization.Permissions.All.ToArray());
+        Services.AddScoped<AttendanceSystem.Blazor.Server.Services.UiPermissions>();
 
         MediatorMock = new Mock<IMediator>();
         SenderMock = new Mock<ISender>();
         ImportServiceMock = new Mock<IImportService>();
         ExportServiceMock = new Mock<IReportExportService>();
         EmailServiceMock = new Mock<IEmailService>();
+        AdmsCommandServiceMock = new Mock<IAdmsCommandService>();
 
         var httpFactoryMock = new Mock<System.Net.Http.IHttpClientFactory>();
         var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<AttendanceSystem.Blazor.Server.Services.UpdateCheckerService>>();
@@ -45,6 +50,7 @@ public abstract class BlazorTestBase : TestContext
         Services.AddSingleton(ImportServiceMock.Object);
         Services.AddSingleton(ExportServiceMock.Object);
         Services.AddSingleton(EmailServiceMock.Object);
+        Services.AddSingleton(AdmsCommandServiceMock.Object);
         Services.AddSingleton(updateChecker);
 
         SetupDefaultMocks();

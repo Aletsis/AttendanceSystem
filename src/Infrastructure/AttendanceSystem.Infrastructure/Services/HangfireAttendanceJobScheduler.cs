@@ -106,6 +106,33 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
             "*/5 * * * *");
     }
 
+    public void ScheduleScheduleIntegrityCheck()
+    {
+        // Every hour, and once now so a fresh start reports at once
+        _recurringJobManager.AddOrUpdate<AttendanceJobs>(
+            "schedule-integrity-check",
+            jobs => jobs.CheckScheduleIntegrity(),
+            "0 * * * *");
+        _backgroundJobClient.Enqueue<AttendanceJobs>(jobs => jobs.CheckScheduleIntegrity());
+    }
+
+    public void ScheduleDailyCalculation()
+    {
+        // 00:05 hora local del servidor: el día anterior ya terminó.
+        _recurringJobManager.AddOrUpdate<AttendanceJobs>(
+            "daily-attendance-calculation",
+            jobs => jobs.CalculatePreviousDay(),
+            "5 0 * * *",
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+
+        // Caso 17: 00:30, cierra los periodos que terminaron hace más de 3 días.
+        _recurringJobManager.AddOrUpdate<AttendanceJobs>(
+            "auto-close-periods",
+            jobs => jobs.AutoClosePeriods(),
+            "30 0 * * *",
+            new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+    }
+
     public void EnqueueBiometricSync(string deviceId, string employeeId)
     {
         _backgroundJobClient.Enqueue<AttendanceJobs>(
@@ -142,6 +169,16 @@ public class AttendanceJobs
     }
 
     [JobDisplayName("Check for Critical Position Absences")]
+    public async Task CalculatePreviousDay()
+    {
+        await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.CalculatePreviousDayCommand());
+    }
+
+    public async Task AutoClosePeriods()
+    {
+        await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.PeriodClosure.AutoClosePeriodsCommand());
+    }
+
     public async Task CheckCriticalAbsences()
     {
         var result = await _mediator.Send(new CheckCriticalAbsencesCommand());
@@ -149,6 +186,18 @@ public class AttendanceJobs
         {
             throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
                 "Check for Critical Position Absences", result.Error);
+        }
+    }
+
+    [JobDisplayName("Extend Rotation Rosters and Check Schedules")]
+    public async Task CheckScheduleIntegrity()
+    {
+        await _mediator.Send(new AttendanceSystem.Application.Features.Roster.Commands.ExtendRotationPatterns.ExtendRotationPatternsCommand());
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Shifts.Commands.CheckScheduleIntegrity.CheckScheduleIntegrityCommand());
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                "Extend Rotation Rosters and Check Schedules", result.Error);
         }
     }
 

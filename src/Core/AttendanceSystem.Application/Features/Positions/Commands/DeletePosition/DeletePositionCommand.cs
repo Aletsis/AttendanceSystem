@@ -6,6 +6,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Positions.Commands.DeletePosition;
 
+[RequiresPermission(Permissions.PositionsDelete)]
 public sealed record DeletePositionCommand(Guid Id) : IRequest<Result>;
 
 public sealed class DeletePositionCommandHandler : IRequestHandler<DeletePositionCommand, Result>

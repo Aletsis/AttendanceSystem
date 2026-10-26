@@ -1,6 +1,6 @@
 @page "/settings"
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Roles = "Administrador")]
+@attribute [Authorize(Policy = Permissions.SettingsManage)]
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration
 @using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration
@@ -13,6 +13,7 @@
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IEmailService EmailService
+@inject IDialogService DialogService
 
 <PageTitle>Configuración del Sistema</PageTitle>
 
@@ -91,8 +92,11 @@
                         <MudItem xs="12">
                             <MudText Typo="Typo.subtitle1" Class="mt-2">Comida</MudText>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
-                                Una ausencia marcada que inicia dentro de la ventana cuenta como comida; los minutos con goce no se descuentan y el exceso sí. Las ausencias fuera de la ventana son salidas temporales.
+                                Toda ausencia marcada es una salida temporal que se descuenta hasta que RH la clasifique (comida, con goce, sin goce o error de checada). Con la ventana activa, la primera ausencia que toca la ventana se clasifica sola como comida y sólo se descuenta lo que exceda los minutos con goce. Apagada, RH clasifica todas. Sin marcajes intermedios no se descuenta nada.
                             </MudText>
+                        </MudItem>
+                        <MudItem xs="12">
+                            <MudSwitch T="bool" @bind-Value="_lunchWindowEnabled" Color="Color.Primary" Label="Ventana de comida (clasificar la comida automáticamente)" />
                         </MudItem>
                         <MudItem xs="12" sm="4">
                             <MudTimePicker Label="Inicio ventana de comida" @bind-Time="_lunchWindowStart" Variant="Variant.Outlined" Editable="true" />
@@ -104,11 +108,47 @@
                             <MudNumericField Label="Minutos de comida con goce" @bind-Value="_paidLunchMinutes" Min="0" Max="240" Variant="Variant.Outlined" />
                         </MudItem>
                         <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Toque doble (minutos)" @bind-Value="_doubleTapMinutes" Min="1" Max="60" Variant="Variant.Outlined"
+                                             HelperText="Dos checadas a esta distancia o menos cuentan como una. No recalcula días anteriores." />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
                             <MudTimePicker Label="Inicio ventana de comida nocturna" @bind-Time="_nightLunchWindowStart" Variant="Variant.Outlined" Editable="true" />
                         </MudItem>
                         <MudItem xs="12" sm="4">
                             <MudTimePicker Label="Fin ventana de comida nocturna" @bind-Time="_nightLunchWindowEnd" Variant="Variant.Outlined" Editable="true"
                                            HelperText="Para turnos nocturnos; puede cruzar la medianoche (p. ej. 23:00–04:00)." />
+                        </MudItem>
+
+                        <MudItem xs="12">
+                            <MudText Typo="Typo.subtitle1" Class="mt-2">Cuarentena de marcajes</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Secondary">
+                                Un marcaje con hora sospechosa no entra al cálculo: queda en cuarentena hasta que un administrador lo libere con la hora
+                                corregida o lo descarte (Hora de relojes). Ninguna regla lo corrige sola.
+                            </MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="R1 Fecha mínima (días antes del alta del reloj)" @bind-Value="_quarantine.MinDateDays" Min="0" Max="3650" Variant="Variant.Outlined"
+                                             HelperText="Anterior a esto, el reloj perdió su fecha. Cada reloj puede fijar la suya." />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="R2 Adelanto tolerado (minutos)" @bind-Value="_quarantine.FutureMinutes" Min="1" Max="1440" Variant="Variant.Outlined"
+                                             HelperText="Más adelante de la hora real de su zona: reloj adelantado." />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="R3 Salto hacia atrás (minutos)" @bind-Value="_quarantine.BackwardJumpMinutes" Min="5" Max="10080" Variant="Variant.Outlined"
+                                             HelperText="Si la hora retrocede más que esto entre marcajes del reloj." />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="R4 Atraso en tiempo real (minutos)" @bind-Value="_quarantine.RealtimeLagMinutes" Min="5" Max="10080" Variant="Variant.Outlined"
+                                             HelperText="ADMS: un marcaje de hace más que esto, con el reloj conectado desde antes, es de un reloj atrasado." />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="R5 Alerta de desfase (minutos)" @bind-Value="_quarantine.DriftAlertMinutes" Min="1" Max="10080" Variant="Variant.Outlined"
+                                             HelperText="ADMS: un desfase menor al de R4 sólo alerta y resincroniza el reloj." />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Margen de lectura de un reloj atrasado (días)" @bind-Value="_quarantine.SdkReadMarginDays" Min="0" Max="30" Variant="Variant.Outlined"
+                                             HelperText="SDK: se lee más atrás para no perder los marcajes con la hora corrida." />
                         </MudItem>
                     </MudGrid>
                 </MudForm>
@@ -401,6 +441,30 @@
     private TimeSpan? _lunchWindowStart = new(12, 30, 0);
     private TimeSpan? _lunchWindowEnd = new(15, 0, 0);
     private int _paidLunchMinutes = 30;
+    private int _doubleTapMinutes = 15;
+
+    // Caso 18: umbrales de la cuarentena.
+    private sealed class QuarantineSettings
+    {
+        public int MinDateDays { get; set; } = 30;
+        public int FutureMinutes { get; set; } = 5;
+        public int BackwardJumpMinutes { get; set; } = 60;
+        public int RealtimeLagMinutes { get; set; } = 30;
+        public int DriftAlertMinutes { get; set; } = 10;
+        public int SdkReadMarginDays { get; set; } = 1;
+
+        public AttendanceSystem.Domain.Services.PunchQuarantinePolicy ToPolicy() =>
+            new(MinDateDays, FutureMinutes, BackwardJumpMinutes, RealtimeLagMinutes, DriftAlertMinutes, SdkReadMarginDays);
+
+        public static QuarantineSettings From(AttendanceSystem.Domain.Services.PunchQuarantinePolicy? p) => p == null ? new() : new()
+        {
+            MinDateDays = p.MinDateDaysBeforeDevice, FutureMinutes = p.FutureToleranceMinutes, BackwardJumpMinutes = p.BackwardJumpMinutes,
+            RealtimeLagMinutes = p.RealtimeLagMinutes, DriftAlertMinutes = p.ClockDriftAlertMinutes, SdkReadMarginDays = p.SdkReadMarginDays
+        };
+    }
+
+    private QuarantineSettings _quarantine = new();
+    private bool _lunchWindowEnabled = true;
     private TimeSpan? _nightLunchWindowStart = new(23, 0, 0);
     private TimeSpan? _nightLunchWindowEnd = new(4, 0, 0);
 
@@ -492,8 +556,12 @@
                 _lunchWindowStart = config.LunchWindowStart ?? _lunchWindowStart;
                 _lunchWindowEnd = config.LunchWindowEnd ?? _lunchWindowEnd;
                 _paidLunchMinutes = config.PaidLunchMinutes;
+                _doubleTapMinutes = config.DoubleTapMinutes;
+                _quarantine = QuarantineSettings.From(config.QuarantinePolicy);
+                _lunchWindowEnabled = config.LunchWindowEnabled;
                 _nightLunchWindowStart = config.NightLunchWindowStart ?? _nightLunchWindowStart;
                 _nightLunchWindowEnd = config.NightLunchWindowEnd ?? _nightLunchWindowEnd;
+                _loadedCalculationSettings = CalculationSettings();
 
                 // Cloud Sync
                 _isCloudSyncEnabled = config.IsCloudSyncEnabled;
@@ -514,8 +582,24 @@
         }
     }
 
+    // Caso 15: los ajustes que cambian el cálculo; si cambian se pregunta desde qué fecha aplican.
+    private string? _loadedCalculationSettings;
+
+    private string CalculationSettings() => string.Join("|", _workPeriodMode, _weeklyStartDay, _fortnightFirstDay, _fortnightSecondDay,
+        _monthlyStartDay, _lunchWindowStart, _lunchWindowEnd, _paidLunchMinutes, _doubleTapMinutes, _lunchWindowEnabled,
+        _nightLunchWindowStart, _nightLunchWindowEnd);
+
     private async Task SaveSettings()
     {
+        DateTime? recalculateFrom = null;
+        if (_loadedCalculationSettings != null && CalculationSettings() != _loadedCalculationSettings)
+        {
+            recalculateFrom = await EffectiveDateDialog.AskAsync(DialogService, "Aplicar cambios del cálculo",
+                "Cambió la comida, el toque doble o los periodos. ¿Desde qué fecha aplican?",
+                date => Mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.GetConfigurationRecalculationImpactQuery(date)));
+            if (recalculateFrom == null) return;
+        }
+
         _isSaving = true;
         try
         {
@@ -557,7 +641,11 @@
                 _lunchWindowEnd,
                 _paidLunchMinutes,
                 _nightLunchWindowStart,
-                _nightLunchWindowEnd
+                _nightLunchWindowEnd,
+                _lunchWindowEnabled,
+                _doubleTapMinutes,
+                recalculateFrom,
+                _quarantine.ToPolicy()
             );
 
             var result = await Mediator.Send(command);
@@ -565,6 +653,7 @@
             if (result.IsSuccess)
             {
                 Snackbar.Add("Configuración guardada correctamente", Severity.Success);
+                _loadedCalculationSettings = CalculationSettings();
             }
             else
             {

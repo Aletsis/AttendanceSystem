@@ -16,6 +16,7 @@ using AttendanceSystem.Application.Features.Attendance.Services;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
 
+[RequiresPermission(Permissions.DevicesDownload)]
 public sealed record DownloadFromDeviceCommand(
     string DeviceId,
     DateTime? FromDate = null,
@@ -23,7 +24,12 @@ public sealed record DownloadFromDeviceCommand(
     bool CalculateAttendance = true,
     string? InitiatedByUserId = null,
     string? InitiatedByUserName = null,
-    bool ForceFullSync = false) : IRequest<Result<DownloadResultDto>>;
+    bool ForceFullSync = false) : IRequest<Result<DownloadResultDto>>, IRequiresDataPermissions
+{
+    /// <summary>Caso 13: re-descargar todo el reloj sólo lo hace el administrador.</summary>
+    public IEnumerable<string> RequiredPermissions() =>
+        ForceFullSync ? new[] { Permissions.DevicesForceFullDownload } : Array.Empty<string>();
+}
 
 public sealed class DownloadFromDeviceCommandHandler
     : IRequestHandler<DownloadFromDeviceCommand, Result<DownloadResultDto>>
@@ -47,6 +53,7 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly IPersistenceFailureClassifier _failureClassifier;
     private readonly AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService _clock;
+    private readonly AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? _quarantine;
 
     public DownloadFromDeviceCommandHandler(
         IDeviceRepository deviceRepository,
@@ -67,8 +74,10 @@ public sealed class DownloadFromDeviceCommandHandler
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         IPersistenceFailureClassifier? failureClassifier = null,
-        AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService? clock = null)
+        AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService? clock = null,
+        AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? quarantine = null)
     {
+        _quarantine = quarantine;
         _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _deviceRepository = deviceRepository;
         _attendanceRepository = attendanceRepository;
@@ -163,57 +172,37 @@ public sealed class DownloadFromDeviceCommandHandler
                 var isAccess = device.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true;
                 var admsTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
 
-                if (command.ForceFullSync || !filterDate.HasValue)
+                // Consultar sólo marcajes. CHECK/LOG y los cambios de stamp disparaban
+                // reenvíos generales, fuera de la ventana histórica solicitada.
+                var table = isAccess ? "Transaction" : "ATTLOG";
+                string query;
+                if (command.ForceFullSync || (!filterDate.HasValue && !command.ToDate.HasValue))
                 {
-                    // Forzar sincronización completa: Resetear stamp en BD para que el próximo push entregue todo desde el inicio (Stamp=0)
-                    await _deviceRepository.ResetAttLogTimestampAsync(sn!, cancellationToken);
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                    _logger.LogInformation("ADMS: Sincronización completa forzada (CHECK + DATA QUERY + LOG + Stamp=0) para SN:{SerialNumber} (Modo: {Mode})",
-                        sn, isAccess ? "acc" : "att");
-
-                    // 1. CHECK actualiza opciones y stamps en el dispositivo (reinicio a Stamp=0 / TransStamp=0)
-                    _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
-
-                    // 2. DATA QUERY para forzar lectura de logs históricos en dispositivos Visible Light / SpeedFace
-                    if (isAccess)
-                    {
-                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=Transaction,fields=*");
-                    }
-                    else
-                    {
-                        _admsCommandService.EnqueueCommand(sn!, "DATA QUERY tablename=ATTLOG,fields=*");
-                    }
-
-                    // 3. LOG fuerza la subida inmediata de buffer
-                    _admsCommandService.EnqueueCommand(sn!, "LOG");
+                    query = $"DATA QUERY tablename={table},fields=*";
                 }
                 else
                 {
-                    // El reloj filtra con su hora civil: la ventana se expresa en su zona, no en la del servidor.
-                    var fromCivil = ToDeviceCivil(filterDate.Value, admsTimeZone);
-                    var fromStr = fromCivil.ToString("yyyy-MM-dd HH:mm:ss");
-                    var toStr = (command.ToDate.HasValue ? ToDeviceCivil(command.ToDate.Value, admsTimeZone) : _clock.ExpectedCivilNow(admsTimeZone)).ToString("yyyy-MM-dd HH:mm:ss");
-
-                    // Actualizar stamp para que /push responda con la fecha requerida (el stamp es hora del reloj)
-                    await _deviceRepository.UpdateLastAttLogTimestampAsync(sn!, fromCivil, cancellationToken);
-                    await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                    _logger.LogInformation("ADMS: Solicitada descarga desde {FromDate} hasta {ToDate} para SN:{SerialNumber} (CHECK + DATA QUERY + LOG)",
-                        fromStr, toStr, sn);
-                    _admsCommandService.EnqueueCommand(sn!, "CHECK", downloadLogId.Value);
-
-                    if (isAccess)
+                    // Las fechas de la consulta se expresan en la hora civil del reloj.
+                    // Sin Hasta, cerrar la ventana en el momento de esta solicitud.
+                    var fromCivil = filterDate.HasValue
+                        ? ToDeviceCivil(filterDate.Value, admsTimeZone)
+                        : new DateTime(1970, 1, 1);
+                    var toCivil = ToDeviceCivil(requestToDate, admsTimeZone);
+                    if (fromCivil > toCivil)
                     {
-                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=Transaction,starttime={fromStr},endtime={toStr}");
-                    }
-                    else
-                    {
-                        _admsCommandService.EnqueueCommand(sn!, $"DATA QUERY tablename=ATTLOG,starttime={fromStr},endtime={toStr}");
+                        const string error = "La fecha inicial de descarga no puede ser posterior a la fecha final.";
+                        downloadLog.MarkAsFailed(error);
+                        await _downloadLogRepository.UpdateAsync(downloadLog, cancellationToken);
+                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                        return Result<DownloadResultDto>.Failure(error);
                     }
 
-                    _admsCommandService.EnqueueCommand(sn!, "LOG");
+                    query = FormattableString.Invariant($"DATA QUERY tablename={table},starttime={fromCivil:yyyy-MM-dd HH:mm:ss},endtime={toCivil:yyyy-MM-dd HH:mm:ss}");
                 }
+
+                // El resultado registrado debe corresponder a la consulta de marcajes.
+                _admsCommandService.EnqueueCommand(sn!, query, downloadLogId.Value);
+                _logger.LogInformation("ADMS: Consulta de marcajes encolada para SN:{SerialNumber}: {Query}", sn, query);
 
                 _logger.LogInformation("✅ ADMS: Comandos de sincronización encolados para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",
                     sn!, downloadLogId.Value);
@@ -284,7 +273,33 @@ public sealed class DownloadFromDeviceCommandHandler
             // con la de esa zona; si se desvió, se resincroniza y queda una alerta (los marcajes ya capturados con la
             // hora equivocada no se alteran aquí).
             var authoritativeTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
-            await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken);
+            var clockCheck = await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken, deviceIdValue);
+
+            // Caso 18: un reloj atrasado grabó los marcajes desde la descarga anterior con la hora corrida. Se lee más
+            // atrás (para no perderlos), se registra el incidente y esos marcajes van a cuarentena con la corrección.
+            var arrival = command.ForceFullSync
+                ? new AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext(AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Redownload)
+                : AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext.Download;
+            string? clockWarning = null;
+            if (!command.ForceFullSync && clockCheck.Drift is { } drift && -drift > AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService.DriftTolerance && _quarantine != null)
+            {
+                var behind = -drift;
+                var policy = await _quarantine.PolicyAsync(cancellationToken);
+                var previousCivil = filterDate.HasValue ? ToDeviceCivil(filterDate.Value, authoritativeTimeZone) : (DateTime?)null;
+                arrival = new AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext(
+                    AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Download, behind, previousCivil);
+                if (filterDate.HasValue) filterDate = filterDate.Value - behind - TimeSpan.FromDays(policy.SdkReadMarginDays);
+                if (clockCheck.Reported is { } reportedNow)
+                {
+                    await _quarantine.RecordClockIncidentAsync(deviceId,
+                        (previousCivil ?? reportedNow.AddDays(-policy.SdkReadMarginDays)) - behind - TimeSpan.FromDays(policy.SdkReadMarginDays),
+                        reportedNow, behind,
+                        $"Al descargar, el reloj marcaba {reportedNow:dd/MM/yyyy HH:mm} cuando eran las {clockCheck.Expected:dd/MM/yyyy HH:mm}",
+                        cancellationToken);
+                }
+                clockWarning = $"El reloj estaba atrasado {AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(behind)}: " +
+                               "se resincronizó y sus marcajes desde la descarga anterior quedaron en cuarentena para revisarlos.";
+            }
 
             // 5. Descargar registros mediante contrato explícito de resultados
             // La ventana se expresa en la hora civil del reloj (el SDK compara con la hora que marca).
@@ -401,6 +416,21 @@ public sealed class DownloadFromDeviceCommandHandler
                         timeZoneId: authoritativeTimeZone,
                         source: deviceBrand.ToString()
                     ));
+                }
+            }
+
+            int quarantinedCount = 0, alreadyResolvedCount = 0;
+            // Marcajes con hora imposible: a cuarentena (guardada antes de que el reloj pueda borrarse), no al cálculo.
+            if (_quarantine != null && domainRecords.Count > 0)
+            {
+                var punches = domainRecords.Select(r => new AttendanceSystem.Application.Features.Devices.Quarantine.PunchCandidate(
+                    r.EmployeeId.Value, r.OriginalCheckTime ?? r.CheckTime, authoritativeTimeZone, r.VerifyMethod.Id, r.CheckType.Id, r.Source ?? deviceBrand.ToString())).ToList();
+                var outcome = await _quarantine.EvaluateAsync(deviceId, deviceName, punches, arrival, cancellationToken);
+                quarantinedCount = outcome.Quarantined;
+                alreadyResolvedCount = outcome.AlreadyResolved;
+                if (outcome.Excluded.Count > 0)
+                {
+                    domainRecords = domainRecords.Where((_, i) => !outcome.Excluded.Contains(i)).ToList();
                 }
             }
 
@@ -547,7 +577,10 @@ public sealed class DownloadFromDeviceCommandHandler
                 AffectedEmployeeIds: affectedEmployeeIds,
                 ReadStatus: readResult.Status,
                 LogsCleared: logsCleared,
-                ClearErrorMessage: clearErrorMessage));
+                ClearErrorMessage: clearErrorMessage,
+                QuarantinedCount: quarantinedCount,
+                AlreadyResolvedCount: alreadyResolvedCount,
+                ClockWarning: clockWarning));
         }
         catch (Exception ex)
         {

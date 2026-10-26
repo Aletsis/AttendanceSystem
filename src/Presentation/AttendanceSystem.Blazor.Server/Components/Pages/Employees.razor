@@ -1,4 +1,5 @@
 @page "/employees"
+@attribute [Authorize(Policy = Permissions.EmployeesView)]
 @using MediatR
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Employees
@@ -144,7 +145,7 @@ else
                             <MudTooltip Text="Editar">
                                 <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context.Item))" Size="Size.Medium" />
                             </MudTooltip>
-                            <AuthorizeView Roles="Administrador" Context="authContext">
+                            <AuthorizeView Policy="@Permissions.EmployeesDelete" Context="authContext">
                                 <MudTooltip Text="Eliminar">
                                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteEmployee(context.Item.Id))" Size="Size.Medium" />
                                 </MudTooltip>
@@ -235,10 +236,12 @@ else
                             <MudTooltip Text="Enviar a Reloj">
                                 <MudIconButton Icon="@Icons.Material.Filled.Router" Color="Color.Info" OnClick="@(() => OpenSendToDeviceDialog(context.Item))" Size="Size.Medium" />
                             </MudTooltip>
-                            <MudTooltip Text="Editar">
-                                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditExternalDialog(context.Item))" Size="Size.Medium" />
-                            </MudTooltip>
-                            <AuthorizeView Roles="Administrador" Context="authContext">
+                            <AuthorizeView Policy="@Permissions.ExternalEmployeesEdit" Context="authContext">
+                                <MudTooltip Text="Editar">
+                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditExternalDialog(context.Item))" Size="Size.Medium" />
+                                </MudTooltip>
+                            </AuthorizeView>
+                            <AuthorizeView Policy="@Permissions.ExternalEmployeesDelete" Context="authContext">
                                 <MudTooltip Text="Eliminar">
                                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteExternalEmployee(context.Item))" Size="Size.Medium" />
                                 </MudTooltip>
@@ -288,10 +291,25 @@ else
     private Guid? _selectedExternalBranchId;
     private EmployeeStatus? _selectedExternalStatus;
 
+    // Caso 14: desde "Marcajes sin empleado" se llega con ?alta=ID (abre el alta con ese ID) o ?buscar=ID.
+    [SupplyParameterFromQuery(Name = "alta")] public string? NewEmployeeId { get; set; }
+    [SupplyParameterFromQuery(Name = "buscar")] public string? SearchFor { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         await LoadFilterOptions();
+        if (!string.IsNullOrWhiteSpace(SearchFor)) _searchString = SearchFor;
         _isLoaded = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_isLoaded && !string.IsNullOrWhiteSpace(NewEmployeeId))
+        {
+            var id = NewEmployeeId;
+            NewEmployeeId = null;
+            await OpenCreateDialog(id);
+        }
     }
 
     private async Task LoadFilterOptions()
@@ -410,10 +428,13 @@ else
         _loadingExternal = false;
     }
 
-    private async Task OpenCreateDialog()
+    private Task OpenCreateDialog() => OpenCreateDialog(null);
+
+    private async Task OpenCreateDialog(string? presetId)
     {
         var options = new DialogOptions { CloseButton = true, MaxWidth = MaxWidth.Medium, FullWidth = true };
         var parameters = new DialogParameters();
+        if (!string.IsNullOrWhiteSpace(presetId)) parameters.Add("Id", presetId);
 
         if (_activeTabIndex == 1)
         {

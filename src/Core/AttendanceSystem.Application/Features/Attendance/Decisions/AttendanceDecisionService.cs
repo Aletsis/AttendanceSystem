@@ -80,6 +80,7 @@ public sealed class AttendanceDecisionService
     private readonly ICurrentUserService? _currentUser;
     private readonly IPersistenceFailureClassifier _classifier;
     private readonly ILogger<AttendanceDecisionService> _logger;
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
 
     public AttendanceDecisionService(
         IAttendanceAdjustmentRepository adjustments,
@@ -90,8 +91,10 @@ public sealed class AttendanceDecisionService
         ISender sender,
         ILogger<AttendanceDecisionService> logger,
         ICurrentUserService? currentUser = null,
-        IPersistenceFailureClassifier? classifier = null)
+        IPersistenceFailureClassifier? classifier = null,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
+        _closures = closures;
         _adjustments = adjustments;
         _consolidations = consolidations;
         _wakeup = wakeup;
@@ -114,6 +117,12 @@ public sealed class AttendanceDecisionService
         Func<AttendanceDecisionContext, AttendanceAdjustment, Task<Result>> decide,
         CancellationToken cancellationToken)
     {
+        // Caso 17: un día de un periodo cerrado no acepta decisiones.
+        if (_closures != null && await _closures.DenyAsync(date, cancellationToken) is { } closedError)
+        {
+            return Result<AttendanceDecisionOutcome>.Failure(closedError);
+        }
+
         var author = Author;
         int revision = 0;
         List<DateTime> affected = new();
@@ -138,6 +147,14 @@ public sealed class AttendanceDecisionService
 
                     var decided = await decide(context, adjustment);
                     if (decided.IsFailure) return decided;
+
+                    if (_closures != null)
+                    {
+                        foreach (var day in context.Touched.Keys.Concat(context.ExtraAffected))
+                        {
+                            if (await _closures.DenyAsync(day, cancellationToken) is { } touchedClosed) return Result.Failure(touchedClosed);
+                        }
+                    }
 
                     foreach (var (day, (touched, isNew, before, previousRevision)) in context.Touched)
                     {

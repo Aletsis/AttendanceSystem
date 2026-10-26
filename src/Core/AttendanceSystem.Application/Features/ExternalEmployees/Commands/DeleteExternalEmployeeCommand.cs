@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.ExternalEmployees.Commands;
 
+[RequiresPermission(Permissions.ExternalEmployeesDelete)]
 public sealed record DeleteExternalEmployeeCommand(Guid Id) : IRequest<Result>;
 
 public sealed class DeleteExternalEmployeeCommandHandler : IRequestHandler<DeleteExternalEmployeeCommand, Result>

@@ -5,6 +5,7 @@ using AttendanceSystem.Application.Common;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.DeleteDeviceUser;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public record DeleteDeviceUserCommand(string DeviceId, string UserId) : IRequest<Result>;
 
 public class DeleteDeviceUserHandler : IRequestHandler<DeleteDeviceUserCommand, Result>

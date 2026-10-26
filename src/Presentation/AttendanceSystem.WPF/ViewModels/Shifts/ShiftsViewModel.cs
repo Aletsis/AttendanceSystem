@@ -266,6 +266,12 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                         SecondBlockToleranceMinutes: result.Parameters.ContainsKey("SecondBlockToleranceMinutes") ? result.Parameters.GetValue<int?>("SecondBlockToleranceMinutes") : null,
                         PunchTrackingMode: punchTrackingMode,
                         HasEntryWindow: hasEntryWindow);
+
+                    // Caso 15: el cambio aplica desde una fecha; hoy o pasada recalcula los días de quienes usan el horario.
+                    var from = await _dialogService.AskEffectiveDateAsync("Aplicar cambio del horario", $"¿Desde qué fecha aplica el cambio de \"{name}\"?",
+                        date => _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.GetShiftRecalculationImpactQuery(shiftData.Id, date)));
+                    if (from == null) return;
+                    command = command with { RecalculateFrom = from };
                     var updateResult = await _mediator.Send(command);
 
                     if (updateResult.IsSuccess)

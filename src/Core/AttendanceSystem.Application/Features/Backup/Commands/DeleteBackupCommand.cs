@@ -2,6 +2,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Backup.Commands;
 
+[RequiresPermission(Permissions.BackupsManage)]
 public record DeleteBackupCommand(string BackupFilePath) : IRequest<bool>;
 
 public class DeleteBackupCommandHandler : IRequestHandler<DeleteBackupCommand, bool>

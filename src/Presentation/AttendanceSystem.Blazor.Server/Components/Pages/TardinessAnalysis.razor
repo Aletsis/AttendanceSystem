@@ -1,4 +1,5 @@
 @page "/attendance/tardiness-analysis"
+@attribute [Authorize(Policy = Permissions.ReportsView)]
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Attendance.Queries.GetTardinessAnalysis
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches

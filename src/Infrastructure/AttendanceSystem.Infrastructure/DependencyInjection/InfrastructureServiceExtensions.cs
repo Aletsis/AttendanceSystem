@@ -62,6 +62,7 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IDeviceRepository, DeviceRepository>();
         services.AddScoped<IShiftRepository, ShiftRepository>();
         services.AddScoped<IShiftRosterRepository, ShiftRosterRepository>();
+        services.AddScoped<IRotationPatternRepository, RotationPatternRepository>();
         services.AddScoped<IBranchRepository, BranchRepository>();
         services.AddScoped<IDepartmentRepository, DepartmentRepository>();
         services.AddScoped<IPositionRepository, PositionRepository>();
@@ -71,7 +72,9 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<IDownloadLogRepository, DownloadLogRepository>();
         services.AddScoped<ISystemAlertRepository, SystemAlertRepository>();
         services.AddScoped<IQuarantinedPunchRepository, QuarantinedPunchRepository>();
+        services.AddScoped<IDeviceClockIncidentRepository, DeviceClockIncidentRepository>();
         services.AddScoped<IPunchTimeCorrectionRepository, PunchTimeCorrectionRepository>();
+        services.AddScoped<IAttendancePeriodClosureRepository, AttendancePeriodClosureRepository>();
         services.AddScoped<IExternalAttendanceLogRepository, ExternalAttendanceLogRepository>();
         services.AddScoped<IExternalEmployeeRepository, ExternalEmployeeRepository>();
         services.AddScoped<IEmployeeAuditLogRepository, EmployeeAuditLogRepository>();

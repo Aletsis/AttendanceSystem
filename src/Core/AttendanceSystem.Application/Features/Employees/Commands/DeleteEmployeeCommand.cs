@@ -8,6 +8,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Employees.Commands;
 
+[RequiresPermission(Permissions.EmployeesDelete)]
 public sealed record DeleteEmployeeCommand(string Id) : IRequest<Result>;
 
 public sealed class DeleteEmployeeCommandHandler : IRequestHandler<DeleteEmployeeCommand, Result>

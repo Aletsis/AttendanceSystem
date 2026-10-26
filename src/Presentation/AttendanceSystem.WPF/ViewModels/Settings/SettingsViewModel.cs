@@ -23,6 +23,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
         private readonly IConfiguration _configuration;
+        private readonly Prism.Dialogs.IDialogService? _dialogService;
 
         private SystemConfigurationDto? _currentConfig;
 
@@ -96,8 +97,10 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
             IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            Prism.Dialogs.IDialogService? dialogService = null)
         {
+            _dialogService = dialogService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
@@ -153,6 +156,7 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     FortnightFirstDay = _currentConfig.FortnightFirstDay;
                     FortnightSecondDay = _currentConfig.FortnightSecondDay;
                     MonthlyStartDay = _currentConfig.MonthlyStartDay;
+                    _loadedPeriods = PeriodSettings();
                 }
                 else
                 {
@@ -163,8 +167,22 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
             finally { SetBusy(false); }
         }
 
+        // Caso 15: los periodos cambian el cálculo (semanas, topes por periodo); si cambian se pregunta desde cuándo aplican.
+        private string? _loadedPeriods;
+
+        private string PeriodSettings() => string.Join("|", WorkPeriodMode, WeeklyStartDay, FortnightFirstDay, FortnightSecondDay, MonthlyStartDay);
+
         private async Task ExecuteSaveSettingsAsync()
         {
+            DateTime? recalculateFrom = null;
+            if (_dialogService != null && _loadedPeriods != null && PeriodSettings() != _loadedPeriods)
+            {
+                recalculateFrom = await _dialogService.AskEffectiveDateAsync("Aplicar cambios del cálculo",
+                    "Cambiaron los periodos. ¿Desde qué fecha aplican?",
+                    date => _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.GetConfigurationRecalculationImpactQuery(date)));
+                if (recalculateFrom == null) return;
+            }
+
             SetBusy(true, "Guardando configuración...");
             try
             {
@@ -198,7 +216,12 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     _currentConfig?.AutoBackupTime,
                     _currentConfig?.IsAutoReportEnabled ?? false,
                     _currentConfig?.AutoReportTime,
-                    _currentConfig?.AutoReportEmails
+                    _currentConfig?.AutoReportEmails,
+                    // Esta pantalla no edita lo siguiente: se conserva lo guardado (antes se reiniciaba la nube y el reporte del día).
+                    _currentConfig?.AutoReportForToday ?? false,
+                    _currentConfig?.IsCloudSyncEnabled ?? true,
+                    _currentConfig?.CloudDbConnectionString,
+                    RecalculateFrom: recalculateFrom
                 );
 
                 var result = await _mediator.Send(command);

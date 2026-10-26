@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
 using Prism.Commands;
+using AttendanceSystem.Application.Authorization;
 using AttendanceSystem.WPF.Services;
 using MediatR;
 using AttendanceSystem.Application.Features.Employees.Queries;
@@ -25,6 +26,11 @@ namespace AttendanceSystem.WPF.ViewModels.Dashboard
         public int PresentToday { get => _presentToday; set => SetProperty(ref _presentToday, value); }
         public int AbsentToday { get => _absentToday; set => SetProperty(ref _absentToday, value); }
         public int LateToday { get => _lateToday; set => SetProperty(ref _lateToday, value); }
+
+        // Caso 13: accesos según los permisos del usuario (los comandos también los validan).
+        public bool CanOpenDevices => _authService.HasPermission(Permissions.DevicesDownload);
+        public bool CanOpenSettings => _authService.HasPermission(Permissions.SettingsManage);
+        public bool CanOpenBackup => _authService.HasPermission(Permissions.BackupsManage);
 
         public ICommand NavigateToEmployeesCommand { get; }
         public ICommand NavigateToAttendanceCommand { get; }
@@ -53,10 +59,10 @@ namespace AttendanceSystem.WPF.ViewModels.Dashboard
             NavigateToPositionsCommand = new DelegateCommand(() => NavigateTo("Positions"));
             NavigateToBranchesCommand = new DelegateCommand(() => NavigateTo("Branches"));
             NavigateToShiftsCommand = new DelegateCommand(() => NavigateTo("Shifts"));
-            NavigateToDevicesCommand = new DelegateCommand(() => NavigateTo("Devices"));
+            NavigateToDevicesCommand = new DelegateCommand(() => NavigateTo("Devices"), () => CanOpenDevices);
             NavigateToReportsCommand = new DelegateCommand(() => NavigateTo("Reports"));
-            NavigateToSettingsCommand = new DelegateCommand(() => NavigateTo("Settings"));
-            NavigateToBackupCommand = new DelegateCommand(() => NavigateTo("Backup"));
+            NavigateToSettingsCommand = new DelegateCommand(() => NavigateTo("Settings"), () => CanOpenSettings);
+            NavigateToBackupCommand = new DelegateCommand(() => NavigateTo("Backup"), () => CanOpenBackup);
             LogoutCommand = new DelegateCommand(async () => await ExecuteLogoutAsync());
 
             _ = LoadDashboardAsync();

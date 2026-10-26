@@ -130,4 +130,51 @@ public class ProcessRegularAttendanceCommandHandlerTests
             da.ActualCheckOut == null &&
             da.MissingCheckOut == true)), Times.Once);
     }
+    [Theory]
+    [InlineData(15, 0)]
+    [InlineData(12, 0)] // Empate entre 08:00 y 16:00: salida.
+    public async Task Handle_WhenSingleRecordNearerToScheduledExit_ShouldRecordMissingCheckIn(int hour, int minute)
+    {
+        var rec = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(hour).AddMinutes(minute), VerifyMethod.Fingerprint, CheckType.CheckIn);
+
+        await _handler.Handle(new ProcessRegularAttendanceCommand(_employee, _date, _shift, new List<AttendanceRecord> { rec }, IsRestDay: false), CancellationToken.None);
+
+        rec.CheckType.Should().Be(CheckType.CheckOut);
+        _dailyRepoMock.Verify(r => r.Add(It.Is<DailyAttendance>(da =>
+            da.ActualCheckIn == null &&
+            da.ActualCheckOut == _date.AddHours(hour).AddMinutes(minute) &&
+            da.MissingCheckIn &&
+            da.LateMinutes == 0)), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WhenTwoMorningRecordsWithin15Minutes_ShouldKeepEntryAndRecordMissingCheckOut()
+    {
+        var rec1 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(7).AddMinutes(55), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        var rec2 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(8).AddMinutes(5), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        var draft = new AttendanceSystem.Application.Features.Attendance.Commands.ProcessDailyAttendance.PunchAssignmentDraft();
+
+        await _handler.Handle(new ProcessRegularAttendanceCommand(_employee, _date, _shift, new List<AttendanceRecord> { rec1, rec2 }, IsRestDay: false, Draft: draft), CancellationToken.None);
+
+        draft.Secondary.Should().ContainKey(rec2.Id).WhoseValue.Should().Be(PunchAssignmentRole.DiscardedDoubleTap);
+        _dailyRepoMock.Verify(r => r.Add(It.Is<DailyAttendance>(da =>
+            da.ActualCheckIn == _date.AddHours(7).AddMinutes(55) &&
+            da.ActualCheckOut == null &&
+            da.MissingCheckOut &&
+            da.EarlyDepartureMinutes == 0)), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WhenTwoAfternoonRecordsWithin15Minutes_ShouldKeepLastAsCheckOut()
+    {
+        var rec1 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(15).AddMinutes(58), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        var rec2 = AttendanceRecord.Create(_employee.Id, _deviceId, _date.AddHours(16).AddMinutes(3), VerifyMethod.Fingerprint, CheckType.CheckIn);
+
+        await _handler.Handle(new ProcessRegularAttendanceCommand(_employee, _date, _shift, new List<AttendanceRecord> { rec1, rec2 }, IsRestDay: false), CancellationToken.None);
+
+        _dailyRepoMock.Verify(r => r.Add(It.Is<DailyAttendance>(da =>
+            da.ActualCheckIn == null &&
+            da.ActualCheckOut == _date.AddHours(16).AddMinutes(3) &&
+            da.MissingCheckIn)), Times.Once);
+    }
 }

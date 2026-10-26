@@ -22,6 +22,12 @@
                     <MudSelectItem Value="@zone.Id">@TimeZoneCatalog.Describe(zone.Id)</MudSelectItem>
                 }
             </MudSelect>
+
+            @if (!string.IsNullOrEmpty(DeviceId))
+            {
+                <MudDatePicker @bind-Date="AcceptPunchesFrom" Label="Aceptar marcajes desde (opcional)" Clearable="true" Editable="true" Class="mb-3"
+                               HelperText="Marcajes anteriores van a cuarentena (el reloj perdió su fecha). Vacío: su fecha de alta menos los días configurados. Adelántela para aceptar el historial de un reloj migrado." />
+            }
             
             <MudSelect T="DeviceBrand" Label="Marca" Value="Brand" ValueChanged="OnBrandChanged" Required="true" Class="mb-3">
                 <MudSelectItem Value="@DeviceBrand.ZKTeco">ZKTeco</MudSelectItem>
@@ -79,6 +85,7 @@
     [Parameter] public string? Username { get; set; }
     [Parameter] public string? Password { get; set; }
     [Parameter] public string? TimeZoneId { get; set; }
+    [Parameter] public DateTime? AcceptPunchesFrom { get; set; }
 
     private IReadOnlyList<TimeZoneCatalog.Entry> _zones = TimeZoneCatalog.Common;
 
@@ -156,7 +163,8 @@
             }
             else
             {
-                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword, TimeZoneId)));
+                MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword, TimeZoneId,
+                    AcceptPunchesFrom: AcceptPunchesFrom, UpdateAcceptPunchesFrom: true)));
             }
         }
     }

@@ -1,5 +1,5 @@
 @page "/branches"
-@attribute [Authorize(Roles = "Administrador")]
+@attribute [Authorize(Policy = Permissions.CatalogsView)]
 @using MediatR
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
@@ -25,9 +25,13 @@
                       Clearable="true" Immediate="true" />
     </MudItem>
     <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
-        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportBranches">Importar</MudButton>
+        <AuthorizeView Policy="@Permissions.BranchesManage" Context="authContext">
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportBranches">Importar</MudButton>
+        </AuthorizeView>
         <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nueva Sucursal</MudButton>
+        <AuthorizeView Policy="@Permissions.BranchesManage" Context="authContext">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nueva Sucursal</MudButton>
+        </AuthorizeView>
     </MudItem>
 </MudGrid>
 
@@ -49,9 +53,11 @@
             </MudChip>
         </MudTd>
         <MudTd DataLabel="Acciones">
-            <MudTooltip Text="Editar">
-                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
-            </MudTooltip>
+            <AuthorizeView Policy="@Permissions.BranchesManage" Context="authContext">
+                <MudTooltip Text="Editar">
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
+                </MudTooltip>
+            </AuthorizeView>
         </MudTd>
     </RowTemplate>
     <PagerContent>

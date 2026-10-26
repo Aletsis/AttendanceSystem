@@ -5,6 +5,7 @@ using AttendanceSystem.Application.Common;
 
 namespace AttendanceSystem.Application.Features.Devices.Commands.DeleteDeviceUserFingerprints;
 
+[RequiresPermission(Permissions.DevicesManage)]
 public record DeleteDeviceUserFingerprintsCommand(string DeviceId, string UserId) : IRequest<Result>;
 
 public class DeleteDeviceUserFingerprintsHandler : IRequestHandler<DeleteDeviceUserFingerprintsCommand, Result>

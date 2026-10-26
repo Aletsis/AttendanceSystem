@@ -1,3 +1,6 @@
+using AttendanceSystem.Domain.Aggregates.SystemAlertAggregate;
+using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Domain.ValueObjects;
@@ -25,13 +28,19 @@ public sealed class DeviceClockService
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly TimeProvider _timeProvider;
     private readonly ILogger<DeviceClockService> _logger;
+    private readonly ISystemAlertRepository? _alerts;
+    private readonly IUnitOfWork? _unitOfWork;
 
     public DeviceClockService(
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver timeZoneResolver,
         ILogger<DeviceClockService>? logger = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        ISystemAlertRepository? alerts = null,
+        IUnitOfWork? unitOfWork = null)
     {
+        _alerts = alerts;
+        _unitOfWork = unitOfWork;
         _timeNormalizer = timeNormalizer;
         _timeZoneResolver = timeZoneResolver;
         _logger = logger ?? NullLogger<DeviceClockService>.Instance;
@@ -70,7 +79,7 @@ public sealed class DeviceClockService
     /// Lee la hora del reloj (ya conectado) y, si se desvía más de <see cref="DriftTolerance"/> de la esperada en su
     /// zona, lo resincroniza y deja una alerta. Si el protocolo no permite leer la hora, no hace nada.
     /// </summary>
-    public async Task<DeviceClockCheck> VerifyAsync(IDeviceClient client, string timeZoneId, string deviceName, CancellationToken cancellationToken = default)
+    public async Task<DeviceClockCheck> VerifyAsync(IDeviceClient client, string timeZoneId, string deviceName, CancellationToken cancellationToken = default, string? deviceId = null)
     {
         DateTime? reported;
         try
@@ -94,6 +103,13 @@ public sealed class DeviceClockService
         _logger.LogWarning(
             "ALERTA: el reloj {Device} marcaba {Reported:yyyy-MM-dd HH:mm:ss} cuando en su zona {TimeZone} eran las {Expected:yyyy-MM-dd HH:mm:ss} (desvío {Drift}). {Action}",
             deviceName, reported, timeZoneId, expected, drift, corrected ? "Se resincronizó." : "La resincronización falló; revisar el reloj.");
+        if (_alerts != null && _unitOfWork != null && deviceId != null)
+        {
+            await _alerts.AddAsync(SystemAlert.Create(AlertType.DeviceClockDrift, deviceId,
+                $"El reloj {deviceName} marcaba {reported:dd/MM/yyyy HH:mm} cuando en su zona eran las {expected:dd/MM/yyyy HH:mm}. " +
+                (corrected ? "Se resincronizó." : "La resincronización falló; revise el reloj.")), cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
         return new DeviceClockCheck(timeZoneId, expected, reported, drift, corrected);
     }
 }

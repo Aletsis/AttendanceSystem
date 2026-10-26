@@ -40,6 +40,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private string? _selectedBranchId;
         private string? _selectedShiftId; // ScheduleId
         private ShiftType _selectedShiftType = ShiftType.Matutino;
+        private ShiftType? _originalShiftType;
         private int? _selectedRestDay; // 0=Sunday, etc.
 
         // Overtime configuration
@@ -77,7 +78,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public ObservableCollection<ShiftDto> VisibleShifts { get; } = new(); // Filtered Shifts
 
         public IEnumerable<Gender> GenderOptions => Enum.GetValues(typeof(Gender)).Cast<Gender>();
-        public IEnumerable<EmployeeStatus> StatusOptions => Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>();
+        // Caso 16: vacaciones, incapacidad y baja temporal son períodos con fechas y sólo los registran RH y Administrador.
+        public IEnumerable<EmployeeStatus> StatusOptions => Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>()
+            .Where(s => CanManageLeave || !AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(s) || s == _loadedStatus);
         public IEnumerable<ShiftType> ShiftTypeOptions => Enum.GetValues(typeof(ShiftType)).Cast<ShiftType>();
         public IEnumerable<OvertimeCalculationMethod> OvertimeCalculationMethodOptions => Enum.GetValues(typeof(OvertimeCalculationMethod)).Cast<OvertimeCalculationMethod>();
         public IEnumerable<OvertimeCapType> OvertimeCapTypeOptions => Enum.GetValues(typeof(OvertimeCapType)).Cast<OvertimeCapType>();
@@ -105,7 +108,32 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public string PhoneNumber { get => _phoneNumber; set => SetProperty(ref _phoneNumber, value); }
         public DateTime HireDate { get => _hireDate; set => SetProperty(ref _hireDate, value); }
         public Gender Gender { get => _gender; set => SetProperty(ref _gender, value); }
-        public EmployeeStatus Status { get => _status; set => SetProperty(ref _status, value); }
+        public EmployeeStatus Status
+        {
+            get => _status;
+            set
+            {
+                if (!SetProperty(ref _status, value)) return;
+                RaisePropertyChanged(nameof(StatusChanged));
+                RaisePropertyChanged(nameof(StartsLeave));
+                RaisePropertyChanged(nameof(StatusDateLabel));
+            }
+        }
+
+        private EmployeeStatus _loadedStatus = EmployeeStatus.Alta;
+        private DateTime? _statusDate = DateTime.Today;
+        private DateTime? _leaveTo;
+
+        public bool CanManageLeave => _authService?.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesLeave) ?? true;
+        public bool CanChangeStatus => IsEditMode && (CanManageLeave || !AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(_loadedStatus));
+        public bool StatusChanged => IsEditMode && Status != _loadedStatus;
+        public bool StartsLeave => StatusChanged && AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(Status);
+        public string StatusDateLabel => StartsLeave ? "Desde"
+            : Status == EmployeeStatus.Alta && AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(_loadedStatus) ? "Regresa a trabajar el"
+            : Status == EmployeeStatus.Baja ? "Último día laborado" : "Vigente desde";
+        public DateTime? StatusDate { get => _statusDate; set => SetProperty(ref _statusDate, value); }
+        /// <summary>Último día del período; vacío = hasta regresar a Alta.</summary>
+        public DateTime? LeaveTo { get => _leaveTo; set => SetProperty(ref _leaveTo, value); }
 
         public string? SelectedDepartmentId
         {
@@ -131,12 +159,33 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 if (SetProperty(ref _selectedShiftType, value))
                 {
                     FilterShifts();
+                    // Caso 12: el horario flexible no admite extras antes de la entrada.
+                    if (!AllowsOvertimeBeforeEntry) CalculateOvertimeBeforeEntry = false;
+                    RaisePropertyChanged(nameof(AllowsOvertimeBeforeEntry));
                 }
             }
         }
 
+        public bool AllowsOvertimeBeforeEntry => AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.AllowsOvertimeBeforeEntry(SelectedShiftType);
+
         public int? SelectedRestDay { get => _selectedRestDay; set => SetProperty(ref _selectedRestDay, value); }
-        public bool OvertimeAuthorized { get => _overtimeAuthorized; set => SetProperty(ref _overtimeAuthorized, value); }
+
+        private int? _loadedRestDay;
+        private List<int>? _loadedRestDays;
+        private DevicePrivilege _loadedDevicePrivilege = DevicePrivilege.User;
+        public bool OvertimeAuthorized
+        {
+            get => _overtimeAuthorized;
+            set
+            {
+                if (!SetProperty(ref _overtimeAuthorized, value) || value) return;
+                // Caso 12: sin extras autorizadas no se configuran redondeo, topes ni extras antes de la entrada.
+                CalculateOvertimeBeforeEntry = false;
+                SelectedOvertimeCalculationMethod = OvertimeCalculationMethod.NoRounding;
+                SelectedOvertimeCapType = OvertimeCapType.None;
+                OvertimeCapMinutes = null;
+            }
+        }
         public OvertimeCalculationMethod SelectedOvertimeCalculationMethod { get => _overtimeCalculationMethod; set => SetProperty(ref _overtimeCalculationMethod, value); }
         public OvertimeCapType SelectedOvertimeCapType { get => _overtimeCapType; set => SetProperty(ref _overtimeCapType, value); }
         public double? OvertimeCapMinutes { get => _overtimeCapMinutes; set => SetProperty(ref _overtimeCapMinutes, value); }
@@ -148,12 +197,15 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
+        private readonly IAuthenticationStateService? _authService;
 
         public EmployeeDetailViewModel(
             IFrameNavigationService navigationService,
             IMessageService messageService,
-            IMediator mediator)
+            IMediator mediator,
+            IAuthenticationStateService? authService = null)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
@@ -288,19 +340,26 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     PhoneNumber = emp.PhoneNumber ?? string.Empty;
                     HireDate = emp.HireDate;
                     Gender = emp.Gender;
+                    _loadedStatus = emp.Status;
                     Status = emp.Status;
+                    RaisePropertyChanged(nameof(StatusOptions));
+                    RaisePropertyChanged(nameof(CanChangeStatus));
                     SelectedDepartmentId = emp.DepartmentId.ToString();
                     // Filter Positions triggers here
 
                     SelectedPositionId = emp.PositionId.ToString();
                     SelectedBranchId = emp.BranchId.ToString();
 
+                    _originalShiftType = emp.ShiftType;
                     SelectedShiftType = emp.ShiftType ?? ShiftType.Matutino;
                     // Filter Shifts triggers here
 
                     SelectedShiftId = emp.ScheduleId?.ToString();
 
                     SelectedRestDay = emp.RestDay;
+                    _loadedRestDay = emp.RestDay;
+                    _loadedRestDays = emp.RestDays?.ToList();
+                    _loadedDevicePrivilege = emp.DevicePrivilege;
                     OvertimeAuthorized = emp.OvertimeAuthorized;
                     SelectedOvertimeCalculationMethod = emp.OvertimeCalculationMethod;
                     SelectedOvertimeCapType = emp.OvertimeCapType;
@@ -379,7 +438,13 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         CalculateOvertimeBeforeEntry,
                         CardNumber,
                         DevicePassword,
-                        Photo
+                        Photo,
+                        // Caso 13: se conservan el privilegio del reloj y los descansos que esta pantalla no edita.
+                        _loadedDevicePrivilege,
+                        SelectedRestDay == _loadedRestDay ? _loadedRestDays : null,
+                        // Caso 16: la fecha del cambio de estado (inicio del período, regreso, baja o reingreso).
+                        StatusChanged ? StatusDate : null,
+                        StartsLeave ? LeaveTo : null
                     );
 
                     var result = await _mediator.Send(command);
@@ -449,7 +514,20 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 return false;
             }
 
-            if (!string.IsNullOrEmpty(SelectedShiftId) && !VisibleShifts.Any(s => s.Id.ToString() == SelectedShiftId))
+            // Caso 10: ningún empleado queda sin turno. El esquema rotativo (su roster) sólo se genera en la versión web.
+            if (SelectedShiftType == ShiftType.Rotativo)
+            {
+                if (_originalShiftType != ShiftType.Rotativo)
+                {
+                    _messageService.ShowErrorAsync("El turno rotativo se asigna desde la versión web, donde se genera su esquema de turnos.");
+                    return false;
+                }
+                return true;
+            }
+
+            if (string.IsNullOrEmpty(SelectedShiftId)) { _messageService.ShowErrorAsync("El horario es requerido."); return false; }
+
+            if (!VisibleShifts.Any(s => s.Id.ToString() == SelectedShiftId))
             {
                 _messageService.ShowErrorAsync("El horario seleccionado no corresponde al turno seleccionado.");
                 return false;
@@ -466,6 +544,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private void ClearForm()
         {
             Id = string.Empty;
+            _originalShiftType = null;
             FirstName = string.Empty;
             LastName = string.Empty;
             Email = string.Empty;

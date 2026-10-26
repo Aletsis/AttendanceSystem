@@ -3,4 +3,6 @@ using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.SetDailyRestDayOverride;
 
-public record SetDailyRestDayOverrideCommand(Guid DailyAttendanceId, bool IsRestDay) : IRequest<bool>;
+[RequiresPermission(Permissions.AttendanceAdjust)]
+public record SetDailyRestDayOverrideCommand(Guid DailyAttendanceId, bool IsRestDay, string? Reason = null)
+    : IRequest<AttendanceSystem.Application.Common.Result<AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionOutcome>>;

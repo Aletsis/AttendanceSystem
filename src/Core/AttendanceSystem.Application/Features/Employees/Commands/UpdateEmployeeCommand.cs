@@ -15,6 +15,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Employees.Commands;
 
+[RequiresPermission(Permissions.EmployeesEdit)]
 public sealed record UpdateEmployeeCommand(
     string Id,
     string FirstName,
@@ -40,7 +41,8 @@ public sealed record UpdateEmployeeCommand(
     string? Photo = null,
     DevicePrivilege DevicePrivilege = DevicePrivilege.User,
     List<int>? RestDays = null,
-    DateTime? EffectiveFrom = null) : IRequest<Result<EmployeeDto>>;
+    DateTime? EffectiveFrom = null,
+    DateTime? EffectiveTo = null) : IRequest<Result<EmployeeDto>>;
 
 public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmployeeCommand, Result<EmployeeDto>>
 {
@@ -53,7 +55,10 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
     private readonly IAttendanceCalculationLockService _lockService;
     private readonly IAttendanceConsolidationRepository _consolidations;
     private readonly IConsolidationWakeup _wakeup;
+    private readonly IShiftRosterRepository _rosterRepository;
+    private readonly IRotationPatternRepository? _patternRepository;
     private readonly ILogger<UpdateEmployeeCommandHandler> _logger;
+    private readonly IPermissionService? _permissions;
 
     public UpdateEmployeeCommandHandler(
         IEmployeeRepository employeeRepository,
@@ -65,8 +70,14 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
         IAttendanceCalculationLockService lockService,
         IAttendanceConsolidationRepository consolidations,
         IConsolidationWakeup wakeup,
-        ILogger<UpdateEmployeeCommandHandler> logger)
+        IShiftRosterRepository rosterRepository,
+        ILogger<UpdateEmployeeCommandHandler> logger,
+        IRotationPatternRepository? patternRepository = null,
+        IPermissionService? permissions = null)
     {
+        _permissions = permissions;
+        _patternRepository = patternRepository;
+        _rosterRepository = rosterRepository;
         _lockService = lockService;
         _consolidations = consolidations;
         _wakeup = wakeup;
@@ -89,6 +100,11 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             if (employee is null)
             {
                 return Result<EmployeeDto>.Failure($"No existe el empleado con ID {request.Id}");
+            }
+
+            if (EmployeeFieldPermissions.ForUpdate(_permissions, employee, request) is { } denied)
+            {
+                return Result<EmployeeDto>.Failure(denied);
             }
 
             // Validar que existan las entidades relacionadas
@@ -121,6 +137,13 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
             if (!department.Positions.Any(p => p.Id == positionId))
             {
                 return Result<EmployeeDto>.Failure($"El puesto '{position.Name}' no pertenece al departamento '{department.Name}'");
+            }
+
+            // Dar de baja no exige horario: después de la baja no hay jornadas.
+            if (request.Status != EmployeeStatus.Baja &&
+                EmployeeScheduleRules.Validate(request.ShiftType, request.ScheduleId) is { } scheduleError)
+            {
+                return Result<EmployeeDto>.Failure(scheduleError);
             }
 
             ShiftId? scheduleId = null;
@@ -169,9 +192,25 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                     request.Photo,
                     request.DevicePrivilege,
                     restDays,
-                    request.EffectiveFrom);
+                    request.EffectiveFrom,
+                    request.EffectiveTo);
 
                 _employeeRepository.Update(employee);
+
+                // El roster sólo rige a los rotativos: al dejar de serlo, se borra desde la fecha de vigencia.
+                var effectiveFrom = (request.EffectiveFrom ?? DateTime.Today).Date;
+                if (employee.AssignmentOn(effectiveFrom).ShiftType != ShiftType.Rotativo)
+                {
+                    var obsolete = await _rosterRepository.GetByEmployeeAsync(employee.Id, effectiveFrom, DateTime.MaxValue.Date, cancellationToken);
+                    if (obsolete.Count > 0) _rosterRepository.RemoveRange(obsolete);
+                    // Su patrón tampoco se sigue extendiendo.
+                    if (_patternRepository != null &&
+                        await _patternRepository.GetByEmployeeAsync(employee.Id, cancellationToken) is { } pattern)
+                    {
+                        pattern.EndBefore(effectiveFrom);
+                    }
+                }
+
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 // F06-08: un cambio con vigencia pasada recalcula de forma durable las jornadas afectadas.
@@ -218,7 +257,9 @@ public sealed class UpdateEmployeeCommandHandler : IRequestHandler<UpdateEmploye
                 CardNumber = employee.CardNumber,
                 DevicePassword = employee.DevicePassword,
                 Photo = employee.Photo,
-                DevicePrivilege = employee.DevicePrivilege
+                DevicePrivilege = employee.DevicePrivilege,
+
+                StatusPeriods = employee.StatusPeriods.OrderByDescending(p => p.StartDate).Select(p => new StatusPeriodDto(p.Status, p.StartDate, p.EndDate)).ToList()
             };
 
             _logger.LogInformation("Empleado actualizado: {EmployeeId} - {FullName}", employee.Id.Value, employee.GetFullName());

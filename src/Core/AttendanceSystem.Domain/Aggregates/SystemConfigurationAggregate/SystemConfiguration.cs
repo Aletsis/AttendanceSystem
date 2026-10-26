@@ -45,12 +45,19 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public TimeSpan LunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultWindowStart;
     public TimeSpan LunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultWindowEnd;
     public int PaidLunchMinutes { get; private set; } = Services.LunchPolicy.DefaultPaidMinutes;
+    // Caso 11: activa, la primera ausencia que se traslapa con la ventana es comida (se descuenta sólo el excedente
+    // sobre los minutos con goce); apagada, toda ausencia es salida temporal que RH clasifica.
+    public bool LunchWindowEnabled { get; private set; } = true;
     // Ventana de comida de turnos nocturnos; puede cruzar medianoche.
     public TimeSpan NightLunchWindowStart { get; private set; } = Services.LunchPolicy.DefaultNightWindowStart;
     public TimeSpan NightLunchWindowEnd { get; private set; } = Services.LunchPolicy.DefaultNightWindowEnd;
 
-    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes);
-    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes);
+    /// <summary>Caso 14: minutos dentro de los cuales dos checadas son un toque doble.</summary>
+    public int DoubleTapMinutes { get; private set; } = Services.LunchPolicy.DoubleTapMaxMinutes;
+    public const int MaxDoubleTapMinutes = 60;
+
+    public Services.LunchPolicy LunchPolicy => new(LunchWindowStart, LunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled, DoubleTapMinutes);
+    public Services.LunchPolicy NightLunchPolicy => new(NightLunchWindowStart, NightLunchWindowEnd, PaidLunchMinutes, LunchWindowEnabled, DoubleTapMinutes);
 
     // Alert Settings
     public bool AreAlertsEnabled { get; private set; }
@@ -186,6 +193,40 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         LunchWindowStart = windowStart;
         LunchWindowEnd = windowEnd;
         PaidLunchMinutes = paidLunchMinutes;
+    }
+
+    // Caso 18: umbrales de la cuarentena de marcajes.
+    public int QuarantineMinDateDaysBeforeDevice { get; private set; } = 30;
+    public int QuarantineFutureToleranceMinutes { get; private set; } = 5;
+    public int QuarantineBackwardJumpMinutes { get; private set; } = 60;
+    public int QuarantineRealtimeLagMinutes { get; private set; } = 30;
+    public int QuarantineClockDriftAlertMinutes { get; private set; } = 10;
+    public int QuarantineSdkReadMarginDays { get; private set; } = 1;
+
+    public Services.PunchQuarantinePolicy QuarantinePolicy => new(QuarantineMinDateDaysBeforeDevice, QuarantineFutureToleranceMinutes,
+        QuarantineBackwardJumpMinutes, QuarantineRealtimeLagMinutes, QuarantineClockDriftAlertMinutes, QuarantineSdkReadMarginDays);
+
+    public void UpdateQuarantinePolicy(Services.PunchQuarantinePolicy policy)
+    {
+        if (policy.Validate() is { } error) throw new DomainException(error);
+        QuarantineMinDateDaysBeforeDevice = policy.MinDateDaysBeforeDevice;
+        QuarantineFutureToleranceMinutes = policy.FutureToleranceMinutes;
+        QuarantineBackwardJumpMinutes = policy.BackwardJumpMinutes;
+        QuarantineRealtimeLagMinutes = policy.RealtimeLagMinutes;
+        QuarantineClockDriftAlertMinutes = policy.ClockDriftAlertMinutes;
+        QuarantineSdkReadMarginDays = policy.SdkReadMarginDays;
+    }
+
+    public void UpdateDoubleTapMinutes(int minutes)
+    {
+        if (minutes < 1 || minutes > MaxDoubleTapMinutes)
+            throw new DomainException($"El toque doble debe estar entre 1 y {MaxDoubleTapMinutes} minutos");
+        DoubleTapMinutes = minutes;
+    }
+
+    public void SetLunchWindowEnabled(bool enabled)
+    {
+        LunchWindowEnabled = enabled;
     }
 
     public void UpdateNightLunchWindow(TimeSpan windowStart, TimeSpan windowEnd)

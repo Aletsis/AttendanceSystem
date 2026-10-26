@@ -25,7 +25,11 @@ public sealed record RecordAttendanceBatchCommand(
     string DeviceId,
     List<AttendanceLogDto> Logs,
     string? TimeZoneId = null,
-    string? Source = null
+    string? Source = null,
+    Guid? DownloadLogId = null,
+    // Caso 18: tiempo real (ADMS empuja cada checada) o respuesta a una consulta/re-descarga.
+    AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival Arrival = AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Redownload,
+    string? DeviceSerial = null
 ) : IRequest<Result<int>>;
 
 // Handler
@@ -38,6 +42,10 @@ public sealed class RecordAttendanceBatchCommandHandler
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ILogger<RecordAttendanceBatchCommandHandler> _logger;
     private readonly IPersistenceFailureClassifier _failureClassifier;
+    private readonly AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? _quarantine;
+    private readonly IAdmsCommandService? _admsCommands;
+    private readonly IDeviceRepository? _devices;
+    private readonly AttendanceSystem.Domain.Repositories.ISystemAlertRepository? _alerts;
 
     public RecordAttendanceBatchCommandHandler(
         IAttendanceRepository attendanceRepository,
@@ -54,8 +62,16 @@ public sealed class RecordAttendanceBatchCommandHandler
         ITimeNormalizer timeNormalizer,
         IAuthoritativeTimeZoneResolver? timeZoneResolver,
         ILogger<RecordAttendanceBatchCommandHandler>? logger = null,
-        IPersistenceFailureClassifier? failureClassifier = null)
+        IPersistenceFailureClassifier? failureClassifier = null,
+        AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? quarantine = null,
+        IAdmsCommandService? admsCommands = null,
+        IDeviceRepository? devices = null,
+        AttendanceSystem.Domain.Repositories.ISystemAlertRepository? alerts = null)
     {
+        _admsCommands = admsCommands;
+        _devices = devices;
+        _alerts = alerts;
+        _quarantine = quarantine;
         _failureClassifier = failureClassifier ?? DefaultPersistenceFailureClassifier.Instance;
         _attendanceRepository = attendanceRepository;
         _unitOfWork = unitOfWork;
@@ -100,9 +116,30 @@ public sealed class RecordAttendanceBatchCommandHandler
                 normalizedLogs.Add((log, utcTime, workDate, tz));
             }
 
+            // Marcajes con hora imposible (reloj sin fecha o adelantado): a cuarentena, no al cálculo. Cuentan como
+            // recibidos para que el reloj no los reenvíe.
+            int quarantined = 0;
+            if (_quarantine != null && normalizedLogs.Count > 0)
+            {
+                var punches = normalizedLogs.Select(n => new AttendanceSystem.Application.Features.Devices.Quarantine.PunchCandidate(
+                    n.Original.EmployeeId, CivilOf(n.Original, n.ResolvedTz), n.ResolvedTz, n.Original.VerifyMethodCode, n.Original.CheckTypeCode,
+                    n.Original.Source ?? command.Source ?? "ADMS")).ToList();
+                var evaluation = await _quarantine.EvaluateAsync(deviceId, command.DeviceId, punches,
+                    new AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext(command.Arrival, DeviceSerial: command.DeviceSerial), cancellationToken);
+                if (evaluation.Excluded.Count > 0)
+                {
+                    quarantined = evaluation.Excluded.Count;
+                    normalizedLogs = normalizedLogs.Where((_, i) => !evaluation.Excluded.Contains(i)).ToList();
+                }
+                if (evaluation.ClockBehind is { } behind && command.Arrival == AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Realtime)
+                {
+                    await HandleClockBehindAsync(deviceId, command, defaultBatchTz, behind, evaluation, punches, cancellationToken);
+                }
+            }
+
             if (normalizedLogs.Count == 0)
             {
-                return Result<int>.Success(0);
+                return Result<int>.Success(quarantined);
             }
 
             var candidates = new List<AttendanceRecord>();
@@ -112,9 +149,9 @@ public sealed class RecordAttendanceBatchCommandHandler
                 var verifyMethod = VerifyMethod.FromValue(log.VerifyMethodCode);
                 var checkType = CheckType.FromValue(log.CheckTypeCode);
 
-                var origCheckTime = log.OriginalCheckTime ?? (log.CheckTime.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(log.CheckTime, recordTz) : log.CheckTime);
+                var origCheckTime = CivilOf(log, recordTz);
 
-                candidates.Add(AttendanceRecord.Create(
+                var record = AttendanceRecord.Create(
                     employeeId,
                     deviceId,
                     utcTime,
@@ -123,7 +160,14 @@ public sealed class RecordAttendanceBatchCommandHandler
                     workDate: workDate,
                     originalCheckTime: origCheckTime,
                     timeZoneId: recordTz,
-                    source: log.Source ?? command.Source ?? "ADMS"));
+                    source: log.Source ?? command.Source ?? "ADMS");
+
+                if (command.DownloadLogId.HasValue)
+                {
+                    record.DownloadLogId = new AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLogId(command.DownloadLogId.Value);
+                }
+
+                candidates.Add(record);
             }
 
             // F03-01 / F03-05 / H04: identidad (empleado, instante) sin importar dispositivo; colisiones
@@ -144,11 +188,62 @@ public sealed class RecordAttendanceBatchCommandHandler
                                   "Agregados: {AddedCount}, Duplicados omitidos: {SkippedCount}",
                                   command.DeviceId, outcome.Inserted.Count, skippedDuplicates);
 
-            return Result<int>.Success(outcome.Inserted.Count);
+            return Result<int>.Success(outcome.Inserted.Count + quarantined);
         }
         catch (DomainException ex)
         {
             return Result<int>.Failure(ex.Message);
+        }
+    }
+
+    /// <summary>Hora civil que marcó el reloj.</summary>
+    private DateTime CivilOf(AttendanceLogDto log, string timeZoneId) =>
+        log.OriginalCheckTime ?? (log.CheckTime.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(log.CheckTime, timeZoneId) : log.CheckTime);
+
+    /// <summary>
+    /// Caso 18: un reloj ADMS envió en tiempo real marcajes con hora atrasada. Se le reenvía la hora correcta y queda la
+    /// alerta; si el atraso mandó marcajes a cuarentena (R4), se registra el periodo atrasado y se le piden de nuevo sus
+    /// marcajes de ese periodo (algunos firmwares dejan de enviarlos), que pasarán por la cuarentena.
+    /// </summary>
+    private async Task HandleClockBehindAsync(
+        DeviceId deviceId,
+        RecordAttendanceBatchCommand command,
+        string timeZoneId,
+        TimeSpan behind,
+        AttendanceSystem.Application.Features.Devices.Quarantine.QuarantineOutcome outcome,
+        IReadOnlyList<AttendanceSystem.Application.Features.Devices.Quarantine.PunchCandidate> punches,
+        CancellationToken cancellationToken)
+    {
+        var expectedNow = _quarantine!.ClockNow(timeZoneId);
+        var serial = command.DeviceSerial;
+        if (_admsCommands != null && serial != null)
+        {
+            var offset = _timeNormalizer.ResolveTimeZone(timeZoneId).GetUtcOffset(DateTime.UtcNow);
+            foreach (var clockCommand in AdmsTimeZone.ClockCommands(expectedNow, offset)) _admsCommands.EnqueueCommand(serial, clockCommand);
+        }
+
+        var device = _devices != null ? await _devices.GetByIdAsync(deviceId, cancellationToken) : null;
+        var name = device?.Name ?? command.DeviceId;
+        if (_alerts != null)
+        {
+            await _alerts.AddAsync(AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert.Create(AlertType.DeviceClockDrift, deviceId.Value,
+                $"El reloj {name} envió en tiempo real marcajes con hora atrasada {AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(behind)}; se le reenvió la hora." +
+                (outcome.LagQuarantined ? " Sus marcajes de ese periodo quedaron en cuarentena." : "")), cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        _logger.LogWarning("ALERTA: el reloj ADMS {Device} está atrasado {Behind}; se encoló su resincronización.", name, behind);
+
+        if (!outcome.LagQuarantined) return;
+        var earliest = punches.Min(p => DateTime.SpecifyKind(p.CivilTime, DateTimeKind.Unspecified));
+        var from = (outcome.PreviousLatestCivil is { } previous && previous - behind < earliest ? previous - behind : earliest).AddMinutes(-1);
+        var to = expectedNow - behind + TimeSpan.FromHours(1);
+        await _quarantine.RecordClockIncidentAsync(deviceId, from, to, behind,
+            $"En tiempo real, el reloj marcaba {expectedNow - behind:dd/MM/yyyy HH:mm} cuando eran las {expectedNow:dd/MM/yyyy HH:mm}", cancellationToken);
+
+        if (_admsCommands != null && serial != null)
+        {
+            var table = device?.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true ? "Transaction" : "ATTLOG";
+            _admsCommands.EnqueueCommand(serial, FormattableString.Invariant($"DATA QUERY tablename={table},starttime={from:yyyy-MM-dd HH:mm:ss},endtime={to:yyyy-MM-dd HH:mm:ss}"));
         }
     }
 }

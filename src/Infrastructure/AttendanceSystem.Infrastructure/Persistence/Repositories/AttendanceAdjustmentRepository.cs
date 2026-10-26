@@ -53,6 +53,11 @@ public class AttendanceAdjustmentRepository : IAttendanceAdjustmentRepository
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<int> CountByShiftOverrideAsync(ShiftId shiftId, CancellationToken cancellationToken = default)
+    {
+        return await _context.AttendanceAdjustments.CountAsync(a => a.ShiftIdOverride == shiftId, cancellationToken);
+    }
+
     public async Task AddAsync(AttendanceAdjustment adjustment, CancellationToken cancellationToken = default)
     {
         await _context.AttendanceAdjustments.AddAsync(adjustment, cancellationToken);

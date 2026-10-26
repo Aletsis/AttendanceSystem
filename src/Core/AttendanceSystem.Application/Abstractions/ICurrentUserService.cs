@@ -8,4 +8,7 @@ public interface ICurrentUserService
     string? UserId { get; }
     string? UserName { get; }
     bool IsAuthenticated { get; }
+
+    /// <summary>Roles del usuario (caso 13); vacío si no hay sesión.</summary>
+    IReadOnlyCollection<string> Roles => Array.Empty<string>();
 }

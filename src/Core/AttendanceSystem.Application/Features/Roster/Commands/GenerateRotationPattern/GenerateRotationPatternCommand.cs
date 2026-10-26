@@ -11,6 +11,10 @@ namespace AttendanceSystem.Application.Features.Roster.Commands.GenerateRotation
 
 public record CustomRotationSlotDto(Guid? ShiftId, bool IsRestDay, string? Notes = null);
 
+/// <summary>
+/// Caso 13: asignar o modificar esquemas es de <see cref="Permissions.RosterManage"/>; el primer esquema de un empleado
+/// recién dado de alta (sin roster) forma parte del alta y basta <see cref="Permissions.EmployeesCreate"/>.
+/// </summary>
 public record GenerateRotationPatternCommand(
     List<string> EmployeeIds,
     DateTime StartDate,
@@ -29,6 +33,10 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
     private readonly IShiftRosterRepository _rosterRepository;
     private readonly IEmployeeRepository? _employeeRepository;
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAttendanceConsolidationRepository? _consolidations;
+    private readonly IConsolidationWakeup? _wakeup;
+    private readonly IRotationPatternRepository? _patternRepository;
+    private readonly IPermissionService? _permissions;
 
     public GenerateRotationPatternCommandHandler(
         IShiftRosterRepository rosterRepository,
@@ -41,14 +49,56 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         IShiftRosterRepository rosterRepository,
         IEmployeeRepository? employeeRepository,
         IUnitOfWork unitOfWork)
+        : this(rosterRepository, employeeRepository, unitOfWork, null, null)
     {
+    }
+
+    public GenerateRotationPatternCommandHandler(
+        IShiftRosterRepository rosterRepository,
+        IEmployeeRepository? employeeRepository,
+        IUnitOfWork unitOfWork,
+        IAttendanceConsolidationRepository? consolidations,
+        IConsolidationWakeup? wakeup)
+        : this(rosterRepository, employeeRepository, unitOfWork, consolidations, wakeup, null)
+    {
+    }
+
+    public GenerateRotationPatternCommandHandler(
+        IShiftRosterRepository rosterRepository,
+        IEmployeeRepository? employeeRepository,
+        IUnitOfWork unitOfWork,
+        IAttendanceConsolidationRepository? consolidations,
+        IConsolidationWakeup? wakeup,
+        IRotationPatternRepository? patternRepository)
+        : this(rosterRepository, employeeRepository, unitOfWork, consolidations, wakeup, patternRepository, null)
+    {
+    }
+
+    public GenerateRotationPatternCommandHandler(
+        IShiftRosterRepository rosterRepository,
+        IEmployeeRepository? employeeRepository,
+        IUnitOfWork unitOfWork,
+        IAttendanceConsolidationRepository? consolidations,
+        IConsolidationWakeup? wakeup,
+        IRotationPatternRepository? patternRepository,
+        IPermissionService? permissions)
+    {
+        _permissions = permissions;
+        _patternRepository = patternRepository;
         _rosterRepository = rosterRepository;
         _employeeRepository = employeeRepository;
         _unitOfWork = unitOfWork;
+        _consolidations = consolidations;
+        _wakeup = wakeup;
     }
 
     public async Task<int> Handle(GenerateRotationPatternCommand request, CancellationToken cancellationToken)
     {
+        if (_permissions != null && !_permissions.Has(Permissions.RosterManage) && !await IsFirstSchemeOfNewEmployeesAsync(request, cancellationToken))
+        {
+            throw new AttendanceSystem.Application.Exceptions.ForbiddenAccessException(PermissionServiceExtensions.DeniedMessage);
+        }
+
         if (request.EmployeeIds == null || !request.EmployeeIds.Any())
             return 0;
 
@@ -58,6 +108,10 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
 
         if (effectiveEndDate < request.StartDate.Date)
             throw new ArgumentException("La fecha final no puede ser anterior a la fecha inicial.");
+
+        // Caso 10: un patrón sin turnos generaría puros descansos.
+        if (RotationPatternDefinition.From(request).MissingShiftsError() is { } missingShifts)
+            throw new ArgumentException(missingShifts);
 
         int totalGenerated = 0;
         var totalDays = (effectiveEndDate - request.StartDate.Date).Days + 1;
@@ -70,9 +124,9 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
             if (_employeeRepository != null)
             {
                 employee = await _employeeRepository.GetByIdAsync(empId, cancellationToken);
-                if (employee != null && employee.ShiftType != ShiftType.Rotativo)
+                // El roster sólo rige a quien es rotativo en la fecha: el empleado lo es desde el inicio del patrón.
+                if (employee != null && employee.BecomeRotating(request.StartDate))
                 {
-                    employee.SetShiftType(ShiftType.Rotativo);
                     _employeeRepository.Update(employee);
                 }
             }
@@ -110,13 +164,34 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
             {
                 await _rosterRepository.AddRangeAsync(newRosters, cancellationToken);
             }
+
+            // Se guarda el patrón para que un esquema indefinido se siga extendiendo (ExtendRotationPatterns).
+            if (_patternRepository != null)
+            {
+                var definition = RotationPatternDefinition.From(request).Serialize();
+                DateTime? patternEnd = request.IsIndefinite ? null : effectiveEndDate;
+                var pattern = await _patternRepository.GetByEmployeeAsync(empId, cancellationToken);
+                if (pattern == null)
+                    await _patternRepository.AddAsync(RotationPattern.Create(empId, request.StartDate, patternEnd, definition, effectiveEndDate), cancellationToken);
+                else
+                    pattern.Replace(request.StartDate, patternEnd, definition, effectiveEndDate);
+            }
+        }
+
+        // Un patrón que empieza en el pasado cambia jornadas ya calculadas: se recalculan hasta hoy.
+        var recalculateTo = effectiveEndDate < DateTime.Today ? effectiveEndDate : DateTime.Today;
+        if (_consolidations != null && request.StartDate.Date <= recalculateTo)
+        {
+            await _consolidations.RequestManyAsync(
+                request.EmployeeIds.Select(EmployeeId.From).ToList(), request.StartDate.Date, recalculateTo, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        if (_consolidations != null && request.StartDate.Date <= recalculateTo) _wakeup?.Signal();
         return totalGenerated;
     }
 
-    private static (ShiftId? shiftId, bool isRestDay, string notes) DetermineSlot(
+    internal static (ShiftId? shiftId, bool isRestDay, string notes) DetermineSlot(
         GenerateRotationPatternCommand request,
         int dayOffset,
         DateTime currentDate,
@@ -199,7 +274,7 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
 
         if (request.RestDayMode == RotationRestDayMode.FromEmployeeProfile)
         {
-            if (employee != null && employee.IsRestDay(currentDate.DayOfWeek))
+            if (employee != null && employee.IsRestDayOn(currentDate))
             {
                 isRestDay = true;
                 restDetail = GetDayName(currentDate.DayOfWeek);
@@ -254,4 +329,15 @@ public class GenerateRotationPatternCommandHandler : IRequestHandler<GenerateRot
         DayOfWeek.Saturday => "Sábado",
         _ => dayOfWeek.ToString()
     };
+
+    private async Task<bool> IsFirstSchemeOfNewEmployeesAsync(GenerateRotationPatternCommand request, CancellationToken cancellationToken)
+    {
+        if (!_permissions!.Has(Permissions.EmployeesCreate) || request.EmployeeIds == null) return false;
+        foreach (var id in request.EmployeeIds)
+        {
+            var roster = await _rosterRepository.GetByEmployeeAsync(EmployeeId.From(id), DateTime.MinValue.Date, DateTime.MaxValue.Date, cancellationToken);
+            if (roster.Count > 0) return false;
+        }
+        return true;
+    }
 }

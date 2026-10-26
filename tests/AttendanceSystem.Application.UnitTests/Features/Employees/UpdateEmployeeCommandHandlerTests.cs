@@ -1,3 +1,4 @@
+using AttendanceSystem.Domain.Aggregates.ShiftRosterAggregate;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Features.Employees.Commands;
 using AttendanceSystem.Domain.Aggregates.BranchAggregate;
@@ -28,6 +29,7 @@ public class UpdateEmployeeCommandHandlerTests
     private readonly Mock<ILogger<UpdateEmployeeCommandHandler>> _loggerMock;
     private readonly UpdateEmployeeCommandHandler _handler;
 
+    private readonly Mock<IShiftRosterRepository> _rosterRepoMock;
     private readonly Branch _sampleBranch;
     private readonly Department _sampleDepartment;
     private readonly Position _samplePosition;
@@ -42,6 +44,9 @@ public class UpdateEmployeeCommandHandlerTests
         _positionRepoMock = new Mock<IPositionRepository>();
         _shiftRepoMock = new Mock<IShiftRepository>();
         _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _rosterRepoMock = new Mock<IShiftRosterRepository>();
+        _rosterRepoMock.Setup(r => r.GetByEmployeeAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Array.Empty<ShiftRoster>());
         _loggerMock = new Mock<ILogger<UpdateEmployeeCommandHandler>>();
 
         _handler = new UpdateEmployeeCommandHandler(
@@ -54,6 +59,7 @@ public class UpdateEmployeeCommandHandlerTests
             Mock.Of<IAttendanceCalculationLockService>(),
             _consolidationMock.Object,
             _wakeupMock.Object,
+            _rosterRepoMock.Object,
             _loggerMock.Object);
 
         _sampleBranch = Branch.Create("A01", "Sucursal Matriz", "Av. Principal 123");
@@ -309,6 +315,28 @@ public class UpdateEmployeeCommandHandlerTests
     }
 
     [Fact]
+    public async Task Handle_RotatingEmployeeMovedToFixedSchedule_DeletesTheRosterFromTheEffectiveDate()
+    {
+        SetupLookups();
+        _sampleEmployee.BecomeRotating(new DateTime(2025, 1, 1));
+        var from = DateTime.Today.AddDays(-3);
+        var obsolete = new[]
+        {
+            ShiftRoster.Create(_sampleEmployee.Id, from, _sampleShift.Id, isRestDay: false),
+            ShiftRoster.Create(_sampleEmployee.Id, from.AddDays(30), null, isRestDay: true)
+        };
+        _rosterRepoMock.Setup(r => r.GetByEmployeeAsync(_sampleEmployee.Id, from, DateTime.MaxValue.Date, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(obsolete);
+
+        var result = await _handler.Handle(ValidCommand(from, scheduleId: _sampleShift.Id.Value.ToString()), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+        _sampleEmployee.AssignmentOn(from.AddDays(-1)).ShiftType.Should().Be(ShiftType.Rotativo);
+        _rosterRepoMock.Verify(r => r.RemoveRange(obsolete), Times.Once);
+        _consolidationMock.Verify(c => c.RequestAsync(_sampleEmployee.Id, from, DateTime.Today, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task Handle_ScheduleChangeWithPastEffectiveDate_RequestsDurableRecalculationFromThatDate()
     {
         SetupLookups();
@@ -357,7 +385,7 @@ public class UpdateEmployeeCommandHandlerTests
         SetupLookups();
         _sampleEmployee.Terminate(DateTime.Today.AddDays(-10));
 
-        var result = await _handler.Handle(ValidCommand(DateTime.Today.AddDays(-12)), CancellationToken.None);
+        var result = await _handler.Handle(ValidCommand(DateTime.Today.AddDays(-12), scheduleId: _sampleShift.Id.Value.ToString()), CancellationToken.None);
 
         result.IsFailure.Should().BeTrue();
         result.Error.Should().Contain("posterior a la última baja");

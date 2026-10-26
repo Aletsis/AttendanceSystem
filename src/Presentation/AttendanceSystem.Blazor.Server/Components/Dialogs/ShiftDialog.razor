@@ -1,5 +1,6 @@
 @using AttendanceSystem.Domain.Enumerations
 @using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Shifts
 @using AttendanceSystem.Application.Features.Shifts.Commands.CreateShift
 @using AttendanceSystem.Application.Features.Shifts.Commands.UpdateShift
 
@@ -20,7 +21,7 @@
         {
             <MudText Typo="Typo.subtitle1" Class="mt-4 mb-1">Horario por Día</MudText>
             <MudText Typo="Typo.caption" Color="Color.Secondary" Class="mb-2 d-block">
-                Cada día usa un horario existente con todas sus reglas (bloques, tolerancias, comida, ventanas). Un día sin horario es descanso.
+                Cada día usa un horario existente con todas sus reglas (bloques, tolerancias, comida, ventanas). Todos los días deben tener horario: los descansos se toman de los días de descanso del empleado.
             </MudText>
             <MudTable Items="_days" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="0">
                 <HeaderContent>
@@ -31,8 +32,8 @@
                 <RowTemplate>
                     <MudTd DataLabel="Día">@context.DayName</MudTd>
                     <MudTd DataLabel="Tipo">
-                        <MudSelect T="ShiftType?" Value="context.Type" ValueChanged="@(t => OnDayTypeChanged(context, t))" Margin="Margin.Dense">
-                            <MudSelectItem T="ShiftType?" Value="@((ShiftType?)null)">Descanso</MudSelectItem>
+                        <MudSelect T="ShiftType?" Value="context.Type" ValueChanged="@(t => OnDayTypeChanged(context, t))" Margin="Margin.Dense"
+                                   Placeholder="Seleccione el tipo" Required="true">
                             @foreach (ShiftType type in AvailableDayShiftTypes)
                             {
                                 <MudSelectItem T="ShiftType?" Value="@((ShiftType?)type)">@GetShiftTypeName(type)</MudSelectItem>
@@ -53,6 +54,14 @@
                     </MudTd>
                 </RowTemplate>
             </MudTable>
+            @if (_mixedError != null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_mixedError</MudAlert>
+            }
+            @foreach (var warning in MixedWarnings())
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@warning</MudAlert>
+            }
         }
         else if (_shiftType == ShiftType.Flexible)
         {
@@ -146,8 +155,8 @@
             <MudTimePicker @bind-Time="_startTime" Label="Hora de Inicio" Required="true" Editable="true" />
             <MudTimePicker @bind-Time="_endTime" Label="Hora de Fin" Required="true" Editable="true" />
         }
-        <MudNumericField T="int?" @bind-Value="_paidLunchMinutes" Label="Minutos de comida con goce" Min="0" Max="240" Clearable="true" Class="mt-4"
-                         HelperText="Vacío = valor global de Configuración. La comida se detecta en la ventana global; el exceso se descuenta." />
+        <MudNumericField T="int?" @bind-Value="_paidLunchMinutes" Label="Duración de referencia de la comida (min)" Min="0" Max="240" Clearable="true" Class="mt-4"
+                         HelperText="Vacío = valor global de Configuración. Sirve para identificar cuál ausencia en la ventana global es la comida." />
     </DialogContent>
     <DialogActions>
         <MudButton OnClick="Cancel">Cancelar</MudButton>
@@ -198,12 +207,23 @@
     private bool _hasEntryWindow = true;
     
     private List<DayConfig> _days = new();
+    private string? _mixedError;
+
+    /// <summary>Caso 9 (b): avisos (no bloquean) de días que terminan a menos de 2 h del siguiente.</summary>
+    private IReadOnlyList<string> MixedWarnings()
+    {
+        var schedules = (AvailableShifts ?? Enumerable.Empty<ShiftDto>()).ToDictionary(s => s.Id);
+        var days = _days
+            .Where(d => d.DayShiftId is { } id && schedules.ContainsKey(id))
+            .ToDictionary(d => d.DayOfWeek, d => schedules[d.DayShiftId!.Value]);
+        return MixedShiftSchedule.AdjacencyWarnings(days);
+    }
 
     public class DayConfig
     {
         public DayOfWeek DayOfWeek { get; set; }
         public string DayName { get; set; } = "";
-        /// <summary>Tipo elegido para filtrar horarios; null = descanso.</summary>
+        /// <summary>Tipo elegido para filtrar horarios; null = sin elegir.</summary>
         public ShiftType? Type { get; set; }
         public Guid? DayShiftId { get; set; }
         /// <summary>Día guardado con horas por día (formato anterior), sin horario asignado.</summary>
@@ -244,7 +264,6 @@
         ShiftType.Matutino,
         ShiftType.Vespertino,
         ShiftType.Nocturno,
-        ShiftType.Continuo,
         ShiftType.Flexible,
         ShiftType.Partido
     ];
@@ -255,12 +274,7 @@
         _startTime = StartTime ?? new TimeSpan(9, 0, 0); // Default 9 AM
         _toleranceMinutes = ToleranceMinutes;
         _shiftType = ShiftType;
-        if (_shiftType == ShiftType.Continuo)
-        {
-            _shiftType = ShiftType.Flexible;
-            _hasEntryWindow = false;
-        }
-        else if (_shiftType == ShiftType.Rotativo)
+        if (_shiftType == ShiftType.Rotativo)
         {
             _shiftType = ShiftType.Matutino;
         }
@@ -402,7 +416,11 @@
         var dtos = new List<ShiftDayDto>();
         if (_shiftType == ShiftType.Mixto)
         {
-            // Sólo los días con tipo; el servidor exige un horario existente en cada uno.
+            // Caso 9: los 7 días llevan horario (el servidor también lo valida).
+            var missing = MixedShiftSchedule.MissingDays(_days.Where(d => d.DayShiftId.HasValue).Select(d => d.DayOfWeek));
+            _mixedError = missing.Count > 0 ? MixedShiftSchedule.MissingDaysMessage(missing) : null;
+            if (_mixedError != null) return;
+
             foreach (var d in _days.Where(d => d.Type.HasValue))
             {
                 var schedule = (AvailableShifts ?? Enumerable.Empty<ShiftDto>()).FirstOrDefault(s => s.Id == d.DayShiftId);
@@ -487,7 +505,6 @@
         ShiftType.Vespertino => "Vespertino",
         ShiftType.Nocturno => "Nocturno",
         ShiftType.Mixto => "Mixto",
-        ShiftType.Continuo => "Continuo",
         ShiftType.Flexible => "Flexible",
         ShiftType.Partido => "Partido / Doble Turno",
         ShiftType.Rotativo => "Rotativo",

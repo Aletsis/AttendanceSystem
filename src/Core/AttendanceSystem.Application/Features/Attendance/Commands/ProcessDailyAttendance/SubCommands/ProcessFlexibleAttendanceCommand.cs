@@ -21,7 +21,6 @@ public record ProcessFlexibleAttendanceCommand(
     string? TimeZoneId = null,
     PunchAssignmentDraft? Draft = null,
     DateTime? NextJornadaEntryStart = null,
-    bool Continuous = false,
     LunchPolicy? Lunch = null,
     DateTime? EarlyEntryStart = null) : IRequest;
 
@@ -30,6 +29,9 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
     private readonly IDailyAttendanceRepository _dailyRepo;
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly ILogger<ProcessFlexibleAttendanceCommandHandler> _logger;
+
+    // Caso 14: configurable (Configuración → Tiempos y periodos); se toma de la política de la petición.
+    private int DoubleTapThresholdMinutes = LunchPolicy.DoubleTapMaxMinutes;
 
     public ProcessFlexibleAttendanceCommandHandler(
         IDailyAttendanceRepository dailyRepo,
@@ -43,6 +45,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
     public async Task Handle(ProcessFlexibleAttendanceCommand request, CancellationToken cancellationToken)
     {
+        DoubleTapThresholdMinutes = (request.Lunch ?? LunchPolicy.Default).DoubleTapMinutes;
         var targetDateOnly = DateOnly.FromDateTime(request.Date);
 
         if (request.Shift.PunchTrackingMode == PunchTrackingMode.MultiInterval)
@@ -51,20 +54,44 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
                 .Where(r => r.Status == AttendanceStatus.Pending && JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart)))
                 .ToList();
 
-            // Filtrar dobles toques inmediatos (< 15 segundos)
+            // Caso 6 (g), como en tiempo corrido: un marcaje a 15 min o menos del anterior es un doble toque.
             var cleanRecords = new List<AttendanceRecord>();
-            foreach (var r in pendingRecords)
+            await AppendWithoutDoubleTapsAsync(cleanRecords, pendingRecords);
+
+            // Caso 6 (h): si el último tramo del día quedó sin salida, se busca en la ventana del día siguiente
+            // (los marcajes de madrugada siguen formando tramos de esta jornada).
+            if (cleanRecords.Count % 2 == 1)
             {
-                if (!cleanRecords.Any() || (r.CheckTime - cleanRecords.Last().CheckTime).TotalSeconds >= 15)
+                var lastOwn = cleanRecords.Last();
+                var windowEnd = JornadaWindowPolicy.ExitWindowEnd(
+                    cleanRecords[0].GetCivilTime(request.TimeZoneId),
+                    JornadaWindowPolicy.ScheduledStart(request.Date, request.Shift.StartTime, request.Shift.HasEntryWindow),
+                    request.Shift.WorkHours,
+                    request.NextJornadaEntryStart);
+                var nextDayRecords = PunchAssignmentPolicy.Chronological(request.Records
+                    .Where(r => r.Status == AttendanceStatus.Pending &&
+                                !JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart) &&
+                                r.CheckTime > lastOwn.CheckTime &&
+                                r.GetCivilTime(request.TimeZoneId) <= windowEnd))
+                    .ToList();
+                await AppendWithoutDoubleTapsAsync(cleanRecords, nextDayRecords);
+            }
+
+            async Task AppendWithoutDoubleTapsAsync(List<AttendanceRecord> target, IEnumerable<AttendanceRecord> source)
+            {
+                foreach (var r in source)
                 {
-                    cleanRecords.Add(r);
-                }
-                else
-                {
-                    // D-02: el doble toque se conserva auditado como descartado, no como candidato libre.
-                    r.MarkAsProcessed();
-                    await _attendanceRepo.UpdateAsync(r, cancellationToken);
-                    request.Draft?.DoubleTap(r);
+                    if (target.Count == 0 || (r.CheckTime - target.Last().CheckTime).TotalMinutes > DoubleTapThresholdMinutes)
+                    {
+                        target.Add(r);
+                    }
+                    else
+                    {
+                        // D-02: el doble toque se conserva auditado como descartado, no como candidato libre.
+                        r.MarkAsProcessed();
+                        await _attendanceRepo.UpdateAsync(r, cancellationToken);
+                        request.Draft?.DoubleTap(r);
+                    }
                 }
             }
 
@@ -154,7 +181,7 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         DateTime? checkOut = null;
         AttendanceRecord? checkInRecord = null;
         AttendanceRecord? checkOutRecord = null;
-        (int LunchMinutes, int LunchExcess, bool HasTempExits, int TempMinutes, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
+        (IReadOnlyList<TemporaryExit> Exits, IReadOnlyList<DateTime> Orphans)? intermediateAnalysis = null;
 
         // Marcajes del día
         var pendingDayRecords = PunchAssignmentPolicy.Chronological(request.Records
@@ -166,43 +193,55 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
             .Where(r => r.Status == AttendanceStatus.Pending))
             .ToList();
 
+        // Caso 6 (d), como en turno fijo: marcajes a no más de 15 min del primero son dobles toques de un solo
+        // marcaje útil (el primero, o el último si está más cerca de la salida esperada).
+        if (pendingDayRecords.Count >= 2 &&
+            (pendingDayRecords.Last().CheckTime - pendingDayRecords.First().CheckTime).TotalMinutes <= DoubleTapThresholdMinutes)
+        {
+            var kept = IsNearerToExpectedExit(pendingDayRecords.First(), request) ? pendingDayRecords.Last() : pendingDayRecords.First();
+            foreach (var doubleTap in pendingDayRecords.Where(r => r != kept))
+            {
+                request.Draft?.DoubleTap(doubleTap);
+                doubleTap.MarkAsProcessed();
+                await _attendanceRepo.UpdateAsync(doubleTap, cancellationToken);
+            }
+            pendingDayRecords = new List<AttendanceRecord> { kept };
+            availableRecords = availableRecords.Where(r => r.Status == AttendanceStatus.Pending).ToList();
+        }
+
         if (pendingDayRecords.Any())
         {
-            // 1. Primer registro = Entrada oficial
-            checkInRecord = pendingDayRecords.First();
-            checkIn = checkInRecord.CheckTime;
+            var first = pendingDayRecords.First();
 
-            // 2. Ventana de salida (F06-01): los marcajes del mismo día siempre son candidatos; en el día siguiente
-            //    sólo hasta el fin de la ventana (entrada programada + duración + margen, antes de la jornada siguiente).
+            // Ventana de salida (F06-01): los marcajes del mismo día siempre son candidatos; en el día siguiente
+            // sólo hasta el fin de la ventana (entrada programada + duración + margen, antes de la jornada siguiente).
             var windowEnd = JornadaWindowPolicy.ExitWindowEnd(
-                checkInRecord.GetCivilTime(request.TimeZoneId),
+                first.GetCivilTime(request.TimeZoneId),
                 JornadaWindowPolicy.ScheduledStart(request.Date, request.Shift.StartTime, request.Shift.HasEntryWindow),
                 request.Shift.WorkHours,
                 request.NextJornadaEntryStart);
             var exitCandidates = availableRecords
-                .Where(r => r.CheckTime > checkIn.Value &&
+                .Where(r => r.CheckTime > first.CheckTime &&
                             (JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart) || r.GetCivilTime(request.TimeZoneId) <= windowEnd))
                 .ToList();
 
-            if (request.Continuous)
+            if (exitCandidates.Count == 0 && IsNearerToExpectedExit(first, request))
             {
-                // Continuo: la salida es el último marcaje de la ventana; los anteriores son intermedios.
-                checkOutRecord = exitCandidates.LastOrDefault();
+                // Caso 6 (c), como en turno fijo: un solo marcaje más cerca de la salida esperada es la salida.
+                checkOutRecord = first;
+                checkOut = first.CheckTime;
             }
             else
             {
-                // Flexible: la salida es el último marcaje del mismo día; si no lo hay, el primero del día
-                // siguiente dentro de la ventana (jornada que cruza medianoche).
-                checkOutRecord = exitCandidates.LastOrDefault(r => JornadaDay.Contains(r, targetDateOnly, request.TimeZoneId, request.EarlyEntryStart))
-                    ?? exitCandidates.FirstOrDefault();
+                checkInRecord = first;
+                checkIn = first.CheckTime;
+                // Caso 6 (a): la salida es el último marcaje de la ventana, aunque caiga al día siguiente (guardias y
+                // jornadas que cruzan medianoche); los anteriores son intermedios.
+                checkOutRecord = exitCandidates.LastOrDefault();
+                checkOut = checkOutRecord?.CheckTime;
             }
 
-            if (checkOutRecord != null)
-            {
-                checkOut = checkOutRecord.CheckTime;
-            }
-
-            if (checkOutRecord != null && checkOut.HasValue)
+            if (checkInRecord != null && checkOutRecord != null && checkIn.HasValue && checkOut.HasValue)
             {
                 // 3. Registros intermedios estrictamente entre entrada y salida
                 var middleRecords = availableRecords
@@ -211,15 +250,13 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
                 if (middleRecords.Any())
                 {
-                    const int doubleTapThresholdMinutes = 15;
-
                     var entryDoubleTaps = middleRecords
-                        .Where(r => (r.CheckTime - checkIn.Value).TotalMinutes <= doubleTapThresholdMinutes)
+                        .Where(r => (r.CheckTime - checkIn.Value).TotalMinutes <= DoubleTapThresholdMinutes)
                         .ToList();
 
                     var exitDoubleTaps = checkOut.HasValue
                         ? middleRecords
-                            .Where(r => (checkOut.Value - r.CheckTime).TotalMinutes <= doubleTapThresholdMinutes)
+                            .Where(r => (checkOut.Value - r.CheckTime).TotalMinutes <= DoubleTapThresholdMinutes)
                             .ToList()
                         : new List<AttendanceRecord>();
 
@@ -283,14 +320,12 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
         if (intermediateAnalysis.HasValue)
         {
             dailyAttendance.ApplyIntermediateAnalysis(
-                intermediateAnalysis.Value.LunchMinutes,
-                intermediateAnalysis.Value.LunchExcess,
-                intermediateAnalysis.Value.HasTempExits,
-                intermediateAnalysis.Value.TempMinutes);
+                intermediateAnalysis.Value.Exits,
+                (request.Lunch ?? LunchPolicy.Default).ForShift(request.Shift.PaidLunchMinutes).PaidMinutes);
             // F06-05 (4a): marcaje intermedio sin pareja: incidencia visible para revisión, sin descuento.
             foreach (var orphan in intermediateAnalysis.Value.Orphans)
             {
-                dailyAttendance.AddCalculationIssue($"Marcaje intermedio sin pareja a las {orphan:HH:mm}: revisar.");
+                dailyAttendance.AddCalculationIssue(IntermediatePunchAnalysis.OrphanIssue(orphan));
             }
         }
 
@@ -301,6 +336,19 @@ public class ProcessFlexibleAttendanceCommandHandler : IRequestHandler<ProcessFl
 
         _dailyRepo.Add(dailyAttendance);
         request.Draft?.Complete(dailyAttendance);
+    }
+
+    /// <summary>
+    /// Caso 6 (c): con ventana de llegada y horas diarias, compara el marcaje con el fin de la ventana y con la salida
+    /// esperada (fin de la ventana + horas); empate: salida. Sin ventana no hay referencia y es la entrada.
+    /// </summary>
+    private static bool IsNearerToExpectedExit(AttendanceRecord record, ProcessFlexibleAttendanceCommand request)
+    {
+        if (!request.Shift.HasEntryWindow || request.Shift.WorkHours <= TimeSpan.Zero) return false;
+        var expectedIn = request.Date.Date.Add(request.Shift.FlexWindowEndTime ?? request.Shift.StartTime);
+        var expectedOut = expectedIn.Add(request.Shift.WorkHours);
+        var civil = record.GetCivilTime(request.TimeZoneId);
+        return Math.Abs((civil - expectedOut).TotalMinutes) <= Math.Abs((civil - expectedIn).TotalMinutes);
     }
 }
 

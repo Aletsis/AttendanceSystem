@@ -75,9 +75,7 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             employees = employees.Where(e => e.DepartmentId == request.DepartmentId).ToList();
         }
 
-        // Filtrar solo empleados activos
-        employees = employees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
-
+        // Caso 16: cada empleado se incluye por sus días activos (relación laboral sin vacaciones ni incapacidad), no por su estado actual.
 
         // 3. Obtener Departamentos, Puestos y Sucursales para referencia
         var departments = await _departmentRepository.GetAllAsync(cancellationToken);
@@ -202,24 +200,8 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
                 // Calcular tiempo extra efectivo considerando la bolsa semanal si aplica
                 double totalOvertime = details.Sum(d => overtimeByRecordId.TryGetValue(d.Id, out var ot) ? ot : d.OvertimeMinutes);
 
-                // Calcular primero el tiempo trabajado total (para mostrarlo en el resumen)
-                double totalWorkedHours = 0;
-                foreach (var d in details)
-                {
-                    if (d.TotalWorkedMinutes > 0)
-                    {
-                        totalWorkedHours += d.TotalWorkedMinutes / 60.0;
-                    }
-                    else
-                    {
-                        var refIn = GetReferenceEntry(d);
-                        var refOut = GetReferenceExit(d);
-                        if (refIn.HasValue && refOut.HasValue)
-                        {
-                            totalWorkedHours += (refOut.Value - refIn.Value).TotalHours;
-                        }
-                    }
-                }
+                // Tiempo trabajado: el guardado en la jornada (única fuente), sin recalcularlo.
+                double totalWorkedHours = details.Sum(d => d.TotalWorkedMinutes) / 60.0;
 
                 // F06-09: las extras guardadas ya llevan el tope de su período contable; volver a topar el total del
                 // rango consultado recortaba los rangos que abarcan más de un período.
@@ -254,14 +236,10 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
 
     private AdvancedReportDetailDto MapToDetail(DailyAttendance att, Employee emp, Dictionary<DailyAttendanceId, int> overtimeByRecordId)
     {
-        // 1. Determine Reference Entry (Entrada de Referencia)
-        DateTime? referenceEntry = GetReferenceEntry(att);
-        DateTime? referenceExit = GetReferenceExit(att);
-
-        // 2. Duración trabajada basada en la regla del usuario
-        TimeSpan? workedVal = att.TotalWorkedMinutes > 0
+        // Tiempo trabajado guardado en la jornada; sin entrada y salida no hay tiempo que mostrar.
+        TimeSpan? workedVal = att.TotalWorkedMinutes > 0 || (att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
             ? TimeSpan.FromMinutes(att.TotalWorkedMinutes)
-            : ((referenceExit.HasValue && referenceEntry.HasValue) ? (referenceExit.Value - referenceEntry.Value) : null);
+            : null;
 
         string workedStr = workedVal.HasValue ? $"{(int)workedVal.Value.TotalHours:00}:{workedVal.Value.Minutes:00}" : "--:--";
 
@@ -295,15 +273,5 @@ public class GetAdvancedAttendanceReportQueryHandler : IRequestHandler<GetAdvanc
             IsRestDay = att.IsRestDay,
             DailyAttendanceId = att.Id.Value
         };
-    }
-
-    private DateTime? GetReferenceEntry(DailyAttendance att)
-    {
-        return att.GetReferenceEntry();
-    }
-
-    private DateTime? GetReferenceExit(DailyAttendance att)
-    {
-        return att.GetReferenceExit();
     }
 }

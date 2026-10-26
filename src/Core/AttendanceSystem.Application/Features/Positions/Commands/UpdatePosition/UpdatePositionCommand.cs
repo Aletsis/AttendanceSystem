@@ -7,6 +7,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Positions.Commands.UpdatePosition;
 
+[RequiresPermission(Permissions.PositionsManage)]
 public sealed record UpdatePositionCommand(
     Guid Id,
     string Name,

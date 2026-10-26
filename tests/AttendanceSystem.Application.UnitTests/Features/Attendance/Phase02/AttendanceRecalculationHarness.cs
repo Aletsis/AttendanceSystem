@@ -192,6 +192,21 @@ internal sealed class InMemoryAttendanceRecordRepository : IAttendanceRepository
 
     public void Detach(AttendanceRecord record) { }
 
+    public Task<AttendanceRecord?> GetLatestByDeviceAsync(DeviceId deviceId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_store.Records.Where(r => r.DeviceId == deviceId && !r.IsVoided).OrderByDescending(r => r.CheckTime).FirstOrDefault());
+
+    public Task<IReadOnlyList<AttendanceRecord>> GetReceivedAfterAsync(DateTime receivedAfterUtc, DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AttendanceRecord>>(_store.Records
+            .Where(r => !r.IsVoided && r.ReceivedAt > receivedAfterUtc && r.WorkDate is { } d && d >= fromDate && d <= toDate)
+            .ToList());
+
+    public Task<IReadOnlyList<PunchDaySummary>> GetPunchDaySummaryAsync(DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<PunchDaySummary>>(_store.Records
+            .Where(r => !r.IsVoided && r.WorkDate is { } d && d >= fromDate && d <= toDate)
+            .GroupBy(r => (r.EmployeeId, r.WorkDate!.Value, r.DeviceId))
+            .Select(g => new PunchDaySummary(g.Key.EmployeeId, g.Key.Item2, g.Key.DeviceId, g.Count()))
+            .ToList());
+
     public Task<IReadOnlyList<AttendanceRecord>> GetByDeviceAndDateRangeAsync(DeviceId deviceId, DateTime startDateTime, DateTime endDateTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<AttendanceRecord>> GetByDownloadLogIdAsync(DownloadLogId downloadLogId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<AttendanceRecord?> GetByEmployeeAndCheckTimeAsync(EmployeeId employeeId, DateTime checkTime, CancellationToken cancellationToken = default) => throw new NotSupportedException();
@@ -215,6 +230,9 @@ internal sealed class InMemoryAdjustmentRepository : IAttendanceAdjustmentReposi
             .Where(a => a.Date.Date >= startDate.Date && a.Date.Date <= endDate.Date)
             .Where(a => employeeId == null || a.EmployeeId == employeeId)
             .ToList());
+
+    public Task<int> CountByShiftOverrideAsync(ShiftId shiftId, CancellationToken cancellationToken = default) =>
+        Task.FromResult(_store.Adjustments.Count(a => a.ShiftIdOverride == shiftId));
 
     public Task AddAsync(AttendanceAdjustment adjustment, CancellationToken cancellationToken = default) { _store.PendingAdjustmentAdds.Add(adjustment); return Task.CompletedTask; }
     public void Update(AttendanceAdjustment adjustment) { }
@@ -341,7 +359,6 @@ internal sealed class SubCommandRoutingSender : ISender
             ProcessFlexibleAttendanceCommand c => new ProcessFlexibleAttendanceCommandHandler(_dailyRepo, _attendanceRepo, NullLogger<ProcessFlexibleAttendanceCommandHandler>.Instance).Handle(c, cancellationToken),
             ProcessSplitAttendanceCommand c => new ProcessSplitAttendanceCommandHandler(_dailyRepo, _attendanceRepo, NullLogger<ProcessSplitAttendanceCommandHandler>.Instance).Handle(c, cancellationToken),
             ProcessNoShiftAttendanceCommand c => new ProcessNoShiftAttendanceCommandHandler(_dailyRepo, _attendanceRepo, NullLogger<ProcessNoShiftAttendanceCommandHandler>.Instance).Handle(c, cancellationToken),
-            ProcessContinuousAttendanceCommand c => new ProcessContinuousAttendanceCommandHandler(this).Handle(c, cancellationToken),
             _ => throw new NotSupportedException(request.GetType().Name)
         };
 
@@ -401,11 +418,22 @@ public sealed class AttendanceRecalculationHarness
             LockService,
             new RecalculationSender(this),
             NullLogger<AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService>.Instance,
-            user.Object);
+            user.Object,
+            closures: PeriodClosures);
     }
 
     public AttendanceSystem.Application.Features.Attendance.Commands.ManuallyAssignAttendance.ManuallyAssignAttendanceCommandHandler ManualAssign() =>
         new(_dailyRepo, _attendanceRepo, _assignmentRepo, Decisions());
+
+    /// <summary>Caso 17: cierres de periodo vigentes en las pruebas (vacío: todo abierto).</summary>
+    public InMemoryPeriodClosureRepository ClosureRepository { get; } = new();
+
+    public AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService PeriodClosures => new(ClosureRepository);
+
+    /// <summary>Recálculo inmediato con el orquestador real (lo que envía un comando tras guardar).</summary>
+    public ISender Sender => new RecalculationSender(this);
+
+    public IAttendanceConsolidationRepository Consolidations => new InMemoryConsolidationRepository(Store);
 
     /// <summary>Sin base compartida no hay otros procesos: el bloqueo es una operación vacía.</summary>
     public IAttendanceCalculationLockService LockService { get; } = Mock.Of<IAttendanceCalculationLockService>();
@@ -441,7 +469,8 @@ public sealed class AttendanceRecalculationHarness
             LockService,
             _unitOfWork,
             new SubCommandRoutingSender(_dailyRepo, _attendanceRepo),
-            NullLogger<ProcessDailyAttendanceCommandHandler>.Instance);
+            NullLogger<ProcessDailyAttendanceCommandHandler>.Instance,
+            closures: PeriodClosures);
 
         return handler.Handle(new ProcessDailyAttendanceCommand(start, end, EmployeeId: employeeId), CancellationToken.None);
     }
@@ -503,4 +532,20 @@ public static class AttendanceResultSnapshot
         var extra = actual.Except(expected).Select(l => "+ " + l);
         return missing.Concat(extra).ToList();
     }
+}
+
+public sealed class InMemoryPeriodClosureRepository : IAttendancePeriodClosureRepository
+{
+    public List<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure> Items { get; } = new();
+
+    public Task<IReadOnlyList<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure>> GetAllAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult<IReadOnlyList<AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure>>(Items.ToList());
+
+    public Task AddAsync(AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure closure, CancellationToken cancellationToken = default)
+    {
+        Items.Add(closure);
+        return Task.CompletedTask;
+    }
+
+    public void Update(AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate.AttendancePeriodClosure closure) { }
 }

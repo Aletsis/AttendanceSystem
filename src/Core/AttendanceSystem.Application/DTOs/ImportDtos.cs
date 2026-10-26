@@ -13,7 +13,7 @@ public sealed record ImportResult<T>
     public string ErrorMessage => string.Join(", ", Errors);
 }
 
-public sealed record ImportedLogEntryDto(string EmployeeId, DateTime DateTime, string Type);
+public sealed record ImportedLogEntryDto(string EmployeeId, DateTime DateTime);
 
 public sealed record ImportBranchDto(string Code, string Name, string Address, bool IsExternal = false, string? ExternalHost = null);
 
@@ -30,5 +30,6 @@ public sealed record ImportEmployeeDto(
     string DepartmentName,
     string PositionName,
     string Gender,
-    DateTime HireDate
+    DateTime HireDate,
+    string? ScheduleName = null
 );

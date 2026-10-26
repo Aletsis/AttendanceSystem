@@ -77,13 +77,24 @@ public class TimeNormalizerTests
     }
 
     [Fact]
-    public void ResolveTimeZone_WithUnknownId_ShouldFallbackToLocalWithoutThrowing()
+    public void ResolveTimeZone_WithUnknownId_ShouldFallbackToTheDefaultZoneWithoutThrowing()
     {
         // Act
         var tz = _normalizer.ResolveTimeZone("NonExistent/Unknown_TimeZone_123");
 
-        // Assert
+        // Assert: cae a la zona autoritativa por defecto, no a la zona local del equipo (en CI la local es UTC).
         tz.Should().NotBeNull();
-        tz.Should().Be(TimeZoneInfo.Local);
+        tz.Should().Be(_normalizer.ResolveTimeZone(TimeNormalizer.DefaultAuthoritativeTimeZoneId));
+    }
+
+    [Fact]
+    public void ResolveTimeZone_WithAZoneMissingOnTheSystem_UsesItsEquivalentRules()
+    {
+        // America/Ciudad_Juarez (2022) no existe en algunos Windows: se usa la de reglas iguales, no la de Ciudad de México.
+        var tz = _normalizer.ResolveTimeZone("America/Ciudad_Juarez");
+        var summer = new DateTime(2026, 7, 1, 12, 0, 0, DateTimeKind.Utc);
+
+        tz.GetUtcOffset(summer).Should().Be(TimeSpan.FromHours(-6));
+        tz.GetUtcOffset(new DateTime(2026, 1, 15, 12, 0, 0, DateTimeKind.Utc)).Should().Be(TimeSpan.FromHours(-7));
     }
 }

@@ -105,6 +105,9 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.TotalWorkedMinutes)
             .IsRequired()
             .HasDefaultValue(0);
+        builder.Property(x => x.WeeklyShortfallMinutes)
+            .IsRequired()
+            .HasDefaultValue(0);
         builder.Property(x => x.IntervalsData)
             .IsRequired(false);
         builder.Property(x => x.OvertimeCalculationMethod)
@@ -132,6 +135,8 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
         builder.Property(x => x.WorkedOnRestDay);
         builder.Property(x => x.CalculateOvertimeBeforeEntry);
         builder.Property(x => x.OvertimeAuthorized);
+        builder.Property(x => x.AuthorizedOvertimeMinutes);
+        builder.Property(x => x.AuthorizedOvertimeForRawMinutes);
         builder.Property(x => x.IsAutoDetectedShift)
             .IsRequired()
             .HasDefaultValue(false);
@@ -160,7 +165,11 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
             .HasDefaultValue(0);
         builder.Property(x => x.LunchMinutesTaken).IsRequired().HasDefaultValue(0);
         builder.Property(x => x.LunchExcessMinutes).IsRequired().HasDefaultValue(0);
-        builder.Property(x => x.LunchExcessForgiven).IsRequired().HasDefaultValue(false);
+        // Caso 11: detalle por salida, minutos de comida con goce y minutos de salidas descontados.
+        builder.Property(x => x.TemporaryExitsData).HasColumnType("text").IsRequired(false);
+        builder.Property(x => x.PaidLunchMinutes).IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.DeductedExitMinutes).IsRequired().HasDefaultValue(0);
+        builder.Ignore(x => x.TemporaryExits);
 
         builder.Property(x => x.TimeZoneId)
             .HasMaxLength(100)
@@ -168,6 +177,8 @@ public class DailyAttendanceConfiguration : IEntityTypeConfiguration<DailyAttend
 
         // AttendanceNote es una propiedad calculada en memoria — no persistir
         builder.Ignore(x => x.AttendanceNote);
+        builder.Ignore(x => x.Notes);
+        builder.Ignore(x => x.HasPunches);
 
         builder.Ignore(x => x.DomainEvents);
 

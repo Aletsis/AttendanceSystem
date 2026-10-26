@@ -283,7 +283,7 @@
                         <iconPacks:PackIconMaterial Kind="ClockFast" Width="30" Height="30"/>
                     </Button>
 
-                    <Button Command="{Binding NavigateToDevicesCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Dispositivos">
+                    <Button Command="{Binding NavigateToDevicesCommand}" Visibility="{Binding CanOpenDevices, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource QuickActionCardStyle}" Tag="Dispositivos">
                         <iconPacks:PackIconMaterial Kind="Devices" Width="30" Height="30"/>
                     </Button>
 
@@ -291,11 +291,11 @@
                         <iconPacks:PackIconMaterial Kind="ChartBar" Width="30" Height="30"/>
                     </Button>
 
-                    <Button Command="{Binding NavigateToSettingsCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Configuración">
+                    <Button Command="{Binding NavigateToSettingsCommand}" Visibility="{Binding CanOpenSettings, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource QuickActionCardStyle}" Tag="Configuración">
                         <iconPacks:PackIconMaterial Kind="Cog" Width="30" Height="30"/>
                     </Button>
 
-                    <Button Command="{Binding NavigateToBackupCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Respaldo">
+                    <Button Command="{Binding NavigateToBackupCommand}" Visibility="{Binding CanOpenBackup, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource QuickActionCardStyle}" Tag="Respaldo">
                         <iconPacks:PackIconMaterial Kind="Database" Width="30" Height="30"/>
                     </Button>
 

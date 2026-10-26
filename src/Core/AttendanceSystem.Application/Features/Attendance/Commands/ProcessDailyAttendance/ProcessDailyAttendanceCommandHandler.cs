@@ -46,6 +46,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
     private readonly IAttendanceCalculationReader _reader;
     private readonly int _batchSize;
     private readonly Dictionary<BranchId, string> _branchTimeZones = new();
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
+    /// <summary>Caso 17: días de periodos cerrados; no se recalculan ni se eliminan.</summary>
+    private Func<DateTime, bool> _isClosed = _ => false;
 
     public ProcessDailyAttendanceCommandHandler(
         IDailyAttendanceRepository dailyRepo,
@@ -62,8 +65,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         ILogger<ProcessDailyAttendanceCommandHandler> logger,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         IAttendanceCalculationReader? reader = null,
-        int batchSize = DefaultBatchSize)
+        int batchSize = DefaultBatchSize,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
+        _closures = closures;
         _reader = reader ?? new RepositoryCalculationReader(employeeRepo, dailyRepo, rosterRepo, adjustmentRepo, attendanceRepo, assignmentRepo);
         _batchSize = Math.Max(1, batchSize);
         _dailyRepo = dailyRepo;
@@ -93,6 +98,8 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         // F07-02 / A05: el rango se valida antes de consultar o modificar nada (también si se invoca sin MediatR).
         var rangeError = DateRangePolicy.Validate(request.StartDate, request.EndDate, DateRangePolicy.MaxRecalculationDays);
         if (rangeError != null) throw new AttendanceSystem.Application.Exceptions.InvalidDateRangeException(rangeError);
+
+        if (_closures != null) _isClosed = await _closures.ClosedDaysAsync(cancellationToken);
 
         // F07-03: sólo los empleados del alcance, filtrados en la base de datos por vigencia de empleo y, con
         // sucursal, por la sucursal vigente en el rango (F06-08). Orden estable por identificador (F02-05).
@@ -325,9 +332,11 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             var overtime = WeeklyHoursCalculationHelper.Calculate(empAttendances, ws.Employee, weeklyStartDay, periodStartOf, date => ExpectedDayOf(ws, date, shifts));
             foreach (var att in empAttendances)
             {
-                if (overtime.TryGetValue(att.Id, out var ot) && (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw))
+                if (_isClosed(att.Date)) continue; // caso 17: una jornada cerrada no cambia
+                if (overtime.TryGetValue(att.Id, out var ot) &&
+                    (att.OvertimeMinutes != ot.Effective || att.RawOvertimeMinutes != ot.Raw || att.WeeklyShortfallMinutes != ot.WeeklyShortfall))
                 {
-                    att.SetCalculatedOvertime(ot.Raw, ot.Effective);
+                    att.SetCalculatedOvertime(ot.Raw, ot.Effective, ot.WeeklyShortfall);
                     _dailyRepo.Update(att);
                     hasSubsequentUpdates = true;
                 }
@@ -400,7 +409,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         // marcaje libre del primer día solicitado; así su salida no queda libre para el día siguiente.
         var unitStart = requestStart;
         var previous = requestStart.AddDays(-1);
-        if (employee.IsActiveOn(previous) &&
+        if (!_isClosed(previous) && employee.IsActiveOn(previous) &&
             (PreviousJornadaReachesFreePunch(ws, previous, shifts) || HasEarlyEntryPunch(ws, requestStart, shifts)))
         {
             unitStart = previous;
@@ -415,12 +424,23 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         {
             if (date <= lastDate)
             {
-                if (employee.IsActiveOn(date))
+                if (_isClosed(date))
+                {
+                    // Caso 17: periodo cerrado; la jornada queda como se cerró.
+                }
+                else if (employee.IsActiveOn(date))
                 {
                     await EnsureLoadedAsync(ws, date, cancellationToken);
                     await IncludeInUnitAsync(ws, date, cancellationToken);
                     await RecalculateJornadaAsync(ws, date, shifts, assignedAt, cancellationToken);
                     processed++;
+                }
+                else if (employee.IsEmployedOn(date))
+                {
+                    // Caso 16: de vacaciones, incapacidad o baja temporal no se calcula; una jornada ya calculada
+                    // (pausa registrada con fecha pasada) se elimina y sus marcajes quedan libres.
+                    await EnsureLoadedAsync(ws, date, cancellationToken);
+                    if (ws.ExistingDaily.ContainsKey(date.Date)) await IncludeInUnitAsync(ws, date, cancellationToken);
                 }
 
                 date = date.AddDays(1);
@@ -430,7 +450,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             // F02-03 (hacia adelante): si la unidad cambió qué marcajes del día siguiente consume,
             // la jornada siguiente ya calculada depende de este resultado y se reconstruye también.
             var next = lastDate.AddDays(1);
-            if (ws.UnitDates.Count == 0 || !employee.IsActiveOn(next)) break;
+            if (ws.UnitDates.Count == 0 || _isClosed(next) || !employee.IsActiveOn(next)) break;
 
             await EnsureLoadedAsync(ws, next, cancellationToken);
             var (before, after) = ws.BoundaryClaims(DateOnly.FromDateTime(next));
@@ -562,7 +582,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
             // Decisión 5: un turno mixto ya llega resuelto al horario del día (AttendanceShiftResolutionService).
             if (dayEndTime <= dayStartTime || shift.WorkHours >= TimeSpan.FromHours(24) ||
-                     shift.ShiftType == ShiftType.Nocturno || shift.ShiftType == ShiftType.Continuo ||
+                     shift.ShiftType == ShiftType.Nocturno ||
                      shift.ShiftType == ShiftType.Flexible || shift.ShiftType == ShiftType.Partido)
             {
                 isCrossDay = true;
@@ -641,7 +661,7 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
 
         bool routesToNightly = effectiveType == ShiftType.Nocturno ||
             (plan.DayEndTime <= plan.DayStartTime &&
-             effectiveType != ShiftType.Continuo && effectiveType != ShiftType.Flexible && effectiveType != ShiftType.Partido);
+             effectiveType != ShiftType.Flexible && effectiveType != ShiftType.Partido);
 
         if (routesToNightly)
         {
@@ -664,18 +684,15 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
                 : maxB2EndBySched;
         }
 
-        if (effectiveType == ShiftType.Continuo || effectiveType == ShiftType.Flexible)
+        if (effectiveType == ShiftType.Flexible)
         {
-            if (shift.PunchTrackingMode == PunchTrackingMode.MultiInterval) return null;
-
-            // F06-01: continuo toma el último marcaje de su ventana; flexible sólo busca en el día siguiente
-            // cuando la entrada es el único marcaje libre de su día. Ambos con el tope de la política de ventanas.
+            // Caso 6 (a, h): en tiempo corrido la salida es el último marcaje de la ventana y en multi-marcaje el
+            // tramo abierto busca su salida en ella; ambas ventanas se anclan en el primer marcaje del día.
             var unavailable = ws.Unavailable(DateOnly.FromDateTime(date), includeOwnManual: true);
             var ownDay = PunchAssignmentPolicy.Chronological(ws.Records.Values
                 .Where(r => ws.WorkDateOf(r) == plan.SearchStartDate && !unavailable.ContainsKey(r.Id)))
                 .ToList();
             if (ownDay.Count == 0) return null;
-            if (effectiveType == ShiftType.Flexible && ownDay.Count != 1) return null;
             return JornadaWindowPolicy.ExitWindowEnd(
                 ownDay[0].GetCivilTime(ws.TimeZoneId),
                 JornadaWindowPolicy.ScheduledStart(date, shift.StartTime, shift.HasEntryWindow),
@@ -697,7 +714,10 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         if (!ws.Employee.IsActiveOn(next) || next > ws.LoadedThrough) return null;
 
         var plan = ResolvePlan(ws, next, shifts);
-        if (plan.Resolution.Shift == null || plan.Resolution.IsRestDay) return null;
+        if (plan.Resolution.Shift is not { } nextShift || plan.Resolution.IsRestDay) return null;
+        // Caso 6 (b): un flexible sin ventana de llegada no tiene hora de entrada (su inicio de 00:00 es nominal) ni
+        // entrada anticipada; su jornada empieza en su propio día y no aparta los marcajes de la noche anterior.
+        if (nextShift.ShiftType == ShiftType.Flexible && !nextShift.HasEntryWindow) return next.Date;
         return JornadaWindowPolicy.EntryWindowStart(next.Date.Add(plan.DayStartTime));
     }
 
@@ -769,11 +789,6 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
             await _sender.Send(new ProcessNoShiftAttendanceCommand(
                 employee, date, records, isRestDay, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft), cancellationToken);
         }
-        else if (shift.ShiftType == ShiftType.Continuo)
-        {
-            await _sender.Send(new ProcessContinuousAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, NextJornadaEntryStart: nextEntryStart, Lunch: ws.Lunch, EarlyEntryStart: plan.EarlyEntryStart), cancellationToken);
-        }
         else if (shift.ShiftType == ShiftType.Flexible)
         {
             await _sender.Send(new ProcessFlexibleAttendanceCommand(
@@ -782,9 +797,9 @@ public class ProcessDailyAttendanceCommandHandler : IRequestHandler<ProcessDaily
         else if (shift.ShiftType == ShiftType.Partido)
         {
             await _sender.Send(new ProcessSplitAttendanceCommand(
-                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, EarlyEntryStart: plan.EarlyEntryStart), cancellationToken);
+                employee, date, shift, records, isRestDay, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, EarlyEntryStart: plan.EarlyEntryStart, Lunch: ws.Lunch), cancellationToken);
         }
-        else if (shift.ShiftType == ShiftType.Nocturno || (plan.DayEndTime <= plan.DayStartTime && shift.ShiftType != ShiftType.Continuo && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
+        else if (shift.ShiftType == ShiftType.Nocturno || (plan.DayEndTime <= plan.DayStartTime && shift.ShiftType != ShiftType.Flexible && shift.ShiftType != ShiftType.Partido))
         {
             await _sender.Send(new ProcessNightlyAttendanceCommand(
                 employee, date, shift, records, isRestDay, plan.DayStartTime, plan.DayEndTime, isAutoDetected, Adjustment: adjustment, TimeZoneId: empTimeZone, Draft: draft, Lunch: ws.NightLunch, NextJornadaEntryStart: nextEntryStart), cancellationToken);

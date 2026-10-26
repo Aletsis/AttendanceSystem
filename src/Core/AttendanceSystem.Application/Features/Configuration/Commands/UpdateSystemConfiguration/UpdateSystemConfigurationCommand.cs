@@ -7,6 +7,7 @@ using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.Application.Features.Configuration.Commands.UpdateSystemConfiguration;
 
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record UpdateSystemConfigurationCommand(
     string CompanyName,
     byte[]? CompanyLogo,
@@ -45,22 +46,29 @@ public sealed record UpdateSystemConfigurationCommand(
     TimeSpan? LunchWindowEnd = null,
     int? PaidLunchMinutes = null,
     TimeSpan? NightLunchWindowStart = null,
-    TimeSpan? NightLunchWindowEnd = null) : IRequest<Result<Guid>>;
+    TimeSpan? NightLunchWindowEnd = null,
+    bool? LunchWindowEnabled = null,
+    int? DoubleTapMinutes = null,
+    DateTime? RecalculateFrom = null,
+    AttendanceSystem.Domain.Services.PunchQuarantinePolicy? QuarantinePolicy = null) : IRequest<Result<Guid>>;
 
 public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<UpdateSystemConfigurationCommand, Result<Guid>>
 {
     private readonly ISystemConfigurationRepository _repository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAttendanceJobScheduler _jobScheduler;
+    private readonly AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation? _recalculation;
 
     public UpdateSystemConfigurationCommandHandler(
         ISystemConfigurationRepository repository,
         IUnitOfWork unitOfWork,
-        IAttendanceJobScheduler jobScheduler)
+        IAttendanceJobScheduler jobScheduler,
+        AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation? recalculation = null)
     {
         _repository = repository;
         _unitOfWork = unitOfWork;
         _jobScheduler = jobScheduler;
+        _recalculation = recalculation;
     }
 
     public async Task<Result<Guid>> Handle(UpdateSystemConfigurationCommand command, CancellationToken cancellationToken)
@@ -117,6 +125,22 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
                 command.PaidLunchMinutes ?? config.PaidLunchMinutes);
         }
 
+        if (command.LunchWindowEnabled.HasValue)
+        {
+            config.SetLunchWindowEnabled(command.LunchWindowEnabled.Value);
+        }
+
+        if (command.DoubleTapMinutes.HasValue)
+        {
+            config.UpdateDoubleTapMinutes(command.DoubleTapMinutes.Value);
+        }
+
+        // Caso 18: los clientes que no envían los umbrales de cuarentena los conservan.
+        if (command.QuarantinePolicy != null)
+        {
+            config.UpdateQuarantinePolicy(command.QuarantinePolicy);
+        }
+
         if (command.NightLunchWindowStart.HasValue || command.NightLunchWindowEnd.HasValue)
         {
             config.UpdateNightLunchWindow(
@@ -163,6 +187,13 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Caso 15: un cambio que afecta el cálculo (comida, toque doble, periodos) con vigencia de hoy o pasada
+        // recalcula a todos los empleados activos desde esa fecha.
+        if (command.RecalculateFrom is { } from && _recalculation != null)
+        {
+            await _recalculation.RequestForAllEmployeesAsync(from, cancellationToken);
+        }
 
         return Result<Guid>.Success(config.Id);
     }

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Windows.Input;
 using AttendanceSystem.Application.DTOs;
+using AttendanceSystem.Application.Features.Shifts;
 using AttendanceSystem.Domain.Enumerations;
 using Prism.Commands;
 using Prism.Mvvm;
@@ -51,20 +52,18 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Vespertino, "Vespertino" },
             { ShiftType.Nocturno, "Nocturno" },
             { ShiftType.Mixto, "Mixto" },
-            { ShiftType.Continuo, "Continuo" },
             { ShiftType.Flexible, "Flexible" },
             { ShiftType.Partido, "Partido / Doble Turno" },
             { ShiftType.Rotativo, "Rotativo" }
         };
 
         // Decisión 5: cada día del mixto usa un horario existente; todos los tipos excepto Mixto y Rotativo.
+        // Caso 9: no hay opción de descanso: los descansos son los del empleado.
         public List<KeyValuePair<ShiftType?, string>> DayShiftTypes { get; } = new()
         {
-            new(null, "Descanso"),
             new(ShiftType.Matutino, "Matutino"),
             new(ShiftType.Vespertino, "Vespertino"),
             new(ShiftType.Nocturno, "Nocturno"),
-            new(ShiftType.Continuo, "Continuo"),
             new(ShiftType.Flexible, "Flexible"),
             new(ShiftType.Partido, "Partido / Doble Turno")
         };
@@ -87,7 +86,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 if (SetProperty(ref _selectedShiftType, value))
                 {
                     RaisePropertyChanged(nameof(IsStandardShift));
-                    RaisePropertyChanged(nameof(IsContinuousShift));
                     RaisePropertyChanged(nameof(IsMixedShift));
                     RaisePropertyChanged(nameof(IsFlexibleShift));
                     RaisePropertyChanged(nameof(IsSplitShift));
@@ -230,8 +228,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             set => SetProperty(ref _secondBlockToleranceMinutes, value);
         }
 
-        public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Continuo && SelectedShiftType.Key != ShiftType.Flexible && SelectedShiftType.Key != ShiftType.Partido;
-        public bool IsContinuousShift => SelectedShiftType.Key == ShiftType.Continuo;
+        public bool IsStandardShift => SelectedShiftType.Key != ShiftType.Mixto && SelectedShiftType.Key != ShiftType.Flexible && SelectedShiftType.Key != ShiftType.Partido;
         public bool IsMixedShift => SelectedShiftType.Key == ShiftType.Mixto;
         public bool IsFlexibleShift => SelectedShiftType.Key == ShiftType.Flexible;
         public bool IsSplitShift => SelectedShiftType.Key == ShiftType.Partido;
@@ -270,7 +267,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 _days.Add(new DayConfigViewModel(SchedulesOfType)
                 {
                     DayOfWeek = kvp.Key,
-                    DayName = kvp.Value
+                    DayName = kvp.Value,
+                    ScheduleChanged = () => UpdateMixedScheduleMessage()
                 });
             }
         }
@@ -280,18 +278,38 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             return !string.IsNullOrWhiteSpace(Name);
         }
 
+        private string? _mixedScheduleMessage;
+
+        /// <summary>Caso 9: días sin horario (bloquean el guardado) y avisos de días que terminan a menos de 2 h del siguiente.</summary>
+        public string? MixedScheduleMessage
+        {
+            get => _mixedScheduleMessage;
+            private set => SetProperty(ref _mixedScheduleMessage, value);
+        }
+
+        private void UpdateMixedScheduleMessage(bool includeMissing = false)
+        {
+            var messages = new List<string>();
+            if (includeMissing)
+            {
+                var missing = MixedShiftSchedule.MissingDays(Days.Where(d => d.DayShiftId.HasValue).Select(d => d.DayOfWeek));
+                if (missing.Count > 0) messages.Add(MixedShiftSchedule.MissingDaysMessage(missing));
+            }
+            var schedules = _availableShifts.ToDictionary(x => x.Id);
+            var days = Days
+                .Where(d => d.DayShiftId is { } id && schedules.ContainsKey(id))
+                .ToDictionary(d => d.DayOfWeek, d => schedules[d.DayShiftId!.Value]);
+            messages.AddRange(MixedShiftSchedule.AdjacencyWarnings(days));
+            MixedScheduleMessage = messages.Count > 0 ? string.Join(Environment.NewLine, messages) : null;
+        }
+
         private void ExecuteSave()
         {
             TimeSpan startTime = StartDateTime?.TimeOfDay ?? TimeSpan.Zero;
             TimeSpan endTime = EndDateTime?.TimeOfDay ?? TimeSpan.Zero;
             TimeSpan? flexEnd = null;
 
-            if (SelectedShiftType.Key == ShiftType.Continuo)
-            {
-                startTime = TimeSpan.Zero;
-                endTime = TimeSpan.FromHours(TargetHours);
-            }
-            else if (SelectedShiftType.Key == ShiftType.Flexible)
+            if (SelectedShiftType.Key == ShiftType.Flexible)
             {
                 if (HasEntryWindow)
                 {
@@ -349,7 +367,12 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             var dayDtos = new List<ShiftDayDto>();
             if (SelectedShiftType.Key == ShiftType.Mixto)
             {
-                // Sólo los días con tipo; el servidor exige un horario existente en cada uno.
+                // Caso 9: los 7 días llevan horario (el servidor también lo valida).
+                if (Days.Any(d => !d.DayShiftId.HasValue))
+                {
+                    UpdateMixedScheduleMessage(includeMissing: true);
+                    return;
+                }
                 foreach (var d in Days.Where(d => d.Type.HasValue))
                 {
                     var schedule = _availableShifts.FirstOrDefault(x => x.Id == d.DayShiftId);
@@ -363,9 +386,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 }
             }
 
-            bool effectiveHasEntryWindow = SelectedShiftType.Key == ShiftType.Continuo
-                ? false
-                : (SelectedShiftType.Key == ShiftType.Flexible ? HasEntryWindow : true);
+            bool effectiveHasEntryWindow = SelectedShiftType.Key == ShiftType.Flexible ? HasEntryWindow : true;
 
             var parameters = new DialogParameters
             {
@@ -435,11 +456,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                     EndDateTime = DateTime.Today.Add(end);
                 }
 
-                if (type == ShiftType.Continuo)
-                {
-                    TargetHours = (int)workHours.TotalHours;
-                }
-                else if (type == ShiftType.Flexible)
+                if (type == ShiftType.Flexible)
                 {
                     if (parameters.ContainsKey("WeeklyWorkHours"))
                     {
@@ -542,10 +559,13 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
         public DayConfigViewModel(Func<ShiftType, IEnumerable<ScheduleOption>> schedulesOfType) => _schedulesOfType = schedulesOfType;
 
+        /// <summary>Se invoca al cambiar el horario del día (avisos de la plantilla).</summary>
+        public Action? ScheduleChanged { get; set; }
+
         public DayOfWeek DayOfWeek { get; set; }
         public string DayName { get; set; } = string.Empty;
 
-        /// <summary>Tipo elegido para filtrar horarios; null = descanso.</summary>
+        /// <summary>Tipo elegido para filtrar horarios; null = sin elegir.</summary>
         public ShiftType? Type
         {
             get => _type;
@@ -566,7 +586,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         public Guid? DayShiftId
         {
             get => _dayShiftId;
-            set => SetProperty(ref _dayShiftId, value);
+            set
+            {
+                if (SetProperty(ref _dayShiftId, value)) ScheduleChanged?.Invoke();
+            }
         }
 
         /// <summary>Día guardado con horas por día (formato anterior), sin horario asignado.</summary>

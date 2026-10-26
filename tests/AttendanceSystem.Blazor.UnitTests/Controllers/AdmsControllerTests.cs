@@ -5,6 +5,7 @@ using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance
 using AttendanceSystem.Blazor.Server.Controllers;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
+using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
@@ -382,5 +383,69 @@ public class AdmsControllerTests
 
         // Cursor must NOT advance because batch had malformed line
         _deviceRepositoryMock.Verify(r => r.UpdateLastAttLogTimestampAsync(It.IsAny<string>(), It.IsAny<DateTime>(), default), Times.Never());
+    }
+
+    [Fact]
+    public async Task QueryData_WhenAttLogQueriedWithCmdId_PassesDownloadLogIdToBatchCommandAndRecordsProgress()
+    {
+        // Arrange
+        var logId = Guid.NewGuid();
+        var payload = "475\t2026-03-01 08:00:00\t1\t1";
+        SetRequestBody(payload);
+
+        _admsCommandServiceMock.Setup(s => s.GetActiveDownloadLogId("CL5Z202660239", "10001"))
+            .Returns(logId);
+
+        _mediatorMock.Setup(m => m.Send(It.IsAny<RecordAttendanceBatchCommand>(), default))
+            .ReturnsAsync(Result<int>.Success(1));
+
+        // Act
+        var result = await _controller.QueryData("CL5Z202660239", tablename: "ATTLOG", type: "tabledata", cmdid: "10001");
+
+        // Assert
+        var contentResult = result.Should().BeOfType<ContentResult>().Subject;
+        contentResult.Content.Should().Be("OK");
+
+        _mediatorMock.Verify(m => m.Send(
+            It.Is<RecordAttendanceBatchCommand>(cmd => cmd.DownloadLogId == logId), default), Times.Once);
+
+        _admsCommandServiceMock.Verify(s => s.RecordDownloadProgress(
+            "CL5Z202660239", "10001", 1, 1), Times.Once);
+    }
+
+    [Fact]
+    public async Task DeviceCmd_WhenDataQueryCompleted_MarksDownloadLogAsSuccessfulWithSessionMetrics()
+    {
+        // Arrange
+        var downloadLog = DownloadLog.Create(_device.Id, DownloadType.Manual);
+        var logId = downloadLog.Id.Value;
+
+        _admsCommandServiceMock.Setup(s => s.AcknowledgeCommandExecutionAsync("CL5Z202660239", "10001", 0, null, default))
+            .ReturnsAsync(logId);
+
+        _admsCommandServiceMock.Setup(s => s.GetAndCompleteDownloadSession("CL5Z202660239", "10001"))
+            .Returns((15, 12));
+
+        _downloadLogRepositoryMock.Setup(r => r.GetByIdAsync(It.Is<DownloadLogId>(id => id.Value == logId), default))
+            .ReturnsAsync(downloadLog);
+
+        SetRequestBody("ID=10001&Return=0&CMD=DATA QUERY");
+
+        // Act
+        var result = await _controller.DeviceCmd("CL5Z202660239");
+
+        // Assert
+        var contentResult = result.Should().BeOfType<ContentResult>().Subject;
+        contentResult.Content.Should().Be("OK");
+
+        downloadLog.IsSuccessful.Should().BeTrue();
+        downloadLog.TotalRecordsDownloaded.Should().Be(15);
+        downloadLog.NewRecordsAdded.Should().Be(12);
+        downloadLog.CompletedAt.Should().NotBeNull();
+
+        _admsCommandServiceMock.Verify(s => s.NotifyDownloadCompleted(
+            "CL5Z202660239", logId, true, 15, 12, null), Times.Once);
+        _downloadLogRepositoryMock.Verify(r => r.UpdateAsync(downloadLog, default), Times.Once);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
     }
 }

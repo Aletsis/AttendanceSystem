@@ -19,4 +19,11 @@ public interface IDeviceHeartbeatTracker
     /// Determina si un dispositivo se encuentra en línea basado en su última actividad.
     /// </summary>
     bool IsDeviceOnline(string? serialNumber, string? deviceId = null, TimeSpan? timeout = null);
+
+    /// <summary>
+    /// Caso 18: desde cuándo (UTC) el reloj se comunica sin interrupción; null si no hay registro. Un marcaje con hora
+    /// anterior que llega "en tiempo real" de un reloj conectado desde antes de esa hora es de un reloj atrasado.
+    /// Se reinicia al reiniciar el servidor.
+    /// </summary>
+    DateTime? GetConnectedSince(string? serialNumber, string? deviceId = null) => null;
 }

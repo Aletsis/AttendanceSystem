@@ -7,6 +7,7 @@ using MediatR;
 
 namespace AttendanceSystem.Application.Features.Departments.Commands.CreateDepartment;
 
+[RequiresPermission(Permissions.DepartmentsManage)]
 public sealed record CreateDepartmentCommand(
     string Name,
     string? Description,

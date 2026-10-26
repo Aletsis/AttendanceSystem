@@ -20,6 +20,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
     private readonly IDepartmentRepository _departmentRepository;
     private readonly IPositionRepository _positionRepository;
     private readonly ISystemConfigurationRepository _systemConfigurationRepository;
+    private readonly IAttendanceAdjustmentRepository? _adjustmentRepository;
 
     public GetAttendanceReportQueryHandler(
         IDailyAttendanceRepository dailyAttendanceRepository,
@@ -27,8 +28,10 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
         IBranchRepository branchRepository,
         IDepartmentRepository departmentRepository,
         IPositionRepository positionRepository,
-        ISystemConfigurationRepository systemConfigurationRepository)
+        ISystemConfigurationRepository systemConfigurationRepository,
+        IAttendanceAdjustmentRepository? adjustmentRepository = null)
     {
+        _adjustmentRepository = adjustmentRepository;
         _dailyAttendanceRepository = dailyAttendanceRepository;
         _employeeRepository = employeeRepository;
         _branchRepository = branchRepository;
@@ -58,10 +61,18 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
 
         // 3. Obtener Empleados, Sucursales, Departamentos y Puestos
         var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
-        var employees = allEmployees.Where(e => e.Status == Domain.Enumerations.EmployeeStatus.Alta).ToList();
+        // Caso 16: cada empleado se incluye por sus días activos (relación laboral sin vacaciones ni incapacidad), no por su estado actual.
+        var employees = allEmployees.ToList();
         var branches = await _branchRepository.GetAllAsync(cancellationToken);
         var departments = await _departmentRepository.GetAllAsync(cancellationToken);
         var positions = await _positionRepository.GetAllAsync(cancellationToken);
+
+        // Caso 13: revisión de la decisión de cada jornada, para que la pantalla rechace decidir sobre una versión vieja.
+        var revisions = _adjustmentRepository == null
+            ? new Dictionary<(EmployeeId, DateTime), int>()
+            : (await _adjustmentRepository.GetByDateRangeAsync(request.StartDate.Date, request.EndDate.Date, request.BranchId, empId, cancellationToken))
+                .GroupBy(a => (a.EmployeeId, a.Date.Date))
+                .ToDictionary(g => g.Key, g => g.Max(a => a.Revision));
 
         var empDict = employees.ToDictionary(e => e.Id, e => e);
         var branchDict = branches.ToDictionary(b => b.Id, b => b.Name);
@@ -107,6 +118,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                 dtos.Add(new AttendanceReportViewDto
                 {
                     EmployeeId = att.EmployeeId.Value,
+                    AdjustmentRevision = revisions.GetValueOrDefault((att.EmployeeId, att.Date.Date)),
                     EmployeeName = empName,
                     Date = att.Date,
                     ShiftName = att.ShiftName ?? "",
@@ -119,12 +131,20 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     ActualCheckIn = att.CivilCheckIn,
                     ActualCheckOut = att.CivilCheckOut,
                     LateMinutes = att.LateMinutes,
+                    EarlyDepartureMinutes = att.EarlyDepartureMinutes,
                     OvertimeMinutes = (int)effectiveOvertime,
+                    RawOvertimeMinutes = att.RawOvertimeMinutes,
+                    OvertimeAuthorized = att.OvertimeAuthorized,
+                    CalculateOvertimeBeforeEntry = att.CalculateOvertimeBeforeEntry,
+                    AuthorizedOvertimeMinutes = att.AuthorizedOvertimeMinutes,
+                    OvertimeAuthorizationOutdated = att.IsOvertimeAuthorizationOutdated,
+                    EmployeeOvertimeAuthorized = emp.OvertimeAuthorized,
                     IsAbsent = att.IsAbsent,
                     IsRestDay = att.IsRestDay,
                     WorkedOnRestDay = att.WorkedOnRestDay,
                     MissingCheckIn = att.MissingCheckIn,
                     MissingCheckOut = att.MissingCheckOut,
+                    HasPunches = att.HasPunches,
                     // --- Turnos Partidos ---
                     ShiftType = att.ShiftType,
                     ScheduledBlock2CheckIn = att.ScheduledBlock2CheckIn,
@@ -138,7 +158,13 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     HasTemporaryExits = att.HasTemporaryExits,
                     TemporaryExitMinutes = att.TemporaryExitMinutes,
                     TemporaryExitStatus = (int)att.TemporaryExitStatus,
+                    Notes = att.Notes,
                     AttendanceNote = att.AttendanceNote,
+                    LunchMinutesTaken = att.LunchMinutesTaken,
+                    LunchDeductibleMinutes = att.LunchExcessMinutes,
+                    TemporaryExits = att.TemporaryExits
+                        .Select(e => new TemporaryExitDto(e.ExitRecordId, e.ExitTime, e.ReturnTime, e.Minutes, e.Status, e.IsAutomaticLunch))
+                        .ToList(),
                     TotalWorkedMinutes = att.TotalWorkedMinutes,
                     PunchTrackingMode = att.PunchTrackingMode,
                     IntervalsData = att.IntervalsData

@@ -1,6 +1,6 @@
 @page "/users"
 @using Microsoft.AspNetCore.Authorization
-@attribute [Authorize(Roles = "Administrador")]
+@attribute [Authorize(Policy = Permissions.UsersManage)]
 @using AttendanceSystem.Application.Features.Users.Queries.GetUsers
 @using AttendanceSystem.Application.Features.Users.Commands.DeleteUser
 @using AttendanceSystem.Application.Features.Users

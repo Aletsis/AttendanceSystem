@@ -91,7 +91,7 @@ public class Phase02PunchOwnershipTests
         var h = new AttendanceRecalculationHarness();
         var night = AttendanceRegressionFixtures.CreateNightShift();
         var regular = AttendanceRegressionFixtures.CreateRegularShift();
-        var guard = AttendanceRegressionFixtures.CreateContinuous24hShift();
+        var guard = AttendanceRegressionFixtures.CreateGuard24hShift();
         var split = Shift.Create(
             name: "Partido 9-13 y 15-19",
             startTime: new TimeSpan(9, 0, 0),
@@ -106,7 +106,7 @@ public class Phase02PunchOwnershipTests
         h.Store.Employees.Add(CreateEmployee(NightId, ShiftType.Nocturno, night));
         h.Store.Employees.Add(CreateEmployee(RotatingId, ShiftType.Rotativo, null));
         h.Store.Employees.Add(CreateEmployee(RegularId, ShiftType.Matutino, regular, new[] { WeekDay.Domingo }));
-        h.Store.Employees.Add(CreateEmployee(GuardId, ShiftType.Continuo, guard));
+        h.Store.Employees.Add(CreateEmployee(GuardId, ShiftType.Flexible, guard));
         h.Store.Employees.Add(CreateEmployee(SplitId, ShiftType.Partido, split, new[] { WeekDay.Domingo }));
 
         var random = new Random(20261019);

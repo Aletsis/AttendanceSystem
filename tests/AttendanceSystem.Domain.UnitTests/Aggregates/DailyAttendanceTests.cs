@@ -141,31 +141,33 @@ public class DailyAttendanceTests
     }
 
     [Fact]
-    public void ApplyIntermediateAnalysis_WhenUnpaidPermission_ShouldDeductFromWorkedTime()
+    public void ApplyIntermediateAnalysis_LunchExcessAndUnpaidExit_AreDeducted()
     {
         // Arrange (8:00 to 18:00 = 10 hrs = 600 min, Scheduled = 8 hrs = 480 min)
-        var checkIn = _date.AddHours(8);
-        var checkOut = _date.AddHours(18);
-
         var da = DailyAttendance.Create(
             employeeId: _employeeId,
             date: _date,
             shift: _standardShift,
-            checkIn: checkIn,
-            checkOut: checkOut,
+            checkIn: _date.AddHours(8),
+            checkOut: _date.AddHours(18),
             isRestDay: false,
             overtimeAuthorized: true);
+        var lunch = new TemporaryExit(Guid.NewGuid(), _date.AddHours(13), _date.AddHours(14).AddMinutes(30), 90, TemporaryExitStatus.Lunch, IsAutomaticLunch: true);
+        var exit = new TemporaryExit(Guid.NewGuid(), _date.AddHours(10), _date.AddHours(10).AddMinutes(30), 30, TemporaryExitStatus.Pending);
 
-        // Act (comida de 90 min con 30 con goce = 60 de exceso descontado; 30 min de salida temporal)
-        da.ApplyIntermediateAnalysis(lunchMinutesTaken: 90, lunchExcessMinutes: 60, hasTemporaryExits: true, temporaryExitMinutes: 30);
-        da.ClassifyTemporaryExit(TemporaryExitStatus.ApprovedUnpaid, "Supervisor");
+        // Act: comida de 90 con 30 con goce; la salida RH la clasifica sin goce.
+        da.ApplyIntermediateAnalysis(new[] { lunch, exit }, paidLunchMinutes: 30);
+        var adjustment = AttendanceAdjustment.Create(_employeeId, _date, "rh");
+        adjustment.ClassifyExit(exit.ExitRecordId, TemporaryExitStatus.ApprovedUnpaid, "rh");
+        da.ApplyAdjustment(adjustment);
 
-        // Assert
-        // Total worked = 600 - 60 (exceso de comida) - 30 (unpaid) = 510 min.
-        // Overtime = 510 - 480 (scheduled) = 30 min.
+        // Total worked = 600 - 60 (excedente de comida) - 30 (sin goce) = 510; lo descontado se repone al final.
+        da.TotalWorkedMinutes.Should().Be(510);
         da.OvertimeMinutes.Should().Be(30);
+        da.LunchExcessMinutes.Should().Be(60);
         da.TemporaryExitStatus.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
-        da.AttendanceNote.Should().Contain("Permiso sin goce");
+        da.Notes.Should().Contain("Salida temporal 10:00–10:30 (30 min) — permiso sin goce, descontada");
+        da.Notes.Should().Contain("Comida de 90 min — 60 min de excedente descontados");
     }
 
     [Fact]
@@ -238,9 +240,9 @@ public class DailyAttendanceTests
     }
 
     [Fact]
-    public void Create_WhenWorkingOnRestDayWithoutShift_ShouldUse8HourGoal()
+    public void Create_WhenWorkingOnRestDayWithoutShift_HasNoOvertimeAndIsFlagged()
     {
-        // Arrange: No shift assigned, worked 9 hours (540 min) -> 60 min OT over 8h (480 min) base
+        // Caso 10: sin turno sólo se registra el tiempo trabajado; no hay meta para calcular extras.
         var checkIn = _date.AddHours(8);
         var checkOut = _date.AddHours(17);
 
@@ -257,7 +259,9 @@ public class DailyAttendanceTests
         // Assert
         da.WorkedOnRestDay.Should().BeTrue();
         da.IsRestDay.Should().BeTrue();
-        da.OvertimeMinutes.Should().Be(60);
+        da.TotalWorkedMinutes.Should().Be(540);
+        da.OvertimeMinutes.Should().Be(0);
+        da.Notes.Should().Contain("Sin turno asignado: asígnele un horario");
     }
 
     [Fact]
@@ -881,5 +885,48 @@ public class DailyAttendanceTests
         da.MissingBlock1CheckOut.Should().BeFalse();
         da.MissingBlock2CheckIn.Should().BeFalse();
     }
-}
 
+    [Fact]
+    public void Notes_IncludeEarlyDeparture_WithoutOtherConditions()
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, _standardShift, _date.AddHours(8), _date.AddHours(15).AddMinutes(30), isRestDay: false);
+
+        da.EarlyDepartureMinutes.Should().Be(30);
+        da.Notes.Should().ContainSingle().Which.Should().Be("Salida anticipada de 30 min");
+    }
+
+    [Fact]
+    public void TotalWorkedMinutes_FollowsTheCurrentPositions()
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, _standardShift, _date.AddHours(8), _date.AddHours(16), isRestDay: false);
+        da.TotalWorkedMinutes.Should().Be(480);
+
+        da.RemoveCheckOut();
+
+        da.TotalWorkedMinutes.Should().Be(0, "sin salida no queda tiempo trabajado de la posición retirada");
+        da.MissingCheckOut.Should().BeTrue();
+    }
+
+    [Fact]
+    public void WithoutShift_StoresTheWorkedTime()
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, shift: null, _date.AddHours(9), _date.AddHours(18), isRestDay: false);
+
+        da.TotalWorkedMinutes.Should().Be(540);
+    }
+
+    [Theory]
+    [InlineData(8, 10, 8, 0)]   // dentro de la tolerancia: desde la hora programada
+    [InlineData(8, 11, 8, 30)]  // pasa la tolerancia: siguiente bloque de 30 min
+    [InlineData(8, 40, 8, 30)]  // dentro de la tolerancia del bloque de las 08:30
+    [InlineData(8, 41, 9, 0)]
+    [InlineData(9, 10, 9, 0)]
+    [InlineData(9, 11, 9, 30)]
+    public void LateEntry_CountsFromTheNextHalfHourBlock_RepeatingTheTolerance(int h, int m, int refH, int refM)
+    {
+        var da = DailyAttendance.Create(_employeeId, _date, _standardShift, _date.AddHours(h).AddMinutes(m), _date.AddHours(16), isRestDay: false);
+
+        da.GetReferenceEntry().Should().Be(_date.AddHours(refH).AddMinutes(refM));
+        da.TotalWorkedMinutes.Should().Be((int)(_date.AddHours(16) - _date.AddHours(refH).AddMinutes(refM)).TotalMinutes);
+    }
+}

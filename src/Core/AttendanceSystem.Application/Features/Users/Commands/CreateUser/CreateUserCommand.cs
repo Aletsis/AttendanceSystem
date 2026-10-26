@@ -4,6 +4,7 @@ using AttendanceSystem.Domain.Entities;
 
 namespace AttendanceSystem.Application.Features.Users.Commands.CreateUser;
 
+[RequiresPermission(Permissions.UsersManage)]
 public sealed record CreateUserCommand(
     string UserName,
     string Email,

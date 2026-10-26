@@ -66,7 +66,9 @@ public class DeviceQueries : IDeviceQueries
                 d.HardwareInfo?.SdkVersion,
                 d.HardwareInfo?.MacAddress,
                 d.TimeZoneId,
-                lastActivity
+                lastActivity,
+                d.AcceptPunchesFrom,
+                d.CreatedAt
             );
         });
     }
@@ -118,7 +120,9 @@ public class DeviceQueries : IDeviceQueries
             device.HardwareInfo?.SdkVersion,
             device.HardwareInfo?.MacAddress,
             device.TimeZoneId,
-            lastActivity
+            lastActivity,
+            device.AcceptPunchesFrom,
+            device.CreatedAt
         );
     }
 

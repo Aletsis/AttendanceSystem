@@ -5,8 +5,11 @@ using AttendanceSystem.Domain.ValueObjects;
 
 namespace AttendanceSystem.Application.Common;
 
-/// <summary>Extras de una jornada: excedente bruto y efectivo (autorizado, redondeado y con topes).</summary>
-public readonly record struct OvertimeResult(int Raw, int Effective);
+/// <summary>
+/// Extras de una jornada: excedente bruto y efectivo (autorizado, redondeado y con topes), y el faltante de la meta
+/// semanal que se reporta en el último día con bolsa de una semana terminada (caso 6 f).
+/// </summary>
+public readonly record struct OvertimeResult(int Raw, int Effective, int WeeklyShortfall = 0);
 
 /// <summary>
 /// Cómo se esperaba un día sin jornada calculada (futuro de la semana o fuera del período de empleo):
@@ -27,7 +30,8 @@ public readonly record struct ExpectedDay(bool Workable, bool Employed, bool Wee
 /// los descansos trabajados conservan su propio excedente.</item>
 /// <item>Autorización: la de cada jornada (<see cref="DailyAttendance.OvertimeAuthorized"/>, que ya incluye los overrides
 /// manuales), no la bandera global del empleado.</item>
-/// <item>Redondeo: una sola vez, sobre el bruto, con el método del empleado.</item>
+/// <item>Redondeo: una sola vez, sobre el bruto, con el método del empleado; una parte autorizada por RH (caso 12)
+/// sustituye al redondeo.</item>
 /// <item>Tope diario: por jornada. Tope de período: acumulado dentro del período contable que contiene la jornada
 /// (<c>periodStartOf</c>), en orden cronológico; no depende del rango solicitado si se le entregan todas las jornadas
 /// del período.</item>
@@ -72,7 +76,7 @@ public static class WeeklyHoursCalculationHelper
         var sorted = attendances.OrderBy(a => a.Date).ThenBy(a => a.Id.Value).ToList();
         periodStartOf ??= date => GetWeekStart(date, weeklyStartDay);
 
-        var rawById = WeeklyRaw(sorted, weeklyStartDay, expectedDay);
+        var rawById = WeeklyRaw(sorted, weeklyStartDay, expectedDay, out var shortfallById);
         var accumulatedByPeriod = new Dictionary<DateTime, double>();
 
         foreach (var att in sorted)
@@ -82,7 +86,7 @@ public static class WeeklyHoursCalculationHelper
             double effective = 0;
             if (raw > 0 && att.OvertimeAuthorized)
             {
-                effective = DailyAttendance.ApplyOvertimeRounding(raw, employee.OvertimeCalculationMethod);
+                effective = att.AuthorizedOvertime(raw, employee.OvertimeCalculationMethod);
 
                 if (employee.OvertimeCapType == OvertimeCapType.Daily && employee.OvertimeCapMinutes.HasValue)
                 {
@@ -98,7 +102,7 @@ public static class WeeklyHoursCalculationHelper
                 }
             }
 
-            result[att.Id] = new OvertimeResult((int)raw, (int)effective);
+            result[att.Id] = new OvertimeResult((int)raw, (int)effective, shortfallById.GetValueOrDefault(att.Id));
         }
 
         return result;
@@ -110,9 +114,11 @@ public static class WeeklyHoursCalculationHelper
     private static Dictionary<DailyAttendanceId, double> WeeklyRaw(
         IReadOnlyList<DailyAttendance> sorted,
         DayOfWeek weeklyStartDay,
-        Func<DateTime, ExpectedDay>? expectedDay)
+        Func<DateTime, ExpectedDay>? expectedDay,
+        out Dictionary<DailyAttendanceId, int> shortfall)
     {
         var raw = new Dictionary<DailyAttendanceId, double>();
+        shortfall = new Dictionary<DailyAttendanceId, int>();
         foreach (var week in sorted.GroupBy(a => GetWeekStart(a.Date, weeklyStartDay)))
         {
             var days = week.ToList();
@@ -167,6 +173,15 @@ public static class WeeklyHoursCalculationHelper
                 cumulative += worked;
                 raw[att.Id] = prior >= goal ? worked : Math.Max(0, prior + worked - goal);
             }
+
+            // Caso 6 (f): en una semana sólo de bolsa ya terminada (calculada hasta su último día), lo que faltó para
+            // la meta se reporta en su último día con bolsa. Las semanas partidas ya reportan el faltante diario.
+            var weekEnd = week.Key.AddDays(6);
+            var lastBagDay = days.LastOrDefault(IsWeeklyBag);
+            if (!mixed && lastBagDay != null && days.Any(a => a.Date.Date == weekEnd) && cumulative < goal)
+            {
+                shortfall[lastBagDay.Id] = (int)Math.Round(goal - cumulative);
+            }
         }
         return raw;
     }
@@ -183,20 +198,6 @@ public static class WeeklyHoursCalculationHelper
         return 0;
     }
 
-    private static double WorkedMinutes(DailyAttendance att)
-    {
-        int workedToday = att.TotalWorkedMinutes;
-        if (workedToday <= 0 && att.ActualCheckIn.HasValue && att.ActualCheckOut.HasValue)
-        {
-            DateTime refIn = att.GetReferenceEntry() ?? att.ActualCheckIn.Value;
-            DateTime refOut = att.GetReferenceExit() ?? att.ActualCheckOut.Value;
-            double span = (refOut - refIn).TotalMinutes - att.LunchBreakMinutesApplied;
-            if (att.TemporaryExitStatus == TemporaryExitStatus.ApprovedUnpaid)
-            {
-                span -= att.TemporaryExitMinutes;
-            }
-            workedToday = (int)Math.Max(0, span);
-        }
-        return workedToday;
-    }
+    /// <summary>Tiempo trabajado guardado por la jornada (única fuente).</summary>
+    private static double WorkedMinutes(DailyAttendance att) => att.TotalWorkedMinutes;
 }

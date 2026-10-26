@@ -8,7 +8,7 @@
     <DialogContent>
         <MudTextField @bind-Value="Name" Label="Nombre" Required="true" RequiredError="El nombre es requerido" />
         <MudTextField @bind-Value="Description" Label="Descripción" Lines="3" />
-        <MudSelect T="Guid" Label="Puestos" MultiSelection="true" @bind-SelectedValues="_selectedPositionIds">
+        <MudSelect T="Guid" Label="Puestos" MultiSelection="true" @bind-SelectedValues="_selectedPositionIds" ToStringFunc="@GetPositionName">
             @foreach (var position in _positions)
             {
                 <MudSelectItem T="Guid" Value="@position.Id">@position.Name</MudSelectItem>
@@ -56,6 +56,8 @@
             }
         }
     }
+
+    private string GetPositionName(Guid id) => _positions.FirstOrDefault(p => p.Id == id)?.Name ?? string.Empty;
 
     private void Cancel() => MudDialog.Cancel();
 

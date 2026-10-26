@@ -16,4 +16,6 @@ public class WpfCurrentUserService : ICurrentUserService
     public string? UserName => _authService.CurrentUserName;
 
     public bool IsAuthenticated => _authService.IsAuthenticated;
+
+    public IReadOnlyCollection<string> Roles => _authService.CurrentUserRoles;
 }

@@ -35,7 +35,6 @@ public static class AttendanceRegressionFixtures
 
     public static readonly ShiftId RegularShiftId = ShiftId.CreateNew();
     public static readonly ShiftId NightShiftId = ShiftId.CreateNew();
-    public static readonly ShiftId Continuous24hShiftId = ShiftId.CreateNew();
     public static readonly ShiftId MultiIntervalShiftId = ShiftId.CreateNew();
     public static readonly ShiftId SplitShiftId = ShiftId.CreateNew();
     public static readonly ShiftId WeeklyOvertimeShiftId = ShiftId.CreateNew();
@@ -106,16 +105,17 @@ public static class AttendanceRegressionFixtures
             lunchBreakMinutes: 30);
     }
 
-    public static Shift CreateContinuous24hShift()
+    public static Shift CreateGuard24hShift()
     {
-        // Turno de guardia continua de 24 horas: 08:00 a 08:00
+        // Guardia de 24 horas: flexible sin ventana de llegada (reemplaza al antiguo turno continuo).
         return Shift.Create(
             name: "Guardia 24 Horas",
             startTime: new TimeSpan(8, 0, 0),
             toleranceMinutes: 30,
             workHours: TimeSpan.FromHours(24),
-            shiftType: ShiftType.Continuo,
-            lunchBreakMinutes: 60);
+            shiftType: ShiftType.Flexible,
+            lunchBreakMinutes: 60,
+            hasEntryWindow: false);
     }
 
     public static Shift CreateMultiIntervalShift()

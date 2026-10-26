@@ -42,6 +42,7 @@ public sealed class GetConsolidationStatusQueryHandler : IRequestHandler<GetCons
 }
 
 /// <summary>Reintento operativo de solicitudes fallidas (todas o una) tras corregir su causa.</summary>
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record RetryFailedConsolidationsCommand(Guid? RequestId = null) : IRequest<Result<int>>;
 
 public sealed class RetryFailedConsolidationsCommandHandler : IRequestHandler<RetryFailedConsolidationsCommand, Result<int>>
@@ -64,6 +65,7 @@ public sealed class RetryFailedConsolidationsCommandHandler : IRequestHandler<Re
 }
 
 /// <summary>Reintento operativo de eventos del outbox que agotaron sus intentos.</summary>
+[RequiresPermission(Permissions.SettingsManage)]
 public sealed record RetryDeadLetteredEventsCommand(Guid? MessageId = null) : IRequest<Result<int>>;
 
 public sealed class RetryDeadLetteredEventsCommandHandler : IRequestHandler<RetryDeadLetteredEventsCommand, Result<int>>

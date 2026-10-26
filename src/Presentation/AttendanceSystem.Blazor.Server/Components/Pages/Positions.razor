@@ -1,4 +1,5 @@
 @page "/positions"
+@attribute [Authorize(Policy = Permissions.CatalogsView)]
 @using MediatR
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Application.Features.Positions.Queries.GetPositions
@@ -25,9 +26,13 @@
                       Clearable="true" Immediate="true" />
     </MudItem>
     <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
-        <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportPositions">Importar</MudButton>
+        <AuthorizeView Policy="@Permissions.PositionsManage" Context="authContext">
+            <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportPositions">Importar</MudButton>
+        </AuthorizeView>
         <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
-        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Puesto</MudButton>
+        <AuthorizeView Policy="@Permissions.PositionsManage" Context="authContext">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="OpenCreateDialog">Nuevo Puesto</MudButton>
+        </AuthorizeView>
     </MudItem>
 </MudGrid>
 
@@ -36,7 +41,7 @@
         <MudTh>Nombre</MudTh>
         <MudTh>Descripción</MudTh>
         <MudTh>Salario Base</MudTh>
-        <AuthorizeView Roles="Administrador" Context="authContext">
+        <AuthorizeView Policy="@Permissions.PositionsManage" Context="authContext">
             <MudTh>Acciones</MudTh>
         </AuthorizeView>
     </HeaderContent>
@@ -50,14 +55,16 @@
         </MudTd>
         <MudTd DataLabel="Descripción">@context.Description</MudTd>
         <MudTd DataLabel="Salario Base">@context.BaseSalary.ToString("c2")</MudTd>
-        <AuthorizeView Roles="Administrador" Context="authContext">
+        <AuthorizeView Policy="@Permissions.PositionsManage" Context="authContext">
             <MudTd DataLabel="Acciones">
                 <MudTooltip Text="Editar">
                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Warning" OnClick="@(() => OpenEditDialog(context))" Size="Size.Small" />
                 </MudTooltip>
-                <MudTooltip Text="Eliminar">
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeletePosition(context))" Size="Size.Small" />
-                </MudTooltip>
+                <AuthorizeView Policy="@Permissions.PositionsDelete" Context="deleteContext">
+                    <MudTooltip Text="Eliminar">
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeletePosition(context))" Size="Size.Small" />
+                    </MudTooltip>
+                </AuthorizeView>
             </MudTd>
         </AuthorizeView>
     </RowTemplate>

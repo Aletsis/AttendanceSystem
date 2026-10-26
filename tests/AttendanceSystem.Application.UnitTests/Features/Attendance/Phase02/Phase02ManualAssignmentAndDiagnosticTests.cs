@@ -68,7 +68,7 @@ public class Phase02ManualAssignmentAndDiagnosticTests
         var tuesdayCheckInBefore = h.Daily(EmployeeA, Tuesday)!.CheckInRecordId;
 
         var result = await CreateHandler(h).Handle(
-            new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), mondayExit.Id.Value.ToString(), "Entrada"),
+            new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), mondayExit.Id.Value.ToString(), "Entrada", Reason: "Prueba"),
             CancellationToken.None);
 
         result.IsSuccess.Should().BeFalse();
@@ -86,13 +86,13 @@ public class Phase02ManualAssignmentAndDiagnosticTests
         var exit16 = h.Punch(EmployeeA, Tuesday.AddHours(16));
         var handler = CreateHandler(h);
 
-        (await handler.Handle(new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), exit16.Id.Value.ToString(), "None"), CancellationToken.None))
+        (await handler.Handle(new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), exit16.Id.Value.ToString(), "None", Reason: "Prueba"), CancellationToken.None))
             .IsSuccess.Should().BeTrue();
         // Desasignar es vacío forzado: el marcaje queda excluido y reservado, no libre.
         h.Daily(EmployeeA, Tuesday)!.CheckOutRecordId.Should().BeNull();
         h.Store.Assignments.Single(a => a.AttendanceRecordId == exit16.Id).Role.Should().Be(PunchAssignmentRole.ManuallyExcluded);
 
-        (await handler.Handle(new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), exit16.Id.Value.ToString(), "Salida"), CancellationToken.None))
+        (await handler.Handle(new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), exit16.Id.Value.ToString(), "Salida", Reason: "Prueba"), CancellationToken.None))
             .IsSuccess.Should().BeTrue();
 
         var row = h.Store.Assignments.Single(a => a.AttendanceRecordId == exit16.Id);

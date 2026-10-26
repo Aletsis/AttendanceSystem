@@ -87,6 +87,7 @@ try
     builder.Services.AddTransient(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
     builder.Services.AddInfrastructureServices(builder.Configuration);
     builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
+    builder.Services.AddScoped<AttendanceSystem.Blazor.Server.Services.UiPermissions>();
 
     // ===== IDENTITY & AUTHENTICATION =====
     builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
@@ -121,6 +122,17 @@ try
     });
 
     // Servicios de autenticación para Blazor con revalidación periódica de SecurityStamp e IsActive
+    // Caso 13: una política por permiso; las páginas y botones piden permisos, no roles.
+    builder.Services.AddAuthorization(options =>
+    {
+        foreach (var permission in AttendanceSystem.Application.Authorization.Permissions.All)
+        {
+            options.AddPolicy(permission, policy => policy.RequireAssertion(context =>
+                AttendanceSystem.Application.Authorization.RolePermissions.Grants(
+                    context.User.FindAll(System.Security.Claims.ClaimTypes.Role).Select(c => c.Value), permission)));
+        }
+    });
+
     builder.Services.AddCascadingAuthenticationState();
     builder.Services.AddScoped<AuthenticationStateProvider, AttendanceSystem.Blazor.Server.Services.IdentityRevalidatingAuthenticationStateProvider>();
 
@@ -221,7 +233,10 @@ try
     // (Normally we would query DB here to restore schedules, but Hangfire persists them in DB, so no need to re-schedule on startup if using SQL storage)
 
     // Hangfire
-    app.UseHangfireDashboard("/hangfire");
+    app.UseHangfireDashboard("/hangfire", new DashboardOptions
+    {
+        Authorization = new[] { new AttendanceSystem.Blazor.Server.Services.HangfireDashboardAuthorizationFilter() }
+    });
 
     // Programar alertas de puestos críticos al inicio
     using (var scope = app.Services.CreateScope())
@@ -230,6 +245,8 @@ try
         scheduler.ScheduleCriticalAbsenceCheck();
         scheduler.ScheduleDeviceHeartbeat();
         scheduler.ScheduleCloudSync();
+        scheduler.ScheduleScheduleIntegrityCheck();
+        scheduler.ScheduleDailyCalculation();
     }
 
     app.UseAntiforgery();

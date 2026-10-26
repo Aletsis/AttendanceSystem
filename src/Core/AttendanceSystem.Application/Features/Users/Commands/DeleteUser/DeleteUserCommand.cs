@@ -4,6 +4,7 @@ using AttendanceSystem.Domain.Entities;
 
 namespace AttendanceSystem.Application.Features.Users.Commands.DeleteUser;
 
+[RequiresPermission(Permissions.UsersManage)]
 public sealed record DeleteUserCommand(string UserId) : IRequest<Unit>;
 
 public sealed class DeleteUserCommandHandler : IRequestHandler<DeleteUserCommand, Unit>

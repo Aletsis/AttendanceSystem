@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.ExternalEmployees.Commands;
 
+[RequiresPermission(Permissions.ExternalEmployeesEdit)]
 public sealed record UpdateExternalEmployeeCommand(
     Guid Id,
     string BranchId,

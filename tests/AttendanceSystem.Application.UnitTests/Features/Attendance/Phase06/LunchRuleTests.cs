@@ -18,9 +18,9 @@ using Xunit;
 namespace AttendanceSystem.Application.UnitTests.Features.Attendance.Phase06;
 
 /// <summary>
-/// Regla de comida (F06-05) con el orquestador real: ventana global 12:30–15:00 y 30 min con goce.
-/// Casos acordados: comida sin hora fija, comida de 30 min no descontada, salida temporal sin comida,
-/// comida de 40 min (10 de exceso descontados), salida temporal y comida el mismo día.
+/// Regla de comida (caso 11) con el orquestador real, turno 08:00–16:00, ventana global 12:30–15:00 y 30 min de
+/// comida con goce. Toda ausencia es una salida que RH clasifica por separado; con la ventana activa, la primera
+/// ausencia que la toca es comida y sólo descuenta su excedente. Lo descontado se repone al final de la jornada.
 /// </summary>
 public class LunchRuleTests
 {
@@ -38,6 +38,14 @@ public class LunchRuleTests
         return h;
     }
 
+    private static void Configure(AttendanceRecalculationHarness h, bool windowEnabled = true, int paidMinutes = 30)
+    {
+        var config = SystemConfiguration.CreateDefault();
+        config.UpdateLunchSettings(new TimeSpan(12, 30, 0), new TimeSpan(15, 0, 0), paidMinutes);
+        config.SetLunchWindowEnabled(windowEnabled);
+        h.Configuration = config;
+    }
+
     private static void Punches(AttendanceRecalculationHarness h, params (int H, int M)[] times)
     {
         foreach (var (hour, minute) in times)
@@ -52,87 +60,191 @@ public class LunchRuleTests
         return h.Store.Dailies.Single(d => d.EmployeeId == Emp && d.Date == Monday);
     }
 
-    [Fact]
-    public async Task Lunch_OfThirtyMinutes_IsPaid_AndNotDeducted()
+    private static async Task ClassifyAsync(AttendanceRecalculationHarness h, TemporaryExit exit, TemporaryExitStatus? status)
+    {
+        var outcome = await new ClassifyTemporaryExitCommandHandler(h.Decisions())
+            .Handle(new ClassifyTemporaryExitCommand(Emp.Value, DateOnly.FromDateTime(Monday), exit.ExitRecordId, status, "rh"), CancellationToken.None);
+        outcome.IsSuccess.Should().BeTrue(outcome.IsSuccess ? string.Empty : outcome.Error);
+    }
+
+    [Theory]
+    [InlineData(20, 0, 480)]   // dentro de los 30 con goce
+    [InlineData(30, 0, 480)]
+    [InlineData(50, 20, 460)]  // sólo se descuenta el excedente
+    [InlineData(150, 120, 360)]
+    public async Task WindowOn_Lunch_DeductsOnlyTheExcess(int lunch, int excess, int worked)
     {
         var h = Harness();
-        Punches(h, (8, 0), (13, 10), (13, 40), (16, 0));
+        Punches(h, (8, 0), (13, 0), (13 + lunch / 60, lunch % 60), (16, 0));
 
         var day = await CalculateAsync(h);
 
-        day.LunchMinutesTaken.Should().Be(30);
-        day.LunchExcessMinutes.Should().Be(0);
-        day.LunchBreakMinutesApplied.Should().Be(0);
+        day.LunchMinutesTaken.Should().Be(lunch);
+        day.LunchExcessMinutes.Should().Be(excess);
+        day.TotalWorkedMinutes.Should().Be(worked);
         day.HasTemporaryExits.Should().BeFalse("la comida no es una salida temporal");
-        day.TotalWorkedMinutes.Should().Be(480);
+        day.RequiresReview.Should().BeFalse("la comida ya está clasificada");
+        day.TemporaryExits.Should().ContainSingle(e => e.Status == TemporaryExitStatus.Lunch && e.IsAutomaticLunch);
     }
 
     [Fact]
-    public async Task Lunch_OfFortyMinutes_DeductsTheExcessByDefault()
+    public async Task WindowOn_AnAbsenceThatTouchesTheWindow_IsLunch()
     {
         var h = Harness();
-        Punches(h, (8, 0), (13, 0), (13, 40), (16, 0));
+        Punches(h, (8, 0), (12, 0), (12, 40), (16, 0)); // sale antes de la ventana y regresa dentro
 
         var day = await CalculateAsync(h);
 
         day.LunchMinutesTaken.Should().Be(40);
-        day.LunchExcessMinutes.Should().Be(10);
-        day.TotalWorkedMinutes.Should().Be(470);
-        day.AttendanceNote.Should().Contain("10 min de exceso descontados");
+        day.HasTemporaryExits.Should().BeFalse();
     }
 
     [Fact]
-    public async Task TemporaryExit_OutsideTheWindow_IsNotLunch()
+    public async Task WindowOn_TheFirstAbsenceInTheWindowIsLunch_TheNextIsATemporaryExit()
     {
         var h = Harness();
-        Punches(h, (8, 0), (10, 0), (10, 30), (16, 0));
+        Punches(h, (8, 0), (13, 0), (13, 20), (13, 40), (14, 20), (16, 40));
+
+        var day = await CalculateAsync(h);
+
+        day.LunchMinutesTaken.Should().Be(20);
+        day.TemporaryExitMinutes.Should().Be(40);
+        day.TemporaryExitStatus.Should().Be(TemporaryExitStatus.Pending);
+        day.TotalWorkedMinutes.Should().Be(480, "520 menos los 40 de la salida pendiente");
+        day.EarlyDepartureMinutes.Should().Be(0, "repuso la salida saliendo 16:40");
+    }
+
+    [Fact]
+    public async Task WindowOff_EveryAbsenceIsAPendingTemporaryExit()
+    {
+        var h = Harness();
+        Configure(h, windowEnabled: false);
+        Punches(h, (8, 0), (13, 0), (14, 0), (16, 0));
 
         var day = await CalculateAsync(h);
 
         day.LunchMinutesTaken.Should().Be(0);
         day.HasTemporaryExits.Should().BeTrue();
-        day.TemporaryExitMinutes.Should().Be(30);
+        day.TemporaryExitMinutes.Should().Be(60);
+        day.TotalWorkedMinutes.Should().Be(420);
+        day.EarlyDepartureMinutes.Should().Be(60, "lo descontado no se repuso");
+        day.RequiresReview.Should().BeTrue();
+        day.Notes.Should().Contain("Salida temporal 13:00–14:00 (60 min) — descontada, pendiente de clasificar");
+    }
+
+    [Theory]
+    [InlineData(TemporaryExitStatus.Lunch, 450, 30)]          // comida: 30 con goce, 30 de excedente
+    [InlineData(TemporaryExitStatus.ApprovedPaid, 480, 0)]
+    [InlineData(TemporaryExitStatus.Dismissed, 480, 0)]
+    [InlineData(TemporaryExitStatus.ApprovedUnpaid, 420, 60)]
+    public async Task EachExit_IsClassifiedByHR(TemporaryExitStatus status, int worked, int early)
+    {
+        var h = Harness();
+        Configure(h, windowEnabled: false);
+        Punches(h, (8, 0), (13, 0), (14, 0), (16, 0));
+        var exit = (await CalculateAsync(h)).TemporaryExits.Single();
+
+        await ClassifyAsync(h, exit, status);
+
+        var day = await CalculateAsync(h);
+        day.TemporaryExits.Single().Status.Should().Be(status);
+        day.TotalWorkedMinutes.Should().Be(worked);
+        day.EarlyDepartureMinutes.Should().Be(early);
+        day.RequiresReview.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task TwoExits_AreClassifiedSeparately()
+    {
+        var h = Harness();
+        Punches(h, (8, 0), (10, 0), (10, 30), (11, 0), (11, 20), (16, 0));
+        var exits = (await CalculateAsync(h)).TemporaryExits;
+        exits.Should().HaveCount(2);
+
+        await ClassifyAsync(h, exits[0], TemporaryExitStatus.ApprovedPaid);
+
+        var day = await CalculateAsync(h);
+        day.TemporaryExits.Select(e => e.Status).Should().Equal(TemporaryExitStatus.ApprovedPaid, TemporaryExitStatus.Pending);
+        day.TotalWorkedMinutes.Should().Be(460, "sólo se descuenta la salida de 20 min que sigue pendiente");
         day.TemporaryExitStatus.Should().Be(TemporaryExitStatus.Pending);
-        day.TotalWorkedMinutes.Should().Be(480, "la salida temporal pendiente no se descuenta hasta que RH la clasifique");
+        day.RequiresReview.Should().BeTrue();
+
+        await ClassifyAsync(h, exits[1], TemporaryExitStatus.ApprovedUnpaid);
+        day = await CalculateAsync(h);
+        day.TemporaryExitStatus.Should().Be(TemporaryExitStatus.ApprovedUnpaid);
+        day.RequiresReview.Should().BeFalse();
     }
 
     [Fact]
-    public async Task TemporaryExit_AndLunch_OnTheSameDay_AreSeparated()
+    public async Task HR_CanReclassifyTheAutomaticLunch_AndRemoveTheDecision()
     {
         var h = Harness();
-        Punches(h, (8, 0), (10, 0), (10, 20), (13, 30), (14, 0), (16, 0));
+        Punches(h, (8, 0), (13, 0), (15, 0), (16, 0)); // "comida" de 2 h que en realidad fue cita médica
+        var lunch = (await CalculateAsync(h)).TemporaryExits.Single();
+        lunch.Status.Should().Be(TemporaryExitStatus.Lunch);
+
+        await ClassifyAsync(h, lunch, TemporaryExitStatus.ApprovedPaid);
+        (await CalculateAsync(h)).TotalWorkedMinutes.Should().Be(480);
+
+        await ClassifyAsync(h, lunch, null);
+        var day = await CalculateAsync(h);
+        day.TemporaryExits.Single().Status.Should().Be(TemporaryExitStatus.Lunch, "sin decisión vuelve a la comida automática");
+        day.TotalWorkedMinutes.Should().Be(390);
+    }
+
+    [Fact]
+    public async Task Pending_IsNotAClassification()
+    {
+        var h = Harness();
+        Punches(h, (8, 0), (10, 0), (10, 30), (16, 0));
+        var exit = (await CalculateAsync(h)).TemporaryExits.Single();
+
+        var outcome = await new ClassifyTemporaryExitCommandHandler(h.Decisions())
+            .Handle(new ClassifyTemporaryExitCommand(Emp.Value, DateOnly.FromDateTime(Monday), exit.ExitRecordId, TemporaryExitStatus.Pending), CancellationToken.None);
+
+        outcome.IsFailure.Should().BeTrue();
+    }
+
+    [Theory]
+    [InlineData(16, 450, 30)]  // sale a su hora: le falta reponer la salida
+    [InlineData(17, 510, 0)]   // la repone saliendo después
+    public async Task PendingExit_IsMadeUpAtTheEndOfTheJornada(int exitHour, int worked, int early)
+    {
+        var h = Harness();
+        Punches(h, (8, 0), (10, 0), (10, 30), (exitHour, 0));
 
         var day = await CalculateAsync(h);
 
-        day.LunchMinutesTaken.Should().Be(30);
-        day.HasTemporaryExits.Should().BeTrue();
-        day.TemporaryExitMinutes.Should().Be(20);
+        day.TotalWorkedMinutes.Should().Be(worked);
+        day.EarlyDepartureMinutes.Should().Be(early);
     }
 
     [Fact]
-    public async Task TwoAbsencesInTheWindow_TheClosestToThePaidDurationIsLunch()
+    public async Task ZeroPaidMinutes_DeductsTheWholeLunch_WhichIsMadeUpAtTheEnd()
     {
         var h = Harness();
-        Punches(h, (8, 0), (13, 0), (13, 20), (14, 0), (14, 32), (16, 0));
+        Configure(h, paidMinutes: 0);
+        Punches(h, (8, 0), (13, 0), (14, 0), (17, 0));
 
         var day = await CalculateAsync(h);
 
-        day.LunchMinutesTaken.Should().Be(32, "32 min está más cerca de los 30 con goce que 20 min");
-        day.LunchExcessMinutes.Should().Be(2);
-        day.TemporaryExitMinutes.Should().Be(20);
+        day.LunchExcessMinutes.Should().Be(60);
+        day.TotalWorkedMinutes.Should().Be(480);
+        day.EarlyDepartureMinutes.Should().Be(0);
+        day.RawOvertimeMinutes.Should().Be(0);
     }
 
     [Fact]
-    public async Task NoLunchPunches_NothingIsDeducted()
+    public async Task NoIntermediatePunches_NothingIsDeducted()
     {
         var h = Harness();
+        Configure(h, windowEnabled: false);
         Punches(h, (8, 0), (16, 0));
 
         var day = await CalculateAsync(h);
 
-        day.LunchMinutesTaken.Should().Be(0);
-        day.LunchBreakMinutesApplied.Should().Be(0);
-        day.TotalWorkedMinutes.Should().Be(480);
+        day.TemporaryExits.Should().BeEmpty();
+        day.TotalWorkedMinutes.Should().Be(480, "sin marcajes el turno ya contempla la comida");
     }
 
     [Fact]
@@ -146,22 +258,7 @@ public class LunchRuleTests
         var day = await CalculateAsync(h);
 
         day.LunchMinutesTaken.Should().Be(60);
-        day.LunchExcessMinutes.Should().Be(0, "el turno concede 60 min con goce");
-    }
-
-    [Fact]
-    public async Task GlobalWindow_IsTakenFromTheSystemConfiguration()
-    {
-        var h = Harness();
-        var config = SystemConfiguration.CreateDefault();
-        config.UpdateLunchSettings(new TimeSpan(14, 0, 0), new TimeSpan(16, 0, 0), 30);
-        h.Configuration = config;
-        Punches(h, (8, 0), (13, 0), (13, 30), (16, 0));
-
-        var day = await CalculateAsync(h);
-
-        day.LunchMinutesTaken.Should().Be(0, "las 13:00 quedan fuera de la ventana configurada");
-        day.HasTemporaryExits.Should().BeTrue();
+        day.LunchExcessMinutes.Should().Be(0, "el turno da 60 min de comida con goce");
     }
 
     [Fact]
@@ -179,28 +276,6 @@ public class LunchRuleTests
     }
 
     [Fact]
-    public async Task ForgivingTheExcess_IsAuditedAndSurvivesRecalculation()
-    {
-        var h = Harness();
-        Punches(h, (8, 0), (13, 0), (13, 40), (16, 0));
-        await CalculateAsync(h);
-
-        var handler = new SetLunchExcessForgivenCommandHandler(h.Decisions());
-        var outcome = await handler.Handle(new SetLunchExcessForgivenCommand(Emp.Value, DateOnly.FromDateTime(Monday), true, "Autorizado por supervisor"), CancellationToken.None);
-        outcome.IsSuccess.Should().BeTrue(outcome.IsSuccess ? string.Empty : outcome.Error);
-
-        var day = await CalculateAsync(h);
-        day.LunchExcessForgiven.Should().BeTrue();
-        day.LunchBreakMinutesApplied.Should().Be(0);
-        day.TotalWorkedMinutes.Should().Be(480);
-        day.AttendanceNote.Should().Contain("perdonado");
-        h.Store.AdjustmentHistory.Should().ContainSingle(e => e.EmployeeId == Emp);
-
-        (await handler.Handle(new SetLunchExcessForgivenCommand(Emp.Value, DateOnly.FromDateTime(Monday), true), CancellationToken.None))
-            .IsFailure.Should().BeTrue("una decisión que no cambia nada se rechaza");
-    }
-
-    [Fact]
     public async Task OrphanIntermediatePunch_IsAReviewIssue_NotATemporaryExit()
     {
         var h = Harness();
@@ -213,7 +288,7 @@ public class LunchRuleTests
         day.RequiresReview.Should().BeTrue();
         day.LunchBreakMinutesApplied.Should().Be(0);
         day.TotalWorkedMinutes.Should().Be(480, "no se descuenta nada hasta que RH lo resuelva");
-        day.AttendanceNote.Should().Contain("revisar");
+        day.AttendanceNote.Should().Contain("clasifíquelo como error de checada o agregue la checada faltante");
     }
 
     [Fact]

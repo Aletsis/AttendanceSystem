@@ -1,5 +1,6 @@
 @using AttendanceSystem.Application.Features.Roster.Queries.GetShiftRoster
-@using AttendanceSystem.Application.Features.Roster.Commands.DeleteShiftRoster
+@using AttendanceSystem.Application.Features.Roster.Commands.AssignShiftRoster
+@using AttendanceSystem.Application.Features.Shifts.Queries.GetShifts
 @using AttendanceSystem.Application.DTOs
 @using AttendanceSystem.Blazor.Server.Components.Dialogs
 @using MediatR
@@ -110,7 +111,8 @@
                     <MudText Typo="Typo.caption">@(context.Notes ?? "—")</MudText>
                 </MudTd>
                 <MudTd Style="text-align: right;">
-                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" OnClick="@(() => DeleteItem(context.Id))" />
+                    @* Caso 10: un día del roster no se borra (quedaría sin turno); se cambia a otro turno o a descanso. *@
+                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Color="Color.Primary" OnClick="@(() => EditItem(context))" />
                 </MudTd>
             </RowTemplate>
             <NoRecordsContent>
@@ -137,6 +139,7 @@
     private DateTime? _endDate = DateTime.Today.AddDays(30);
     private bool _loading;
     private List<ShiftRosterDto> _rosterItems = new();
+    private List<ShiftDto> _shifts = new();
 
     protected override async Task OnInitializedAsync()
     {
@@ -195,22 +198,35 @@
         }
     }
 
-    private async Task DeleteItem(Guid id)
+    private async Task EditItem(ShiftRosterDto item)
     {
-        var confirm = await DialogService.ShowMessageBoxAsync(
-            "Confirmar eliminación",
-            "¿Desea eliminar esta fecha de la proyección?",
-            yesText: "Eliminar", cancelText: "Cancelar", noText: null,
-            options: new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraSmall });
-
-        if (confirm == true)
+        if (_shifts.Count == 0)
         {
-            var success = await Sender.Send(new DeleteShiftRosterCommand(id));
-            if (success)
-            {
-                Snackbar.Add("Asignación eliminada de la proyección.", Severity.Success);
-                await LoadProjection();
-            }
+            var shiftsResult = await Sender.Send(new GetShiftsQuery());
+            if (shiftsResult.IsSuccess) _shifts = shiftsResult.Value.OrderBy(s => s.StartTime).ToList();
+        }
+
+        var parameters = new DialogParameters
+        {
+            { nameof(RosterDayDialog.Date), item.Date },
+            { nameof(RosterDayDialog.ShiftId), item.ShiftId },
+            { nameof(RosterDayDialog.IsRestDay), item.IsRestDay },
+            { nameof(RosterDayDialog.Shifts), _shifts }
+        };
+        var dialog = await DialogService.ShowAsync<RosterDayDialog>("Cambiar día del roster", parameters,
+            new DialogOptions { FullWidth = true, MaxWidth = MaxWidth.ExtraSmall });
+        var result = await dialog.Result;
+        if (result is not { Canceled: false, Data: RosterDayDialog.RosterDayResult day }) return;
+
+        try
+        {
+            await Sender.Send(new AssignShiftRosterCommand(EmployeeId, item.Date, day.ShiftId, day.IsRestDay, "Cambio manual"));
+            Snackbar.Add("Día del roster actualizado.", Severity.Success);
+            await LoadProjection();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al actualizar el día: {ex.Message}", Severity.Error);
         }
     }
 

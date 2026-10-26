@@ -1,22 +1,22 @@
-@using System.ComponentModel.DataAnnotations
-@using AttendanceSystem.Application.Features.Attendance.Commands.RegisterManualAttendance
-
 <MudDialog>
     <DialogContent>
         <MudForm @ref="form" @bind-IsValid="@success">
             <MudGrid>
                 <MudItem xs="12">
                     <MudText>Agregando registro manual para: <b>@Values.EmployeeName</b></MudText>
-                    <MudText>Fecha: <b>@Values.Date.ToString("dd/MM/yyyy")</b></MudText>
+                    <MudText Typo="Typo.caption">
+                        Capture la fecha y hora reales del marcaje. El sistema decide si es entrada, salida o comida y a qué jornada pertenece
+                        (p. ej. la salida de las 06:00 de un turno nocturno se captura con la fecha del día siguiente).
+                    </MudText>
                 </MudItem>
-                <MudItem xs="12">
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker Label="Fecha" @bind-Date="Date" Required="true" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
                     <MudTimePicker Label="Hora" @bind-Time="Time" Required="true" AmPm="false" />
                 </MudItem>
                 <MudItem xs="12">
-                     <MudSelect Label="Tipo" @bind-Value="Type" Required="true" AnchorOrigin="Origin.BottomCenter">
-                        <MudSelectItem Value="@("Entrada")">Entrada</MudSelectItem>
-                        <MudSelectItem Value="@("Salida")">Salida</MudSelectItem>
-                    </MudSelect>
+                    <MudTextField @bind-Value="Reason" Label="Motivo" Required="true" RequiredError="Indique el motivo" MaxLength="500" Lines="2" />
                 </MudItem>
             </MudGrid>
         </MudForm>
@@ -34,20 +34,23 @@
 
     private MudForm form = default!;
     private bool success;
+    private DateTime? Date;
     private TimeSpan? Time = DateTime.Now.TimeOfDay;
-    private string Type = "Entrada";
+    private string Reason = string.Empty;
+
+    protected override void OnInitialized() => Date = Values.Date.ToDateTime(TimeOnly.MinValue);
 
     private void Cancel() => MudDialog.Cancel();
 
     private void Submit()
     {
-        if (Time.HasValue)
+        if (Date.HasValue && Time.HasValue && !string.IsNullOrWhiteSpace(Reason))
         {
-            var dateTime = Values.Date.ToDateTime(TimeOnly.FromTimeSpan(Time.Value));
-            MudDialog.Close(DialogResult.Ok(new ManualLogResult(dateTime, Type)));
+            var dateTime = Date.Value.Date + new TimeSpan(Time.Value.Hours, Time.Value.Minutes, 0);
+            MudDialog.Close(DialogResult.Ok(new ManualLogResult(dateTime, Reason.Trim())));
         }
     }
 
     public record ManualLogCallbackValues(string EmployeeName, DateOnly Date);
-    public record ManualLogResult(DateTime DateTime, string Type);
+    public record ManualLogResult(DateTime DateTime, string Reason);
 }

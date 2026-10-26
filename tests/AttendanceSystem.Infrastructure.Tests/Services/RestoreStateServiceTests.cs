@@ -87,7 +87,8 @@ public class RestoreStateServiceTests
 
         var drainTask = Task.Run(async () =>
         {
-            await service.DrainActiveWritersAsync(TimeSpan.FromSeconds(2));
+            // Límite holgado: la prueba verifica que espera al escritor, no el tiempo (bajo carga el retraso de 100 ms crece).
+            await service.DrainActiveWritersAsync(TimeSpan.FromSeconds(30));
         });
 
         await Task.Delay(100);

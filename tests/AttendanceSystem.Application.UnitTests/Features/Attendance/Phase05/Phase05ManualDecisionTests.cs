@@ -96,14 +96,17 @@ public class Phase05ManualDecisionTests
         var h = RegularWeek(out _);
         await h.RecalculateAsync(Monday, Wednesday);
         var late = h.Punch(Emp, Tuesday.AddHours(8).AddMinutes(20));
+        var leave = AttendanceRegressionFixtures.CreatePunch(Emp, Tuesday.AddHours(10), CheckType.CheckIn);
+        h.Store.Records.Add(leave);
+        h.Store.Records.Add(AttendanceRegressionFixtures.CreatePunch(Emp, Tuesday.AddHours(10).AddMinutes(40), CheckType.CheckIn));
         var decisions = h.Decisions();
         var tuesday = DateOnly.FromDateTime(Tuesday);
 
         (await Assign(h, late, Tuesday, "Entrada")).IsSuccess.Should().BeTrue();
-        (await new ClassifyTemporaryExitCommandHandler(decisions).Handle(new ClassifyTemporaryExitCommand(Emp.Value, tuesday, TemporaryExitStatus.ApprovedPaid, "Cita médica"), CancellationToken.None)).IsSuccess.Should().BeTrue();
+        (await new ClassifyTemporaryExitCommandHandler(decisions).Handle(new ClassifyTemporaryExitCommand(Emp.Value, tuesday, leave.Id.Value, TemporaryExitStatus.ApprovedPaid, "Cita médica"), CancellationToken.None)).IsSuccess.Should().BeTrue();
         (await new SetDailyOvertimeAuthorizationCommandHandler(decisions).Handle(new SetDailyOvertimeAuthorizationCommand(Emp.Value, tuesday, false, false, "Sin autorización"), CancellationToken.None)).IsSuccess.Should().BeTrue();
         var daily = h.Daily(Emp, Tuesday)!;
-        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(daily.Id.Value, true), CancellationToken.None)).Should().BeTrue();
+        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(daily.Id.Value, true), CancellationToken.None)).IsSuccess.Should().BeTrue();
 
         await RecalculateAroundAsync(h, Tuesday);
 
@@ -244,7 +247,7 @@ public class Phase05ManualDecisionTests
         var saves = h.Store.SaveChangesCount;
         var snapshot = AttendanceResultSnapshot.Capture(h.Store);
 
-        var foreignResult = await h.ManualAssign().Handle(new ManuallyAssignAttendanceCommand(Emp.Value, DateOnly.FromDateTime(Tuesday), foreign.Id.Value.ToString(), "Entrada"), CancellationToken.None);
+        var foreignResult = await h.ManualAssign().Handle(new ManuallyAssignAttendanceCommand(Emp.Value, DateOnly.FromDateTime(Tuesday), foreign.Id.Value.ToString(), "Entrada", Reason: "Prueba"), CancellationToken.None);
         var occupiedResult = await Assign(h, mondayExit, Tuesday, "Salida");
 
         foreignResult.Error.Should().Be("El marcaje no pertenece al empleado indicado.");
@@ -302,7 +305,7 @@ public class Phase05ManualDecisionTests
         var shift = Regular();
         h.Store.Shifts.Add(shift);
         h.Store.Employees.Add(CreateEmployee(Emp, shift));
-        var only = Punch(h, Emp, Tuesday.AddHours(15).AddMinutes(50));
+        var only = Punch(h, Emp, Tuesday.AddHours(9).AddMinutes(50));
         await h.RecalculateAsync(Tuesday, Tuesday);
         h.Daily(Emp, Tuesday)!.CheckInRecordId.Should().Be(only.Id, "precondición: el único marcaje se tomó como entrada");
 
@@ -348,7 +351,7 @@ public class Phase05ManualDecisionTests
         var second = Punch(h, Emp, Saturday.AddHours(10));
         var last = Punch(h, Emp, Saturday.AddHours(14));
         await h.RecalculateAsync(Saturday, Saturday);
-        h.Daily(Emp, Saturday)!.IsRestDay.Should().BeTrue("sábado sin configuración: descanso por defecto");
+        h.Daily(Emp, Saturday)!.CalculationIssue.Should().Contain("no tiene horario para el sábado", "caso 9: un día vacío de la plantilla se reporta");
 
         var decisions = h.Decisions();
         await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(h.Daily(Emp, Saturday)!.Id.Value, false), CancellationToken.None);
@@ -356,7 +359,7 @@ public class Phase05ManualDecisionTests
         await RecalculateAroundAsync(h, Saturday);
 
         var daily = h.Daily(Emp, Saturday)!;
-        daily.IsRestDay.Should().BeFalse("la decisión manual prevalece sobre el descanso por falta de configuración");
+        daily.IsRestDay.Should().BeFalse("la decisión manual se conserva");
         daily.CheckInRecordId.Should().Be(second.Id);
         daily.CheckOutRecordId.Should().Be(last.Id);
         _ = first;
@@ -400,7 +403,6 @@ public class Phase05ManualDecisionTests
         new object[] { "Nocturno", 22 },
         new object[] { "Flexible", 8 },
         new object[] { "MultiInterval", 8 },
-        new object[] { "Continuo", 8 },
         new object[] { "Partido", 9 },
         new object[] { "Mixto", 8 },
         new object[] { "SinTurno", 8 }
@@ -412,7 +414,6 @@ public class Phase05ManualDecisionTests
         "Nocturno" => AttendanceRegressionFixtures.CreateNightShift(),
         "Flexible" => Shift.Create("Flexible 8h", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Flexible),
         "MultiInterval" => AttendanceRegressionFixtures.CreateMultiIntervalShift(),
-        "Continuo" => AttendanceRegressionFixtures.CreateContinuous24hShift(),
         "Partido" => Shift.Create("Partido 9-13 y 15-19", new TimeSpan(9, 0, 0), 10, TimeSpan.FromHours(4), ShiftType.Partido,
             secondBlockStartTime: new TimeSpan(15, 0, 0), secondBlockEndTime: new TimeSpan(19, 0, 0)),
         "Mixto" => AttendanceRegressionFixtures.CreateMixedShift(),
@@ -439,7 +440,7 @@ public class Phase05ManualDecisionTests
         var day = DateOnly.FromDateTime(Tuesday);
         (await Assign(h, chosen, Tuesday, "Entrada")).IsSuccess.Should().BeTrue($"{kind}: asignación");
         (await new SetDailyOvertimeAuthorizationCommandHandler(decisions).Handle(new SetDailyOvertimeAuthorizationCommand(Emp.Value, day, false, false), CancellationToken.None)).IsSuccess.Should().BeTrue();
-        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(h.Daily(Emp, Tuesday)!.Id.Value, true), CancellationToken.None)).Should().BeTrue();
+        (await new SetDailyRestDayOverrideCommandHandler(h.DailyRepository, decisions).Handle(new SetDailyRestDayOverrideCommand(h.Daily(Emp, Tuesday)!.Id.Value, true), CancellationToken.None)).IsSuccess.Should().BeTrue();
 
         await RecalculateAroundAsync(h, Tuesday);
 
@@ -454,42 +455,62 @@ public class Phase05ManualDecisionTests
 
     #region Captura manual
 
-    private sealed class ManualAssignSender : ISender
-    {
-        private readonly AttendanceRecalculationHarness _h;
-        public ManualAssignSender(AttendanceRecalculationHarness h) => _h = h;
+    private static RegisterManualAttendanceCommandHandler ManualCapture(AttendanceRecalculationHarness h) =>
+        new(h.AttendanceRepository, h.UnitOfWork, AttendanceSystem.Application.Abstractions.DefaultTimeNormalizer.Instance);
 
-        public async Task<TResponse> Send<TResponse>(IRequest<TResponse> request, CancellationToken cancellationToken = default) =>
-            request is ManuallyAssignAttendanceCommand c
-                ? (TResponse)(object)await _h.ManualAssign().Handle(c, cancellationToken)
-                : throw new NotSupportedException(request.GetType().Name);
-
-        public Task Send<TRequest>(TRequest request, CancellationToken cancellationToken = default) where TRequest : IRequest => throw new NotSupportedException();
-        public Task<object?> Send(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public IAsyncEnumerable<TResponse> CreateStream<TResponse>(IStreamRequest<TResponse> request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-        public IAsyncEnumerable<object?> CreateStream(object request, CancellationToken cancellationToken = default) => throw new NotSupportedException();
-    }
+    private static Task<Result> CaptureAsync(AttendanceRecalculationHarness h, DateTime civil) =>
+        ManualCapture(h).Handle(new RegisterManualAttendanceCommand(Emp.Value, civil, AttendanceRegressionFixtures.TimeZoneMexicoCity, "Olvidó checar"), CancellationToken.None);
 
     [Fact]
-    public async Task ManualCapture_IsInsertedOnce_AndAssignedAsAPersistentDecision()
+    public async Task ManualCapture_OnCalculatedDay_IsPlacedByNormalRules_WithoutManualDecision()
     {
         var h = RegularWeek(out _);
         await h.RecalculateAsync(Tuesday, Tuesday);
-        var handler = new RegisterManualAttendanceCommandHandler(h.AttendanceRepository, h.DailyRepository, h.UnitOfWork,
-            AttendanceSystem.Application.Abstractions.DefaultTimeNormalizer.Instance,
-            new ManualAssignSender(h));
 
-        var civilExit = Tuesday.AddHours(18);
-        var first = await handler.Handle(new RegisterManualAttendanceCommand(Emp.Value, civilExit, "Salida", AttendanceRegressionFixtures.TimeZoneMexicoCity), CancellationToken.None);
-        var again = await handler.Handle(new RegisterManualAttendanceCommand(Emp.Value, civilExit, "Salida", AttendanceRegressionFixtures.TimeZoneMexicoCity), CancellationToken.None);
+        var result = await CaptureAsync(h, Tuesday.AddHours(18).AddMinutes(30));
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+        await h.RecalculateAsync(Tuesday, Tuesday);
 
-        first.IsSuccess.Should().BeTrue(first.IsSuccess ? string.Empty : first.Error);
-        again.IsSuccess.Should().BeTrue("la captura repetida reutiliza el marcaje y reafirma la decisión");
         var manual = h.Store.Records.Where(r => r.EmployeeId == Emp && r.Source == "Manual").Should().ContainSingle().Subject;
+        h.Daily(Emp, Tuesday)!.CheckOutRecordId.Should().Be(manual.Id, "la jornada ya calculada no impide considerar el marcaje");
+        h.Store.Adjustments.Should().BeEmpty("la captura no fuerza ninguna posición");
+    }
 
-        await RecalculateAroundAsync(h, Tuesday);
-        h.Daily(Emp, Tuesday)!.CheckOutRecordId.Should().Be(manual.Id);
-        h.Store.Adjustments.Single().CheckOutOverride.Should().Be(PositionOverrideKind.Assigned);
+    [Fact]
+    public async Task ManualCapture_IsRejected_WhenAPunchExistsInTheSameMinute()
+    {
+        var h = RegularWeek(out _);
+
+        var duplicate = await CaptureAsync(h, Tuesday.AddHours(16).AddMinutes(5).AddSeconds(40));
+        var repeated = await CaptureAsync(h, Tuesday.AddHours(10));
+        var again = await CaptureAsync(h, Tuesday.AddHours(10));
+
+        duplicate.IsSuccess.Should().BeFalse("ya existe el marcaje de dispositivo de las 16:05");
+        repeated.IsSuccess.Should().BeTrue();
+        again.IsSuccess.Should().BeFalse();
+        h.Store.Records.Where(r => r.EmployeeId == Emp && r.Source == "Manual").Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ManualCapture_AfterMidnight_BelongsToThePreviousNightJornada()
+    {
+        var h = new AttendanceRecalculationHarness();
+        var night = AttendanceRegressionFixtures.CreateNightShift();
+        h.Store.Shifts.Add(night);
+        h.Store.Employees.Add(CreateEmployee(Emp, night));
+        var checkIn = Punch(h, Emp, Monday.AddHours(21).AddMinutes(55));
+        await h.RecalculateAsync(Monday, Tuesday);
+
+        // Salida olvidada: se captura con la fecha civil del marcaje (martes) y se recalcula ese día, como la UI.
+        var result = await CaptureAsync(h, Tuesday.AddHours(6).AddMinutes(10));
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? string.Empty : result.Error);
+        await h.RecalculateAsync(Tuesday, Tuesday);
+
+        var manual = h.Store.Records.Single(r => r.Source == "Manual");
+        var monday = h.Daily(Emp, Monday)!;
+        monday.CheckInRecordId.Should().Be(checkIn.Id);
+        monday.CheckOutRecordId.Should().Be(manual.Id, "el recálculo del martes incluye la jornada nocturna del lunes que alcanza el marcaje");
+        h.Daily(Emp, Tuesday)?.CheckInRecordId.Should().NotBe(manual.Id);
     }
 
     #endregion

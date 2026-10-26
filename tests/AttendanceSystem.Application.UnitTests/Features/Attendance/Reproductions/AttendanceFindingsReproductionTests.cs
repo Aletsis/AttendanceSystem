@@ -282,16 +282,18 @@ public class AttendanceFindingsReproductionTests
         var shifts = new Dictionary<ShiftId, Shift> { [mixedShift.Id] = mixedShift };
 
         // LÍNEA BASE (F00-05): la delegación omitía el ajuste del supervisor.
-        // CORREGIDO (F05-04 y decisión 5): el mixto se resuelve al horario del día antes de calcular; sin horario
-        // es descanso, salvo decisión manual explícita, que prevalece.
+        // CORREGIDO (F05-04 y decisión 5): el mixto se resuelve al horario del día antes de calcular. Caso 9: un día
+        // sin horario en una plantilla anterior no es descanso (el descanso es del empleado) y se reporta; la
+        // decisión manual explícita prevalece.
         var withoutDecision = AttendanceShiftResolutionService.Resolve(employee, dateSabado, null, null, shifts, Array.Empty<DateTime>());
         withoutDecision.Shift.Should().BeNull();
-        withoutDecision.IsRestDay.Should().BeTrue("sin horario en la plantilla el día es descanso");
+        withoutDecision.IsRestDay.Should().BeFalse("el sábado no es descanso del empleado");
+        withoutDecision.Issue.Should().Contain("no tiene horario para el sábado");
 
         var adjustment = AttendanceAdjustment.Create(employee.Id, dateSabado, "Supervisor RH", "Autorizado");
-        adjustment.SetRestDayOverride(false, "Supervisor RH");
+        adjustment.SetRestDayOverride(true, "Supervisor RH");
         var withDecision = AttendanceShiftResolutionService.Resolve(employee, dateSabado, null, adjustment, shifts, Array.Empty<DateTime>());
-        withDecision.IsRestDay.Should().BeFalse("la decisión manual de laborable prevalece");
+        withDecision.IsRestDay.Should().BeTrue("la decisión manual de descanso prevalece");
     }
 
     #endregion
@@ -342,7 +344,8 @@ public class AttendanceFindingsReproductionTests
             EmployeeId: AttendanceRegressionFixtures.EmployeeFixedId.Value, // EMP-FIX-001
             Date: DateOnly.FromDateTime(new DateTime(2026, 8, 28)),
             RecordId: foreignPunch.Id.Value.ToString(),
-            AssignmentType: "Entrada");
+            AssignmentType: "Entrada",
+            Reason: "Prueba");
 
         // ACT:
         var result = await handler.Handle(command, CancellationToken.None);
@@ -358,14 +361,14 @@ public class AttendanceFindingsReproductionTests
 
     #endregion
 
-    #region H08 — Continuo delegado a flexible con límite de 18 horas
+    #region H08 — Guardia de 24 horas con límite de 18 horas
 
     [Fact]
-    public async Task H08_Continuous_24h_Shift_Accepts_Exit_Within_The_24_Hour_Window()
+    public async Task H08_Guard_24h_Shift_Accepts_Exit_Within_The_24_Hour_Window()
     {
         // ENTRADA:
-        // Turno continuo de 24 horas: 08:00 AM del Día 1 a 08:00 AM del Día 2 (24 horas).
-        var continuousShift = AttendanceRegressionFixtures.CreateContinuous24hShift();
+        // Guardia de 24 horas: 08:00 AM del Día 1 a 08:00 AM del Día 2 (24 horas).
+        var guardShift = AttendanceRegressionFixtures.CreateGuard24hShift();
         var employee = AttendanceRegressionFixtures.CreateFixedEmployee();
 
         var entry = AttendanceRegressionFixtures.CreatePunch(
@@ -394,12 +397,12 @@ public class AttendanceFindingsReproductionTests
         var command = new ProcessFlexibleAttendanceCommand(
             employee,
             new DateTime(2026, 8, 24),
-            continuousShift,
+            guardShift,
             new List<AttendanceRecord> { entry, exitAt24h },
             IsRestDay: false);
 
         // ACT:
-        await handler.Handle(command with { Continuous = true }, CancellationToken.None);
+        await handler.Handle(command, CancellationToken.None);
 
         // LÍNEA BASE (F00-05): el límite rígido de 18 h descartaba la salida a las 24 h.
         // CORREGIDO (F06-01): ventana = duración + margen con tope de 24 h (C-03).

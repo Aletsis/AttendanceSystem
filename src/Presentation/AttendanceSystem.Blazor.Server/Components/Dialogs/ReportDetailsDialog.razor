@@ -15,7 +15,7 @@
                 @if (ReportType == "Retardos") { <MudTh>Retardo (min)</MudTh> }
                 @if (ReportType == "HorasExtra") { <MudTh>Extra / Laborado</MudTh> }
                 @if (ReportType == "DescansoTrabajado") { <MudTh>Tipo</MudTh> }
-                @if (ReportType == "DescansoErroneo") { <MudTh>Acciones</MudTh> }
+                @if (ReportType == "DescansoErroneo" && _canAdjust) { <MudTh>Acciones</MudTh> }
             </HeaderContent>
             <RowTemplate>
                 <MudTd>@context.Date.ToShortDateString()</MudTd>
@@ -32,10 +32,14 @@
                     </MudTd> 
                 }
                 @if (ReportType == "DescansoTrabajado") { <MudTd>Descanso Trabajado</MudTd> }
-                @if (ReportType == "DescansoErroneo") 
+                @if (ReportType == "DescansoErroneo" && _canAdjust) 
                 { 
                     <MudTd>
-                        @if (context.IsRestDay)
+                        @if (context.DailyAttendanceId is { } id && _updated.Contains(id))
+                        {
+                            <MudChip T="string" Size="Size.Small" Color="Color.Info">Actualizado</MudChip>
+                        }
+                        else if (context.IsRestDay)
                         {
                              <MudButton Variant="Variant.Filled" Color="Color.Warning" Size="Size.Small" OnClick="@(() => ToggleRestDay(context))">Hacer Laborable</MudButton>
                         }
@@ -49,7 +53,7 @@
         </MudTable>
     </DialogContent>
     <DialogActions>
-        <MudButton Color="Color.Primary" OnClick="Submit">Cerrar</MudButton>
+        <MudButton Color="Color.Primary" OnClick="Submit">@(_updated.Count > 0 ? "Cerrar y actualizar reporte" : "Cerrar")</MudButton>
     </DialogActions>
 </MudDialog>
 
@@ -59,25 +63,32 @@
     [Parameter] public List<AttendanceSystem.Application.DTOs.AdvancedReportDetailDto> Records { get; set; } = new();
     [Parameter] public string ReportType { get; set; } = string.Empty;
 
+    // Caso 13: sólo RH y Administrador corrigen; los días corregidos quedan marcados y el reporte se regenera al cerrar.
+    private bool _canAdjust;
+    private readonly HashSet<Guid> _updated = new();
+
+    protected override async Task OnInitializedAsync() =>
+        _canAdjust = await UiPermissions.HasAsync(Permissions.AttendanceAdjust);
+
     async Task ToggleRestDay(AttendanceSystem.Application.DTOs.AdvancedReportDetailDto item)
     {
-        if (item.DailyAttendanceId == null) return;
+        if (item.DailyAttendanceId is not { } id) return;
         
         bool newStatus = !item.IsRestDay;
-        var command = new SetDailyRestDayOverrideCommand(item.DailyAttendanceId.Value, newStatus);
-        var result = await Mediator.Send(command);
+        var result = await Mediator.Send(new SetDailyRestDayOverrideCommand(id, newStatus));
         
-        if (result)
+        if (result.IsSuccess)
         {
-             Snackbar.Add(newStatus ? "Día marcado como Descanso." : "Día marcado como Laborable.", Severity.Success);
-             // Note: The UI won't update automatically because Records are immutable.
-             // We recommend closing and refreshing, or we could hack the DTO if it wasn't init-only.
+            _updated.Add(id);
+            Snackbar.Add(newStatus ? "Día marcado como Descanso." : "Día marcado como Laborable.", Severity.Success);
         }
         else
         {
-            Snackbar.Add("Error al actualizar.", Severity.Error);
+            // Otro usuario o un recálculo cambió el día: se cierra para regenerar el reporte con los datos actuales.
+            Snackbar.Add($"{result.Error} El reporte se actualizará con los datos actuales.", Severity.Warning);
+            MudDialog.Close(DialogResult.Ok(true));
         }
     }
 
-    void Submit() => MudDialog.Close(DialogResult.Ok(true));
+    void Submit() => MudDialog.Close(DialogResult.Ok(_updated.Count > 0));
 }
