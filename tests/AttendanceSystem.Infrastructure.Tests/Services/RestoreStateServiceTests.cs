@@ -128,6 +128,20 @@ public class RestoreStateServiceTests
     }
 
     [Fact]
+    public async Task TryAcquireRestoreLockAsync_FromFailed_ShouldBeAllowed_SoARestoreCanRecover()
+    {
+        var service = new RestoreStateService(NullLogger<RestoreStateService>.Instance);
+        await service.TryAcquireRestoreLockAsync("Owner_1", "Test");
+        await service.ReleaseRestoreLockAsync("Owner_1", success: false);
+
+        var acquired = await service.TryAcquireRestoreLockAsync("Owner_2", "Recuperación");
+
+        acquired.Should().BeTrue();
+        service.CurrentState.Should().Be(MaintenanceState.Preparing);
+        service.CurrentOwner.Should().Be("Owner_2");
+    }
+
+    [Fact]
     public async Task TransitionStateAsync_ShouldUpdateStateCorrectly()
     {
         var service = new RestoreStateService(NullLogger<RestoreStateService>.Instance);

@@ -227,6 +227,55 @@ public class BackupServiceTests
     }
 
     [Fact]
+    public async Task RestoreBackupAsync_OfAZipWithoutDatabase_ReleasesTheLockAndRemovesTheExtractedFiles()
+    {
+        var zipPath = Path.Combine(Path.GetTempPath(), $"no_database_{Guid.NewGuid():N}.zip");
+        using (var archive = System.IO.Compression.ZipFile.Open(zipPath, System.IO.Compression.ZipArchiveMode.Create))
+        {
+            var entry = archive.CreateEntry("config/appsettings.json");
+            using var writer = new StreamWriter(entry.Open());
+            writer.Write("{ \"ConnectionStrings\": { \"AttendanceDb\": \"Password=secret\" } }");
+        }
+
+        var tempDirsBefore = Directory.GetDirectories(Path.GetTempPath(), "AttendanceRestore_*").ToHashSet();
+        var restoreState = new RestoreStateService(NullLogger<RestoreStateService>.Instance);
+        try
+        {
+            var service = CreateService(restoreStateService: restoreState);
+
+            var result = await service.RestoreBackupAsync(zipPath);
+
+            result.Success.Should().BeFalse();
+            result.Message.Should().Contain("database.backup");
+            restoreState.CurrentState.Should().Be(AttendanceSystem.Application.Common.MaintenanceState.Normal);
+            Directory.GetDirectories(Path.GetTempPath(), "AttendanceRestore_*").Except(tempDirsBefore)
+                .Should().BeEmpty("el contenido extraído (con la configuración) no debe quedar en el directorio temporal");
+        }
+        finally
+        {
+            File.Delete(zipPath);
+        }
+    }
+
+    [Fact]
+    public void ExcludeMaintenanceSchema_DropsOnlyItsTocEntries()
+    {
+        const string toc = ";\n; Archive created at 2026-10-26\n;\n" +
+                           "5; 2615 16384 SCHEMA - system_maintenance attendanceuser\n" +
+                           "220; 1259 16390 TABLE system_maintenance maintenance_lock attendanceuser\n" +
+                           "3400; 0 16390 TABLE DATA system_maintenance maintenance_lock attendanceuser\n" +
+                           "221; 1259 16400 TABLE public Employees attendanceuser\r\n" +
+                           "6; 2615 16385 SCHEMA - hangfire attendanceuser\n";
+
+        var kept = BackupService.ExcludeMaintenanceSchema(toc).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+
+        kept.Should().Contain("221; 1259 16400 TABLE public Employees attendanceuser");
+        kept.Should().Contain("6; 2615 16385 SCHEMA - hangfire attendanceuser");
+        kept.Should().Contain(";");
+        kept.Should().NotContain(l => l.Contains("system_maintenance"));
+    }
+
+    [Fact]
     public async Task ValidateBackupArchiveAsync_WhenFileDoesNotExist_ShouldReturnInvalid()
     {
         var service = CreateService();

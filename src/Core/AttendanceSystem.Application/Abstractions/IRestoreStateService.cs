@@ -34,8 +34,16 @@ public interface IRestoreStateService
     int ActiveWritersCount { get; }
 
     /// <summary>
+    /// Carga al arrancar el estado persistido en PostgreSQL. Un fallo crítico de restauración (Failed, o un rollback
+    /// interrumpido) sobrevive al reinicio; una restauración interrumpida antes de confirmar vuelve a Normal porque
+    /// la restauración es atómica y no llegó a modificar la base.
+    /// </summary>
+    Task<MaintenanceState> LoadPersistedStateAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Intenta adquirir el bloqueo exclusivo de restauración para un propietario dado.
-    /// Rechaza la adquisición si ya existe otra restauración en curso.
+    /// Rechaza la adquisición si ya existe otra restauración en curso; desde Failed se permite, porque una
+    /// restauración exitosa es la forma de salir de ese estado.
     /// </summary>
     Task<bool> TryAcquireRestoreLockAsync(string ownerId, string description, CancellationToken cancellationToken = default);
 

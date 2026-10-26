@@ -39,11 +39,84 @@ public class RestoreStateService : IRestoreStateService
 
     public int ActiveWritersCount => Volatile.Read(ref _activeWritersCount);
 
+    public async Task<MaintenanceState> LoadPersistedStateAsync(CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(_connectionString))
+        {
+            return _currentState;
+        }
+
+        string? persistedState;
+        string? persistedOwner;
+        try
+        {
+            var builder = new NpgsqlConnectionStringBuilder(_connectionString) { Timeout = 5, CommandTimeout = 5 };
+            await using var connection = new NpgsqlConnection(builder.ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using var existsCmd = new NpgsqlCommand("SELECT to_regclass('system_maintenance.maintenance_lock') IS NOT NULL", connection);
+            if (!(bool)(await existsCmd.ExecuteScalarAsync(cancellationToken) ?? false))
+            {
+                return _currentState;
+            }
+
+            await using var cmd = new NpgsqlCommand("SELECT state, owner_id FROM system_maintenance.maintenance_lock WHERE id = 1", connection);
+            await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
+            if (!await reader.ReadAsync(cancellationToken))
+            {
+                return _currentState;
+            }
+
+            persistedState = reader.GetString(0);
+            persistedOwner = reader.IsDBNull(1) ? null : reader.GetString(1);
+        }
+        catch (Exception ex)
+        {
+            // Sin base no hay nada que proteger aquí: el arranque fallará más adelante con un error claro.
+            _logger.LogWarning(ex, "No se pudo leer el estado de mantenimiento persistido; se asume operación normal.");
+            return _currentState;
+        }
+
+        if (!Enum.TryParse<MaintenanceState>(persistedState, out var state) || state == MaintenanceState.Normal)
+        {
+            return _currentState;
+        }
+
+        // Validating y Recovering ocurren después de un COMMIT: la base puede tener datos restaurados sin validar.
+        if (state is MaintenanceState.Failed or MaintenanceState.Validating or MaintenanceState.Recovering)
+        {
+            lock (_lock)
+            {
+                _currentState = MaintenanceState.Failed;
+                _currentOwner = persistedOwner;
+            }
+
+            _logger.LogCritical(
+                "🚨 Se encontró una restauración con fallo crítico ({PersistedState}, {Owner}). El sistema arranca en mantenimiento (Failed): " +
+                "restaure un respaldo desde la página de respaldos para salir de este estado.",
+                state,
+                persistedOwner ?? "desconocido");
+
+            if (state != MaintenanceState.Failed)
+            {
+                await TryPersistStateToDatabaseAsync(MaintenanceState.Failed, persistedOwner, $"Restauración interrumpida en {state}", cancellationToken);
+            }
+            return MaintenanceState.Failed;
+        }
+
+        _logger.LogWarning(
+            "Se encontró una restauración interrumpida en {PersistedState} ({Owner}). No llegó a confirmarse, así que la base no se modificó; se reanuda la operación normal.",
+            state,
+            persistedOwner ?? "desconocido");
+        await TryPersistStateToDatabaseAsync(MaintenanceState.Normal, null, $"Restauración interrumpida en {state} descartada al arrancar", cancellationToken);
+        return _currentState;
+    }
+
     public async Task<bool> TryAcquireRestoreLockAsync(string ownerId, string description, CancellationToken cancellationToken = default)
     {
         lock (_lock)
         {
-            if (_currentState != MaintenanceState.Normal)
+            if (_currentState != MaintenanceState.Normal && _currentState != MaintenanceState.Failed)
             {
                 _logger.LogWarning(
                     "Rechazando intento de restauración por {AttemptOwner}: El sistema ya está en mantenimiento ({State}) por {CurrentOwner}.",
