@@ -389,8 +389,8 @@ public class RestoreStateService : IRestoreStateService, IDisposable
             var builder = new NpgsqlConnectionStringBuilder(_connectionString)
             {
                 Pooling = false,
-                Timeout = 5,
-                CommandTimeout = 5,
+                Timeout = 15,
+                CommandTimeout = 15,
                 ApplicationName = LockApplicationName,
                 // Si el proceso muere, PostgreSQL detecta la conexión caída y libera el bloqueo.
                 KeepAlive = 15
@@ -411,9 +411,9 @@ public class RestoreStateService : IRestoreStateService, IDisposable
         }
         catch (Exception ex)
         {
-            // Sin base no hay a quién excluir: la restauración fallará después con un error claro.
-            _logger.LogWarning(ex, "No se pudo tomar el bloqueo de mantenimiento en PostgreSQL; se continúa sólo con el bloqueo local.");
-            return true;
+            // Sin poder verificar el bloqueo no se sabe si otro proceso restaura: no se arriesga una restauración simultánea.
+            _logger.LogWarning(ex, "No se pudo tomar el bloqueo de mantenimiento en PostgreSQL; se rechaza la restauración.");
+            return false;
         }
     }
 

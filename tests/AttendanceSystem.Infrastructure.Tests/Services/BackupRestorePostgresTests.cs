@@ -72,13 +72,43 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
         return new ConfigurationBuilder().AddInMemoryCollection(values).Build();
     }
 
-    private (BackupService Service, RestoreStateService State) CreateService()
+    private (BackupService Service, RestoreStateService State) CreateService(
+        AttendanceSystem.Application.Abstractions.IBackgroundJobControlService? jobs = null)
     {
         var configuration = BuildConfiguration();
         var state = NewState();
         var service = new BackupService(configuration, NullLogger<BackupService>.Instance, _configRepo.Object, state,
-            contextFactory: new FixtureContextFactory(_fixture));
+            jobs, contextFactory: new FixtureContextFactory(_fixture));
         return (service, state);
+    }
+
+    private sealed class JobControlSpy : AttendanceSystem.Application.Abstractions.IBackgroundJobControlService
+    {
+        public int Pauses;
+        public int Resumes;
+        public bool Paused => Pauses > Resumes;
+        public Task PauseBackgroundJobsAsync(CancellationToken cancellationToken = default) { Pauses++; return Task.CompletedTask; }
+        public Task ResumeBackgroundJobsAsync(CancellationToken cancellationToken = default) { Resumes++; return Task.CompletedTask; }
+    }
+
+    /// <summary>Progreso que se procesa en el mismo hilo que lo reporta (Progress&lt;T&gt; lo haría después, en otro).</summary>
+    private sealed class InlineProgress : IProgress<RestoreProgressReport>
+    {
+        private readonly Action<RestoreProgressReport> _onReport;
+        public InlineProgress(Action<RestoreProgressReport> onReport) => _onReport = onReport;
+        public void Report(RestoreProgressReport value) => _onReport(value);
+    }
+
+    /// <summary>Respaldo que pasa todas las verificaciones previas pero no supera la validación posterior.</summary>
+    private async Task<string> CreateBackupFailingPostValidationAsync(BackupService service, string extraSql = "", string undoSql = "")
+    {
+        await ExecAsync(@"ALTER TABLE public.""Employees"" RENAME TO ""Employees_hidden"";
+                          ALTER TABLE public.""AttendanceRecords"" RENAME TO ""AttendanceRecords_hidden"";" + extraSql);
+        var backup = await service.CreateDatabaseBackupAsync();
+        await ExecAsync(undoSql + @"ALTER TABLE public.""Employees_hidden"" RENAME TO ""Employees"";
+                                     ALTER TABLE public.""AttendanceRecords_hidden"" RENAME TO ""AttendanceRecords"";");
+        backup.Success.Should().BeTrue(backup.Message);
+        return backup.BackupFilePath!;
     }
 
     /// <summary>Cada instancia representa otro proceso (servidor web, cliente WPF, otro worker de IIS).</summary>
@@ -499,5 +529,169 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
 
         result.Success.Should().BeFalse();
         Directory.GetFiles(_backupDir).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task Restore_ThatFailsPostValidation_IsRolledBackFromTheSnapshot()
+    {
+        var jobs = new JobControlSpy();
+        var (service, state) = CreateService(jobs);
+        if (!ToolsAvailable(service)) return;
+
+        var badBackup = await CreateBackupFailingPostValidationAsync(service);
+        await SetProbeAsync("vigente");
+
+        var result = await service.RestoreBackupAsync(badBackup);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("validación").And.Contain("revertida exitosamente");
+        (await ProbeValueAsync()).Should().Be("vigente");
+        await AssertSchemaIntactAsync();
+        state.CurrentState.Should().Be(MaintenanceState.Normal);
+        jobs.Paused.Should().BeFalse("las tareas se reanudan tras un rollback exitoso");
+        Directory.GetFiles(_backupDir, ".safety_snapshot_*").Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task WhenTheRollbackAlsoFails_TheSystemStaysFailed_AndTheListedSnapshotRecoversIt()
+    {
+        var jobs = new JobControlSpy();
+        var (service, state) = CreateService(jobs);
+        if (!ToolsAvailable(service)) return;
+
+        // El respaldo malo trae un event trigger que impide borrar esquemas: se crea al final de su propio script,
+        // así que la restauración se confirma, pero el rollback (que empieza borrando esquemas) ya no puede.
+        const string blockSchemaDrops = @"
+            CREATE OR REPLACE FUNCTION public.block_schema_drop() RETURNS event_trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF tg_tag = 'DROP SCHEMA' THEN RAISE EXCEPTION 'borrado de esquemas bloqueado por la prueba'; END IF;
+            END $$;
+            CREATE EVENT TRIGGER block_schema_drop ON ddl_command_start EXECUTE FUNCTION public.block_schema_drop();";
+        const string allowSchemaDrops = "DROP EVENT TRIGGER IF EXISTS block_schema_drop; DROP FUNCTION IF EXISTS public.block_schema_drop();";
+
+        var badBackup = await CreateBackupFailingPostValidationAsync(service, blockSchemaDrops, allowSchemaDrops);
+        await SetProbeAsync("vigente");
+
+        var result = await service.RestoreBackupAsync(badBackup);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("FALLO CRÍTICO").And.Contain("Snapshot previo conservado")
+            .And.Contain("borrado de esquemas bloqueado por la prueba", "el rollback debe fallar por la causa que se provocó");
+        state.CurrentState.Should().Be(MaintenanceState.Failed);
+        jobs.Paused.Should().BeTrue("tras un fallo crítico las tareas siguen en pausa");
+
+        var snapshot = (await service.GetAvailableBackupsAsync()).Should()
+            .ContainSingle(b => b.BackupType == BackupDto.SafetySnapshotType).Subject;
+        (await service.PruneOldBackupsAsync(keepCount: 1)).Should().Be(0);
+
+        // El administrador corrige la causa, reinicia y restaura el snapshot desde la lista.
+        await ExecAsync(allowSchemaDrops);
+        var restarted = NewState();
+        (await restarted.LoadPersistedStateAsync()).Should().Be(MaintenanceState.Failed);
+        var restartedJobs = new JobControlSpy();
+        var restartedService = new BackupService(BuildConfiguration(), NullLogger<BackupService>.Instance, _configRepo.Object,
+            restarted, restartedJobs, new FixtureContextFactory(_fixture));
+
+        var recovery = await restartedService.RestoreBackupAsync(snapshot.FilePath);
+
+        recovery.Success.Should().BeTrue(recovery.Message);
+        (await ProbeValueAsync()).Should().Be("vigente");
+        await AssertSchemaIntactAsync();
+        restarted.CurrentState.Should().Be(MaintenanceState.Normal);
+        restartedJobs.Resumes.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task TwoProcessesRestoringAtOnce_OnlyOneRuns()
+    {
+        var (first, firstState) = CreateService();
+        if (!ToolsAvailable(first)) return;
+        var (second, secondState) = CreateService();
+
+        await SetProbeAsync("respaldo");
+        var backup = await first.CreateDatabaseBackupAsync();
+        backup.Success.Should().BeTrue(backup.Message);
+        await SetProbeAsync("vigente");
+
+        // El segundo proceso lo intenta justo cuando el primero está a mitad de pg_restore.
+        RestoreResultDto? concurrent = null;
+        var progress = new InlineProgress(report =>
+        {
+            if (concurrent == null && report.Stage == RestoreStage.ExecutingPgRestore)
+            {
+                concurrent = second.RestoreBackupAsync(backup.BackupFilePath!).GetAwaiter().GetResult();
+            }
+        });
+
+        var result = await first.RestoreBackupAsync(backup.BackupFilePath!, progress);
+
+        result.Success.Should().BeTrue(result.Message);
+        concurrent.Should().NotBeNull();
+        concurrent!.Success.Should().BeFalse();
+        concurrent.Message.Should().Contain("Ya existe otra restauración");
+        (await ProbeValueAsync()).Should().Be("respaldo");
+        firstState.CurrentState.Should().Be(MaintenanceState.Normal);
+        // El segundo vio la restauración del primero; el monitor (aquí, a mano) le informa que ya terminó.
+        await secondState.RefreshRemoteStateAsync();
+        secondState.CurrentState.Should().Be(MaintenanceState.Normal);
+    }
+
+    [Fact]
+    public async Task DuringARealRestore_AnotherProcessSeesTheMaintenance_AndCannotWrite()
+    {
+        var jobs = new JobControlSpy();
+        var (service, _) = CreateService(jobs);
+        if (!ToolsAvailable(service)) return;
+        using var other = NewState();
+
+        await SetProbeAsync("respaldo");
+        var backup = await service.CreateDatabaseBackupAsync();
+        backup.Success.Should().BeTrue(backup.Message);
+
+        MaintenanceState? seenState = null;
+        bool? seenCanWrite = null;
+        var progress = new InlineProgress(report =>
+        {
+            if (seenState == null && report.Stage == RestoreStage.ExecutingPgRestore)
+            {
+                other.RefreshRemoteStateAsync().GetAwaiter().GetResult();
+                seenState = other.CurrentState;
+                seenCanWrite = other.CanWrite;
+            }
+        });
+
+        var result = await service.RestoreBackupAsync(backup.BackupFilePath!, progress);
+
+        result.Success.Should().BeTrue(result.Message);
+        seenState.Should().Be(MaintenanceState.Restoring);
+        seenCanWrite.Should().BeFalse();
+        jobs.Pauses.Should().Be(1);
+        jobs.Resumes.Should().Be(1);
+
+        await other.RefreshRemoteStateAsync();
+        other.CanWrite.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ARestoreThatChangesNothing_ResumesTheBackgroundJobs()
+    {
+        var jobs = new JobControlSpy();
+        var (service, _) = CreateService(jobs);
+        if (!ToolsAvailable(service)) return;
+
+        await ExecAsync(@"
+            DROP ROLE IF EXISTS restore_probe_owner2;
+            CREATE ROLE restore_probe_owner2;
+            CREATE TABLE public.owned_probe2 (id int);
+            ALTER TABLE public.owned_probe2 OWNER TO restore_probe_owner2;");
+        var backup = await service.CreateDatabaseBackupAsync();
+        await ExecAsync("DROP TABLE public.owned_probe2; DROP ROLE restore_probe_owner2;");
+        backup.Success.Should().BeTrue(backup.Message);
+
+        var result = await service.RestoreBackupAsync(backup.BackupFilePath!);
+
+        result.Message.Should().Contain("no se modificó");
+        jobs.Pauses.Should().Be(1);
+        jobs.Resumes.Should().Be(1);
     }
 }

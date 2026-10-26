@@ -381,7 +381,9 @@ public class BackupService : IBackupService
             lockAcquired = await _restoreStateService.TryAcquireRestoreLockAsync(ownerId, $"Restauración desde {Path.GetFileName(backupFilePath)}", cancellationToken);
             if (!lockAcquired)
             {
-                var msg = $"Operación rechazada: Ya existe otra restauración o mantenimiento en curso ({_restoreStateService.CurrentState} por {_restoreStateService.CurrentOwner ?? "desconocido"}).";
+                var msg = _restoreStateService.CurrentState == MaintenanceState.Normal
+                    ? "Operación rechazada: Ya existe otra restauración en curso en otro proceso, o no se pudo verificar el bloqueo de mantenimiento en PostgreSQL."
+                    : $"Operación rechazada: Ya existe otra restauración o mantenimiento en curso ({_restoreStateService.CurrentState} por {_restoreStateService.CurrentOwner ?? "desconocido"}).";
                 _logger.LogError(msg);
                 progress?.Report(new RestoreProgressReport(RestoreStage.Failed, "Restauración Rechazada", msg, IsError: true));
                 return new RestoreResultDto { Success = false, Message = msg };
