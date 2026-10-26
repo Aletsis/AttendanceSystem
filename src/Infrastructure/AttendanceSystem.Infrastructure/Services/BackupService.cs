@@ -6,6 +6,8 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Npgsql;
@@ -19,6 +21,7 @@ public class BackupService : IBackupService
     private readonly ISystemConfigurationRepository _systemConfigRepository;
     private readonly IRestoreStateService _restoreStateService;
     private readonly IBackgroundJobControlService _backgroundJobControlService;
+    private readonly IDbContextFactory<AttendanceDbContext>? _contextFactory;
     private readonly TimeSpan _dumpStallTimeout;
     private readonly TimeSpan _restoreStallTimeout;
     private readonly TimeSpan _drainTimeout;
@@ -34,13 +37,15 @@ public class BackupService : IBackupService
         ILogger<BackupService> logger,
         ISystemConfigurationRepository systemConfigRepository,
         IRestoreStateService? restoreStateService = null,
-        IBackgroundJobControlService? backgroundJobControlService = null)
+        IBackgroundJobControlService? backgroundJobControlService = null,
+        IDbContextFactory<AttendanceDbContext>? contextFactory = null)
     {
         _configuration = configuration;
         _logger = logger;
         _systemConfigRepository = systemConfigRepository;
         _restoreStateService = restoreStateService ?? new RestoreStateService(new Microsoft.Extensions.Logging.Abstractions.NullLogger<RestoreStateService>());
         _backgroundJobControlService = backgroundJobControlService ?? new NullBackgroundJobControlService();
+        _contextFactory = contextFactory;
 
         var dumpTimeoutSec = configuration.GetValue<int>("Backup:DumpStallTimeoutSeconds", 600);
         var restoreTimeoutSec = configuration.GetValue<int>("Backup:RestoreStallTimeoutSeconds", 900);
@@ -484,6 +489,15 @@ public class BackupService : IBackupService
                 _logger.LogError("La validación post-restauración falló: {Message}. Iniciando rollback...", postValidation.Message);
                 return await RollbackFromSnapshotAsync(ownerId, safetyBackupFile!, tempDir,
                     $"Restauración rechazada por validación de datos fallida: {postValidation.Message}", progress);
+            }
+
+            // El esquema restaurado debe coincidir con esta versión antes de reanudar escrituras y tareas.
+            var schemaCheck = await AlignSchemaWithApplicationAsync(progress, cancellationToken);
+            if (!schemaCheck.Valid)
+            {
+                _logger.LogError("La versión del esquema restaurado no es compatible: {Message}. Iniciando rollback...", schemaCheck.Message);
+                return await RollbackFromSnapshotAsync(ownerId, safetyBackupFile!, tempDir,
+                    $"Restauración rechazada: {schemaCheck.Message}", progress);
             }
 
             // 7. Finalización exitosa
@@ -1548,7 +1562,7 @@ GRANT ALL ON SCHEMA public TO public;
             .Where(line => line.StartsWith(';') || !pattern.IsMatch(line));
     }
 
-    private async Task TerminateOtherConnectionsAsync(CancellationToken cancellationToken)
+    internal async Task TerminateOtherConnectionsAsync(CancellationToken cancellationToken)
     {
         NpgsqlConnection.ClearAllPools();
         try
@@ -1561,9 +1575,12 @@ GRANT ALL ON SCHEMA public TO public;
                 SELECT pg_terminate_backend(pid)
                 FROM pg_stat_activity
                 WHERE datname = current_database()
-                  AND pid <> pg_backend_pid();";
+                  AND pid <> pg_backend_pid()
+                  AND application_name IS DISTINCT FROM @lockApp;";
 
+            // La sesión que retiene el bloqueo de mantenimiento es la de esta misma restauración.
             await using var termCmd = new NpgsqlCommand(terminateSql, connection);
+            termCmd.Parameters.AddWithValue("lockApp", RestoreStateService.LockApplicationName);
             await termCmd.ExecuteNonQueryAsync(cancellationToken);
         }
         catch (Exception ex)
@@ -1676,6 +1693,58 @@ GRANT ALL ON SCHEMA public TO public;
         {
             _logger.LogError(ex, "Error verificando esquema tras la restauración.");
             return (false, $"Error verificando esquema: {ex.Message}");
+        }
+        finally
+        {
+            NpgsqlConnection.ClearAllPools();
+        }
+    }
+
+    /// <summary>
+    /// Compara las migraciones del respaldo con las de esta versión. Un respaldo de una versión más nueva se rechaza
+    /// (esta versión no sabe trabajar con ese esquema); uno más antiguo se actualiza aquí mismo, todavía en
+    /// mantenimiento, para no reanudar tareas sobre un esquema viejo.
+    /// </summary>
+    private async Task<(bool Valid, string Message)> AlignSchemaWithApplicationAsync(IProgress<RestoreProgressReport>? progress, CancellationToken cancellationToken)
+    {
+        if (_contextFactory == null)
+        {
+            _logger.LogWarning("Sin fábrica de contexto: se omite la verificación de versión del esquema restaurado.");
+            return (true, "Verificación de versión omitida.");
+        }
+
+        try
+        {
+            NpgsqlConnection.ClearAllPools();
+            await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+
+            var known = context.Database.GetMigrations().ToList();
+            var applied = (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
+
+            var unknown = applied.Except(known).ToList();
+            if (unknown.Count > 0)
+            {
+                return (false, $"El respaldo proviene de una versión más nueva del sistema (migraciones desconocidas: {string.Join(", ", unknown.Take(3))}{(unknown.Count > 3 ? ", ..." : "")}). Actualice la aplicación antes de restaurarlo.");
+            }
+
+            var pending = known.Except(applied).ToList();
+            if (pending.Count == 0)
+            {
+                return (true, "El esquema restaurado coincide con esta versión.");
+            }
+
+            _logger.LogWarning("El respaldo es de una versión anterior: aplicando {Count} migraciones pendientes ({First} … {Last})...",
+                pending.Count, pending.First(), pending.Last());
+            progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Actualización de Esquema",
+                $"El respaldo es de una versión anterior: aplicando {pending.Count} migración(es) pendiente(s)...", ProgressPercentage: 90));
+
+            await context.Database.MigrateAsync(cancellationToken);
+            return (true, $"Se aplicaron {pending.Count} migraciones pendientes.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al verificar o actualizar el esquema restaurado.");
+            return (false, $"No se pudo actualizar el esquema restaurado a esta versión: {ex.Message}");
         }
         finally
         {

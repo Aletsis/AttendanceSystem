@@ -7,9 +7,13 @@ using System.Threading.Tasks;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate;
 using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Infrastructure.Persistence;
 using AttendanceSystem.Infrastructure.Services;
 using AttendanceSystem.Infrastructure.Tests.Persistence;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -51,7 +55,9 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
         {
             ["ConnectionStrings:AttendanceDb"] = _fixture.ConnectionString,
             ["Backup:KeepLastNBackups"] = "0",
-            ["Backup:DrainTimeoutSeconds"] = "1"
+            ["Backup:DrainTimeoutSeconds"] = "1",
+            // Las pruebas refrescan el estado de otros procesos a mano.
+            ["Maintenance:PollIntervalSeconds"] = "0"
         };
         var binPath = Environment.GetEnvironmentVariable("TEST_PG_BIN_PATH");
         if (!string.IsNullOrWhiteSpace(binPath))
@@ -68,9 +74,20 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
     private (BackupService Service, RestoreStateService State) CreateService()
     {
         var configuration = BuildConfiguration();
-        var state = new RestoreStateService(NullLogger<RestoreStateService>.Instance, configuration);
-        var service = new BackupService(configuration, NullLogger<BackupService>.Instance, _configRepo.Object, state);
+        var state = NewState();
+        var service = new BackupService(configuration, NullLogger<BackupService>.Instance, _configRepo.Object, state,
+            contextFactory: new FixtureContextFactory(_fixture));
         return (service, state);
+    }
+
+    /// <summary>Cada instancia representa otro proceso (servidor web, cliente WPF, otro worker de IIS).</summary>
+    private RestoreStateService NewState() => new(NullLogger<RestoreStateService>.Instance, BuildConfiguration());
+
+    private sealed class FixtureContextFactory : IDbContextFactory<AttendanceDbContext>
+    {
+        private readonly PostgresTestDatabaseFixture _fixture;
+        public FixtureContextFactory(PostgresTestDatabaseFixture fixture) => _fixture = fixture;
+        public AttendanceDbContext CreateDbContext() => _fixture.CreateDbContext();
     }
 
     /// <summary>Hay PostgreSQL y herramientas cliente; si faltan en CI, la prueba falla en vez de omitirse en silencio.</summary>
@@ -288,9 +305,140 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
 
         (await state.TryAcquireRestoreLockAsync("interrumpida", "simulación")).Should().BeTrue();
         await state.TransitionStateAsync(MaintenanceState.Restoring, "simulación");
+        state.Dispose(); // el proceso muere: su sesión y el bloqueo consultivo desaparecen
 
         var restarted = new RestoreStateService(NullLogger<RestoreStateService>.Instance, BuildConfiguration());
         (await restarted.LoadPersistedStateAsync()).Should().Be(MaintenanceState.Normal);
         (await ScalarAsync("SELECT state FROM system_maintenance.maintenance_lock WHERE id = 1")).Should().Be("Normal");
+    }
+
+    [Fact]
+    public async Task AnotherProcess_SeesARestoreInProgress_AndCannotStartItsOwn()
+    {
+        var (service, restorer) = CreateService();
+        if (!ToolsAvailable(service)) return;
+        using var other = NewState();
+
+        (await restorer.TryAcquireRestoreLockAsync("web", "restauración")).Should().BeTrue();
+        await other.RefreshRemoteStateAsync();
+
+        other.CanWrite.Should().BeFalse();
+        other.CurrentState.Should().Be(MaintenanceState.Preparing);
+        other.CurrentOwner.Should().Be("web");
+        (await other.TryAcquireRestoreLockAsync("wpf", "restauración simultánea")).Should().BeFalse();
+
+        // La restauración termina las demás conexiones, pero no la que prueba que sigue viva.
+        await service.TerminateOtherConnectionsAsync(CancellationToken.None);
+        await other.RefreshRemoteStateAsync();
+        other.CurrentState.Should().Be(MaintenanceState.Preparing);
+
+        await restorer.ReleaseRestoreLockAsync("web", success: true);
+        await other.RefreshRemoteStateAsync();
+        other.CanWrite.Should().BeTrue();
+        (await other.TryAcquireRestoreLockAsync("wpf", "ahora sí")).Should().BeTrue();
+        await other.ReleaseRestoreLockAsync("wpf", success: true);
+    }
+
+    [Fact]
+    public async Task ARestoreLeftBehindByADeadProcess_IsIgnoredBeforeCommit_AndFailedAfterIt()
+    {
+        var (service, _) = CreateService();
+        if (!ToolsAvailable(service)) return;
+        using var other = NewState();
+
+        var crashedBeforeCommit = NewState();
+        (await crashedBeforeCommit.TryAcquireRestoreLockAsync("muerto-1", "simulación")).Should().BeTrue();
+        await crashedBeforeCommit.TransitionStateAsync(MaintenanceState.Restoring, "simulación");
+        crashedBeforeCommit.Dispose();
+
+        await other.RefreshRemoteStateAsync();
+        other.CanWrite.Should().BeTrue("antes del COMMIT la base no cambió");
+
+        var crashedAfterCommit = NewState();
+        (await crashedAfterCommit.TryAcquireRestoreLockAsync("muerto-2", "simulación")).Should().BeTrue();
+        await crashedAfterCommit.TransitionStateAsync(MaintenanceState.Validating, "simulación");
+        crashedAfterCommit.Dispose();
+
+        await other.RefreshRemoteStateAsync();
+        other.CurrentState.Should().Be(MaintenanceState.Failed, "los datos restaurados no llegaron a validarse");
+        other.CanWrite.Should().BeFalse();
+
+        (await other.TryAcquireRestoreLockAsync("recuperación", "desde Failed")).Should().BeTrue();
+        await other.ReleaseRestoreLockAsync("recuperación", success: true);
+        other.CanWrite.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task AFailedRestoreInAnotherProcess_BlocksWritesHereToo()
+    {
+        var (service, _) = CreateService();
+        if (!ToolsAvailable(service)) return;
+        using var failing = NewState();
+        using var other = NewState();
+
+        (await failing.TryAcquireRestoreLockAsync("wpf", "simulación")).Should().BeTrue();
+        await failing.ReleaseRestoreLockAsync("wpf", success: false);
+        await other.RefreshRemoteStateAsync();
+
+        other.CurrentState.Should().Be(MaintenanceState.Failed);
+        other.Invoking(o => o.RegisterActiveWriter()).Should().Throw<AttendanceSystem.Application.Exceptions.DatabaseMaintenanceException>();
+
+        (await failing.TryAcquireRestoreLockAsync("wpf", "limpieza")).Should().BeTrue();
+        await failing.ReleaseRestoreLockAsync("wpf", success: true);
+        await other.RefreshRemoteStateAsync();
+        other.CanWrite.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task Restore_OfABackupFromANewerVersion_IsRejectedAndRolledBack()
+    {
+        var (service, state) = CreateService();
+        if (!ToolsAvailable(service)) return;
+
+        await ExecAsync(@"INSERT INTO ""__EFMigrationsHistory"" (""MigrationId"", ""ProductVersion"") VALUES ('29991231000000_FutureMigration', '99.0.0')");
+        var backup = await service.CreateDatabaseBackupAsync();
+        backup.Success.Should().BeTrue(backup.Message);
+        await ExecAsync(@"DELETE FROM ""__EFMigrationsHistory"" WHERE ""MigrationId"" = '29991231000000_FutureMigration'");
+        await SetProbeAsync("vigente");
+
+        var result = await service.RestoreBackupAsync(backup.BackupFilePath!);
+
+        result.Success.Should().BeFalse();
+        result.Message.Should().Contain("versión más nueva").And.Contain("revertida exitosamente");
+        (await ProbeValueAsync()).Should().Be("vigente");
+        (await ScalarAsync(@"SELECT COUNT(*) FROM ""__EFMigrationsHistory"" WHERE ""MigrationId"" = '29991231000000_FutureMigration'"))
+            .Should().Be(0L);
+        state.CurrentState.Should().Be(MaintenanceState.Normal);
+    }
+
+    [Fact]
+    public async Task Restore_OfABackupFromAnOlderVersion_AppliesThePendingMigrations()
+    {
+        var (service, state) = CreateService();
+        if (!ToolsAvailable(service)) return;
+
+        string latest;
+        await using (var context = _fixture.CreateDbContext())
+        {
+            var migrations = context.Database.GetMigrations().ToList();
+            latest = migrations[^1];
+            await context.GetService<IMigrator>().MigrateAsync(migrations[^2]);
+        }
+        var backup = await service.CreateDatabaseBackupAsync();
+        backup.Success.Should().BeTrue(backup.Message);
+        await using (var context = _fixture.CreateDbContext())
+        {
+            await context.Database.MigrateAsync();
+        }
+
+        var result = await service.RestoreBackupAsync(backup.BackupFilePath!);
+
+        result.Success.Should().BeTrue(result.Message);
+        state.CurrentState.Should().Be(MaintenanceState.Normal);
+        await using (var context = _fixture.CreateDbContext())
+        {
+            (await context.Database.GetPendingMigrationsAsync()).Should().BeEmpty();
+            (await context.Database.GetAppliedMigrationsAsync()).Should().Contain(latest);
+        }
     }
 }
