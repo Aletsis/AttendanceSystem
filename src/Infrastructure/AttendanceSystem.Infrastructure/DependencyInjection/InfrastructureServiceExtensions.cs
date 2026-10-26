@@ -115,8 +115,9 @@ public static class InfrastructureServiceExtensions
         services.AddScoped<ICloudLogSyncService, CloudLogSyncService>();
         services.AddSingleton<IAdmsCommandService, AdmsCommandService>();
         services.AddSingleton<IDeviceHeartbeatTracker, DeviceHeartbeatTracker>();
-        services.AddScoped<IReportExportService, ReportExportService>();
-        services.AddScoped<IImportService, ImportService>();
+        // Sin estado ni dependencias (sólo leen y generan archivos): singleton, para que WPF los tome del contenedor raíz.
+        services.AddSingleton<IReportExportService, ReportExportService>();
+        services.AddSingleton<IImportService, ImportService>();
         services.AddScoped<IEmailService, SmtpEmailService>();
         services.AddScoped<IAuthenticationService, AuthenticationService>();
         services.AddSingleton<ITimeNormalizer, TimeNormalizer>();

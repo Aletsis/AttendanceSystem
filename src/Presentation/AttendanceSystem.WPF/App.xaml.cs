@@ -115,7 +115,8 @@ namespace AttendanceSystem.WPF
 
             containerRegistry.RegisterInstance<IImportService>(_serviceProvider.GetRequiredService<IImportService>());
             containerRegistry.RegisterInstance<IReportExportService>(_serviceProvider.GetRequiredService<IReportExportService>());
-            containerRegistry.RegisterInstance<IBackupService>(_serviceProvider.GetRequiredService<IBackupService>());
+            // IBackupService no se registra aquí: es scoped (usa la base de datos) y las pantallas de respaldo usan los
+            // comandos de MediatR, que crean su propio ámbito.
 
             // ViewModels
             containerRegistry.RegisterForNavigation<Views.Employees.EmployeesView, ViewModels.Employees.EmployeesViewModel>();
