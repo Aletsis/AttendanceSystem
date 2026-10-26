@@ -18,4 +18,7 @@ public class WpfCurrentUserService : ICurrentUserService
     public bool IsAuthenticated => _authService.IsAuthenticated;
 
     public IReadOnlyCollection<string> Roles => _authService.CurrentUserRoles;
+
+    /// <summary>En el cliente WPF todo lo hace un usuario: sin sesión iniciada no se permite ningún comando.</summary>
+    public bool RequiresSignIn => true;
 }

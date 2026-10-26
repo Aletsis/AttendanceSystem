@@ -34,9 +34,10 @@ public sealed class PermissionService : IPermissionService
     /// <param name="currentUser">Nulo en hosts sin usuarios (servicio de relojes): todo lo ejecuta el sistema.</param>
     public PermissionService(ICurrentUserService? currentUser) => _currentUser = currentUser;
 
-    public bool IsSystem => _currentUser is not { IsAuthenticated: true };
+    public bool IsSystem => _currentUser is not { IsAuthenticated: true } && _currentUser?.RequiresSignIn != true;
 
-    public bool Has(string permission) => IsSystem || RolePermissions.Grants(_currentUser!.Roles, permission);
+    public bool Has(string permission) =>
+        IsSystem || (_currentUser is { IsAuthenticated: true } user && RolePermissions.Grants(user.Roles, permission));
 }
 
 public static class PermissionServiceExtensions
