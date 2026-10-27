@@ -3,259 +3,415 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             xmlns:behaviors="clr-namespace:AttendanceSystem.WPF.Behaviors"
              Background="{StaticResource Brush.Background}">
-    
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="S" Modifiers="Control" Command="{Binding SaveSettingsCommand}"/>
+    </UserControl.InputBindings>
+
     <UserControl.Resources>
-        <DropShadowEffect x:Key="CardShadow" BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
-        
-        <Style x:Key="SettingCardStyle" TargetType="Border">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="CornerRadius" Value="15"/>
-            <Setter Property="Effect" Value="{StaticResource CardShadow}"/>
-            <Setter Property="Padding" Value="25"/>
-            <Setter Property="Margin" Value="0,0,0,20"/>
+        <Style x:Key="SettingsNumericStyle" TargetType="mah:NumericUpDown">
+            <Setter Property="MinHeight" Value="38"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
         </Style>
-
-        <Style x:Key="SettingTitleStyle" TargetType="TextBlock">
-            <Setter Property="FontSize" Value="18"/>
-            <Setter Property="FontWeight" Value="Bold"/>
-            <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
-            <Setter Property="Margin" Value="0,0,0,20"/>
+        <Style x:Key="SettingsTimeStyle" TargetType="mah:TimePicker">
+            <Setter Property="MinHeight" Value="38"/>
+            <Setter Property="Culture" Value="es-MX"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
         </Style>
-
-        <Style x:Key="LabelStyle" TargetType="TextBlock">
-            <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
-            <Setter Property="Margin" Value="0,0,0,8"/>
+        <!-- Contenido de cada pestaña: tarjetas de ancho cómodo. -->
+        <Style x:Key="TabBodyStyle" TargetType="StackPanel">
+            <Setter Property="MaxWidth" Value="920"/>
+            <Setter Property="HorizontalAlignment" Value="Left"/>
+            <Setter Property="Margin" Value="0,0,16,16"/>
         </Style>
     </UserControl.Resources>
 
-    <Grid Margin="30">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid Margin="30">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,25">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
-
-
-            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Text="Configuración del Sistema" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
-                <TextBlock Text="Personalice los parámetros globales y técnicos de la aplicación" FontSize="14" Foreground="{StaticResource Brush.TextMuted}"/>
-            </StackPanel>
-
-            <!-- Top Right Save Button -->
-            <Button Grid.Column="2"
-                    Command="{Binding SaveSettingsCommand}" 
-                    Background="{StaticResource Brush.Success}" Foreground="White" Height="45" Padding="25,0" BorderThickness="0" Effect="{StaticResource CardShadow}">
-                <Button.Resources>
-                    <Style TargetType="Border">
-                        <Setter Property="CornerRadius" Value="10"/>
-                    </Style>
-                </Button.Resources>
-                <StackPanel Orientation="Horizontal">
-                    <iconPacks:PackIconMaterial Kind="ContentSave" Width="18" Height="18" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                    <TextBlock Text="Guardar" VerticalAlignment="Center" FontSize="14" FontWeight="Bold"/>
+            <!-- Encabezado -->
+            <Grid Grid.Row="0" Margin="0,0,0,16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Configuración" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                    <TextBlock Text="Parámetros del cálculo, tareas automáticas y avisos. Aplican también a la versión web." FontSize="14" Foreground="{StaticResource Brush.TextMuted}"/>
                 </StackPanel>
-            </Button>
-        </Grid>
-
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" Padding="0,0,15,0">
-            <StackPanel MaxWidth="1000" HorizontalAlignment="Center">
-                
-                <!-- Identidad Corporativa -->
-                <Border Style="{StaticResource SettingCardStyle}">
-                    <StackPanel>
-                        <TextBlock Text="Identidad Corporativa" Style="{StaticResource SettingTitleStyle}"/>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="2*"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="Nombre de la Empresa" Style="{StaticResource LabelStyle}"/>
-                                <TextBox Text="{Binding CompanyName}" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
-                            </StackPanel>
-                            
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Text="Logo de la Empresa" Style="{StaticResource LabelStyle}"/>
-                                <Grid Height="100">
-                                    <Border BorderThickness="1" BorderBrush="{StaticResource Brush.Border}" CornerRadius="8" Background="{StaticResource Brush.SurfaceAlt}">
-                                        <Grid>
-                                            <Image Source="{Binding CompanyLogo, Converter={StaticResource ByteArrayToImageConverter}}" Stretch="Uniform" Margin="10"/>
-                                            <TextBlock Text="Sin Logo" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                                       Visibility="{Binding CompanyLogo, Converter={StaticResource BooleanToVisibilityConverter}, ConverterParameter=Inverse}"/>
-                                        </Grid>
-                                    </Border>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,5,5">
-                                        <Button Command="{Binding UploadLogoCommand}" ToolTip="Subir Logo" Style="{StaticResource MahApps.Styles.Button.Circle}" Width="30" Height="30" Background="White" BorderBrush="{StaticResource Brush.Border}">
-                                            <iconPacks:PackIconMaterial Kind="CloudUpload" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
-                                        </Button>
-                                        <Button Command="{Binding RemoveLogoCommand}" ToolTip="Eliminar Logo" Style="{StaticResource MahApps.Styles.Button.Circle}" Width="30" Height="30" Background="White" BorderBrush="{StaticResource Brush.Border}" Margin="5,0,0,0">
-                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}"/>
-                                        </Button>
-                                    </StackPanel>
-                                </Grid>
-                            </StackPanel>
-                        </Grid>
+                <Button Grid.Column="1" Command="{Binding SaveSettingsCommand}" Style="{StaticResource PrimaryButtonStyle}" ToolTip="Guardar (Ctrl+S)" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <iconPacks:PackIconMaterial Kind="ContentSave" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                        <TextBlock Text="Guardar cambios" VerticalAlignment="Center"/>
                     </StackPanel>
-                </Border>
+                </Button>
+            </Grid>
 
-                <!-- General & ADMS -->
-                <Border Style="{StaticResource SettingCardStyle}">
-                    <StackPanel>
-                        <TextBlock Text="Parámetros Generales y ADMS" Style="{StaticResource SettingTitleStyle}"/>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition/>
-                                <RowDefinition Height="20"/>
-                                <RowDefinition/>
-                            </Grid.RowDefinitions>
-                            
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="Tolerancia Retardo (Minutos)" Style="{StaticResource LabelStyle}"/>
-                                <mah:NumericUpDown Value="{Binding ToleranceMinutes}" Minimum="0" Maximum="60" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="2">
-                                <TextBlock Text="Jornada Laboral Estándar (Horas)" Style="{StaticResource LabelStyle}"/>
-                                <mah:NumericUpDown Value="{Binding StandardWorkHours}" Minimum="1" Maximum="24" Interval="0.5" StringFormat="0.##" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Row="2" Grid.Column="0">
-                                <TextBlock Text="Puerto ADMS" Style="{StaticResource LabelStyle}"/>
-                                <mah:NumericUpDown Value="{Binding AdmsPort}" Minimum="1024" Maximum="65535" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
-                            </StackPanel>
-
-                            <Border Grid.Row="2" Grid.Column="2" Background="#E1F5FE" CornerRadius="8" Padding="10">
-                                <StackPanel Orientation="Horizontal">
-                                    <iconPacks:PackIconMaterial Kind="Information" Foreground="#0288D1" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                    <TextBlock Text="Cambiar el puerto ADMS requiere reiniciar la aplicación." FontSize="11" Foreground="#01579B" TextWrapping="Wrap" VerticalAlignment="Center"/>
+            <TabControl Grid.Row="1" Style="{StaticResource PageTabControlStyle}" ItemContainerStyle="{StaticResource PageTabItemStyle}">
+                <!-- ===== General ===== -->
+                <TabItem Header="General">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Style="{StaticResource TabBodyStyle}">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Empresa" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Aparece en los reportes y exportaciones." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="260"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Nombre de la empresa" Style="{StaticResource FormLabelStyle}"/>
+                                            <TextBox Text="{Binding CompanyName}" Style="{StaticResource FormTextBoxStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="Logotipo" Style="{StaticResource FormLabelStyle}"/>
+                                            <Border Height="96" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}" CornerRadius="8" Background="{StaticResource Brush.SurfaceAlt}">
+                                                <Grid>
+                                                    <Image Source="{Binding CompanyLogo, Converter={StaticResource ByteArrayToImageConverter}}" Stretch="Uniform" Margin="10"/>
+                                                    <TextBlock Text="Sin logotipo" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                               Visibility="{Binding HasLogo, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                                </Grid>
+                                            </Border>
+                                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                                                <Button Command="{Binding UploadLogoCommand}" Style="{StaticResource SecondaryButtonStyle}" Height="32" Padding="12,0" Margin="0,0,8,0">
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <iconPacks:PackIconMaterial Kind="CloudUpload" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="Cambiar" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Command="{Binding RemoveLogoCommand}" Style="{StaticResource DangerButtonStyle}" Height="32" Padding="12,0"
+                                                        Visibility="{Binding HasLogo, Converter={StaticResource BooleanToVisibilityConverter}}" Content="Quitar"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
                                 </StackPanel>
                             </Border>
-                        </Grid>
-                    </StackPanel>
-                </Border>
 
-                <!-- Periodos Laborales -->
-                <Border Style="{StaticResource SettingCardStyle}">
-                    <StackPanel>
-                        <TextBlock Text="Periodos Laborales" Style="{StaticResource SettingTitleStyle}"/>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            
-                            <StackPanel Grid.Column="0">
-                                <TextBlock Text="Modo de Periodo" Style="{StaticResource LabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding WorkPeriodModes}" SelectedItem="{Binding WorkPeriodMode}" ItemTemplate="{StaticResource EnumItemTemplate}" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
-                            </StackPanel>
-
-                            <StackPanel Grid.Column="2">
-                                <!-- Semanal -->
-                                <StackPanel Visibility="{Binding WorkPeriodMode, Converter={StaticResource WorkPeriodModeToVisibilityConverter}, ConverterParameter=Weekly}">
-                                    <TextBlock Text="Día de Inicio" Style="{StaticResource LabelStyle}"/>
-                                    <ComboBox ItemsSource="{Binding DaysOfWeek}" SelectedItem="{Binding WeeklyStartDay}" ItemTemplate="{StaticResource EnumItemTemplate}" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Jornada" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Valores generales; cada horario puede tener los suyos." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Tolerancia de retardo (minutos)" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:NumericUpDown Value="{Binding ToleranceMinutes}" Minimum="0" Maximum="60" Style="{StaticResource SettingsNumericStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Jornada estándar (horas)" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:NumericUpDown Value="{Binding StandardWorkHours}" Minimum="1" Maximum="24" Interval="0.5" StringFormat="0.##" Style="{StaticResource SettingsNumericStyle}"/>
+                                        </StackPanel>
+                                    </Grid>
                                 </StackPanel>
-                                
-                                <!-- Quincenal -->
-                                <Grid Visibility="{Binding WorkPeriodMode, Converter={StaticResource WorkPeriodModeToVisibilityConverter}, ConverterParameter=Fortnightly}">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="10"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <StackPanel>
-                                        <TextBlock Text="Inicio 1º (Día)" Style="{StaticResource LabelStyle}"/>
-                                        <mah:NumericUpDown Value="{Binding FortnightFirstDay}" Minimum="1" Maximum="28" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Periodos de pago" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Definen las semanas o quincenas de los topes por periodo y de la prenómina. Cambiarlos pide desde qué fecha aplican." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Periodo" Style="{StaticResource FormLabelStyle}"/>
+                                            <ComboBox ItemsSource="{Binding WorkPeriodModes}" SelectedItem="{Binding WorkPeriodMode}" ItemTemplate="{StaticResource EnumItemTemplate}" Style="{StaticResource FormComboBoxStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <StackPanel Style="{StaticResource FormFieldStyle}" Visibility="{Binding WorkPeriodMode, Converter={StaticResource WorkPeriodModeToVisibilityConverter}, ConverterParameter=Weekly}">
+                                                <TextBlock Text="La semana inicia el" Style="{StaticResource FormLabelStyle}"/>
+                                                <ComboBox ItemsSource="{Binding DaysOfWeek}" SelectedItem="{Binding WeeklyStartDay}" ItemTemplate="{StaticResource EnumItemTemplate}" Style="{StaticResource FormComboBoxStyle}"/>
+                                            </StackPanel>
+                                            <Grid Visibility="{Binding WorkPeriodMode, Converter={StaticResource WorkPeriodModeToVisibilityConverter}, ConverterParameter=Fortnightly}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="12"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Style="{StaticResource FormFieldStyle}">
+                                                    <TextBlock Text="1ª quincena inicia el día" Style="{StaticResource FormLabelStyle}"/>
+                                                    <mah:NumericUpDown Value="{Binding FortnightFirstDay}" Minimum="1" Maximum="28" Style="{StaticResource SettingsNumericStyle}"/>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                                    <TextBlock Text="2ª quincena inicia el día" Style="{StaticResource FormLabelStyle}"/>
+                                                    <mah:NumericUpDown Value="{Binding FortnightSecondDay}" Minimum="1" Maximum="28" Style="{StaticResource SettingsNumericStyle}"/>
+                                                </StackPanel>
+                                            </Grid>
+                                            <StackPanel Style="{StaticResource FormFieldStyle}" Visibility="{Binding WorkPeriodMode, Converter={StaticResource WorkPeriodModeToVisibilityConverter}, ConverterParameter=Monthly}">
+                                                <TextBlock Text="El mes inicia el día" Style="{StaticResource FormLabelStyle}"/>
+                                                <mah:NumericUpDown Value="{Binding MonthlyStartDay}" Minimum="1" Maximum="28" Style="{StaticResource SettingsNumericStyle}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- ===== Comida y marcajes ===== -->
+                <TabItem Header="Comida y marcajes">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Style="{StaticResource TabBodyStyle}">
+                            <Border Style="{StaticResource InfoBannerStyle}">
+                                <TextBlock Style="{StaticResource BannerTextStyle}"
+                                           Text="Toda ausencia marcada es una salida temporal que se descuenta hasta que RH la clasifique. Con la ventana activa, la primera ausencia que toca la ventana se clasifica sola como comida y sólo se descuenta lo que exceda los minutos con goce. Estos cambios piden desde qué fecha aplican."/>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <mah:ToggleSwitch IsOn="{Binding LunchWindowEnabled}" Content="Clasificar la comida automáticamente (ventana de comida)" Margin="0,0,0,16"/>
+                                    <Grid IsEnabled="{Binding LunchWindowEnabled}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto"/>
+                                            <RowDefinition Height="Auto"/>
+                                        </Grid.RowDefinitions>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Ventana de comida: inicio" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:TimePicker SelectedDateTime="{Binding LunchWindowStart}" Style="{StaticResource SettingsTimeStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Ventana de comida: fin" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:TimePicker SelectedDateTime="{Binding LunchWindowEnd}" Style="{StaticResource SettingsTimeStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="4" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Minutos de comida con goce" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:NumericUpDown Value="{Binding PaidLunchMinutes}" Minimum="0" Maximum="240" Style="{StaticResource SettingsNumericStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Comida nocturna: inicio" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:TimePicker SelectedDateTime="{Binding NightLunchWindowStart}" Style="{StaticResource SettingsTimeStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="1" Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Comida nocturna: fin" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:TimePicker SelectedDateTime="{Binding NightLunchWindowEnd}" Style="{StaticResource SettingsTimeStyle}"/>
+                                            <TextBlock Text="Puede cruzar la medianoche (p. ej. 23:00–04:00)." Style="{StaticResource FormHelperStyle}" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Toque doble" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Dos checadas a esta distancia o menos cuentan como una." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <StackPanel Style="{StaticResource FormFieldStyle}" Width="260" HorizontalAlignment="Left">
+                                        <TextBlock Text="Minutos" Style="{StaticResource FormLabelStyle}"/>
+                                        <mah:NumericUpDown Value="{Binding DoubleTapMinutes}" Minimum="1" Maximum="60" Style="{StaticResource SettingsNumericStyle}"/>
                                     </StackPanel>
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="Inicio 2º (Día)" Style="{StaticResource LabelStyle}"/>
-                                        <mah:NumericUpDown Value="{Binding FortnightSecondDay}" Minimum="1" Maximum="28" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+
+                <!-- ===== Automatización ===== -->
+                <TabItem Header="Tareas automáticas">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Style="{StaticResource TabBodyStyle}">
+                            <Border Style="{StaticResource InfoBannerStyle}">
+                                <TextBlock Style="{StaticResource BannerTextStyle}"
+                                           Text="Las tareas automáticas las ejecuta el servidor web. Al guardar se le pide recargarlas; si no responde, usan el horario nuevo cuando se reinicie."/>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Descarga de relojes" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Descarga diaria de los relojes con SDK. Los relojes ADMS envían sus checadas solos al puerto ADMS." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <mah:ToggleSwitch IsOn="{Binding IsAutoDownloadEnabled}" Content="Descarga automática diaria" Margin="0,0,0,12"/>
+                                            <StackPanel IsEnabled="{Binding IsAutoDownloadEnabled}">
+                                                <StackPanel Style="{StaticResource FormFieldStyle}">
+                                                    <TextBlock Text="Hora" Style="{StaticResource FormLabelStyle}"/>
+                                                    <mah:TimePicker SelectedDateTime="{Binding AutoDownloadDateTime}" Style="{StaticResource SettingsTimeStyle}"/>
+                                                </StackPanel>
+                                                <CheckBox Content="Procesar sólo el día actual" IsChecked="{Binding AutoDownloadOnlyToday}" Style="{StaticResource FormCheckBoxStyle}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <mah:ToggleSwitch IsOn="{Binding AutoClearDevicesAfterDownload}" Content="Vaciar los relojes tras descargar" Margin="0,0,0,4"/>
+                                            <TextBlock Text="Sólo se borra del reloj lo que quedó guardado, y sólo si la descarga fue completa." Style="{StaticResource FormHelperStyle}" Margin="0,0,0,16"/>
+                                            <StackPanel Style="{StaticResource FormFieldStyle}">
+                                                <TextBlock Text="Puerto ADMS" Style="{StaticResource FormLabelStyle}"/>
+                                                <mah:NumericUpDown Value="{Binding AdmsPort}" Minimum="1024" Maximum="65535" Style="{StaticResource SettingsNumericStyle}"/>
+                                                <TextBlock Text="Cambiarlo requiere reiniciar el servidor web." Style="{StaticResource FormHelperStyle}" Margin="0,4,0,0"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Respaldos" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="La carpeta es la del servidor donde corre la base de datos." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <mah:ToggleSwitch IsOn="{Binding IsAutoBackupEnabled}" Content="Respaldo automático diario" Margin="0,0,0,12"/>
+                                            <StackPanel Style="{StaticResource FormFieldStyle}" IsEnabled="{Binding IsAutoBackupEnabled}">
+                                                <TextBlock Text="Hora" Style="{StaticResource FormLabelStyle}"/>
+                                                <mah:TimePicker SelectedDateTime="{Binding AutoBackupTime}" Style="{StaticResource SettingsTimeStyle}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Tiempo máximo de un respaldo (minutos)" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:NumericUpDown Value="{Binding BackupTimeoutMinutes}" Minimum="1" Maximum="240" Style="{StaticResource SettingsNumericStyle}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <StackPanel Style="{StaticResource FormFieldStyle}">
+                                        <TextBlock Text="Carpeta de respaldos" Style="{StaticResource FormLabelStyle}"/>
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Text="{Binding BackupDirectory}" Style="{StaticResource FormTextBoxStyle}"/>
+                                            <Button Grid.Column="1" Command="{Binding SelectBackupFolderCommand}" Style="{StaticResource SecondaryButtonStyle}" Height="38" Margin="8,0,0,0" ToolTip="Elegir carpeta">
+                                                <iconPacks:PackIconMaterial Kind="FolderOpen" Width="16" Height="16" Foreground="{StaticResource Brush.Primary}"/>
+                                            </Button>
+                                        </Grid>
                                     </StackPanel>
-                                </Grid>
-
-                                <!-- Mensual -->
-                                <StackPanel Visibility="{Binding WorkPeriodMode, Converter={StaticResource WorkPeriodModeToVisibilityConverter}, ConverterParameter=Monthly}">
-                                    <TextBlock Text="Día de Inicio Mes" Style="{StaticResource LabelStyle}"/>
-                                    <mah:NumericUpDown Value="{Binding MonthlyStartDay}" Minimum="1" Maximum="28" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
                                 </StackPanel>
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                            </Border>
 
-                <!-- Automatización y Respaldos -->
-                <Border Style="{StaticResource SettingCardStyle}">
-                    <StackPanel>
-                        <TextBlock Text="Automatización y Respaldos" Style="{StaticResource SettingTitleStyle}"/>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="30"/>
-                                <ColumnDefinition Width="*"/>
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition/>
-                                <RowDefinition Height="20"/>
-                                <RowDefinition/>
-                            </Grid.RowDefinitions>
-
-                            <StackPanel Grid.Column="0">
-                                <mah:ToggleSwitch Header="Descarga Automática Diaria" IsOn="{Binding IsAutoDownloadEnabled}" OnContent="Activado" OffContent="Desactivado"/>
-                                <StackPanel IsEnabled="{Binding IsAutoDownloadEnabled}" Margin="0,10,0,0">
-                                    <TextBlock Text="Hora de Ejecución" Style="{StaticResource LabelStyle}"/>
-                                    <mah:TimePicker SelectedDateTime="{Binding AutoDownloadDateTime}" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"
-                                                   xmlns:System="clr-namespace:System;assembly=System.Runtime"/>
-                                    <CheckBox Content="Solo procesar día actual" IsChecked="{Binding AutoDownloadOnlyToday}" Margin="0,10,0,0"/>
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Reporte diario por correo" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Requiere el correo configurado en la pestaña Avisos y correo." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <mah:ToggleSwitch IsOn="{Binding IsAutoReportEnabled}" Content="Enviar el reporte diario" Margin="0,0,0,12"/>
+                                    <Grid IsEnabled="{Binding IsAutoReportEnabled}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="200"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Hora de envío" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:TimePicker SelectedDateTime="{Binding AutoReportTime}" Style="{StaticResource SettingsTimeStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Destinatarios" Style="{StaticResource FormLabelStyle}"/>
+                                            <TextBox Text="{Binding AutoReportEmails}" Style="{StaticResource FormTextBoxStyle}" mah:TextBoxHelper.Watermark="gerencia@empresa.com, rh@empresa.com"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <CheckBox Content="Enviar el reporte del día actual (si no, el del día anterior)" IsChecked="{Binding AutoReportForToday}" Style="{StaticResource FormCheckBoxStyle}"
+                                              IsEnabled="{Binding IsAutoReportEnabled}"/>
                                 </StackPanel>
-                            </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
 
-                            <StackPanel Grid.Column="2">
-                                <mah:ToggleSwitch Header="Limpieza de Dispositivos" IsOn="{Binding AutoClearDevicesAfterDownload}" OnContent="Limpiar tras descarga" OffContent="No limpiar"/>
-                            </StackPanel>
+                <!-- ===== Avisos y correo ===== -->
+                <TabItem Header="Avisos y correo">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel Style="{StaticResource TabBodyStyle}">
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Avisos por correo" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Varios correos separados por coma." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <mah:ToggleSwitch IsOn="{Binding AreAlertsEnabled}" Content="Enviar avisos" Margin="0,0,0,12"/>
+                                    <StackPanel IsEnabled="{Binding AreAlertsEnabled}">
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Faltas" Style="{StaticResource FormLabelStyle}"/>
+                                            <TextBox Text="{Binding AbsenceAlertEmails}" Style="{StaticResource FormTextBoxStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Retardos" Style="{StaticResource FormLabelStyle}"/>
+                                            <TextBox Text="{Binding LateAlertEmails}" Style="{StaticResource FormTextBoxStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Fallas del sistema (relojes, respaldos)" Style="{StaticResource FormLabelStyle}"/>
+                                            <TextBox Text="{Binding SystemFailureAlertEmails}" Style="{StaticResource FormTextBoxStyle}"/>
+                                        </StackPanel>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Border>
 
-                            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
-                                <TextBlock Text="Directorio de Respaldos" Style="{StaticResource LabelStyle}"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*"/>
-                                        <ColumnDefinition Width="Auto"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBox Text="{Binding BackupDirectory}" Padding="12,10" BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
-                                    <Button Grid.Column="1" Command="{Binding SelectBackupFolderCommand}" Style="{StaticResource MahApps.Styles.Button.Flat}" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,1,1" Background="{StaticResource Brush.SurfaceAlt}" Padding="10,0">
-                                        <iconPacks:PackIconMaterial Kind="FolderOpen" Width="16" Height="16" Foreground="{StaticResource Brush.Primary}"/>
-                                    </Button>
-                                </Grid>
-                            </StackPanel>
-                        </Grid>
-                    </StackPanel>
-                </Border>
+                            <Border Style="{StaticResource CardStyle}">
+                                <StackPanel>
+                                    <TextBlock Text="Servidor de correo (SMTP)" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="La cuenta desde la que se envían avisos y reportes." Style="{StaticResource CardSubtitleStyle}"/>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="160"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Servidor" Style="{StaticResource FormLabelStyle}"/>
+                                            <TextBox Text="{Binding SmtpHost}" Style="{StaticResource FormTextBoxStyle}" mah:TextBoxHelper.Watermark="smtp.empresa.com"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Puerto" Style="{StaticResource FormLabelStyle}"/>
+                                            <mah:NumericUpDown Value="{Binding SmtpPort}" Minimum="1" Maximum="65535" Style="{StaticResource SettingsNumericStyle}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="24"/>
+                                            <ColumnDefinition Width="*"/>
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Usuario" Style="{StaticResource FormLabelStyle}"/>
+                                            <TextBox Text="{Binding SmtpUser}" Style="{StaticResource FormTextBoxStyle}"/>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2" Style="{StaticResource FormFieldStyle}">
+                                            <TextBlock Text="Contraseña" Style="{StaticResource FormLabelStyle}"/>
+                                            <PasswordBox behaviors:PasswordBoxAssist.BoundPassword="{Binding SmtpPassword}" MinHeight="38" Padding="8,8"
+                                                         Background="{StaticResource Brush.SurfaceAlt}" BorderBrush="{StaticResource Brush.Border}" VerticalContentAlignment="Center"/>
+                                        </StackPanel>
+                                    </Grid>
+                                    <CheckBox Content="Usar SSL/TLS" IsChecked="{Binding SmtpEnableSsl}" Style="{StaticResource FormCheckBoxStyle}"/>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </ScrollViewer>
+                </TabItem>
+            </TabControl>
+        </Grid>
 
-                <Rectangle Height="50" Fill="Transparent"/>
-            </StackPanel>
-        </ScrollViewer>
-        
-        <!-- Loading Overlay -->
-        <Border Grid.Row="0" Grid.RowSpan="2" Background="{StaticResource Brush.BusyOverlay}" CornerRadius="15" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="-30">
+        <!-- Cargando -->
+        <Border Background="{StaticResource Brush.BusyOverlay}" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="{StaticResource Brush.Primary}"/>
-                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" FontSize="18" FontWeight="SemiBold" Margin="0,15,0,0" HorizontalAlignment="Center"/>
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="56" Height="56" Foreground="{StaticResource Brush.Primary}"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" FontSize="16" FontWeight="SemiBold" Margin="0,14,0,0" HorizontalAlignment="Center"/>
             </StackPanel>
         </Border>
     </Grid>

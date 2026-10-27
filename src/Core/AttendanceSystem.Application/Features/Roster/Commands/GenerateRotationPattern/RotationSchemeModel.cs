@@ -1,9 +1,12 @@
 using AttendanceSystem.Application.DTOs;
-using AttendanceSystem.Application.Features.Roster.Commands.GenerateRotationPattern;
 using AttendanceSystem.Domain.Enumerations;
 
-namespace AttendanceSystem.Blazor.Server.Components.Dialogs;
+namespace AttendanceSystem.Application.Features.Roster.Commands.GenerateRotationPattern;
 
+/// <summary>
+/// Parámetros del esquema rotativo de un empleado, compartidos por la web y el cliente de escritorio:
+/// la misma validación y el mismo <see cref="GenerateRotationPatternCommand"/> en ambos.
+/// </summary>
 public class RotationSchemeModel
 {
     public RotationSchemeType SchemeType { get; set; } = RotationSchemeType.Rotativo3x8;
@@ -38,6 +41,16 @@ public class RotationSchemeModel
         if (Shift3 == Guid.Empty)
             Shift3 = shifts.Count > 2 ? shifts[2].Id : Shift1;
     }
+
+    /// <summary>Turno que queda como horario del empleado: el primero de la rotación o el turno base.</summary>
+    public Guid PrimaryShift =>
+        SchemeType is RotationSchemeType.Rotativo3x8 or RotationSchemeType.Rotativo2x8 ? Shift1 : BaseShift;
+
+    /// <summary>Los esquemas 3x8 y 2x8 con descanso en días fijos los guardan también como descansos del empleado.</summary>
+    public IReadOnlyList<DayOfWeek>? ProfileRestDays =>
+        SchemeType is RotationSchemeType.Rotativo3x8 or RotationSchemeType.Rotativo2x8 && SelectedFixedRestDays is { Count: > 0 }
+            ? SelectedFixedRestDays.ToList()
+            : null;
 
     public (bool IsValid, string? ErrorMessage) Validate()
     {

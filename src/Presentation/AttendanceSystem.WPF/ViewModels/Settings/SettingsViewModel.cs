@@ -54,8 +54,43 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
 
         private bool _autoClearDevicesAfterDownload;
 
+        // Comida y marcajes (afectan el cálculo)
+        private bool _lunchWindowEnabled = true;
+        private TimeSpan? _lunchWindowStart = new(13, 0, 0);
+        private TimeSpan? _lunchWindowEnd = new(16, 0, 0);
+        private int _paidLunchMinutes = 30;
+        private TimeSpan? _nightLunchWindowStart = new(23, 0, 0);
+        private TimeSpan? _nightLunchWindowEnd = new(4, 0, 0);
+        private int _doubleTapMinutes = 15;
+
+        // Respaldos y reporte automáticos
+        private bool _isAutoBackupEnabled;
+        private TimeSpan? _autoBackupTime = new(2, 0, 0);
+        private bool _isAutoReportEnabled;
+        private TimeSpan? _autoReportTime = new(9, 0, 0);
+        private string? _autoReportEmails;
+        private bool _autoReportForToday;
+
+        // Alertas y correo
+        private bool _areAlertsEnabled;
+        private string? _absenceAlertEmails;
+        private string? _lateAlertEmails;
+        private string? _systemFailureAlertEmails;
+        private string? _smtpHost;
+        private int _smtpPort = 587;
+        private string? _smtpUser;
+        private string? _smtpPassword;
+        private bool _smtpEnableSsl = true;
+
         public string CompanyName { get => _companyName; set => SetProperty(ref _companyName, value); }
-        public byte[]? CompanyLogo { get => _companyLogo; set => SetProperty(ref _companyLogo, value); }
+        public byte[]? CompanyLogo
+        {
+            get => _companyLogo;
+            set
+            {
+                if (SetProperty(ref _companyLogo, value)) RaisePropertyChanged(nameof(HasLogo));
+            }
+        }
         public int ToleranceMinutes { get => _toleranceMinutes; set => SetProperty(ref _toleranceMinutes, value); }
         /// <summary>Horas de la jornada; admite fracciones (7.5) que antes se truncaban al guardar.</summary>
         public double StandardWorkHours { get => _standardWorkHours; set => SetProperty(ref _standardWorkHours, value); }
@@ -66,6 +101,44 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         public string BackupDirectory { get => _backupDirectory; set => SetProperty(ref _backupDirectory, value); }
         public int BackupTimeoutMinutes { get => _backupTimeoutMinutes; set => SetProperty(ref _backupTimeoutMinutes, value); }
         public bool AutoClearDevicesAfterDownload { get => _autoClearDevicesAfterDownload; set => SetProperty(ref _autoClearDevicesAfterDownload, value); }
+
+        public bool LunchWindowEnabled { get => _lunchWindowEnabled; set => SetProperty(ref _lunchWindowEnabled, value); }
+        public DateTime? LunchWindowStart { get => ToDateTime(_lunchWindowStart); set => SetTime(ref _lunchWindowStart, value); }
+        public DateTime? LunchWindowEnd { get => ToDateTime(_lunchWindowEnd); set => SetTime(ref _lunchWindowEnd, value); }
+        public int PaidLunchMinutes { get => _paidLunchMinutes; set => SetProperty(ref _paidLunchMinutes, value); }
+        public DateTime? NightLunchWindowStart { get => ToDateTime(_nightLunchWindowStart); set => SetTime(ref _nightLunchWindowStart, value); }
+        public DateTime? NightLunchWindowEnd { get => ToDateTime(_nightLunchWindowEnd); set => SetTime(ref _nightLunchWindowEnd, value); }
+        public int DoubleTapMinutes { get => _doubleTapMinutes; set => SetProperty(ref _doubleTapMinutes, value); }
+
+        public bool IsAutoBackupEnabled { get => _isAutoBackupEnabled; set => SetProperty(ref _isAutoBackupEnabled, value); }
+        public DateTime? AutoBackupTime { get => ToDateTime(_autoBackupTime); set => SetTime(ref _autoBackupTime, value); }
+        public bool IsAutoReportEnabled { get => _isAutoReportEnabled; set => SetProperty(ref _isAutoReportEnabled, value); }
+        public DateTime? AutoReportTime { get => ToDateTime(_autoReportTime); set => SetTime(ref _autoReportTime, value); }
+        public string? AutoReportEmails { get => _autoReportEmails; set => SetProperty(ref _autoReportEmails, value); }
+        public bool AutoReportForToday { get => _autoReportForToday; set => SetProperty(ref _autoReportForToday, value); }
+
+        public bool AreAlertsEnabled { get => _areAlertsEnabled; set => SetProperty(ref _areAlertsEnabled, value); }
+        public string? AbsenceAlertEmails { get => _absenceAlertEmails; set => SetProperty(ref _absenceAlertEmails, value); }
+        public string? LateAlertEmails { get => _lateAlertEmails; set => SetProperty(ref _lateAlertEmails, value); }
+        public string? SystemFailureAlertEmails { get => _systemFailureAlertEmails; set => SetProperty(ref _systemFailureAlertEmails, value); }
+        public string? SmtpHost { get => _smtpHost; set => SetProperty(ref _smtpHost, value); }
+        public int SmtpPort { get => _smtpPort; set => SetProperty(ref _smtpPort, value); }
+        public string? SmtpUser { get => _smtpUser; set => SetProperty(ref _smtpUser, value); }
+        public string? SmtpPassword { get => _smtpPassword; set => SetProperty(ref _smtpPassword, value); }
+        public bool SmtpEnableSsl { get => _smtpEnableSsl; set => SetProperty(ref _smtpEnableSsl, value); }
+
+        public bool HasLogo => CompanyLogo is { Length: > 0 };
+
+        /// <summary>Los selectores de hora trabajan con DateTime; la configuración guarda la hora del día.</summary>
+        private static DateTime? ToDateTime(TimeSpan? time) => time.HasValue ? DateTime.Today.Add(time.Value) : null;
+
+        private void SetTime(ref TimeSpan? field, DateTime? value, [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null)
+        {
+            var time = value?.TimeOfDay;
+            if (field == time) return;
+            field = time;
+            RaisePropertyChanged(propertyName);
+        }
 
         public DateTime? AutoDownloadDateTime
         {
@@ -155,7 +228,33 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     FortnightFirstDay = _currentConfig.FortnightFirstDay;
                     FortnightSecondDay = _currentConfig.FortnightSecondDay;
                     MonthlyStartDay = _currentConfig.MonthlyStartDay;
-                    _loadedPeriods = PeriodSettings();
+
+                    LunchWindowEnabled = _currentConfig.LunchWindowEnabled;
+                    if (_currentConfig.LunchWindowStart.HasValue) LunchWindowStart = ToDateTime(_currentConfig.LunchWindowStart);
+                    if (_currentConfig.LunchWindowEnd.HasValue) LunchWindowEnd = ToDateTime(_currentConfig.LunchWindowEnd);
+                    PaidLunchMinutes = _currentConfig.PaidLunchMinutes;
+                    if (_currentConfig.NightLunchWindowStart.HasValue) NightLunchWindowStart = ToDateTime(_currentConfig.NightLunchWindowStart);
+                    if (_currentConfig.NightLunchWindowEnd.HasValue) NightLunchWindowEnd = ToDateTime(_currentConfig.NightLunchWindowEnd);
+                    DoubleTapMinutes = _currentConfig.DoubleTapMinutes;
+
+                    IsAutoBackupEnabled = _currentConfig.IsAutoBackupEnabled;
+                    if (_currentConfig.AutoBackupTime.HasValue) AutoBackupTime = ToDateTime(_currentConfig.AutoBackupTime);
+                    IsAutoReportEnabled = _currentConfig.IsAutoReportEnabled;
+                    if (_currentConfig.AutoReportTime.HasValue) AutoReportTime = ToDateTime(_currentConfig.AutoReportTime);
+                    AutoReportEmails = _currentConfig.AutoReportEmails;
+                    AutoReportForToday = _currentConfig.AutoReportForToday;
+
+                    AreAlertsEnabled = _currentConfig.AreAlertsEnabled;
+                    AbsenceAlertEmails = _currentConfig.AbsenceAlertEmails;
+                    LateAlertEmails = _currentConfig.LateAlertEmails;
+                    SystemFailureAlertEmails = _currentConfig.SystemFailureAlertEmails;
+                    SmtpHost = _currentConfig.SmtpHost;
+                    SmtpPort = _currentConfig.SmtpPort;
+                    SmtpUser = _currentConfig.SmtpUser;
+                    SmtpPassword = _currentConfig.SmtpPassword;
+                    SmtpEnableSsl = _currentConfig.SmtpEnableSsl;
+
+                    _loadedCalculation = CalculationSettings();
                 }
                 else
                 {
@@ -166,10 +265,11 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
             finally { SetBusy(false); }
         }
 
-        // Caso 15: los periodos cambian el cálculo (semanas, topes por periodo); si cambian se pregunta desde cuándo aplican.
-        private string? _loadedPeriods;
+        // Caso 15 (como la web): periodos, comida y toque doble cambian el cálculo; si cambian se pregunta desde cuándo aplican.
+        private string? _loadedCalculation;
 
-        private string PeriodSettings() => string.Join("|", WorkPeriodMode, WeeklyStartDay, FortnightFirstDay, FortnightSecondDay, MonthlyStartDay);
+        private string CalculationSettings() => string.Join("|", WorkPeriodMode, WeeklyStartDay, FortnightFirstDay, FortnightSecondDay, MonthlyStartDay,
+            _lunchWindowStart, _lunchWindowEnd, PaidLunchMinutes, DoubleTapMinutes, LunchWindowEnabled, _nightLunchWindowStart, _nightLunchWindowEnd);
 
         private async Task ExecuteSaveSettingsAsync()
         {
@@ -182,10 +282,10 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
             }
 
             DateTime? recalculateFrom = null;
-            if (_dialogService != null && _loadedPeriods != null && PeriodSettings() != _loadedPeriods)
+            if (_dialogService != null && _loadedCalculation != null && CalculationSettings() != _loadedCalculation)
             {
                 recalculateFrom = await _dialogService.AskEffectiveDateAsync("Aplicar cambios del cálculo",
-                    "Cambiaron los periodos. ¿Desde qué fecha aplican?",
+                    "Cambió la comida, el toque doble o los periodos. ¿Desde qué fecha aplican?",
                     date => _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.GetConfigurationRecalculationImpactQuery(date)));
                 if (recalculateFrom == null) return;
             }
@@ -210,24 +310,31 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                     FortnightFirstDay,
                     FortnightSecondDay,
                     MonthlyStartDay,
-                    _currentConfig.AreAlertsEnabled,
-                    _currentConfig.AbsenceAlertEmails,
-                    _currentConfig.LateAlertEmails,
-                    _currentConfig.SystemFailureAlertEmails,
-                    _currentConfig.SmtpHost,
-                    _currentConfig.SmtpPort,
-                    _currentConfig.SmtpUser,
-                    _currentConfig.SmtpPassword,
-                    _currentConfig.SmtpEnableSsl,
-                    _currentConfig.IsAutoBackupEnabled,
-                    _currentConfig.AutoBackupTime,
-                    _currentConfig.IsAutoReportEnabled,
-                    _currentConfig.AutoReportTime,
-                    _currentConfig.AutoReportEmails,
-                    // Esta pantalla no edita lo siguiente: se conserva lo guardado (antes se reiniciaba la nube y el reporte del día).
-                    _currentConfig.AutoReportForToday,
+                    AreAlertsEnabled,
+                    AbsenceAlertEmails,
+                    LateAlertEmails,
+                    SystemFailureAlertEmails,
+                    SmtpHost,
+                    SmtpPort,
+                    SmtpUser,
+                    SmtpPassword,
+                    SmtpEnableSsl,
+                    IsAutoBackupEnabled,
+                    _autoBackupTime,
+                    IsAutoReportEnabled,
+                    _autoReportTime,
+                    AutoReportEmails,
+                    AutoReportForToday,
+                    // La nube y la cuarentena se configuran en la web: se conserva lo guardado (la cuarentena nula no cambia).
                     _currentConfig.IsCloudSyncEnabled,
                     _currentConfig.CloudDbConnectionString,
+                    _lunchWindowStart,
+                    _lunchWindowEnd,
+                    PaidLunchMinutes,
+                    _nightLunchWindowStart,
+                    _nightLunchWindowEnd,
+                    LunchWindowEnabled,
+                    DoubleTapMinutes,
                     RecalculateFrom: recalculateFrom
                 );
 

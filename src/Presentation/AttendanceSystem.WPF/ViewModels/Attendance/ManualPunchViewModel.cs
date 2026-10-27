@@ -68,6 +68,8 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
 
                 // Como en la web: se recalcula el día del marcaje (el recálculo incluye la jornada previa si la alcanza).
                 await _mediator.Send(new ProcessDailyAttendanceCommand(checkTime.Date, checkTime.Date, EmployeeId: EmployeeId.From(SelectedEmployee.Id)));
+                // Antes de cerrar: CanCloseDialog rechaza el cierre mientras se guarda.
+                IsSaving = false;
                 RequestClose.Invoke(new DialogParameters { { "CheckTime", checkTime }, { "EmployeeName", SelectedEmployee.Display } }, ButtonResult.OK);
             }
             catch (Exception ex)

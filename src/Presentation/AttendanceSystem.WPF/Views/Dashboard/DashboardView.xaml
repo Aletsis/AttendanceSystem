@@ -13,64 +13,28 @@
     </UserControl.InputBindings>
 
     <UserControl.Resources>
-        <LinearGradientBrush x:Key="PrimaryGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#4E73DF" Offset="0"/>
-            <GradientStop Color="#224ABE" Offset="1"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="SuccessGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#1CC88A" Offset="0"/>
-            <GradientStop Color="#13855C" Offset="1"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="WarningGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#F6C23E" Offset="0"/>
-            <GradientStop Color="#DDA20A" Offset="1"/>
-        </LinearGradientBrush>
-        <LinearGradientBrush x:Key="DangerGradient" StartPoint="0,0" EndPoint="1,1">
-            <GradientStop Color="#E74A3B" Offset="0"/>
-            <GradientStop Color="#BE2617" Offset="1"/>
-        </LinearGradientBrush>
-
-        <!-- Tarjeta de cifra del día. Tag = título; Content = valor. -->
-        <Style x:Key="StatCardStyle" TargetType="ContentControl">
-            <Setter Property="Margin" Value="10"/>
-            <Setter Property="Foreground" Value="White"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ContentControl">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="16" Padding="24,20" Effect="{StaticResource Effect.CardShadow}">
-                            <StackPanel>
-                                <TextBlock Text="{TemplateBinding Tag}" FontSize="14" FontWeight="SemiBold" Opacity="0.85"/>
-                                <ContentPresenter Margin="0,6,0,0" TextElement.FontSize="34" TextElement.FontWeight="Bold"/>
-                            </StackPanel>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
+        <!-- Cifra del día: etiqueta, número grande y una línea de contexto. -->
+        <Style x:Key="KpiCardStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Padding" Value="20,16"/>
+            <Setter Property="Margin" Value="8,0,8,16"/>
         </Style>
-
-        <!-- Acceso rápido a una pantalla. -->
-        <Style x:Key="QuickLinkStyle" TargetType="Button">
-            <Setter Property="Margin" Value="10"/>
+        <Style x:Key="KpiLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+        </Style>
+        <Style x:Key="KpiValueStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="32"/>
+            <Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
+            <Setter Property="Margin" Value="0,4,0,0"/>
+        </Style>
+        <Style x:Key="LinkButtonStyle" TargetType="Button" BasedOn="{StaticResource MahApps.Styles.Button.Flat}">
+            <Setter Property="Foreground" Value="{StaticResource Brush.Primary}"/>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="Padding" Value="6,2"/>
             <Setter Property="Cursor" Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="Button">
-                        <Border x:Name="Card" Background="{StaticResource Brush.Surface}" CornerRadius="12" Padding="20,18"
-                                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
-                            <ContentPresenter/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource Brush.Primary}"/>
-                                <Setter TargetName="Card" Property="Effect" Value="{StaticResource Effect.CardShadow}"/>
-                            </Trigger>
-                            <Trigger Property="IsKeyboardFocused" Value="True">
-                                <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource Brush.Primary}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
         </Style>
     </UserControl.Resources>
 
@@ -94,49 +58,230 @@
                     </Button>
                 </Grid>
 
-                <!-- Error al cargar las cifras -->
-                <Border Background="{StaticResource Brush.DangerSoft}" CornerRadius="10" Padding="16,12" Margin="0,0,0,10"
+                <Border Background="{StaticResource Brush.DangerSoft}" CornerRadius="10" Padding="16,12" Margin="0,0,0,16"
                         Visibility="{Binding StatsError, Converter={StaticResource NullToCollapsedConverter}}">
                     <TextBlock Text="{Binding StatsError}" Foreground="{StaticResource Brush.Danger}" TextWrapping="Wrap"/>
                 </Border>
 
-                <!-- Cifras del día -->
-                <UniformGrid Columns="4" Margin="-10,0">
-                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource PrimaryGradient}" Tag="Empleados activos" Content="{Binding ActiveEmployees}"/>
-                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource SuccessGradient}" Tag="Presentes hoy" Content="{Binding PresentToday}"/>
-                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource DangerGradient}" Tag="Faltas hoy" Content="{Binding AbsentToday}"/>
-                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource WarningGradient}" Tag="Retardos hoy" Content="{Binding LateToday}"/>
+                <!-- Cifras de hoy -->
+                <UniformGrid Columns="4" Margin="-8,0" Visibility="{Binding ShowAttendance, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Border Style="{StaticResource KpiCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Presentes hoy" Style="{StaticResource KpiLabelStyle}"/>
+                            <TextBlock Text="{Binding PresentToday}" Style="{StaticResource KpiValueStyle}"/>
+                            <TextBlock Text="{Binding ActiveEmployees, StringFormat='de {0} empleados activos'}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource KpiCardStyle}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="ClockAlertOutline" Width="14" Height="14" Foreground="{StaticResource Brush.WarningText}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="Retardos hoy" Style="{StaticResource KpiLabelStyle}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding LateToday}" Style="{StaticResource KpiValueStyle}"/>
+                            <TextBlock Text="{Binding OnTimeToday, StringFormat='{}{0} llegaron puntuales'}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource KpiCardStyle}">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="AccountCancelOutline" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                <TextBlock Text="Faltas hoy" Style="{StaticResource KpiLabelStyle}"/>
+                            </StackPanel>
+                            <TextBlock Text="{Binding AbsentToday}" Style="{StaticResource KpiValueStyle}"/>
+                            <TextBlock Text="{Binding WithoutRecordToday, StringFormat='{}{0} con turno aún sin checar'}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}"/>
+                        </StackPanel>
+                    </Border>
+                    <Border Style="{StaticResource KpiCardStyle}">
+                        <StackPanel>
+                            <TextBlock Text="Puntualidad" Style="{StaticResource KpiLabelStyle}"/>
+                            <TextBlock Text="{Binding PunctualityRate, StringFormat='{}{0:0.#}%'}" Style="{StaticResource KpiValueStyle}"/>
+                            <ProgressBar Value="{Binding PunctualityRate, Mode=OneWay}" Maximum="100" Height="6" Margin="0,4,0,6" BorderThickness="0"
+                                         Foreground="{StaticResource Brush.Primary}" Background="{StaticResource Brush.SurfaceAlt}"/>
+                            <TextBlock Text="{Binding PunctualityText}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" TextTrimming="CharacterEllipsis"/>
+                        </StackPanel>
+                    </Border>
                 </UniformGrid>
-                <TextBlock Text="Presentes, faltas y retardos son los de la asistencia ya calculada para hoy."
-                           FontSize="12" Foreground="{StaticResource Brush.TextMuted}" Margin="0,4,0,30"/>
 
-                <!-- Accesos -->
-                <TextBlock Text="Accesos rápidos" FontSize="20" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
-                <ItemsControl ItemsSource="{Binding QuickLinks}" Margin="-10,0" Focusable="False">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <UniformGrid Columns="4"/>
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Button Style="{StaticResource QuickLinkStyle}"
-                                    Command="{Binding DataContext.OpenCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                    CommandParameter="{Binding}">
-                                <StackPanel Orientation="Horizontal">
-                                    <Border Width="44" Height="44" CornerRadius="22" Background="{StaticResource Brush.PrimarySoft}" VerticalAlignment="Top">
-                                        <iconPacks:PackIconMaterial Kind="{Binding Icon}" Width="22" Height="22" Foreground="{StaticResource Brush.Primary}"
-                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                                    </Border>
-                                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center" MaxWidth="180">
-                                        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
-                                        <TextBlock Text="{Binding Description}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-                                    </StackPanel>
+                <Grid Margin="0,0,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="2*"/>
+                    </Grid.ColumnDefinitions>
+
+                    <!-- Asistencia de la semana: un solo dato, el % de quienes tenían turno -->
+                    <Border Style="{StaticResource CardStyle}" Visibility="{Binding ShowAttendance, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <Grid>
+                                <StackPanel>
+                                    <TextBlock Text="Asistencia de los últimos 7 días" Style="{StaticResource CardTitleStyle}"/>
+                                    <TextBlock Text="Porcentaje de quienes tenían turno y checaron. Pase el cursor sobre un día para ver el detalle." Style="{StaticResource CardSubtitleStyle}"/>
                                 </StackPanel>
-                            </Button>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                                <Button Content="Ver asistencia" Command="{Binding OpenAttendanceCommand}" Style="{StaticResource LinkButtonStyle}" HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                            </Grid>
+                            <Grid Height="170">
+                                <!-- Línea base y referencia del 100 % (recesivas) -->
+                                <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0" VerticalAlignment="Top" Margin="0,27,0,0"/>
+                                <TextBlock Text="100%" FontSize="10" Foreground="{StaticResource Brush.TextMuted}" VerticalAlignment="Top" Margin="0,13,0,0"/>
+                                <ItemsControl ItemsSource="{Binding WeekBars}" Focusable="False" Margin="32,0,0,0">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Rows="1"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <!-- Toda la columna recibe el cursor: el objetivo es mayor que la barra. -->
+                                            <Grid Background="Transparent" ToolTip="{Binding Tooltip}" ToolTipService.InitialShowDelay="100">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*"/>
+                                                    <RowDefinition Height="Auto"/>
+                                                </Grid.RowDefinitions>
+                                                <StackPanel VerticalAlignment="Bottom" HorizontalAlignment="Center">
+                                                    <!-- Sólo hoy lleva la cifra; los demás días, en el tooltip -->
+                                                    <TextBlock Text="{Binding ValueText}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" HorizontalAlignment="Center" Margin="0,0,0,4"
+                                                               Visibility="{Binding IsToday, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                    <Border Width="22" Height="{Binding BarHeight}" CornerRadius="4,4,0,0" Background="{StaticResource Brush.Primary}"/>
+                                                </StackPanel>
+                                                <TextBlock Grid.Row="1" Text="{Binding Label}" FontSize="11" HorizontalAlignment="Center" Margin="0,6,0,0">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}"/>
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                                    <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
+                                                                    <Setter Property="FontWeight" Value="Bold"/>
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <Border BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0" VerticalAlignment="Bottom" Margin="32,0,0,23"/>
+                            </Grid>
+                            <TextBlock Text="Aún no hay asistencia calculada en la semana." Style="{StaticResource FormHelperStyle}" Margin="0,8,0,0"
+                                       Visibility="{Binding HasWeekData, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Relojes -->
+                    <Border Grid.Column="2" Style="{StaticResource CardStyle}" Visibility="{Binding ShowDevices, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="Relojes" Style="{StaticResource CardTitleStyle}"/>
+                                <Button Content="Ver relojes" Command="{Binding OpenDevicesCommand}" Style="{StaticResource LinkButtonStyle}" HorizontalAlignment="Right" VerticalAlignment="Top"/>
+                            </Grid>
+                            <TextBlock FontSize="32" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,4,0,0">
+                                <Run Text="{Binding OnlineDevices, Mode=OneWay}"/><Run Text="{Binding TotalDevices, Mode=OneWay, StringFormat=' / {0}'}" FontSize="18" Foreground="{StaticResource Brush.TextMuted}"/>
+                            </TextBlock>
+                            <TextBlock Text="en línea" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" Margin="0,0,0,10"/>
+                            <Border Margin="0,0,0,10">
+                                <Border.Style>
+                                    <Style TargetType="Border" BasedOn="{StaticResource InfoBannerStyle}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DevicesNeedAttention}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource Brush.WarningSoft}"/>
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding DevicesHealthText}" Style="{StaticResource BannerTextStyle}"/>
+                            </Border>
+                            <ItemsControl ItemsSource="{Binding Devices}" Focusable="False">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <!-- Estado con ícono y texto, nunca sólo color -->
+                                            <iconPacks:PackIconMaterial Width="12" Height="12" VerticalAlignment="Center" Margin="0,0,8,0">
+                                                <iconPacks:PackIconMaterial.Style>
+                                                    <Style TargetType="iconPacks:PackIconMaterial">
+                                                        <Setter Property="Kind" Value="CloseCircle"/>
+                                                        <Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/>
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsOnline}" Value="True">
+                                                                <Setter Property="Kind" Value="CheckCircle"/>
+                                                                <Setter Property="Foreground" Value="{StaticResource Brush.Success}"/>
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </iconPacks:PackIconMaterial.Style>
+                                            </iconPacks:PackIconMaterial>
+                                            <TextBlock Grid.Column="1" Text="{Binding Name}" Foreground="{StaticResource Brush.Text}" TextTrimming="CharacterEllipsis"/>
+                                            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                                                <TextBlock Text="Memoria casi llena" FontSize="11" Foreground="{StaticResource Brush.Danger}" Margin="0,0,8,0"
+                                                           Visibility="{Binding IsAlmostFull, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                                <TextBlock Text="{Binding Status}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
+                                            </StackPanel>
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="{Binding OldestDownloadText}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="0,8,0,0"
+                                       Visibility="{Binding OldestDownloadText, Converter={StaticResource NullToCollapsedConverter}}"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- Pendientes -->
+                <Border Style="{StaticResource CardStyle}" Visibility="{Binding HasPending, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel>
+                        <TextBlock Text="Pendientes" Style="{StaticResource CardTitleStyle}"/>
+                        <TextBlock Text="Lo que requiere revisión de RH o del administrador." Style="{StaticResource CardSubtitleStyle}"/>
+
+                        <Grid Margin="0,0,0,6" Visibility="{Binding PendingExits, Converter={StaticResource CountToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <iconPacks:PackIconMaterial Kind="TimerSandEmpty" Width="16" Height="16" Foreground="{StaticResource Brush.WarningText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Foreground="{StaticResource Brush.Text}" VerticalAlignment="Center">
+                                    <Run Text="{Binding PendingExits, Mode=OneWay}" FontWeight="Bold"/>
+                                    <Run Text="día(s) de la semana con salidas temporales sin clasificar"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Button Content="Clasificar" Command="{Binding OpenAttendanceCommand}" Style="{StaticResource LinkButtonStyle}" HorizontalAlignment="Right"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,6" Visibility="{Binding PendingOvertime, Converter={StaticResource CountToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <iconPacks:PackIconMaterial Kind="ClockPlusOutline" Width="16" Height="16" Foreground="{StaticResource Brush.WarningText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Foreground="{StaticResource Brush.Text}" VerticalAlignment="Center">
+                                    <Run Text="{Binding PendingOvertime, Mode=OneWay}" FontWeight="Bold"/>
+                                    <Run Text="día(s) de la semana con tiempo extra por autorizar"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Button Content="Revisar" Command="{Binding OpenAttendanceCommand}" Style="{StaticResource LinkButtonStyle}" HorizontalAlignment="Right"/>
+                        </Grid>
+                        <Grid Margin="0,0,0,6" Visibility="{Binding UnmatchedPunches, Converter={StaticResource CountToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <iconPacks:PackIconMaterial Kind="AccountQuestionOutline" Width="16" Height="16" Foreground="{StaticResource Brush.WarningText}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Foreground="{StaticResource Brush.Text}" VerticalAlignment="Center" TextWrapping="Wrap">
+                                    <Run Text="{Binding UnmatchedPunches, Mode=OneWay}" FontWeight="Bold"/>
+                                    <Run Text="ID(s) con checadas que no cuentan (no registrados, fuera de su alta o en vacaciones/incapacidad)"/>
+                                </TextBlock>
+                            </StackPanel>
+                            <Button Content="Ver empleados" Command="{Binding OpenEmployeesCommand}" Style="{StaticResource LinkButtonStyle}" HorizontalAlignment="Right"/>
+                        </Grid>
+                        <StackPanel Visibility="{Binding HasScheduleAlerts, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,6,0,0">
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                <iconPacks:PackIconMaterial Kind="CalendarAlert" Width="16" Height="16" Foreground="{StaticResource Brush.Danger}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBlock Text="Horarios por corregir (dejan o dejarían días sin turno)" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                            <ItemsControl ItemsSource="{Binding ScheduleAlerts}" Focusable="False" Margin="26,0,0,0">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding StringFormat='• {0}'}" FontSize="12" Foreground="{StaticResource Brush.TextSecondary}" TextWrapping="Wrap" Margin="0,2"/>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
             </StackPanel>
         </ScrollViewer>
 
