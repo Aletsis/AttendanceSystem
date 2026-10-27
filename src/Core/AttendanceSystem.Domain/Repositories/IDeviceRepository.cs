@@ -45,5 +45,15 @@ public interface IDeviceRepository
 
     void Detach(Device device);
 
+    /// <summary>
+    /// Si el reloj tiene historial (checadas, descargas, cuarentena, incidentes o correcciones de hora). Con historial no
+    /// se borra: las checadas de un reloj nunca se eliminan y deben seguir apuntando a él.
+    /// </summary>
+    Task<bool> HasHistoryAsync(
+        DeviceId deviceId,
+        CancellationToken cancellationToken = default);
+
+    void Delete(Device device);
+
     void ClearChangeTracker();
 }

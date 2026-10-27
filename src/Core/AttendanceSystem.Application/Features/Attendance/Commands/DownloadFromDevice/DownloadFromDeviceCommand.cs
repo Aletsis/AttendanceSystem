@@ -24,11 +24,18 @@ public sealed record DownloadFromDeviceCommand(
     bool CalculateAttendance = true,
     string? InitiatedByUserId = null,
     string? InitiatedByUserName = null,
-    bool ForceFullSync = false) : IRequest<Result<DownloadResultDto>>, IRequiresDataPermissions
+    bool ForceFullSync = false,
+    bool ClearDeviceAfterDownload = false) : IRequest<Result<DownloadResultDto>>, IRequiresDataPermissions
 {
-    /// <summary>Caso 13: re-descargar todo el reloj sólo lo hace el administrador.</summary>
-    public IEnumerable<string> RequiredPermissions() =>
-        ForceFullSync ? new[] { Permissions.DevicesForceFullDownload } : Array.Empty<string>();
+    /// <summary>
+    /// Caso 13: re-descargar todo el reloj sólo lo hace el administrador, igual que vaciar su memoria. Vaciarla usa la
+    /// misma limpieza segura que "Borrar tras descargar": sólo el rango leído y guardado, y sólo si la lectura fue completa.
+    /// </summary>
+    public IEnumerable<string> RequiredPermissions()
+    {
+        if (ForceFullSync) yield return Permissions.DevicesForceFullDownload;
+        if (ClearDeviceAfterDownload) yield return Permissions.DevicesManage;
+    }
 }
 
 public sealed class DownloadFromDeviceCommandHandler
@@ -233,7 +240,7 @@ public sealed class DownloadFromDeviceCommandHandler
         var deviceBrand = device.Brand;
         var username = device.Username;
         var password = device.Password;
-        var shouldClear = device.ShouldClearAfterDownload;
+        var shouldClear = device.ShouldClearAfterDownload || command.ClearDeviceAfterDownload;
         var deviceSerialNumber = device.HardwareInfo?.SerialNumber;
         var deviceName = device.Name;
 

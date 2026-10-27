@@ -189,6 +189,7 @@ namespace AttendanceSystem.WPF
             containerRegistry.RegisterDialog<Views.Devices.DeviceAdvancedDetailsDialog, ViewModels.Devices.DeviceAdvancedDetailsViewModel>();
             containerRegistry.RegisterDialog<Views.Employees.ExternalEmployeeDetailDialog, ViewModels.Employees.ExternalEmployeeDetailViewModel>();
             containerRegistry.RegisterDialog<Views.Auth.ChangePasswordDialog, ViewModels.Auth.ChangePasswordViewModel>();
+            containerRegistry.RegisterDialog<Views.Attendance.ManualPunchDialog, ViewModels.Attendance.ManualPunchViewModel>();
         }
 
         protected override void OnExit(ExitEventArgs e)

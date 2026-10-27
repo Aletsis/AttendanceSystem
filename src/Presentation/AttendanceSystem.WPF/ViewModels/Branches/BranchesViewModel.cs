@@ -241,23 +241,31 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar la sucursal {item.Name}?\nEsta acción no se puede deshacer.");
+                $"¿Está seguro de eliminar la sucursal {item.Code} - {item.Name}?\n\nSólo se puede eliminar si no tiene empleados ni empleados externos asignados. Esta acción no se puede deshacer.");
 
             if (!confirmed) return;
 
-            // Nota: Aquí se asume que existe un DeleteBranchCommand en el Application layer.
-            // Si no existe, se mostrará un error de compilación o ejecución que el desarrollador deberá atender.
-            // Basado en el patrón de otras entidades, implementamos la llamada.
+            SetBusy(true, "Eliminando sucursal...");
             try
             {
-                // Buscamos si existe DeleteBranchCommand (usualmente en .Commands.DeleteBranch)
-                // Para evitar errores si no existe, por ahora mostramos el mensaje de "No Implementado" 
-                // o intentamos si estamos seguros.
-                await _messageService.ShowMessageAsync("Información", "La funcionalidad de eliminación física de sucursales está restringida por integridad de datos.");
+                var result = await _mediator.Send(new AttendanceSystem.Application.Features.Branches.Commands.DeleteBranch.DeleteBranchCommand(item.Id));
+                if (result.IsSuccess)
+                {
+                    await _messageService.ShowSuccessAsync("Sucursal eliminada correctamente.");
+                    await LoadBranchesAsync();
+                }
+                else
+                {
+                    await _messageService.ShowErrorAsync(result.Error);
+                }
             }
             catch (Exception ex)
             {
                 await _messageService.ShowErrorAsync($"Error al eliminar: {ex.Message}");
+            }
+            finally
+            {
+                SetBusy(false);
             }
         }
 

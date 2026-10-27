@@ -22,6 +22,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
         private readonly IAuthenticationStateService _authService;
         private readonly IReportExportService _reportExportService;
         private readonly IConfiguration _configuration;
+        private readonly Prism.Dialogs.IDialogService _dialogService;
 
         private ObservableCollection<AttendanceLogItem> _attendanceLogs = new();
         private AttendanceLogItem? _selectedLog;
@@ -66,6 +67,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             IMediator mediator,
             IReportExportService reportExportService,
             IConfiguration configuration,
+            Prism.Dialogs.IDialogService dialogService,
             IAuthenticationStateService authService)
         {
             _authService = authService;
@@ -74,6 +76,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             _mediator = mediator;
             _reportExportService = reportExportService;
             _configuration = configuration;
+            _dialogService = dialogService;
 
             ManualEntryCommand = new DelegateCommand(ExecuteManualEntry);
             CalculateAttendanceCommand = new DelegateCommand(async () => await ExecuteCalculateAttendanceAsync());
@@ -187,7 +190,13 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
 
         private void ExecuteManualEntry()
         {
-            _messageService.ShowMessageAsync("Entrada Manual", "Funcionalidad en desarrollo...");
+            _dialogService.ShowDialog("ManualPunchDialog", null, async result =>
+            {
+                if (result.Result != Prism.Dialogs.ButtonResult.OK) return;
+                var checkTime = result.Parameters.GetValue<DateTime>("CheckTime");
+                await _messageService.ShowSuccessAsync($"Marcaje registrado: {result.Parameters.GetValue<string>("EmployeeName")}, {checkTime:dd/MM/yyyy HH:mm}.");
+                await LoadAttendanceLogsAsync();
+            });
         }
 
         private async Task ExecuteCalculateAttendanceAsync()

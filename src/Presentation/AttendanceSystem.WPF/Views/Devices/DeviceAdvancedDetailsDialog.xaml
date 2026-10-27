@@ -206,7 +206,9 @@
                                 <Button Command="{Binding ClearLogsCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,10,10" Padding="15,10">
                                     <StackPanel Orientation="Horizontal">
                                         <iconPacks:PackIconMaterial Kind="DeleteSweep" Width="16" Height="16" Margin="0,0,10,0"/>
-                                        <TextBlock Text="Borrar Logs en Dispositivo"/>
+                                        <TextBlock Text="Vaciar memoria del reloj"/>
+                                        <mah:ProgressRing IsActive="{Binding IsClearingLogs}" Width="14" Height="14" Margin="8,0,0,0"
+                                                          Visibility="{Binding IsClearingLogs, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                     </StackPanel>
                                 </Button>
                             </WrapPanel>

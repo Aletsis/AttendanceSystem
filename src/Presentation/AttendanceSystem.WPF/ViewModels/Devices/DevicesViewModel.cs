@@ -119,7 +119,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                             Port = device.Port,
                             BranchName = device.Location ?? "N/A",
                             IsActive = device.IsActive,
-                            Status = device.Status,
+                            Status = device.IsActive ? device.Status : "Inactivo",
                             LastSync = device.LastDownloadAt
                         });
                     }
@@ -249,10 +249,27 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private async Task ExecuteDeleteDeviceAsync(DeviceListItem? item)
         {
             if (item == null) return;
-            var confirmed = await _messageService.ShowConfirmationAsync("Confirmar eliminación", $"¿Está seguro de eliminar el dispositivo {item.Name}?");
+            var confirmed = await _messageService.ShowConfirmationAsync("Confirmar eliminación",
+                $"¿Está seguro de eliminar el dispositivo {item.Name}?\n\nSi ya tiene checadas o descargas no se borra: se desactiva (deja de descargarse y de recibir empleados) y sus checadas se conservan.");
             if (!confirmed) return;
 
-            await _messageService.ShowMessageAsync("No Implementado", "La funcionalidad de eliminar dispositivo aún no está implementada en el backend.");
+            SetBusy(true, "Eliminando dispositivo...");
+            try
+            {
+                var result = await _mediator.Send(new AttendanceSystem.Application.Features.Devices.Commands.DeleteDevice.DeleteDeviceCommand(Guid.Parse(item.Id)));
+                if (result.IsFailure)
+                {
+                    await _messageService.ShowErrorAsync($"Error al eliminar: {result.Error}");
+                    return;
+                }
+
+                await _messageService.ShowSuccessAsync(result.Value == AttendanceSystem.Application.Features.Devices.Commands.DeleteDevice.DeleteDeviceOutcome.Deleted
+                    ? "Dispositivo eliminado."
+                    : "El dispositivo tenía historial: quedó desactivado y sus checadas se conservan.");
+                await LoadDevicesAsync();
+            }
+            catch (Exception ex) { await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
+            finally { SetBusy(false); }
         }
 
         private async Task ExecuteTestConnectionAsync(DeviceListItem? item)
