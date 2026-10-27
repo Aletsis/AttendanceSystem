@@ -246,6 +246,7 @@ La aplicación Blazor aplica las migraciones de Entity Framework Core al arranca
 3. **Versión de la base:** si `__EFMigrationsHistory` contiene migraciones que esta versión no conoce (se reinstaló una versión anterior), **no se toca nada** y se arranca en mantenimiento. Los IDs de `RetiredMigrations` no cuentan: son migraciones que una versión instalada aplicó con un identificador que después cambió.
 4. **Respaldo previo:** si hay migraciones pendientes y la base ya tenía migraciones aplicadas, se crea y verifica `PreMigration_Backup_<fecha>_<hora>.backup` en el directorio de respaldos. Aparece en la página de respaldos con la descripción *Estado previo a una actualización del esquema* y **la retención no lo borra**. Si el respaldo falla, **no se migra** y se arranca en mantenimiento. Una base recién creada no se respalda.
 5. **Migraciones:** se aplican de una en una y el log registra cuál se aplica y cuánto tarda (`Aplicando migración 3/26: ...`). Cada comando tiene hasta `Database:MigrationTimeoutMinutes` (30 min); el valor por defecto de Npgsql (30 s) no alcanza para migraciones de datos sobre tablas grandes. Cada migración se confirma en su propia transacción: si una falla, la base queda en la última que terminó, nunca a medias, y se arranca en mantenimiento.
+   * **Tiempo de arranque:** respaldo y migraciones tienen en total `Database:StartupMigrationBudgetMinutes` (50 min). Al agotarse, la migración en curso se deshace y se arranca en mantenimiento indicando cuál era; las ya aplicadas quedan y **el siguiente arranque continúa** con las demás. El presupuesto vence antes que `startupTimeLimit` de IIS (3600 s): si IIS mata el proceso no queda registro, y la sesión que estaba migrando sigue viva en PostgreSQL bloqueando las tablas.
    * **Tablas ocupadas:** un `ALTER TABLE` necesita la tabla en exclusiva. Si otra sesión la tiene (un cliente WPF con una transacción abierta, o la sesión de un arranque anterior que murió migrando), la sentencia espera como máximo `Database:MigrationLockTimeoutSeconds` (`lock_timeout`, también para la lectura del historial), se deshace y se arranca en mantenimiento. El mensaje lista esas sesiones (pid, `application_name`, IP, estado, antigüedad y tablas). Antes de migrar se avisa en el log (`WRN`) si ya hay sesiones con tablas tomadas. Ciérrelas, o termínelas con `SELECT pg_terminate_backend(<pid>);`, y reinicie.
 6. **Datos iniciales** (roles y usuario `admin`) sólo si el esquema quedó al día.
 
@@ -257,11 +258,12 @@ La aplicación Blazor aplica las migraciones de Entity Framework Core al arranca
 * **Restauración con fallo crítico:** si el estado guardado es `Failed` por una restauración (ver 4.4), el arranque **omite** las migraciones y la creación del usuario inicial y deja Hangfire en pausa. Migrar o sembrar datos sobre una base que quedó sin validar ocultaría el problema.
 * **Restauración en curso en otro proceso:** se omiten migraciones y datos iniciales; la restauración deja el esquema al día al terminar.
 * **Restauraciones:** al restaurar un respaldo de una versión anterior, sus migraciones pendientes se aplican durante la propia restauración; un respaldo de una versión más nueva se rechaza (ver 4.4).
-* **IIS:** `web.config` sube `startupTimeLimit` de 120 s a 1800 s para que IIS no abandone una actualización larga; debe ser al menos `Database:MigrationTimeoutMinutes`.
+* **IIS:** `web.config` sube `startupTimeLimit` de 120 s a 3600 s (el máximo) para que IIS no abandone una actualización larga; debe ser mayor que `Database:StartupMigrationBudgetMinutes`.
 
 | Clave | Valor por defecto | Uso |
 |---|---|---|
 | `Database:MigrationTimeoutMinutes` | `30` (mín. 1) | Tiempo máximo de cada comando de migración y de la espera a que otro proceso termine de migrar. |
+| `Database:StartupMigrationBudgetMinutes` | `50` (mín. 1) | Tiempo total del arranque para respaldar y migrar; menor que `startupTimeLimit` de IIS. |
 | `Database:MigrationLockTimeoutSeconds` | `120` (mín. 1) | Lo que una sentencia de migración espera a que otra sesión suelte una tabla antes de cancelarse. |
 | `Database:StartupConnectAttempts` | `6` | Intentos de conexión con PostgreSQL al arrancar. |
 | `Database:StartupConnectRetrySeconds` | `2` | Espera inicial entre intentos; se duplica hasta 15 s. |

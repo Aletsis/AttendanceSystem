@@ -72,22 +72,37 @@ namespace AttendanceSystem.Infrastructure.Persistence.Migrations
             // que ya usa una jornada, luego el de mayor estado. Las jornadas que apuntaban a una copia pasan a apuntar al
             // conservado y las copias se eliminan. (Antes se conservaban todas las copias enlazadas, y si dos copias
             // estaban enlazadas, o la enlazada no era la primera del grupo, el índice único no se podía crear.)
+            // Sólo se miran los grupos repetidos, y las checadas que usa alguna jornada se calculan una vez: las cuatro
+            // columnas de DailyAttendances no tienen índice, y buscarlas por cada checada tardaba horas en bases reales.
             migrationBuilder.Sql(@"
                 DO $$
                 BEGIN
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'AttendanceRecords') THEN
+                        CREATE TEMP TABLE punch_groups ON COMMIT DROP AS
+                        SELECT a.""Id"", a.""EmployeeId"", a.""CheckTime"", a.""StatusId""
+                        FROM ""AttendanceRecords"" a
+                        JOIN (SELECT ""EmployeeId"", ""CheckTime""
+                              FROM ""AttendanceRecords""
+                              GROUP BY ""EmployeeId"", ""CheckTime""
+                              HAVING count(*) > 1) r
+                          ON r.""EmployeeId"" = a.""EmployeeId"" AND r.""CheckTime"" = a.""CheckTime"";
+
+                        CREATE TEMP TABLE linked_punches ON COMMIT DROP AS
+                        SELECT DISTINCT v.""Id""
+                        FROM ""DailyAttendances"" d
+                        CROSS JOIN LATERAL (VALUES (d.""CheckInRecordId""), (d.""Block1CheckOutRecordId""),
+                                                   (d.""Block2CheckInRecordId""), (d.""CheckOutRecordId"")) AS v(""Id"")
+                        WHERE v.""Id"" IN (SELECT ""Id"" FROM punch_groups);
+
                         CREATE TEMP TABLE punch_duplicates ON COMMIT DROP AS
                         SELECT t.""Id"", t.""KeeperId""
                         FROM (
-                            SELECT a.""Id"",
-                                   FIRST_VALUE(a.""Id"") OVER w AS ""KeeperId""
-                            FROM ""AttendanceRecords"" a
-                            WINDOW w AS (
-                                PARTITION BY a.""EmployeeId"", a.""CheckTime""
-                                ORDER BY (EXISTS (
-                                              SELECT 1 FROM ""DailyAttendances"" d
-                                              WHERE a.""Id"" IN (d.""CheckInRecordId"", d.""Block1CheckOutRecordId"", d.""Block2CheckInRecordId"", d.""CheckOutRecordId""))) DESC,
-                                         a.""StatusId"" DESC, a.""Id"")
+                            SELECT g.""Id"",
+                                   FIRST_VALUE(g.""Id"") OVER (
+                                       PARTITION BY g.""EmployeeId"", g.""CheckTime""
+                                       ORDER BY (l.""Id"" IS NOT NULL) DESC, g.""StatusId"" DESC, g.""Id"") AS ""KeeperId""
+                            FROM punch_groups g
+                            LEFT JOIN linked_punches l ON l.""Id"" = g.""Id""
                         ) t
                         WHERE t.""Id"" <> t.""KeeperId"";
 
