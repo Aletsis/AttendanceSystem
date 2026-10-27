@@ -132,3 +132,5 @@ scratch/*.*
 /Docs/PlanCorreccionAsistencia/
 /Docs/PlanRemediacion/
 .initial_admin_credentials.txt
+# Proyecto temporal que genera la compilación de WPF
+*_wpftmp.csproj

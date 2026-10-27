@@ -236,10 +236,11 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                 if (result.IsSuccess)
                 {
                     // Notificar al backend Blazor Server para recargar las tareas Hangfire en segundo plano
+                    string? reloadProblem = null;
                     try
                     {
                         var backendUrl = _configuration["BackendUrl"] ?? "http://localhost:18372";
-                        using var httpClient = new System.Net.Http.HttpClient();
+                        using var httpClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) };
                         var apiKey = _configuration["ApiKey"] ?? _configuration["ZKTecoService:ApiKey"];
                         if (!string.IsNullOrWhiteSpace(apiKey))
                         {
@@ -248,12 +249,22 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
                         var reloadResponse = await httpClient.PostAsync($"{backendUrl}/api/configuration/reload-jobs", null);
                         if (!reloadResponse.IsSuccessStatusCode)
                         {
-                            System.Diagnostics.Debug.WriteLine($"Error notifying backend of configuration change: {reloadResponse.StatusCode}");
+                            reloadProblem = $"respondió {(int)reloadResponse.StatusCode}";
                         }
                     }
                     catch (Exception ex)
                     {
-                        System.Diagnostics.Debug.WriteLine($"Error notifying backend: {ex.Message}");
+                        reloadProblem = ex.Message;
+                    }
+
+                    if (reloadProblem != null)
+                    {
+                        // Antes sólo se escribía en la depuración: el usuario creía aplicados los horarios automáticos.
+                        Serilog.Log.Warning("El servidor web no recargó las tareas programadas: {Problem}", reloadProblem);
+                        await _messageService.ShowWarningAsync("La configuración se guardó, pero el servidor web no confirmó la recarga de las tareas programadas " +
+                            $"({reloadProblem}). Las descargas, respaldos y reportes automáticos usarán el horario nuevo cuando se reinicie el sitio web.");
+                        await LoadSettingsAsync();
+                        return;
                     }
 
                     await _messageService.ShowSuccessAsync("Configuración guardada correctamente");
