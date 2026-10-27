@@ -39,6 +39,7 @@ public class StartupMigrationService
     private readonly IRestoreStateService _restoreState;
     private readonly ILogger<StartupMigrationService> _logger;
     private readonly TimeSpan _migrationTimeout;
+    private readonly TimeSpan _lockTimeout;
     private readonly int _connectAttempts;
     private readonly TimeSpan _connectRetryDelay;
 
@@ -54,6 +55,7 @@ public class StartupMigrationService
         _restoreState = restoreState;
         _logger = logger;
         _migrationTimeout = MigrationTimeout(configuration);
+        _lockTimeout = SchemaMigrator.LockTimeout(configuration);
         _connectAttempts = Math.Max(configuration.GetValue("Database:StartupConnectAttempts", 6), 1);
         _connectRetryDelay = TimeSpan.FromSeconds(Math.Max(configuration.GetValue("Database:StartupConnectRetrySeconds", 2), 0));
     }
@@ -69,12 +71,14 @@ public class StartupMigrationService
     {
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         await EnsureDatabaseReachableAsync(context, cancellationToken);
+        var connectionString = context.Database.GetConnectionString()!;
+        SchemaMigrator.UseMigrationSession(context, _migrationTimeout, _lockTimeout);
 
         string? backupPath = null;
         try
         {
             await using var migrationLock = await DatabaseMigrationLock.AcquireAsync(
-                context.Database.GetConnectionString()!, _migrationTimeout, _logger, cancellationToken);
+                connectionString, _migrationTimeout, _logger, cancellationToken);
 
             // Se consulta con el bloqueo tomado: si otro proceso migró mientras se esperaba, ya no queda nada pendiente.
             var known = context.Database.GetMigrations().ToList();
@@ -116,8 +120,14 @@ public class StartupMigrationService
                 _logger.LogInformation("Respaldo previo a las migraciones: {Path}", backupPath);
             }
 
-            context.Database.SetCommandTimeout(_migrationTimeout);
-            await context.Database.MigrateAsync(cancellationToken);
+            var holders = await SchemaMigrator.DescribeSessionsHoldingTablesAsync(connectionString, _logger, cancellationToken);
+            if (holders != null)
+            {
+                _logger.LogWarning("Hay sesiones con tablas tomadas; si no las sueltan en {Seconds:0} s, la migración se cancelará: {Sessions}",
+                    _lockTimeout.TotalSeconds, holders);
+            }
+
+            await SchemaMigrator.ApplyAsync(context, applied, pending, _logger, cancellationToken);
             _logger.LogInformation("Todas las migraciones se aplicaron correctamente");
             return new StartupMigrationResult(StartupMigrationOutcome.Migrated, $"Se aplicaron {pending.Count} migraciones.");
         }
@@ -125,10 +135,15 @@ public class StartupMigrationService
         {
             _logger.LogError(ex, "Error al verificar o aplicar migraciones de base de datos");
 
+            var cause = SchemaMigrator.IsLockTimeout(ex)
+                ? SchemaMigrator.LockTimeoutMessage(_lockTimeout,
+                    await SchemaMigrator.DescribeSessionsHoldingTablesAsync(connectionString, _logger, cancellationToken))
+                : $"{ex.Message}.";
+
             // Cada migración se confirma por separado: la base queda en la última que terminó, no a medias.
             var lastApplied = await TryGetLastAppliedMigrationAsync(cancellationToken);
             return await EnterMaintenanceAsync(
-                $"Falló la actualización del esquema: {ex.Message}. La base quedó en la migración {lastApplied ?? "(desconocida)"}." +
+                $"Falló la actualización del esquema: {cause} La base quedó en la migración {lastApplied ?? "(desconocida)"}." +
                 (backupPath != null ? $" Respaldo previo: {backupPath}." : ""), cancellationToken);
         }
     }
@@ -172,6 +187,8 @@ public class StartupMigrationService
         try
         {
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
+            // Si una sesión huérfana tiene el historial en exclusiva, no vale la pena esperarla sólo para el mensaje.
+            SchemaMigrator.UseMigrationSession(context, TimeSpan.FromSeconds(30), TimeSpan.FromSeconds(10));
             return (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).LastOrDefault();
         }
         catch (Exception ex)

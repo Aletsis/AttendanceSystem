@@ -200,6 +200,43 @@ INSERT INTO ""__EFMigrationsHistory"" VALUES ('20260423195140_AddOvertimeFlagsTo
     }
 
     [Fact]
+    public async Task WhenAClientHoldsATable_TheMigrationGivesUpQuickly_AndTheMessageNamesTheClient()
+    {
+        if (!_available) return;
+        await MigrateToAsync(V223LastMigration);
+        _backupService.Setup(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupResultDto { Success = true, BackupFilePath = "/respaldos/PreMigration_Backup_x.backup" });
+        // Un cliente WPF que dejó una transacción abierta después de leer checadas.
+        await using var client = await OpenClientAsync("cliente_wpf_prueba",
+            @"BEGIN; SELECT 1 FROM ""AttendanceRecords"" LIMIT 1;");
+        var state = NewState();
+
+        var result = await NewService(state: state, lockTimeoutSeconds: 2).RunAsync();
+
+        result.Outcome.Should().Be(StartupMigrationOutcome.Maintenance);
+        result.Message.Should().Contain("soltaran tablas").And.Contain("cliente_wpf_prueba").And.Contain("AttendanceRecords");
+        state.CurrentState.Should().Be(MaintenanceState.Failed);
+        await using var context = new ContextFactory(_connectionString).CreateDbContext();
+        (await context.Database.GetPendingMigrationsAsync()).Should().NotBeEmpty();
+    }
+
+    [Fact]
+    public async Task WhenAnOrphanedSessionHoldsTheHistory_StartupDoesNotHang_AndNamesTheSession()
+    {
+        if (!_available) return;
+        await MigrateToAsync(V223LastMigration);
+        // La sesión de un proceso que murió a mitad de una migración: ya no tiene el bloqueo consultivo, pero sí el historial.
+        await using var orphan = await OpenClientAsync("migracion_huerfana",
+            @"BEGIN; LOCK TABLE ""__EFMigrationsHistory"" IN ACCESS EXCLUSIVE MODE;");
+
+        var result = await NewService(lockTimeoutSeconds: 2).RunAsync();
+
+        result.Outcome.Should().Be(StartupMigrationOutcome.Maintenance);
+        result.Message.Should().Contain("soltaran tablas").And.Contain("migracion_huerfana").And.Contain("__EFMigrationsHistory");
+        _backupService.Verify(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()), Times.Never());
+    }
+
+    [Fact]
     public async Task WhenPostgresIsUnreachable_StartupRetriesAndThenStops()
     {
         var unreachable = new NpgsqlConnectionStringBuilder(_connectionString) { Port = 1, Timeout = 2 }.ConnectionString;
@@ -219,12 +256,30 @@ INSERT INTO ""__EFMigrationsHistory"" VALUES ('20260423195140_AddOvertimeFlagsTo
             It.IsAny<Exception?>(), It.IsAny<Func<It.IsAnyType, Exception?, string>>()), Times.Exactly(2));
     }
 
-    private StartupMigrationService NewService(IBackupService? backupService = null, RestoreStateService? state = null) => new(
+    private StartupMigrationService NewService(IBackupService? backupService = null, RestoreStateService? state = null,
+        int? lockTimeoutSeconds = null) => new(
         new ContextFactory(_connectionString),
         backupService ?? _backupService.Object,
         state ?? NewState(),
         NullLogger<StartupMigrationService>.Instance,
-        new ConfigurationBuilder().Build());
+        new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["Database:MigrationLockTimeoutSeconds"] = lockTimeoutSeconds?.ToString()
+        }).Build());
+
+    /// <summary>Otra sesión que ejecuta <paramref name="sql"/> y queda abierta hasta que se libere.</summary>
+    private async Task<NpgsqlConnection> OpenClientAsync(string applicationName, string sql)
+    {
+        var connection = new NpgsqlConnection(new NpgsqlConnectionStringBuilder(_connectionString)
+        {
+            ApplicationName = applicationName,
+            Pooling = false
+        }.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
+        return connection;
+    }
 
     /// <summary>Cada instancia representa otro proceso o un reinicio; el estado de los demás se refresca a mano.</summary>
     private RestoreStateService NewState() => new(NullLogger<RestoreStateService>.Instance,
