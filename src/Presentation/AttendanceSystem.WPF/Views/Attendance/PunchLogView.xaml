@@ -1,0 +1,233 @@
+<UserControl x:Class="AttendanceSystem.WPF.Views.Attendance.PunchLogView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
+             xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
+             Background="{StaticResource Brush.Background}">
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
+        <KeyBinding Key="Left" Modifiers="Alt" Command="{Binding PreviousDayCommand}"/>
+        <KeyBinding Key="Right" Modifiers="Alt" Command="{Binding NextDayCommand}"/>
+    </UserControl.InputBindings>
+
+    <UserControl.Resources>
+        <Style x:Key="RowActionItemStyle" TargetType="MenuItem" BasedOn="{StaticResource MahApps.Styles.MenuItem}">
+            <Setter Property="Header" Value="{Binding Header}"/>
+            <Setter Property="Command" Value="{Binding Command}"/>
+        </Style>
+        <Style x:Key="TextCellStyle" TargetType="TextBlock">
+            <Setter Property="VerticalAlignment" Value="Center"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Grid>
+        <Grid Margin="30">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <!-- Encabezado -->
+            <Grid Grid.Row="0" Margin="0,0,0,20">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <StackPanel VerticalAlignment="Center">
+                    <TextBlock Text="Bitácora de marcajes" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                    <TextBlock Text="Cada checada del día, cómo se usó en el cálculo y de qué reloj vino." FontSize="14" Foreground="{StaticResource Brush.TextMuted}"/>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Command="{Binding ExportCommand}" Style="{StaticResource SecondaryButtonStyle}" Margin="0,0,10,0">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconMaterial Kind="FileExcel" Width="16" Height="16" Foreground="{StaticResource Brush.Success}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Exportar" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                    <Button Command="{Binding ManualEntryCommand}" Style="{StaticResource PrimaryButtonStyle}"
+                            Visibility="{Binding CanManualPunch, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconMaterial Kind="ClipboardEdit" Width="16" Height="16" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                            <TextBlock Text="Registro manual" VerticalAlignment="Center"/>
+                        </StackPanel>
+                    </Button>
+                </StackPanel>
+            </Grid>
+
+            <!-- Filtros -->
+            <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="18,14">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="16"/>
+                        <ColumnDefinition Width="*" MaxWidth="420"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0">
+                        <TextBlock Text="Día" Style="{StaticResource FormLabelStyle}"/>
+                        <StackPanel Orientation="Horizontal">
+                            <Button Command="{Binding PreviousDayCommand}" Style="{StaticResource MahApps.Styles.Button.Square}" Width="34" Height="38"
+                                    Background="{StaticResource Brush.SurfaceAlt}" BorderBrush="{StaticResource Brush.Border}" ToolTip="Día anterior (Alt+←)">
+                                <iconPacks:PackIconMaterial Kind="ChevronLeft" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
+                            </Button>
+                            <DatePicker SelectedDate="{Binding SelectedDate}" Style="{StaticResource FormDatePickerStyle}" Width="150" Margin="6,0"/>
+                            <Button Command="{Binding NextDayCommand}" Style="{StaticResource MahApps.Styles.Button.Square}" Width="34" Height="38"
+                                    Background="{StaticResource Brush.SurfaceAlt}" BorderBrush="{StaticResource Brush.Border}" ToolTip="Día siguiente (Alt+→)">
+                                <iconPacks:PackIconMaterial Kind="ChevronRight" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="Empleado" Style="{StaticResource FormLabelStyle}"/>
+                        <ComboBox ItemsSource="{Binding Employees}" SelectedItem="{Binding SelectedEmployee}" DisplayMemberPath="Display"
+                                  IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Display" Style="{StaticResource FormComboBoxStyle}"/>
+                    </StackPanel>
+                    <Button Grid.Column="4" Command="{Binding RefreshCommand}" Style="{StaticResource MahApps.Styles.Button.Square}" Width="38" Height="38"
+                            VerticalAlignment="Bottom" Background="{StaticResource Brush.SurfaceAlt}" BorderBrush="{StaticResource Brush.Border}" ToolTip="Actualizar (F5)">
+                        <iconPacks:PackIconMaterial Kind="Refresh" Width="18" Height="18" Foreground="{StaticResource Brush.Primary}"/>
+                    </Button>
+                </Grid>
+            </Border>
+
+            <!-- Estado del día del empleado elegido: decisiones manuales y cambio de horario -->
+            <WrapPanel Grid.Row="2" Margin="0,0,0,12" Visibility="{Binding HasEmployee, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <Border Style="{StaticResource InfoBannerStyle}" Margin="0,0,10,0" Visibility="{Binding HasShiftOverride, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding ShiftOverrideText}" Style="{StaticResource BannerTextStyle}"/>
+                        <Button Content="Regresar al horario del roster" Command="{Binding ClearShiftOverrideCommand}" Style="{StaticResource MahApps.Styles.Button.Flat}"
+                                FontSize="11" Padding="8,2" Margin="10,0,0,0" Visibility="{Binding CanAdjust, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </StackPanel>
+                </Border>
+                <Border Style="{StaticResource InfoBannerStyle}" Margin="0,0,10,0" Visibility="{Binding HasRestDayOverride, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="{Binding RestDayOverrideText}" Style="{StaticResource BannerTextStyle}"/>
+                        <Button Content="Regresar al descanso del roster" Command="{Binding ClearRestDayOverrideCommand}" Style="{StaticResource MahApps.Styles.Button.Flat}"
+                                FontSize="11" Padding="8,2" Margin="10,0,0,0" Visibility="{Binding CanAdjust, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                    </StackPanel>
+                </Border>
+                <mah:DropDownButton Content="Cambiar horario del día" ItemsSource="{Binding ShiftActions}" ItemContainerStyle="{StaticResource RowActionItemStyle}"
+                                    Height="34" Padding="10,0" Margin="0,0,0,16" VerticalAlignment="Top"
+                                    Visibility="{Binding CanChangeShift, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+            </WrapPanel>
+
+            <!-- Marcajes -->
+            <Border Grid.Row="3" Style="{StaticResource CardStyle}" Padding="8" Margin="0">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{Binding Summary}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" Margin="10,6,0,8"/>
+                    <DataGrid Grid.Row="1" Style="{StaticResource ModernDataGridStyle}" ItemsSource="{Binding Rows}" RowHeight="NaN" MinRowHeight="46">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="Hora" Binding="{Binding CheckTime, StringFormat='HH:mm:ss'}" Width="85">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource TextCellStyle}">
+                                        <Setter Property="FontWeight" Value="Bold"/>
+                                        <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
+                            <DataGridTextColumn Header="No." Binding="{Binding EmployeeId}" Width="70" ElementStyle="{StaticResource TextCellStyle}"/>
+                            <DataGridTextColumn Header="Empleado" Binding="{Binding EmployeeName}" Width="1.4*" MinWidth="160" ElementStyle="{StaticResource TextCellStyle}"/>
+
+                            <DataGridTemplateColumn Header="Uso en el cálculo" Width="2*" MinWidth="240">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,4">
+                                            <!-- Anulado o corregido: ya no cuenta -->
+                                            <Border Style="{StaticResource BadgeBorderStyle}" Margin="0,0,6,0" ToolTip="{Binding VoidTooltip}"
+                                                    Visibility="{Binding IsVoided, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                <TextBlock Text="{Binding VoidText}" FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.TextMuted}" TextDecorations="Strikethrough"/>
+                                            </Border>
+                                            <StackPanel Orientation="Horizontal" Visibility="{Binding IsVoided, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                                <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource Brush.PrimarySoft}" Margin="0,0,6,0"
+                                                        Visibility="{Binding IsCorrection, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <TextBlock Text="Hora corregida" FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}"/>
+                                                </Border>
+                                                <Border Style="{StaticResource BadgeBorderStyle}" Background="{StaticResource Brush.WarningSoft}" Margin="0,0,6,0" ToolTip="{Binding ManualTooltip}"
+                                                        Visibility="{Binding IsManual, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                    <TextBlock Text="Manual" FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.WarningText}"/>
+                                                </Border>
+                                                <Border Margin="0,0,6,0">
+                                                    <Border.Style>
+                                                        <Style TargetType="Border" BasedOn="{StaticResource BadgeBorderStyle}">
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="in"><Setter Property="Background" Value="{StaticResource Brush.SuccessSoft}"/></DataTrigger>
+                                                                <DataTrigger Binding="{Binding Kind}" Value="out"><Setter Property="Background" Value="{StaticResource Brush.PrimarySoft}"/></DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </Border.Style>
+                                                    <TextBlock Text="{Binding Assignment}" FontSize="11" FontWeight="Bold">
+                                                        <TextBlock.Style>
+                                                            <Style TargetType="TextBlock">
+                                                                <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="in"><Setter Property="Foreground" Value="{StaticResource Brush.Success}"/></DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="out"><Setter Property="Foreground" Value="{StaticResource Brush.Primary}"/></DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </TextBlock.Style>
+                                                    </TextBlock>
+                                                </Border>
+                                                <mah:DropDownButton Content="Cambiar..." ItemsSource="{Binding Actions}" ItemContainerStyle="{StaticResource RowActionItemStyle}"
+                                                                    FontSize="11" Padding="6,1" VerticalAlignment="Center"
+                                                                    Visibility="{Binding HasActions, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+
+                            <DataGridTextColumn Header="Método" Binding="{Binding VerifyMethod}" Width="110" ElementStyle="{StaticResource TextCellStyle}"/>
+                            <DataGridTextColumn Header="Reloj" Binding="{Binding DeviceName}" Width="*" MinWidth="120" ElementStyle="{StaticResource TextCellStyle}"/>
+                            <DataGridTextColumn Header="Procesamiento" Binding="{Binding Status}" Width="*" MinWidth="120" ElementStyle="{StaticResource TextCellStyle}"/>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </Border>
+
+            <!-- Historial de ajustes del día (caso 13) -->
+            <Expander Grid.Row="4" Header="{Binding HistoryHeader}" Margin="0,12,0,0" mah:HeaderedControlHelper.HeaderBackground="{StaticResource Brush.SurfaceAlt}"
+                      mah:HeaderedControlHelper.HeaderForeground="{StaticResource Brush.Text}"
+                      Visibility="{Binding ShowHistory, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <DataGrid Style="{StaticResource ModernDataGridStyle}" ItemsSource="{Binding History}" RowHeight="NaN" MinRowHeight="36" MaxHeight="220">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="Fecha" Binding="{Binding ChangedAt, StringFormat='dd/MM/yyyy HH:mm'}" Width="130"/>
+                        <DataGridTextColumn Header="Usuario" Binding="{Binding ChangedBy}" Width="120"/>
+                        <DataGridTextColumn Header="Movimiento" Binding="{Binding Action}" Width="160"/>
+                        <DataGridTextColumn Header="Motivo" Binding="{Binding Reason, TargetNullValue='—'}" Width="*"/>
+                        <DataGridTextColumn Header="Antes → después" Width="1.5*">
+                            <DataGridTextColumn.Binding>
+                                <MultiBinding StringFormat="{}{0} → {1}">
+                                    <Binding Path="Before" TargetNullValue="—"/>
+                                    <Binding Path="After" TargetNullValue="—"/>
+                                </MultiBinding>
+                            </DataGridTextColumn.Binding>
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="TextWrapping" Value="Wrap"/>
+                                    <Setter Property="FontSize" Value="11"/>
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Expander>
+        </Grid>
+
+        <!-- Cargando -->
+        <Border Background="{StaticResource Brush.BusyOverlay}" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="56" Height="56" Foreground="{StaticResource Brush.Primary}"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" FontSize="16" FontWeight="SemiBold" Margin="0,14,0,0" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

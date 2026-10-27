@@ -113,6 +113,7 @@ namespace AttendanceSystem.WPF.ViewModels
                     new NavItem("Inicio", PackIconMaterialKind.ViewDashboardOutline, nameof(Views.Dashboard.DashboardView)),
                     new NavItem("Empleados", PackIconMaterialKind.AccountMultipleOutline, nameof(Views.Employees.EmployeesView)),
                     new NavItem("Asistencia", PackIconMaterialKind.CalendarCheckOutline, nameof(Views.Attendance.AttendanceView)),
+                    new NavItem("Bitácora de marcajes", PackIconMaterialKind.TextBoxSearchOutline, nameof(Views.Attendance.PunchLogView)),
                     new NavItem("Reportes", PackIconMaterialKind.ChartBar, nameof(Views.Reports.ReportsView)),
                 }),
                 ("CATÁLOGOS", new[]

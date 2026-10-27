@@ -13,6 +13,7 @@ namespace AttendanceSystem.WPF.Services
             [nameof(Views.Employees.EmployeesView)] = Permissions.EmployeesView,
             [nameof(Views.Employees.EmployeeDetailView)] = Permissions.EmployeesView,
             [nameof(Views.Attendance.AttendanceView)] = Permissions.AttendanceView,
+            [nameof(Views.Attendance.PunchLogView)] = Permissions.AttendanceView,
             [nameof(Views.Reports.ReportsView)] = Permissions.ReportsView,
             [nameof(Views.Branches.BranchesView)] = Permissions.CatalogsView,
             [nameof(Views.Departments.DepartmentsView)] = Permissions.CatalogsView,

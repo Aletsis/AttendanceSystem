@@ -171,6 +171,7 @@ namespace AttendanceSystem.WPF
             containerRegistry.RegisterForNavigation<Views.Shifts.ShiftsView, ViewModels.Shifts.ShiftsViewModel>();
             containerRegistry.RegisterForNavigation<Views.Devices.DevicesView, ViewModels.Devices.DevicesViewModel>();
             containerRegistry.RegisterForNavigation<Views.Attendance.AttendanceView, ViewModels.Attendance.AttendanceViewModel>();
+            containerRegistry.RegisterForNavigation<Views.Attendance.PunchLogView, ViewModels.Attendance.PunchLogViewModel>();
             containerRegistry.RegisterForNavigation<Views.Reports.ReportsView, ViewModels.Reports.ReportsViewModel>();
             containerRegistry.RegisterForNavigation<Views.Settings.SettingsView, ViewModels.Settings.SettingsViewModel>();
             containerRegistry.RegisterForNavigation<Views.Backup.BackupView, ViewModels.Backup.BackupViewModel>();
@@ -186,6 +187,7 @@ namespace AttendanceSystem.WPF
             containerRegistry.RegisterDialog<Views.Devices.DownloadLogDetailsDialog, ViewModels.Devices.DownloadLogDetailsViewModel>();
             containerRegistry.RegisterDialog<Views.Devices.DownloadLogsRangeDialog, ViewModels.Devices.DownloadLogsRangeViewModel>();
             containerRegistry.RegisterDialog<Views.Common.EffectiveDateDialog, ViewModels.Common.EffectiveDateViewModel>();
+            containerRegistry.RegisterDialog<Views.Common.ReasonDialog, ViewModels.Common.ReasonViewModel>();
             containerRegistry.RegisterDialog<Views.Devices.DeviceAdvancedDetailsDialog, ViewModels.Devices.DeviceAdvancedDetailsViewModel>();
             containerRegistry.RegisterDialog<Views.Employees.ExternalEmployeeDetailDialog, ViewModels.Employees.ExternalEmployeeDetailViewModel>();
             containerRegistry.RegisterDialog<Views.Auth.ChangePasswordDialog, ViewModels.Auth.ChangePasswordViewModel>();
