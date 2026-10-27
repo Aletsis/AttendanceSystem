@@ -97,6 +97,7 @@
             <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
             <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
             <converters:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
+            <converters:CountToVisibilityConverter x:Key="CountToVisibilityConverter" />
             <converters:SuccessToIconConverter x:Key="SuccessToIconConverter" />
             <converters:SuccessToBrushConverter x:Key="SuccessToBrushConverter" />
             <converters:ByteArrayToImageConverter x:Key="ByteArrayToImageConverter" />

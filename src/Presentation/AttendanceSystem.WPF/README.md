@@ -30,9 +30,24 @@ ejecuta tareas programadas (descargas, respaldos y reportes automáticos los hac
 - Durante una restauración (o tras una fallida) se muestra un aviso arriba y los cambios se rechazan.
 - Tras restaurar un respaldo desde aquí se cierra la sesión.
 
+## Pantallas que igualan a la web
+
+- **Inicio**: métricas del día (presentes, retardos, faltas, puntualidad), asistencia de los últimos 7 días, salud de
+  los relojes y pendientes de RH (salidas sin clasificar, extras por autorizar, horarios por corregir, checadas que no
+  cuentan). Cada bloque sólo para quien puede ver esos datos.
+- **Asistencia**: el reporte de asistencia de la web; RH clasifica cada salida temporal y autoriza las extras del día
+  (completas o en bloques de 30 min).
+- **Bitácora de marcajes**: cada checada del día y cómo se usó; RH reasigna marcajes, cambia el horario del día y
+  regresa decisiones al roster (con motivo, `Views/Common/ReasonDialog`).
+- **Empleado**: pestañas, varios días de descanso, fecha de vigencia de los cambios y esquema rotativo
+  (`RotationSchemeModel`, compartido con la web en Application).
+- **Configuración**: además de lo general, comida, toque doble, tareas automáticas, avisos y SMTP. La nube y la
+  cuarentena se editan sólo en la web y se conservan al guardar.
+
 ## Estructura
 
-- `Themes/Theme.xaml`: paleta y estilos compartidos; `App.xaml`: estilos basados en MahApps (tablas).
+- `Themes/Theme.xaml`: paleta y estilos compartidos (tarjetas, botones, pestañas, campos, fichas de días);
+  `App.xaml`: estilos basados en MahApps (tablas y campos de formulario).
 - `Views/ShellWindow.xaml` + `ViewModels/ShellViewModel.cs`: menú, usuario, avisos y mantenimiento.
 - `Services/`: navegación, sesión, mensajes (los guardados correctos se muestran como avisos breves), resumen de
   importaciones.
