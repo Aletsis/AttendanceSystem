@@ -1940,14 +1940,18 @@ GRANT ALL ON SCHEMA public TO public;
             return (true, "Verificación de versión omitida.");
         }
 
+        string? connectionString = null;
+        var lockTimeout = SchemaMigrator.LockTimeout(_configuration);
         try
         {
             NpgsqlConnection.ClearAllPools();
             await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
             var migrationTimeout = StartupMigrationService.MigrationTimeout(_configuration);
+            connectionString = context.Database.GetConnectionString()!;
+            SchemaMigrator.UseMigrationSession(context, migrationTimeout, lockTimeout);
             // Mismo bloqueo que el arranque: un worker que inicia ahora no debe migrar a la vez.
             await using var migrationLock = await DatabaseMigrationLock.AcquireAsync(
-                context.Database.GetConnectionString()!, migrationTimeout, _logger, cancellationToken);
+                connectionString, migrationTimeout, _logger, cancellationToken);
 
             var known = context.Database.GetMigrations().ToList();
             var applied = (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
@@ -1969,14 +1973,17 @@ GRANT ALL ON SCHEMA public TO public;
             progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Actualización de Esquema",
                 $"El respaldo es de una versión anterior: aplicando {pending.Count} migración(es) pendiente(s)...", ProgressPercentage: 90));
 
-            context.Database.SetCommandTimeout(migrationTimeout);
-            await context.Database.MigrateAsync(cancellationToken);
+            await SchemaMigrator.ApplyAsync(context, applied, pending, _logger, cancellationToken);
             return (true, $"Se aplicaron {pending.Count} migraciones pendientes.");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error al verificar o actualizar el esquema restaurado.");
-            return (false, $"No se pudo actualizar el esquema restaurado a esta versión: {ex.Message}");
+            var cause = SchemaMigrator.IsLockTimeout(ex) && connectionString != null
+                ? SchemaMigrator.LockTimeoutMessage(lockTimeout,
+                    await SchemaMigrator.DescribeSessionsHoldingTablesAsync(connectionString, _logger, cancellationToken))
+                : ex.Message;
+            return (false, $"No se pudo actualizar el esquema restaurado a esta versión: {cause}");
         }
         finally
         {
