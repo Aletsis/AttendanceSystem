@@ -53,8 +53,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             { ShiftType.Nocturno, "Nocturno" },
             { ShiftType.Mixto, "Mixto" },
             { ShiftType.Flexible, "Flexible" },
-            { ShiftType.Partido, "Partido / Doble Turno" },
-            { ShiftType.Rotativo, "Rotativo" }
+            { ShiftType.Partido, "Partido / Doble Turno" }
         };
 
         // Decisión 5: cada día del mixto usa un horario existente; todos los tipos excepto Mixto y Rotativo.
@@ -437,7 +436,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                 Name = parameters.GetValue<string>("Name");
                 ToleranceMinutes = parameters.GetValue<int>("ToleranceMinutes");
 
+                // Como en la web: "Rotativo" es un esquema del empleado, no un tipo de horario; uno antiguo se abre como matutino.
                 var type = parameters.GetValue<ShiftType>("ShiftType");
+                if (type == ShiftType.Rotativo) type = ShiftType.Matutino;
                 SelectedShiftType = ShiftTypes.FirstOrDefault(t => t.Key == type);
 
                 var start = parameters.GetValue<TimeSpan>("StartTime");

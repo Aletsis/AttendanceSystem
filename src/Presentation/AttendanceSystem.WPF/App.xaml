@@ -64,6 +64,34 @@
                 </Style.Triggers>
             </Style>
 
+            <!-- Campos de formulario compartidos. -->
+            <Style x:Key="FormTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource MahApps.Styles.TextBox}">
+                <Setter Property="Padding" Value="8,8"/>
+                <Setter Property="MinHeight" Value="38"/>
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+                <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+
+            <Style x:Key="FormComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource MahApps.Styles.ComboBox}">
+                <Setter Property="MinHeight" Value="38"/>
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+                <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+
+            <Style x:Key="FormDatePickerStyle" TargetType="DatePicker" BasedOn="{StaticResource MahApps.Styles.DatePicker}">
+                <Setter Property="MinHeight" Value="38"/>
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+                <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+                <Setter Property="VerticalContentAlignment" Value="Center"/>
+            </Style>
+
+            <Style x:Key="FormCheckBoxStyle" TargetType="CheckBox" BasedOn="{StaticResource MahApps.Styles.CheckBox}">
+                <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
+                <Setter Property="Margin" Value="0,0,0,12"/>
+            </Style>
+
             <!-- Global Converters -->
             <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
             <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
