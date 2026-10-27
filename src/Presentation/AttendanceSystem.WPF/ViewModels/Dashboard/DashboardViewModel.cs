@@ -1,48 +1,52 @@
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.Windows.Input;
 using Prism.Commands;
-using AttendanceSystem.Application.Authorization;
 using AttendanceSystem.WPF.Services;
 using MediatR;
+using MahApps.Metro.IconPacks;
 using AttendanceSystem.Application.Features.Employees.Queries;
 using AttendanceSystem.Application.Features.Attendance.Queries.GetDailyAttendance;
+using AttendanceSystem.Domain.Enumerations;
 
 namespace AttendanceSystem.WPF.ViewModels.Dashboard
 {
+    /// <summary>Inicio: resumen del día y accesos a las pantallas que el usuario puede abrir.</summary>
     public class DashboardViewModel : ViewModelBase
     {
         private readonly IAuthenticationStateService _authService;
         private readonly IFrameNavigationService _navigationService;
         private readonly IMediator _mediator;
 
-        private string _welcomeMessage = string.Empty;
-        private int _totalEmployees;
+        private int _activeEmployees;
         private int _presentToday;
         private int _absentToday;
         private int _lateToday;
+        private string? _statsError;
 
-        public string WelcomeMessage { get => _welcomeMessage; set => SetProperty(ref _welcomeMessage, value); }
-        public int TotalEmployees { get => _totalEmployees; set => SetProperty(ref _totalEmployees, value); }
+        public string WelcomeMessage => $"Hola, {_authService.CurrentUserName ?? "usuario"}";
+        public string RoleName => string.Join(", ", _authService.CurrentUserRoles);
+        public string TodayText
+        {
+            get
+            {
+                var text = DateTime.Today.ToString("dddd d 'de' MMMM 'de' yyyy", CultureInfo.GetCultureInfo("es-MX"));
+                return char.ToUpper(text[0]) + text[1..];
+            }
+        }
+
+        public int ActiveEmployees { get => _activeEmployees; set => SetProperty(ref _activeEmployees, value); }
         public int PresentToday { get => _presentToday; set => SetProperty(ref _presentToday, value); }
         public int AbsentToday { get => _absentToday; set => SetProperty(ref _absentToday, value); }
         public int LateToday { get => _lateToday; set => SetProperty(ref _lateToday, value); }
 
-        // Caso 13: accesos según los permisos del usuario (los comandos también los validan).
-        public bool CanOpenDevices => _authService.HasPermission(Permissions.DevicesDownload);
-        public bool CanOpenSettings => _authService.HasPermission(Permissions.SettingsManage);
-        public bool CanOpenBackup => _authService.HasPermission(Permissions.BackupsManage);
+        /// <summary>Motivo por el que no se cargaron las cifras; antes el error se ocultaba y se veían ceros.</summary>
+        public string? StatsError { get => _statsError; set => SetProperty(ref _statsError, value); }
 
-        public ICommand NavigateToEmployeesCommand { get; }
-        public ICommand NavigateToAttendanceCommand { get; }
-        public ICommand NavigateToDepartmentsCommand { get; }
-        public ICommand NavigateToPositionsCommand { get; }
-        public ICommand NavigateToBranchesCommand { get; }
-        public ICommand NavigateToShiftsCommand { get; }
-        public ICommand NavigateToDevicesCommand { get; }
-        public ICommand NavigateToReportsCommand { get; }
-        public ICommand NavigateToSettingsCommand { get; }
-        public ICommand NavigateToBackupCommand { get; }
-        public ICommand LogoutCommand { get; }
+        public ObservableCollection<QuickLink> QuickLinks { get; } = new();
+
+        public ICommand OpenCommand { get; }
+        public ICommand RefreshCommand { get; }
 
         public DashboardViewModel(
             IAuthenticationStateService authService,
@@ -53,79 +57,56 @@ namespace AttendanceSystem.WPF.ViewModels.Dashboard
             _navigationService = navigationService;
             _mediator = mediator;
 
-            NavigateToEmployeesCommand = new DelegateCommand(() => NavigateTo("Employees"));
-            NavigateToAttendanceCommand = new DelegateCommand(() => NavigateTo("Attendance"));
-            NavigateToDepartmentsCommand = new DelegateCommand(() => NavigateTo("Departments"));
-            NavigateToPositionsCommand = new DelegateCommand(() => NavigateTo("Positions"));
-            NavigateToBranchesCommand = new DelegateCommand(() => NavigateTo("Branches"));
-            NavigateToShiftsCommand = new DelegateCommand(() => NavigateTo("Shifts"));
-            NavigateToDevicesCommand = new DelegateCommand(() => NavigateTo("Devices"), () => CanOpenDevices);
-            NavigateToReportsCommand = new DelegateCommand(() => NavigateTo("Reports"));
-            NavigateToSettingsCommand = new DelegateCommand(() => NavigateTo("Settings"), () => CanOpenSettings);
-            NavigateToBackupCommand = new DelegateCommand(() => NavigateTo("Backup"), () => CanOpenBackup);
-            LogoutCommand = new DelegateCommand(async () => await ExecuteLogoutAsync());
+            OpenCommand = new DelegateCommand<QuickLink>(link => { if (link != null) _navigationService.NavigateTo(link.ViewName); });
+            RefreshCommand = new DelegateCommand(async () => await LoadDashboardAsync());
+
+            var links = new[]
+            {
+                new QuickLink("Empleados", "Altas, cambios y bajas del personal", PackIconMaterialKind.AccountMultipleOutline, nameof(Views.Employees.EmployeesView)),
+                new QuickLink("Asistencia", "Asistencia por día, cálculo y exportación", PackIconMaterialKind.CalendarCheckOutline, nameof(Views.Attendance.AttendanceView)),
+                new QuickLink("Reportes", "Reportes de asistencia y nómina", PackIconMaterialKind.ChartBar, nameof(Views.Reports.ReportsView)),
+                new QuickLink("Relojes y descargas", "Descarga de checadas de los relojes", PackIconMaterialKind.Fingerprint, nameof(Views.Devices.DevicesView)),
+                new QuickLink("Turnos", "Horarios y turnos de trabajo", PackIconMaterialKind.ClockOutline, nameof(Views.Shifts.ShiftsView)),
+                new QuickLink("Sucursales", "Sucursales internas y externas", PackIconMaterialKind.OfficeBuildingOutline, nameof(Views.Branches.BranchesView)),
+                new QuickLink("Configuración", "Empresa, periodos y descargas automáticas", PackIconMaterialKind.CogOutline, nameof(Views.Settings.SettingsView)),
+                new QuickLink("Respaldos", "Crear y restaurar respaldos", PackIconMaterialKind.DatabaseOutline, nameof(Views.Backup.BackupView)),
+            };
+            foreach (var link in links.Where(l => _authService.CanOpen(l.ViewName))) QuickLinks.Add(link);
 
             _ = LoadDashboardAsync();
         }
 
         private async Task LoadDashboardAsync()
         {
-            WelcomeMessage = $"Bienvenido, {_authService.CurrentUserName ?? "Usuario"}";
-
-            SetBusy(true, "Cargando estadísticas...");
+            SetBusy(true, "Cargando resumen del día...");
+            StatsError = null;
             try
             {
-                // 1. Total Employees
                 var empResult = await _mediator.Send(new GetAllEmployeesQuery());
                 if (empResult.IsSuccess && empResult.Value != null)
                 {
-                    TotalEmployees = empResult.Value.Count();
+                    ActiveEmployees = empResult.Value.Count(e => e.Status == EmployeeStatus.Alta);
                 }
 
-                // 2. Attendance Stats (Today)
                 var today = DateTime.Today;
-                var attQuery = new GetDailyAttendanceByDateRangeQuery(today, today);
-                var attResult = await _mediator.Send(attQuery);
-
-                if (attResult != null)
+                var attendance = await _mediator.Send(new GetDailyAttendanceByDateRangeQuery(today, today));
+                if (attendance != null)
                 {
-                    PresentToday = attResult.Count(a => a.ActualCheckIn.HasValue && !a.IsAbsent);
-                    AbsentToday = attResult.Count(a => a.IsAbsent);
-                    LateToday = attResult.Count(a => a.LateMinutes > 0);
+                    PresentToday = attendance.Count(a => a.ActualCheckIn.HasValue && !a.IsAbsent);
+                    AbsentToday = attendance.Count(a => a.IsAbsent);
+                    LateToday = attendance.Count(a => a.LateMinutes > 0);
                 }
             }
-            catch (Exception)
+            catch (Exception ex)
             {
-                // Silent catch for dashboard if fails, just show 0s or keep previous state
-                // Or log error
+                StatsError = $"No se pudo cargar el resumen del día: {ex.Message}";
             }
             finally
             {
                 SetBusy(false);
             }
         }
-
-        private void NavigateTo(string viewName)
-        {
-            switch (viewName)
-            {
-                case "Employees": _navigationService.NavigateTo<Views.Employees.EmployeesView>(); break;
-                case "Departments": _navigationService.NavigateTo<Views.Departments.DepartmentsView>(); break;
-                case "Positions": _navigationService.NavigateTo<Views.Positions.PositionsView>(); break;
-                case "Branches": _navigationService.NavigateTo<Views.Branches.BranchesView>(); break;
-                case "Shifts": _navigationService.NavigateTo<Views.Shifts.ShiftsView>(); break;
-                case "Devices": _navigationService.NavigateTo<Views.Devices.DevicesView>(); break;
-                case "Attendance": _navigationService.NavigateTo<Views.Attendance.AttendanceView>(); break;
-                case "Reports": _navigationService.NavigateTo<Views.Reports.ReportsView>(); break;
-                case "Settings": _navigationService.NavigateTo<Views.Settings.SettingsView>(); break;
-                case "Backup": _navigationService.NavigateTo<Views.Backup.BackupView>(); break;
-            }
-        }
-
-        private async Task ExecuteLogoutAsync()
-        {
-            await _authService.LogoutAsync();
-            _navigationService.ResetTo(FrameNavigationService.LoginViewName);
-        }
     }
+
+    public sealed record QuickLink(string Title, string Description, PackIconMaterialKind Icon, string ViewName);
 }

@@ -132,5 +132,25 @@
 
             <ContentControl Grid.Row="1" prism:RegionManager.RegionName="MainRegion" Focusable="False"/>
         </Grid>
+
+        <!-- Avisos de guardado correcto: no bloquean y se cierran solos (o con un clic). -->
+        <ItemsControl Grid.ColumnSpan="2" ItemsSource="{Binding Toasts}" Focusable="False"
+                      HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,24" Panel.ZIndex="100">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Style="{StaticResource ToastBorderStyle}">
+                        <Border.InputBindings>
+                            <MouseBinding Gesture="LeftClick"
+                                          Command="{Binding DataContext.DismissToastCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                          CommandParameter="{Binding}"/>
+                        </Border.InputBindings>
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconMaterial Kind="CheckCircle" Width="18" Height="18" Foreground="{StaticResource Brush.Success}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding Text}" Foreground="White" Margin="10,0,0,0" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="360"/>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
     </Grid>
 </mah:MetroWindow>

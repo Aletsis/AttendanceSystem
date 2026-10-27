@@ -354,7 +354,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         private void ExecuteEditEmployee(EmployeeListItem? employee)
         {
-            if (employee == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (employee == null || !CanEdit) return;
 
             var parameters = new Prism.Navigation.NavigationParameters();
             parameters.Add("EmployeeId", employee.Id);
@@ -443,7 +444,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
 
         private void ExecuteEditExternalEmployee(ExternalEmployeeListItem? employee)
         {
-            if (employee == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (employee == null || !CanEditExternal) return;
 
             var empData = _allExternalEmployeesData.FirstOrDefault(e => e.Id == employee.Id);
             if (empData == null) return;

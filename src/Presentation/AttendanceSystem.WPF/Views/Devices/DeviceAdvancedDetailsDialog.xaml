@@ -17,7 +17,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -32,8 +36,8 @@
             <!-- Header -->
             <Grid Grid.Row="0" Margin="0,0,0,20">
                 <StackPanel>
-                    <TextBlock Text="Detalles del Dispositivo" FontSize="24" FontWeight="Bold" Foreground="#4E5D78"/>
-                    <TextBlock Text="{Binding Name}" FontSize="14" Foreground="#858796" Margin="0,2,0,0"/>
+                    <TextBlock Text="Detalles del Dispositivo" FontSize="24" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                    <TextBlock Text="{Binding Name}" FontSize="14" Foreground="{StaticResource Brush.TextMuted}" Margin="0,2,0,0"/>
                 </StackPanel>
                 <Border Background="{Binding StatusColor}" CornerRadius="12" Padding="12,4" HorizontalAlignment="Right" VerticalAlignment="Top">
                     <TextBlock Text="{Binding StatusText}" Foreground="White" FontSize="12" FontWeight="Bold"/>
@@ -55,35 +59,35 @@
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
                                 
-                                <Border Background="#F8F9FC" CornerRadius="8" Padding="15" Margin="0,0,10,0">
+                                <Border Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
                                     <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Foreground="#4E73DF" Margin="0,0,0,5" HorizontalAlignment="Center"/>
+                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding UserCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Usuarios" FontSize="11" Foreground="#858796" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Usuarios" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Grid.Column="1" Background="#F8F9FC" CornerRadius="8" Padding="15" Margin="0,0,10,0">
+                                <Border Grid.Column="1" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
                                     <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="Fingerprint" Foreground="#1CC88A" Margin="0,0,0,5" HorizontalAlignment="Center"/>
+                                        <iconPacks:PackIconMaterial Kind="Fingerprint" Foreground="{StaticResource Brush.Success}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding FingerprintCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Huellas" FontSize="11" Foreground="#858796" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Huellas" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Grid.Column="2" Background="#F8F9FC" CornerRadius="8" Padding="15" Margin="0,0,10,0">
+                                <Border Grid.Column="2" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
                                     <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="History" Foreground="#36B9CC" Margin="0,0,0,5" HorizontalAlignment="Center"/>
+                                        <iconPacks:PackIconMaterial Kind="History" Foreground="{StaticResource Brush.Info}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding AttendanceRecordCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Registros" FontSize="11" Foreground="#858796" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Registros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
 
-                                <Border Grid.Column="3" Background="#F8F9FC" CornerRadius="8" Padding="15">
+                                <Border Grid.Column="3" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
                                     <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="ShieldAccount" Foreground="#F6C23E" Margin="0,0,0,5" HorizontalAlignment="Center"/>
+                                        <iconPacks:PackIconMaterial Kind="ShieldAccount" Foreground="{StaticResource Brush.Warning}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
                                         <TextBlock Text="{Binding FaceCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Rostros" FontSize="11" Foreground="#858796" HorizontalAlignment="Center"/>
+                                        <TextBlock Text="Rostros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
                                     </StackPanel>
                                 </Border>
                             </Grid>
@@ -96,18 +100,18 @@
                                 
                                 <StackPanel Margin="0,0,15,0">
                                     <Label Content="Identificación y Red" FontWeight="Bold" Margin="0,0,0,5"/>
-                                    <mah:ClipBorder Background="#F8F9FC" CornerRadius="8" Padding="15">
+                                    <mah:ClipBorder Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
                                         <StackPanel>
-                                            <TextBlock Text="Nombre" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="Nombre" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding Name}" FontSize="15" Margin="0,0,0,10"/>
                                             
-                                            <TextBlock Text="IP / Host" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="IP / Host" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding IpAddress}" FontSize="15" Margin="0,0,0,10"/>
                                             
-                                            <TextBlock Text="Puerto" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="Puerto" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding Port}" FontSize="15" Margin="0,0,0,10"/>
                                             
-                                            <TextBlock Text="Ubicación" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="Ubicación" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding Location, TargetNullValue='Sin ubicación'}" FontSize="15"/>
                                         </StackPanel>
                                     </mah:ClipBorder>
@@ -115,18 +119,18 @@
 
                                 <StackPanel Grid.Column="1">
                                     <Label Content="Conexión y Hardware" FontWeight="Bold" Margin="0,0,0,5"/>
-                                    <mah:ClipBorder Background="#F8F9FC" CornerRadius="8" Padding="15">
+                                    <mah:ClipBorder Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
                                         <StackPanel>
-                                            <TextBlock Text="Marca" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="Marca" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding Brand}" FontSize="15" Margin="0,0,0,10"/>
                                             
-                                            <TextBlock Text="Método de Descarga" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="Método de Descarga" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding DownloadMethod}" FontSize="15" Margin="0,0,0,10"/>
                                             
-                                            <TextBlock Text="Número de Serie" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="Número de Serie" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding SerialNumber, TargetNullValue='No disponible'}" FontSize="15" Margin="0,0,0,10"/>
                                             
-                                            <TextBlock Text="Firmware" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="Firmware" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                             <TextBlock Text="{Binding FirmwareVersion, TargetNullValue='No disponible'}" FontSize="15"/>
                                         </StackPanel>
                                     </mah:ClipBorder>
@@ -147,7 +151,7 @@
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
                             <Button Command="{Binding LoadUsersCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                                     Style="{StaticResource MahApps.Styles.Button.Flat}"
-                                    Background="#4E73DF" Foreground="White">
+                                    Background="{StaticResource Brush.Primary}" Foreground="White">
                                 <StackPanel Orientation="Horizontal">
                                     <iconPacks:PackIconMaterial Kind="Refresh" Width="14" Height="14" Margin="0,0,8,0"/>
                                     <TextBlock Text="Consultar Usuarios del Dispositivo"/>
@@ -207,7 +211,7 @@
                                 </Button>
                             </WrapPanel>
 
-                            <Border BorderThickness="0,1,0,0" BorderBrush="#EAECF4" Margin="0,10,0,20"/>
+                            <Border BorderThickness="0,1,0,0" BorderBrush="{StaticResource Brush.Border}" Margin="0,10,0,20"/>
                             
                             <Label Content="Capacidades del Hardware" FontWeight="Bold" Margin="0,0,0,10"/>
                             <Grid>
@@ -215,21 +219,21 @@
                                     <ColumnDefinition Width="*"/>
                                     <ColumnDefinition Width="*"/>
                                 </Grid.ColumnDefinitions>
-                                <mah:ClipBorder Background="#F8F9FC" CornerRadius="8" Padding="15" Margin="0,0,10,0">
+                                <mah:ClipBorder Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
                                     <StackPanel>
-                                        <TextBlock Text="Límite Usuarios" FontSize="11" Foreground="#858796"/>
+                                        <TextBlock Text="Límite Usuarios" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                         <TextBlock Text="{Binding UserCapacity, TargetNullValue='Desconocido'}" FontSize="15" Margin="0,0,0,10"/>
                                         
-                                        <TextBlock Text="Límite Huellas" FontSize="11" Foreground="#858796"/>
+                                        <TextBlock Text="Límite Huellas" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                         <TextBlock Text="{Binding FingerprintCapacity, TargetNullValue='Desconocido'}" FontSize="15" Margin="0,0,0,10"/>
                                     </StackPanel>
                                 </mah:ClipBorder>
-                                <mah:ClipBorder Grid.Column="1" Background="#F8F9FC" CornerRadius="8" Padding="15">
+                                <mah:ClipBorder Grid.Column="1" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
                                     <StackPanel>
-                                        <TextBlock Text="Límite Rostros" FontSize="11" Foreground="#858796"/>
+                                        <TextBlock Text="Límite Rostros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                         <TextBlock Text="{Binding FaceCapacity, TargetNullValue='Desconocido'}" FontSize="15" Margin="0,0,0,10"/>
                                         
-                                        <TextBlock Text="Límite Registros" FontSize="11" Foreground="#858796"/>
+                                        <TextBlock Text="Límite Registros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                         <TextBlock Text="{Binding AttendanceRecordCapacity, TargetNullValue='Desconocido'}" FontSize="15"/>
                                     </StackPanel>
                                 </mah:ClipBorder>
@@ -296,7 +300,7 @@
             <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                 <Button Content="Cerrar" 
                         Command="{Binding CancelCommand}"
-                        Background="#4E73DF"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="30,10"
                         BorderThickness="0">

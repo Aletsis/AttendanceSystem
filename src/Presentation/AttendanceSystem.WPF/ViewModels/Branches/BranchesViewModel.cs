@@ -193,7 +193,8 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
 
         private void ExecuteEditBranch(BranchListItem? item)
         {
-            if (item == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (item == null || !CanManage) return;
 
             var branchData = _allBranchesData.FirstOrDefault(b => b.Id == item.Id);
             if (branchData == null) return;

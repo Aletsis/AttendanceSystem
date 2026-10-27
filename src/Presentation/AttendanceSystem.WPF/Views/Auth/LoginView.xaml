@@ -5,7 +5,7 @@
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              xmlns:prism="http://prismlibrary.com/"
              prism:ViewModelLocator.AutoWireViewModel="True"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
     
     <UserControl.Resources>
         <!-- Shadow Effect -->
@@ -24,7 +24,7 @@
     <Grid>
         <!-- Background Decoration -->
         <Canvas IsHitTestVisible="False">
-            <Ellipse Width="400" Height="400" Fill="#EBF0F9" Canvas.Left="-100" Canvas.Top="-100"/>
+            <Ellipse Width="400" Height="400" Fill="{StaticResource Brush.PrimarySoft}" Canvas.Left="-100" Canvas.Top="-100"/>
             <Ellipse Width="300" Height="300" Fill="#F0F3F9" Canvas.Right="-50" Canvas.Bottom="-50"/>
         </Canvas>
 
@@ -39,14 +39,14 @@
                     <!-- Logo/Icon Container -->
                     <Border Width="80" 
                             Height="80" 
-                            Background="#F8F9FC" 
+                            Background="{StaticResource Brush.SurfaceAlt}" 
                             CornerRadius="40" 
                             Margin="0,0,0,25" 
                             HorizontalAlignment="Center">
                         <iconPacks:PackIconMaterial Kind="Fingerprint" 
                                                   Width="40" 
                                                   Height="40"
-                                                  Foreground="#4E73DF"
+                                                  Foreground="{StaticResource Brush.Primary}"
                                                   VerticalAlignment="Center"
                                                   HorizontalAlignment="Center"/>
                     </Border>
@@ -54,13 +54,13 @@
                     <TextBlock Text="Sistema de Asistencia" 
                                FontSize="28" 
                                FontWeight="Bold" 
-                               Foreground="#4E5D78"
+                               Foreground="{StaticResource Brush.Text}"
                                HorizontalAlignment="Center"
                                Margin="0,0,0,8"/>
                     
                     <TextBlock Text="Bienvenido de nuevo, por favor inicie sesión." 
                                FontSize="14" 
-                               Foreground="#858796"
+                               Foreground="{StaticResource Brush.TextMuted}"
                                HorizontalAlignment="Center"
                                Margin="0,0,0,40"/>
 
@@ -69,7 +69,7 @@
                         <TextBlock Text="Usuario" 
                                    FontSize="12" 
                                    FontWeight="SemiBold" 
-                                   Foreground="#5A5C69" 
+                                   Foreground="{StaticResource Brush.TextSecondary}" 
                                    Margin="0,0,0,8"/>
                         <TextBox x:Name="UsernameBox"
                                  Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" 
@@ -78,15 +78,15 @@
                                  FontSize="15"
                                  Padding="12,10"
                                  BorderThickness="1.5"
-                                 BorderBrush="#EAECF4"
-                                 Background="#F8F9FC"
-                                 mah:ControlsHelper.FocusBorderBrush="#4E73DF"
+                                 BorderBrush="{StaticResource Brush.Border}"
+                                 Background="{StaticResource Brush.SurfaceAlt}"
+                                 mah:ControlsHelper.FocusBorderBrush="{StaticResource Brush.Primary}"
                                  Margin="0,0,0,20"/>
 
                         <TextBlock Text="Contraseña" 
                                    FontSize="12" 
                                    FontWeight="SemiBold" 
-                                   Foreground="#5A5C69" 
+                                   Foreground="{StaticResource Brush.TextSecondary}" 
                                    Margin="0,0,0,8"/>
                         <PasswordBox x:Name="PasswordBox"
                                     mah:TextBoxHelper.ClearTextButton="True"
@@ -94,9 +94,9 @@
                                     FontSize="15"
                                     Padding="12,10"
                                     BorderThickness="1.5"
-                                    BorderBrush="#EAECF4"
-                                    Background="#F8F9FC"
-                                    mah:ControlsHelper.FocusBorderBrush="#4E73DF"
+                                    BorderBrush="{StaticResource Brush.Border}"
+                                    Background="{StaticResource Brush.SurfaceAlt}"
+                                    mah:ControlsHelper.FocusBorderBrush="{StaticResource Brush.Primary}"
                                     Margin="0,0,0,10"/>
                     </StackPanel>
 
@@ -126,10 +126,10 @@
         </Grid>
 
         <!-- Busy Indicator Overlay -->
-        <Grid Background="#B3000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+        <Grid Background="{StaticResource Brush.BusyOverlay}" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White" Margin="0,0,0,15"/>
-                <TextBlock Text="{Binding BusyMessage}" Foreground="White" HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold"/>
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,15"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" HorizontalAlignment="Center" FontSize="18" FontWeight="SemiBold"/>
             </StackPanel>
         </Grid>
     </Grid>

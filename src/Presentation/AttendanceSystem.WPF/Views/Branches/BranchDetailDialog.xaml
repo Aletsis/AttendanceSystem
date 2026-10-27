@@ -18,7 +18,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -32,8 +36,8 @@
 
             <!-- Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Complete la información de la sucursal" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Complete la información de la sucursal" FontSize="13" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0"/>
             </StackPanel>
 
             <!-- Form -->
@@ -45,7 +49,7 @@
                     </Grid.ColumnDefinitions>
                     
                     <StackPanel Grid.Column="0" Margin="0,0,10,15">
-                        <TextBlock Text="Código" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Código" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Ej: A01"
                                  MaxLength="3"
@@ -53,7 +57,7 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Margin="0,0,0,15">
-                        <TextBlock Text="Nombre" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Nombre" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Nombre de la sucursal"
                                  Padding="10,8"/>
@@ -61,7 +65,7 @@
                 </Grid>
 
                 <StackPanel Margin="0,0,0,15">
-                    <TextBlock Text="Dirección" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBlock Text="Dirección" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <TextBox Text="{Binding Address, UpdateSourceTrigger=PropertyChanged}" 
                              mah:TextBoxHelper.Watermark="Dirección física"
                              Padding="10,8"/>
@@ -70,14 +74,14 @@
                 <CheckBox Content="Es Sucursal Externa" 
                           IsChecked="{Binding IsExternal}"
                           Margin="0,5,0,15"
-                          Foreground="#4E5D78"/>
+                          Foreground="{StaticResource Brush.Text}"/>
 
                 <StackPanel Visibility="{Binding IsExternal, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <TextBlock Text="Host (API URL)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBlock Text="Host (API URL)" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <TextBox Text="{Binding ExternalHost, UpdateSourceTrigger=PropertyChanged}" 
                              mah:TextBoxHelper.Watermark="https://api.sucursal.com"
                              Padding="10,8"/>
-                    <TextBlock Text="Requerido para sincronización remota." FontSize="11" Foreground="#858796" Margin="2,5,0,0"/>
+                    <TextBlock Text="Requerido para sincronización remota." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="2,5,0,0"/>
                 </StackPanel>
             </StackPanel>
 
@@ -90,8 +94,8 @@
                         Padding="20,10"/>
                 
                 <Button Content="Guardar" 
-                        Command="{Binding SaveCommand}"
-                        Background="#4E73DF"
+                        Command="{Binding SaveCommand}" IsDefault="True"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="30,10"
                         BorderThickness="0">

@@ -6,82 +6,66 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
-             Background="#F5F7FA">
-    
+             Background="{StaticResource Brush.Background}">
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
+    </UserControl.InputBindings>
+
     <UserControl.Resources>
-        <!-- Gradients for Stat Cards -->
         <LinearGradientBrush x:Key="PrimaryGradient" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#4E73DF" Offset="0"/>
             <GradientStop Color="#224ABE" Offset="1"/>
         </LinearGradientBrush>
-        
         <LinearGradientBrush x:Key="SuccessGradient" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#1CC88A" Offset="0"/>
             <GradientStop Color="#13855C" Offset="1"/>
         </LinearGradientBrush>
-        
         <LinearGradientBrush x:Key="WarningGradient" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#F6C23E" Offset="0"/>
             <GradientStop Color="#DDA20A" Offset="1"/>
         </LinearGradientBrush>
-        
         <LinearGradientBrush x:Key="DangerGradient" StartPoint="0,0" EndPoint="1,1">
             <GradientStop Color="#E74A3B" Offset="0"/>
             <GradientStop Color="#BE2617" Offset="1"/>
         </LinearGradientBrush>
 
-        <!-- Shadow Effect -->
-        <DropShadowEffect x:Key="CardShadow" 
-                          BlurRadius="15" 
-                          ShadowDepth="2" 
-                          Opacity="0.1" 
-                          Color="Black"/>
-
-        <!-- Quick Action Card Style -->
-        <Style x:Key="QuickActionCardStyle" TargetType="Button">
-            <Setter Property="Background" Value="White"/>
-            <Setter Property="BorderThickness" Value="0"/>
+        <!-- Tarjeta de cifra del día. Tag = título; Content = valor. -->
+        <Style x:Key="StatCardStyle" TargetType="ContentControl">
             <Setter Property="Margin" Value="10"/>
-            <Setter Property="Height" Value="140"/>
+            <Setter Property="Foreground" Value="White"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContentControl">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="16" Padding="24,20" Effect="{StaticResource Effect.CardShadow}">
+                            <StackPanel>
+                                <TextBlock Text="{TemplateBinding Tag}" FontSize="14" FontWeight="SemiBold" Opacity="0.85"/>
+                                <ContentPresenter Margin="0,6,0,0" TextElement.FontSize="34" TextElement.FontWeight="Bold"/>
+                            </StackPanel>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Acceso rápido a una pantalla. -->
+        <Style x:Key="QuickLinkStyle" TargetType="Button">
+            <Setter Property="Margin" Value="10"/>
             <Setter Property="Cursor" Value="Hand"/>
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="border" 
-                                Background="{TemplateBinding Background}" 
-                                CornerRadius="12"
-                                Effect="{StaticResource CardShadow}">
-                            <Grid>
-                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                                    <Border x:Name="iconContainer" 
-                                            Width="60" 
-                                            Height="60" 
-                                            CornerRadius="30" 
-                                            Background="#F8F9FC"
-                                            Margin="0,0,0,10">
-                                        <ContentPresenter Content="{TemplateBinding Content}" 
-                                                         VerticalAlignment="Center" 
-                                                         HorizontalAlignment="Center"/>
-                                    </Border>
-                                    <TextBlock x:Name="text" 
-                                               Text="{TemplateBinding Tag}" 
-                                               FontSize="14" 
-                                               FontWeight="SemiBold" 
-                                               Foreground="#5A5C69"
-                                               TextAlignment="Center"/>
-                                </StackPanel>
-                            </Grid>
+                        <Border x:Name="Card" Background="{StaticResource Brush.Surface}" CornerRadius="12" Padding="20,18"
+                                BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
+                            <ContentPresenter/>
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="border" Property="Background" Value="#F8F9FC"/>
-                                <Setter TargetName="iconContainer" Property="Background" Value="{DynamicResource MahApps.Brushes.Accent}"/>
-                                <Setter TargetName="text" Property="Foreground" Value="{DynamicResource MahApps.Brushes.Accent}"/>
-                                <Setter TargetName="border" Property="RenderTransform">
-                                    <Setter.Value>
-                                        <TranslateTransform Y="-5"/>
-                                    </Setter.Value>
-                                </Setter>
+                                <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource Brush.Primary}"/>
+                                <Setter TargetName="Card" Property="Effect" Value="{StaticResource Effect.CardShadow}"/>
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Card" Property="BorderBrush" Value="{StaticResource Brush.Primary}"/>
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -90,220 +74,77 @@
         </Style>
     </UserControl.Resources>
 
-    <ScrollViewer VerticalScrollBarVisibility="Auto">
-        <Grid Margin="30">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-            </Grid.RowDefinitions>
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="30">
+                <!-- Encabezado -->
+                <Grid Margin="0,0,0,20">
+                    <StackPanel>
+                        <TextBlock Text="{Binding WelcomeMessage}" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                        <TextBlock Foreground="{StaticResource Brush.TextMuted}" FontSize="14" Margin="0,4,0,0">
+                            <Run Text="{Binding TodayText, Mode=OneWay}"/>
+                            <Run Text=" · "/>
+                            <Run Text="{Binding RoleName, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                    <Button HorizontalAlignment="Right" VerticalAlignment="Center" Command="{Binding RefreshCommand}"
+                            Style="{StaticResource MahApps.Styles.Button.Square}" Width="42" Height="42"
+                            Background="{StaticResource Brush.Surface}" BorderBrush="{StaticResource Brush.Border}" ToolTip="Actualizar (F5)">
+                        <iconPacks:PackIconMaterial Kind="Refresh" Width="18" Height="18" Foreground="{StaticResource Brush.Primary}"/>
+                    </Button>
+                </Grid>
 
-            <!-- Header Section -->
-            <Grid Grid.Row="0" Margin="0,0,0,30">
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="Panel de Control" 
-                               FontSize="32" 
-                               FontWeight="Bold" 
-                               Foreground="#4E5D78"/>
-                    <TextBlock Text="{Binding WelcomeMessage}" 
-                               FontSize="16" 
-                               Foreground="#858796" 
-                               Margin="0,5,0,0"/>
-                </StackPanel>
-                
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Border Background="White" 
-                            CornerRadius="20" 
-                            Padding="15,8" 
-                            Effect="{StaticResource CardShadow}">
-                        <StackPanel Orientation="Horizontal">
-                            <iconPacks:PackIconMaterial Kind="CalendarClock" 
-                                                      VerticalAlignment="Center" 
-                                                      Foreground="{DynamicResource MahApps.Brushes.Accent}"
-                                                      Margin="0,0,10,0"/>
-                            <TextBlock Text="{Binding Source={x:Static System:DateTime.Now}, StringFormat='{}{0:dd MMMM, yyyy}'}" 
-                                       xmlns:System="clr-namespace:System;assembly=mscorlib"
-                                       VerticalAlignment="Center" 
-                                       FontWeight="Medium" 
-                                       Foreground="#5A5C69"/>
-                        </StackPanel>
-                    </Border>
-                </StackPanel>
-            </Grid>
-
-            <!-- Statistics Section -->
-            <UniformGrid Grid.Row="1" Columns="4" Margin="-10,0,-10,40">
-                <!-- Total Employees -->
-                <Border Background="{StaticResource PrimaryGradient}" 
-                        CornerRadius="16" 
-                        Margin="10" 
-                        Padding="25"
-                        Effect="{StaticResource CardShadow}">
-                    <Grid>
-                        <StackPanel>
-                            <TextBlock Text="Total Empleados" 
-                                       FontSize="14" 
-                                       FontWeight="SemiBold" 
-                                       Foreground="White" 
-                                       Opacity="0.8"/>
-                            <TextBlock Text="{Binding TotalEmployees}" 
-                                       FontSize="36" 
-                                       FontWeight="Bold" 
-                                       Foreground="White" 
-                                       Margin="0,5,0,0"/>
-                        </StackPanel>
-                        <iconPacks:PackIconMaterial Kind="AccountGroup" 
-                                                  Width="48" 
-                                                  Height="48" 
-                                                  Foreground="White" 
-                                                  HorizontalAlignment="Right" 
-                                                  VerticalAlignment="Center" 
-                                                  Opacity="0.3"/>
-                    </Grid>
+                <!-- Error al cargar las cifras -->
+                <Border Background="{StaticResource Brush.DangerSoft}" CornerRadius="10" Padding="16,12" Margin="0,0,0,10"
+                        Visibility="{Binding StatsError, Converter={StaticResource NullToCollapsedConverter}}">
+                    <TextBlock Text="{Binding StatsError}" Foreground="{StaticResource Brush.Danger}" TextWrapping="Wrap"/>
                 </Border>
 
-                <!-- Present Today -->
-                <Border Background="{StaticResource SuccessGradient}" 
-                        CornerRadius="16" 
-                        Margin="10" 
-                        Padding="25"
-                        Effect="{StaticResource CardShadow}">
-                    <Grid>
-                        <StackPanel>
-                            <TextBlock Text="Presentes Hoy" 
-                                       FontSize="14" 
-                                       FontWeight="SemiBold" 
-                                       Foreground="White" 
-                                       Opacity="0.8"/>
-                            <TextBlock Text="{Binding PresentToday}" 
-                                       FontSize="36" 
-                                       FontWeight="Bold" 
-                                       Foreground="White" 
-                                       Margin="0,5,0,0"/>
-                        </StackPanel>
-                        <iconPacks:PackIconMaterial Kind="AccountCheck" 
-                                                  Width="48" 
-                                                  Height="48" 
-                                                  Foreground="White" 
-                                                  HorizontalAlignment="Right" 
-                                                  VerticalAlignment="Center" 
-                                                  Opacity="0.3"/>
-                    </Grid>
-                </Border>
-
-                <!-- Absent Today -->
-                <Border Background="{StaticResource DangerGradient}" 
-                        CornerRadius="16" 
-                        Margin="10" 
-                        Padding="25"
-                        Effect="{StaticResource CardShadow}">
-                    <Grid>
-                        <StackPanel>
-                            <TextBlock Text="Ausentes Hoy" 
-                                       FontSize="14" 
-                                       FontWeight="SemiBold" 
-                                       Foreground="White" 
-                                       Opacity="0.8"/>
-                            <TextBlock Text="{Binding AbsentToday}" 
-                                       FontSize="36" 
-                                       FontWeight="Bold" 
-                                       Foreground="White" 
-                                       Margin="0,5,0,0"/>
-                        </StackPanel>
-                        <iconPacks:PackIconMaterial Kind="AccountRemove" 
-                                                  Width="48" 
-                                                  Height="48" 
-                                                  Foreground="White" 
-                                                  HorizontalAlignment="Right" 
-                                                  VerticalAlignment="Center" 
-                                                  Opacity="0.3"/>
-                    </Grid>
-                </Border>
-
-                <!-- Late Today -->
-                <Border Background="{StaticResource WarningGradient}" 
-                        CornerRadius="16" 
-                        Margin="10" 
-                        Padding="25"
-                        Effect="{StaticResource CardShadow}">
-                    <Grid>
-                        <StackPanel>
-                            <TextBlock Text="Retardos Hoy" 
-                                       FontSize="14" 
-                                       FontWeight="SemiBold" 
-                                       Foreground="White" 
-                                       Opacity="0.8"/>
-                            <TextBlock Text="{Binding LateToday}" 
-                                       FontSize="36" 
-                                       FontWeight="Bold" 
-                                       Foreground="White" 
-                                       Margin="0,5,0,0"/>
-                        </StackPanel>
-                        <iconPacks:PackIconMaterial Kind="AccountClock" 
-                                                  Width="48" 
-                                                  Height="48" 
-                                                  Foreground="White" 
-                                                  HorizontalAlignment="Right" 
-                                                  VerticalAlignment="Center" 
-                                                  Opacity="0.3"/>
-                    </Grid>
-                </Border>
-            </UniformGrid>
-
-            <!-- Quick Actions Section -->
-            <StackPanel Grid.Row="2">
-                <TextBlock Text="Accesos Rápidos" 
-                           FontSize="22" 
-                           FontWeight="Bold" 
-                           Foreground="#4E5D78" 
-                           Margin="0,0,0,20"/>
-                
-                <UniformGrid Columns="4" Margin="-10">
-                    <Button Command="{Binding NavigateToEmployeesCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Empleados">
-                        <iconPacks:PackIconMaterial Kind="AccountMultiple" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToAttendanceCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Asistencia">
-                        <iconPacks:PackIconMaterial Kind="CalendarCheck" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToDepartmentsCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Departamentos">
-                        <iconPacks:PackIconMaterial Kind="Domain" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToPositionsCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Posiciones">
-                        <iconPacks:PackIconMaterial Kind="AccountBadge" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToBranchesCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Sucursales">
-                        <iconPacks:PackIconMaterial Kind="OfficeBuilding" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToShiftsCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Turnos">
-                        <iconPacks:PackIconMaterial Kind="ClockFast" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToDevicesCommand}" Visibility="{Binding CanOpenDevices, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource QuickActionCardStyle}" Tag="Dispositivos">
-                        <iconPacks:PackIconMaterial Kind="Devices" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToReportsCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Reportes">
-                        <iconPacks:PackIconMaterial Kind="ChartBar" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToSettingsCommand}" Visibility="{Binding CanOpenSettings, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource QuickActionCardStyle}" Tag="Configuración">
-                        <iconPacks:PackIconMaterial Kind="Cog" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding NavigateToBackupCommand}" Visibility="{Binding CanOpenBackup, Converter={StaticResource BooleanToVisibilityConverter}}" Style="{StaticResource QuickActionCardStyle}" Tag="Respaldo">
-                        <iconPacks:PackIconMaterial Kind="Database" Width="30" Height="30"/>
-                    </Button>
-
-                    <Button Command="{Binding LogoutCommand}" Style="{StaticResource QuickActionCardStyle}" Tag="Salir" Foreground="#E74A3B">
-                        <iconPacks:PackIconMaterial Kind="Power" Width="30" Height="30"/>
-                    </Button>
+                <!-- Cifras del día -->
+                <UniformGrid Columns="4" Margin="-10,0">
+                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource PrimaryGradient}" Tag="Empleados activos" Content="{Binding ActiveEmployees}"/>
+                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource SuccessGradient}" Tag="Presentes hoy" Content="{Binding PresentToday}"/>
+                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource DangerGradient}" Tag="Faltas hoy" Content="{Binding AbsentToday}"/>
+                    <ContentControl Style="{StaticResource StatCardStyle}" Background="{StaticResource WarningGradient}" Tag="Retardos hoy" Content="{Binding LateToday}"/>
                 </UniformGrid>
+                <TextBlock Text="Presentes, faltas y retardos son los de la asistencia ya calculada para hoy."
+                           FontSize="12" Foreground="{StaticResource Brush.TextMuted}" Margin="0,4,0,30"/>
+
+                <!-- Accesos -->
+                <TextBlock Text="Accesos rápidos" FontSize="20" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
+                <ItemsControl ItemsSource="{Binding QuickLinks}" Margin="-10,0" Focusable="False">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <UniformGrid Columns="4"/>
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Style="{StaticResource QuickLinkStyle}"
+                                    Command="{Binding DataContext.OpenCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                    CommandParameter="{Binding}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Border Width="44" Height="44" CornerRadius="22" Background="{StaticResource Brush.PrimarySoft}" VerticalAlignment="Top">
+                                        <iconPacks:PackIconMaterial Kind="{Binding Icon}" Width="22" Height="22" Foreground="{StaticResource Brush.Primary}"
+                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                    </Border>
+                                    <StackPanel Margin="14,0,0,0" VerticalAlignment="Center" MaxWidth="180">
+                                        <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
+                                        <TextBlock Text="{Binding Description}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
-        </Grid>
-    </ScrollViewer>
+        </ScrollViewer>
+
+        <Border Background="{StaticResource Brush.BusyOverlay}" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="50" Height="50" Foreground="{StaticResource Brush.Primary}"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+            </StackPanel>
+        </Border>
+    </Grid>
 </UserControl>

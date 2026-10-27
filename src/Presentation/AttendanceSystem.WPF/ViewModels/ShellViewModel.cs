@@ -46,6 +46,7 @@ namespace AttendanceSystem.WPF.ViewModels
 
             NavigateCommand = new DelegateCommand<NavItem>(item => { if (item?.ViewName != null) _navigationService.NavigateTo(item.ViewName); });
             LogoutCommand = new DelegateCommand(async () => await LogoutAsync());
+            DismissToastCommand = new DelegateCommand<ToastMessage>(toast => _messageService.Toasts.Remove(toast));
             ChangePasswordCommand = new DelegateCommand(() => _dialogService.ShowDialog("ChangePasswordDialog", null, async result =>
             {
                 if (result.Result == Prism.Dialogs.ButtonResult.OK)
@@ -75,6 +76,9 @@ namespace AttendanceSystem.WPF.ViewModels
         public ICommand NavigateCommand { get; }
         public ICommand LogoutCommand { get; }
         public ICommand ChangePasswordCommand { get; }
+        public ICommand DismissToastCommand { get; }
+
+        public ObservableCollection<ToastMessage> Toasts => _messageService.Toasts;
 
         /// <summary>Lo llama la ventana al cargarse, cuando la región principal ya existe.</summary>
         public void AttachToMainRegion()

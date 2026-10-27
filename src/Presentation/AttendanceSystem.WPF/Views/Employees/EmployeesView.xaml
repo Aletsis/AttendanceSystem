@@ -3,7 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
+    </UserControl.InputBindings>
     
     <UserControl.Resources>
         <!-- Estatus: verde en alta, rojo en baja y ámbar en ausencias con período (vacaciones, incapacidad, baja temporal). -->
@@ -48,7 +52,7 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="2"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="#F8F9FC"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
         </Style>
     </UserControl.Resources>
 
@@ -72,11 +76,11 @@
                     <TextBlock Text="Gestión de Empleados" 
                                FontSize="26" 
                                FontWeight="Bold"
-                               Foreground="#4E5D78"
+                               Foreground="{StaticResource Brush.Text}"
                                Margin="0,0,20,0"/>
                     
                     <!-- Segmented Mode Selector: Internos vs Externos -->
-                    <Border Background="#EAECF4" CornerRadius="8" Padding="3" VerticalAlignment="Center">
+                    <Border Background="{StaticResource Brush.Border}" CornerRadius="8" Padding="3" VerticalAlignment="Center">
                         <StackPanel Orientation="Horizontal">
                             <Button Content="Sucursales Internas"
                                     Command="{Binding SwitchToInternalCommand}"
@@ -87,10 +91,10 @@
                                 <Button.Style>
                                     <Style TargetType="Button">
                                         <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Foreground" Value="#5A5C69"/>
+                                        <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsInternalMode}" Value="True">
-                                                <Setter Property="Background" Value="#4E73DF"/>
+                                                <Setter Property="Background" Value="{StaticResource Brush.Primary}"/>
                                                 <Setter Property="Foreground" Value="White"/>
                                             </DataTrigger>
                                         </Style.Triggers>
@@ -112,10 +116,10 @@
                                 <Button.Style>
                                     <Style TargetType="Button">
                                         <Setter Property="Background" Value="Transparent"/>
-                                        <Setter Property="Foreground" Value="#5A5C69"/>
+                                        <Setter Property="Foreground" Value="{StaticResource Brush.TextSecondary}"/>
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding IsExternalMode}" Value="True">
-                                                <Setter Property="Background" Value="#1CC88A"/>
+                                                <Setter Property="Background" Value="{StaticResource Brush.Success}"/>
                                                 <Setter Property="Foreground" Value="White"/>
                                             </DataTrigger>
                                         </Style.Triggers>
@@ -134,13 +138,13 @@
                 <!-- Subtitle for Internal -->
                 <TextBlock Text="Personal de sucursales internas con control de asistencia, turnos y retardos"
                            FontSize="13"
-                           Foreground="#858796"
+                           Foreground="{StaticResource Brush.TextMuted}"
                            Visibility="{Binding IsInternalMode, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                 
                 <!-- Subtitle for External -->
                 <TextBlock Text="Personal de sucursales externas (aislado de cálculos y turnos internos; permite IDs repetidos por sucursal)"
                            FontSize="13"
-                           Foreground="#858796"
+                           Foreground="{StaticResource Brush.TextMuted}"
                            Visibility="{Binding IsExternalMode, Converter={StaticResource BooleanToVisibilityConverter}}"/>
             </StackPanel>
 
@@ -154,10 +158,10 @@
                         Height="42"
                         Margin="0,0,10,0"
                         Background="White"
-                        BorderBrush="#EAECF4"
+                        BorderBrush="{StaticResource Brush.Border}"
                         ToolTip="Descargar Plantilla Excel"
                         Effect="{StaticResource CardShadow}">
-                    <iconPacks:PackIconMaterial Kind="FileDownloadOutline" Width="20" Height="20" Foreground="#36B9CC"/>
+                    <iconPacks:PackIconMaterial Kind="FileDownloadOutline" Width="20" Height="20" Foreground="{StaticResource Brush.Info}"/>
                 </Button>
                 
                 <Button Command="{Binding ExportEmployeesCommand}" Visibility="{Binding CanExport, Converter={StaticResource BooleanToVisibilityConverter}}"
@@ -166,10 +170,10 @@
                         Height="42"
                         Margin="0,0,10,0"
                         Background="White"
-                        BorderBrush="#EAECF4"
+                        BorderBrush="{StaticResource Brush.Border}"
                         ToolTip="Exportar a Excel"
                         Effect="{StaticResource CardShadow}">
-                    <iconPacks:PackIconMaterial Kind="FileExcel" Width="20" Height="20" Foreground="#1CC88A"/>
+                    <iconPacks:PackIconMaterial Kind="FileExcel" Width="20" Height="20" Foreground="{StaticResource Brush.Success}"/>
                 </Button>
 
                 <Button Command="{Binding ImportEmployeesCommand}" Visibility="{Binding CanImport, Converter={StaticResource BooleanToVisibilityConverter}}"
@@ -178,14 +182,14 @@
                         Height="42"
                         Margin="0,0,10,0"
                         Background="White"
-                        BorderBrush="#EAECF4"
+                        BorderBrush="{StaticResource Brush.Border}"
                         ToolTip="Importar desde Excel"
                         Effect="{StaticResource CardShadow}">
-                    <iconPacks:PackIconMaterial Kind="FileUpload" Width="20" Height="20" Foreground="#F6C23E"/>
+                    <iconPacks:PackIconMaterial Kind="FileUpload" Width="20" Height="20" Foreground="{StaticResource Brush.Warning}"/>
                 </Button>
 
                 <Button Command="{Binding AddEmployeeCommand}" Visibility="{Binding CanCreate, Converter={StaticResource BooleanToVisibilityConverter}}"
-                        Background="#4E73DF"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Height="45"
                         Padding="20,0"
@@ -212,7 +216,7 @@
                         Orientation="Horizontal"
                         Visibility="{Binding IsExternalMode, Converter={StaticResource BooleanToVisibilityConverter}}">
                 <Button Command="{Binding AddExternalEmployeeCommand}" Visibility="{Binding CanCreateExternal, Converter={StaticResource BooleanToVisibilityConverter}}"
-                        Background="#1CC88A"
+                        Background="{StaticResource Brush.Success}"
                         Foreground="White"
                         Height="45"
                         Padding="20,0"
@@ -262,8 +266,8 @@
                             FontSize="14"
                             Padding="12,10"
                             BorderThickness="1"
-                            BorderBrush="#EAECF4"
-                            Background="#F8F9FC"
+                            BorderBrush="{StaticResource Brush.Border}"
+                            Background="{StaticResource Brush.SurfaceAlt}"
                             Margin="0,0,10,0"/>
 
                     <!-- Status Filter -->
@@ -274,7 +278,7 @@
                              Margin="0,0,10,0"
                              Padding="12,10"
                              BorderThickness="1"
-                             BorderBrush="#EAECF4"/>
+                             BorderBrush="{StaticResource Brush.Border}"/>
 
                     <!-- Refresh Button -->
                     <Button Grid.Column="2"
@@ -282,44 +286,22 @@
                             Style="{StaticResource MahApps.Styles.Button.Square}"
                             Width="42"
                             Height="42"
-                            Background="#F8F9FC"
-                            BorderBrush="#EAECF4">
-                        <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
+                            Background="{StaticResource Brush.SurfaceAlt}"
+                            BorderBrush="{StaticResource Brush.Border}">
+                        <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}"/>
                     </Button>
                 </Grid>
 
                 <!-- 1. Internal Employee Table -->
-                <DataGrid Grid.Row="1"
+                <DataGrid Style="{StaticResource ModernDataGridStyle}"
+                          Grid.Row="1"
                           ItemsSource="{Binding Employees}"
                           SelectedItem="{Binding SelectedEmployee}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          SelectionMode="Single"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserResizeRows="False"
-                          GridLinesVisibility="None"
-                          HeadersVisibility="Column"
-                          BorderThickness="0"
-                          Background="Transparent"
-                          RowHeight="50"
                           Visibility="{Binding IsInternalMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <DataGrid.ColumnHeaderStyle>
-                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
-                            <Setter Property="Background" Value="#F8F9FC"/>
-                            <Setter Property="Foreground" Value="#4E5D78"/>
-                            <Setter Property="FontWeight" Value="Bold"/>
-                            <Setter Property="Padding" Value="10,15"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#EAECF4"/>
-                        </Style>
-                    </DataGrid.ColumnHeaderStyle>
-                    <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MahApps.Styles.DataGridRow}">
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#F8F9FC"/>
-                        </Style>
-                    </DataGrid.RowStyle>
+                    <DataGrid.InputBindings>
+                        <MouseBinding Gesture="LeftDoubleClick" Command="{Binding EditEmployeeCommand}"
+                                      CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"/>
+                    </DataGrid.InputBindings>
                     
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="No. Empleado" Binding="{Binding EmployeeNumber}" Width="120"/>
@@ -327,17 +309,17 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="5,0">
-                                        <Border Width="32" Height="32" Background="#EBF0F9" CornerRadius="16" Margin="0,0,10,0">
-                                            <iconPacks:PackIconMaterial Kind="Account" Width="16" Height="16" Foreground="#4E73DF" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        <Border Width="32" Height="32" Background="{StaticResource Brush.PrimarySoft}" CornerRadius="16" Margin="0,0,10,0">
+                                            <iconPacks:PackIconMaterial Kind="Account" Width="16" Height="16" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                         </Border>
-                                        <TextBlock Text="{Binding FullName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#5A5C69"/>
+                                        <TextBlock Text="{Binding FullName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextSecondary}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="Sucursal" Binding="{Binding BranchName}" Width="140"/>
                         <DataGridTextColumn Header="Departamento" Binding="{Binding DepartmentName}" Width="140"/>
-                        <DataGridTextColumn Header="Posición" Binding="{Binding PositionName}" Width="140"/>
+                        <DataGridTextColumn Header="Puesto" Binding="{Binding PositionName}" Width="140"/>
                         <DataGridTemplateColumn Header="Estado" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -357,21 +339,21 @@
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Sincronizar con Reloj Checador">
-                                            <iconPacks:PackIconMaterial Kind="CloudSync" Width="14" Height="14" Foreground="#36B9CC"/>
+                                            <iconPacks:PackIconMaterial Kind="CloudSync" Width="14" Height="14" Foreground="{StaticResource Brush.Info}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.EditEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 Visibility="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar">
-                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
+                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeleteEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 Visibility="{Binding DataContext.CanDelete, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar">
-                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>
+                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}"/>
                                         </Button>
                                     </StackPanel>
                                 </DataTemplate>
@@ -381,37 +363,15 @@
                 </DataGrid>
 
                 <!-- 2. External Employee Table -->
-                <DataGrid Grid.Row="1"
+                <DataGrid Style="{StaticResource ModernDataGridStyle}"
+                          Grid.Row="1"
                           ItemsSource="{Binding ExternalEmployees}"
                           SelectedItem="{Binding SelectedExternalEmployee}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          SelectionMode="Single"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserResizeRows="False"
-                          GridLinesVisibility="None"
-                          HeadersVisibility="Column"
-                          BorderThickness="0"
-                          Background="Transparent"
-                          RowHeight="50"
                           Visibility="{Binding IsExternalMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <DataGrid.ColumnHeaderStyle>
-                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
-                            <Setter Property="Background" Value="#F8F9FC"/>
-                            <Setter Property="Foreground" Value="#4E5D78"/>
-                            <Setter Property="FontWeight" Value="Bold"/>
-                            <Setter Property="Padding" Value="10,15"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#EAECF4"/>
-                        </Style>
-                    </DataGrid.ColumnHeaderStyle>
-                    <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MahApps.Styles.DataGridRow}">
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#F8F9FC"/>
-                        </Style>
-                    </DataGrid.RowStyle>
+                    <DataGrid.InputBindings>
+                        <MouseBinding Gesture="LeftDoubleClick" Command="{Binding EditExternalEmployeeCommand}"
+                                      CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"/>
+                    </DataGrid.InputBindings>
                     
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="Sucursal Externa" Width="160">
@@ -431,7 +391,7 @@
                                         <Border Width="32" Height="32" Background="#DCFCE7" CornerRadius="16" Margin="0,0,10,0">
                                             <iconPacks:PackIconMaterial Kind="AccountBadge" Width="16" Height="16" Foreground="#16A34A" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                         </Border>
-                                        <TextBlock Text="{Binding FullName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#5A5C69"/>
+                                        <TextBlock Text="{Binding FullName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextSecondary}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -458,14 +418,14 @@
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar Empleado Externo">
-                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
+                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeleteExternalEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 Visibility="{Binding DataContext.CanDeleteExternal, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar Empleado Externo">
-                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>
+                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}"/>
                                         </Button>
                                     </StackPanel>
                                 </DataTemplate>
@@ -478,7 +438,7 @@
 
         <!-- Loading Overlay -->
         <Border Grid.Row="0" Grid.RowSpan="2"
-                Background="#B3000000"
+                Background="{StaticResource Brush.BusyOverlay}"
                 CornerRadius="15"
                 Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
                 Margin="-30">
@@ -486,9 +446,9 @@
                 <mah:ProgressRing IsActive="{Binding IsBusy}" 
                                   Width="60" 
                                   Height="60"
-                                  Foreground="White"/>
+                                  Foreground="{StaticResource Brush.Primary}"/>
                 <TextBlock Text="{Binding BusyMessage}" 
-                           Foreground="White" 
+                           Foreground="{StaticResource Brush.Text}" 
                            FontSize="18"
                            FontWeight="SemiBold"
                            Margin="0,15,0,0"

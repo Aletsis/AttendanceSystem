@@ -207,7 +207,8 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
 
         private void ExecuteEditShift(ShiftListItem? item)
         {
-            if (item == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (item == null || !CanManage) return;
 
             var shiftData = _allShiftsData.FirstOrDefault(s => s.Id == item.Id);
             if (shiftData == null) return;

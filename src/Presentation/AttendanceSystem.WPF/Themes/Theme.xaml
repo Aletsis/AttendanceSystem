@@ -75,4 +75,18 @@
             </Setter.Value>
         </Setter>
     </Style>
+
+    <!-- Capa de "cargando" de las pantallas: clara, para no oscurecer toda la ventana. -->
+    <SolidColorBrush x:Key="Brush.BusyOverlay" Color="#D9F5F7FA"/>
+
+    <!-- Avisos breves (guardado correcto) que no interrumpen: esquina inferior derecha de la ventana. -->
+    <Style x:Key="ToastBorderStyle" TargetType="Border">
+        <Setter Property="Background" Value="{StaticResource Brush.Text}"/>
+        <Setter Property="CornerRadius" Value="10"/>
+        <Setter Property="Padding" Value="16,12"/>
+        <Setter Property="Margin" Value="0,8,0,0"/>
+        <Setter Property="MaxWidth" Value="420"/>
+        <Setter Property="Effect" Value="{StaticResource Effect.CardShadow}"/>
+        <Setter Property="Cursor" Value="Hand"/>
+    </Style>
 </ResourceDictionary>

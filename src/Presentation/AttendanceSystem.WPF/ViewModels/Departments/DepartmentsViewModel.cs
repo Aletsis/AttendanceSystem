@@ -189,7 +189,8 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
 
         private void ExecuteEditDepartment(DepartmentListItem? item)
         {
-            if (item == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (item == null || !CanManage) return;
 
             var deptData = _allDepartmentsData.FirstOrDefault(d => d.Id == item.Id);
             if (deptData == null) return;

@@ -14,13 +14,61 @@
                 <ResourceDictionary Source="Themes/Theme.xaml" />
             </ResourceDictionary.MergedDictionaries>
             
+            <!-- Estilos basados en los de MahApps: aquí, después de combinar sus diccionarios, para poder heredarlos. -->
+            <!-- Tablas de las pantallas: encabezado claro, filas separadas y un aviso cuando no hay registros. -->
+            <Style x:Key="ModernDataGridColumnHeaderStyle" TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
+                <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+                <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
+                <Setter Property="FontWeight" Value="Bold"/>
+                <Setter Property="Padding" Value="10,15"/>
+                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+            </Style>
+
+            <Style x:Key="ModernDataGridRowStyle" TargetType="DataGridRow" BasedOn="{StaticResource MahApps.Styles.DataGridRow}">
+                <Setter Property="BorderThickness" Value="0,0,0,1"/>
+                <Setter Property="BorderBrush" Value="{StaticResource Brush.SurfaceAlt}"/>
+            </Style>
+
+            <Style x:Key="ModernDataGridStyle" TargetType="DataGrid" BasedOn="{StaticResource MahApps.Styles.DataGrid}">
+                <Setter Property="AutoGenerateColumns" Value="False"/>
+                <Setter Property="IsReadOnly" Value="True"/>
+                <Setter Property="SelectionMode" Value="Single"/>
+                <Setter Property="CanUserAddRows" Value="False"/>
+                <Setter Property="CanUserDeleteRows" Value="False"/>
+                <Setter Property="CanUserResizeRows" Value="False"/>
+                <Setter Property="GridLinesVisibility" Value="None"/>
+                <Setter Property="HeadersVisibility" Value="Column"/>
+                <Setter Property="BorderThickness" Value="0"/>
+                <Setter Property="RowHeight" Value="50"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="ColumnHeaderStyle" Value="{StaticResource ModernDataGridColumnHeaderStyle}"/>
+                <Setter Property="RowStyle" Value="{StaticResource ModernDataGridRowStyle}"/>
+                <Style.Triggers>
+                    <Trigger Property="HasItems" Value="False">
+                        <Setter Property="Background">
+                            <Setter.Value>
+                                <VisualBrush Stretch="None" AlignmentX="Center" AlignmentY="Center">
+                                    <VisualBrush.Visual>
+                                        <StackPanel>
+                                            <TextBlock Text="No hay registros para mostrar" FontSize="15" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
+                                            <TextBlock Text="Cambie la búsqueda o los filtros, o agregue un registro nuevo." FontSize="12"
+                                                       Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center" Margin="0,4,0,0"/>
+                                        </StackPanel>
+                                    </VisualBrush.Visual>
+                                </VisualBrush>
+                            </Setter.Value>
+                        </Setter>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
             <!-- Global Converters -->
             <converters:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
             <converters:InverseBooleanConverter x:Key="InverseBooleanConverter" />
             <converters:InverseBooleanToVisibilityConverter x:Key="InverseBooleanToVisibilityConverter" />
             <converters:NullToCollapsedConverter x:Key="NullToCollapsedConverter" />
-            <converters:BooleanToStatusTextConverter x:Key="BooleanToStatusTextConverter" />
-            <converters:BooleanToStatusBrushConverter x:Key="BooleanToStatusBrushConverter" />
             <converters:SuccessToIconConverter x:Key="SuccessToIconConverter" />
             <converters:SuccessToBrushConverter x:Key="SuccessToBrushConverter" />
             <converters:ByteArrayToImageConverter x:Key="ByteArrayToImageConverter" />

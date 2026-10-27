@@ -3,7 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
+    </UserControl.InputBindings>
     
     <UserControl.Resources>
         <!-- Shadow Effect -->
@@ -18,7 +22,7 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="2"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="#F8F9FC"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
         </Style>
     </UserControl.Resources>
 
@@ -41,15 +45,15 @@
                 <TextBlock Text="Horarios y Turnos" 
                            FontSize="28" 
                            FontWeight="Bold"
-                           Foreground="#4E5D78"/>
+                           Foreground="{StaticResource Brush.Text}"/>
                 <TextBlock Text="Configure los esquemas de tiempo laboral para su personal"
                            FontSize="14"
-                           Foreground="#858796"/>
+                           Foreground="{StaticResource Brush.TextMuted}"/>
             </StackPanel>
 
             <Button Grid.Column="2"
                     Command="{Binding AddShiftCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
-                    Background="#4E73DF"
+                    Background="{StaticResource Brush.Primary}"
                     Foreground="White"
                     Height="45"
                     Padding="20,0"
@@ -96,8 +100,8 @@
                             FontSize="14"
                             Padding="12,10"
                             BorderThickness="1"
-                            BorderBrush="#EAECF4"
-                            Background="#F8F9FC"
+                            BorderBrush="{StaticResource Brush.Border}"
+                            Background="{StaticResource Brush.SurfaceAlt}"
                             Margin="0,0,10,0"/>
 
                     <Button Grid.Column="1"
@@ -105,53 +109,31 @@
                             Style="{StaticResource MahApps.Styles.Button.Square}"
                             Width="42"
                             Height="42"
-                            Background="#F8F9FC"
-                            BorderBrush="#EAECF4">
-                        <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
+                            Background="{StaticResource Brush.SurfaceAlt}"
+                            BorderBrush="{StaticResource Brush.Border}">
+                        <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}"/>
                     </Button>
                 </Grid>
 
                 <!-- Shift Table -->
-                <DataGrid Grid.Row="1"
+                <DataGrid Style="{StaticResource ModernDataGridStyle}"
+                          Grid.Row="1"
                           ItemsSource="{Binding Shifts}"
-                          SelectedItem="{Binding SelectedShift}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          SelectionMode="Single"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserResizeRows="False"
-                          GridLinesVisibility="None"
-                          HeadersVisibility="Column"
-                          BorderThickness="0"
-                          Background="Transparent"
-                          RowHeight="50">
-                    <DataGrid.ColumnHeaderStyle>
-                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
-                            <Setter Property="Background" Value="#F8F9FC"/>
-                            <Setter Property="Foreground" Value="#4E5D78"/>
-                            <Setter Property="FontWeight" Value="Bold"/>
-                            <Setter Property="Padding" Value="10,15"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#EAECF4"/>
-                        </Style>
-                    </DataGrid.ColumnHeaderStyle>
-                    <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MahApps.Styles.DataGridRow}">
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#F8F9FC"/>
-                        </Style>
-                    </DataGrid.RowStyle>
+                          SelectedItem="{Binding SelectedShift}">
+                    <DataGrid.InputBindings>
+                        <MouseBinding Gesture="LeftDoubleClick" Command="{Binding EditShiftCommand}"
+                                      CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"/>
+                    </DataGrid.InputBindings>
                     
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="Turno" Width="*">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="5,0">
-                                        <Border Width="32" Height="32" Background="#EBF0F9" CornerRadius="16" Margin="0,0,10,0">
-                                            <iconPacks:PackIconMaterial Kind="ClockOutline" Width="16" Height="16" Foreground="#4E73DF" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        <Border Width="32" Height="32" Background="{StaticResource Brush.PrimarySoft}" CornerRadius="16" Margin="0,0,10,0">
+                                            <iconPacks:PackIconMaterial Kind="ClockOutline" Width="16" Height="16" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                         </Border>
-                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#5A5C69"/>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextSecondary}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -182,7 +164,7 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="VerticalAlignment" Value="Center"/>
                                     <Setter Property="HorizontalAlignment" Value="Center"/>
-                                    <Setter Property="Foreground" Value="#858796"/>
+                                    <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
@@ -191,8 +173,8 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
-                                        <TextBlock Text="{Binding ToleranceMinutes}" FontWeight="SemiBold" Foreground="#5A5C69"/>
-                                        <TextBlock Text=" min" FontSize="11" Foreground="#858796" VerticalAlignment="Bottom" Margin="2,0,0,2"/>
+                                        <TextBlock Text="{Binding ToleranceMinutes}" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextSecondary}"/>
+                                        <TextBlock Text=" min" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" VerticalAlignment="Bottom" Margin="2,0,0,2"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -223,8 +205,8 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="10,0">
-                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Width="14" Height="14" Foreground="#858796" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding EmployeeCount}" VerticalAlignment="Center" Foreground="#5A5C69"/>
+                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Width="14" Height="14" Foreground="{StaticResource Brush.TextMuted}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding EmployeeCount}" VerticalAlignment="Center" Foreground="{StaticResource Brush.TextSecondary}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -239,14 +221,14 @@
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar">
-                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
+                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeleteShiftCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar">
-                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>
+                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}"/>
                                         </Button>
                                     </StackPanel>
                                 </DataTemplate>
@@ -259,7 +241,7 @@
 
         <!-- Loading Overlay -->
         <Border Grid.Row="0" Grid.RowSpan="2"
-                Background="#B3000000"
+                Background="{StaticResource Brush.BusyOverlay}"
                 CornerRadius="15"
                 Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
                 Margin="-30">
@@ -267,9 +249,9 @@
                 <mah:ProgressRing IsActive="{Binding IsBusy}" 
                                   Width="60" 
                                   Height="60"
-                                  Foreground="White"/>
+                                  Foreground="{StaticResource Brush.Primary}"/>
                 <TextBlock Text="{Binding BusyMessage}" 
-                           Foreground="White" 
+                           Foreground="{StaticResource Brush.Text}" 
                            FontSize="18"
                            FontWeight="SemiBold"
                            Margin="0,15,0,0"

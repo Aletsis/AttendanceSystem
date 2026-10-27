@@ -104,7 +104,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
         private async Task LoadPositionsAsync()
         {
-            SetBusy(true, "Cargando posiciones...");
+            SetBusy(true, "Cargando puestos...");
             try
             {
                 var result = await _mediator.Send(new GetPositionsQuery());
@@ -149,12 +149,12 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                 }
                 else
                 {
-                    await _messageService.ShowErrorAsync($"Error al cargar posiciones: {result.Error}");
+                    await _messageService.ShowErrorAsync($"Error al cargar puestos: {result.Error}");
                 }
             }
             catch (Exception ex)
             {
-                await _messageService.ShowErrorAsync($"Error al cargar posiciones: {ex.Message}");
+                await _messageService.ShowErrorAsync($"Error al cargar puestos: {ex.Message}");
             }
             finally
             {
@@ -208,7 +208,8 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
         private void ExecuteEditPosition(PositionListItem? item)
         {
-            if (item == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (item == null || !CanManage) return;
 
             var posData = _allPositionsData.FirstOrDefault(p => p.Id == item.Id);
             if (posData == null) return;
@@ -253,11 +254,11 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar la posición {item.Name}?");
+                $"¿Está seguro de eliminar el puesto {item.Name}?");
 
             if (!confirmed) return;
 
-            SetBusy(true, "Eliminando posición...");
+            SetBusy(true, "Eliminando puesto...");
             try
             {
                 var command = new DeletePositionCommand(item.Id);
@@ -265,17 +266,17 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
                 if (result.IsSuccess)
                 {
-                    await _messageService.ShowSuccessAsync("Posición eliminada correctamente");
+                    await _messageService.ShowSuccessAsync("Puesto eliminado correctamente");
                     await LoadPositionsAsync();
                 }
                 else
                 {
-                    await _messageService.ShowErrorAsync($"Error al eliminar posición: {result.Error}");
+                    await _messageService.ShowErrorAsync($"Error al eliminar puesto: {result.Error}");
                 }
             }
             catch (Exception ex)
             {
-                await _messageService.ShowErrorAsync($"Error al eliminar posición: {ex.Message}");
+                await _messageService.ShowErrorAsync($"Error al eliminar puesto: {ex.Message}");
             }
             finally
             {

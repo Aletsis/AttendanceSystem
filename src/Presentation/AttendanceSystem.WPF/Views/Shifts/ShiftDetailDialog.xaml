@@ -22,6 +22,10 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis"/>
         <DataTemplate x:Key="DayConfigTemplate">
@@ -31,7 +35,7 @@
                     <ColumnDefinition Width="140"/>
                     <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Text="{Binding DayName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                <TextBlock Text="{Binding DayName}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
                 <ComboBox Grid.Column="1" ItemsSource="{Binding DataContext.DayShiftTypes, RelativeSource={RelativeSource AncestorType=UserControl}}"
                           SelectedValue="{Binding Type}"
                           SelectedValuePath="Key"
@@ -48,7 +52,7 @@
         </DataTemplate>
     </UserControl.Resources>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -62,8 +66,8 @@
 
             <!-- Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Defina el tipo de jornada y las reglas de asistencia" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Defina el tipo de jornada y las reglas de asistencia" FontSize="13" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0"/>
             </StackPanel>
 
             <!-- Form -->
@@ -76,20 +80,20 @@
                         </Grid.ColumnDefinitions>
                         
                         <StackPanel Margin="0,0,10,15">
-                            <TextBlock Text="Nombre del Turno" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Nombre del Turno" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" 
                                      mah:TextBoxHelper.Watermark="Ej: Matutino Oficina"
                                      Padding="10,8"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="1" Margin="0,0,0,15">
-                            <TextBlock Text="Tolerancia" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Tolerancia" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <mah:NumericUpDown Value="{Binding ToleranceMinutes}" Minimum="0" Margin="0" Padding="5"/>
                         </StackPanel>
                     </Grid>
 
                     <StackPanel Margin="0,0,0,15">
-                        <TextBlock Text="Tipo de Turno" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Tipo de Turno" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <ComboBox ItemsSource="{Binding ShiftTypes}" 
                                   SelectedItem="{Binding SelectedShiftType}"
                                   DisplayMemberPath="Value"
@@ -107,13 +111,13 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,10,0">
-                                <TextBlock Text="Hora de Entrada" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Hora de Entrada" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding StartDateTime}" 
                                                 mah:TextBoxHelper.Watermark="9:00 AM"
                                                 Culture="es-MX" IsClockVisible="False"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Hora de Salida" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Hora de Salida" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding EndDateTime}" 
                                                 mah:TextBoxHelper.Watermark="6:00 PM"
                                                 Culture="es-MX" IsClockVisible="False"/>
@@ -123,8 +127,8 @@
 
                     <!-- Mixto Shift -->
                     <StackPanel Visibility="{Binding IsMixedShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                        <TextBlock Text="Horario por Día (todos los días; los descansos son los del empleado)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,8"/>
-                        <Border BorderThickness="1" BorderBrush="#EAECF4" CornerRadius="8" Padding="10">
+                        <TextBlock Text="Horario por Día (todos los días; los descansos son los del empleado)" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,8"/>
+                        <Border BorderThickness="1" BorderBrush="{StaticResource Brush.Border}" CornerRadius="8" Padding="10">
                             <ItemsControl ItemsSource="{Binding Days}" ItemTemplate="{StaticResource DayConfigTemplate}"/>
                         </Border>
                         <TextBlock Text="{Binding MixedScheduleMessage}" TextWrapping="Wrap" Foreground="#C05621" FontSize="11" Margin="0,8,0,0"/>
@@ -132,8 +136,8 @@
 
                     <!-- Flexible Shift -->
                     <StackPanel Visibility="{Binding IsFlexibleShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                        <TextBlock Text="Política de Entrada" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                        <CheckBox Content="Definir ventana de llegada con tolerancia de retraso" IsChecked="{Binding HasEntryWindow}" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                        <TextBlock Text="Política de Entrada" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
+                        <CheckBox Content="Definir ventana de llegada con tolerancia de retraso" IsChecked="{Binding HasEntryWindow}" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
 
                         <Grid Margin="0,5,0,15" Visibility="{Binding HasEntryWindow, Converter={StaticResource BoolToVis}}">
                             <Grid.ColumnDefinitions>
@@ -141,47 +145,47 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,10,0">
-                                <TextBlock Text="Inicio Ventana Llegada" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Inicio Ventana Llegada" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding StartDateTime}" 
                                                 mah:TextBoxHelper.Watermark="8:00 AM"
                                                 Culture="es-MX" IsClockVisible="False"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Fin Ventana Llegada" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Fin Ventana Llegada" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding FlexWindowEndDateTime}" 
                                                 mah:TextBoxHelper.Watermark="9:30 AM"
                                                 Culture="es-MX" IsClockVisible="False"/>
                             </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="Modalidad de Marcajes" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Modalidad de Marcajes" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                            <RadioButton Content="Tiempo Corrido (1 Entrada / 1 Salida)" IsChecked="{Binding IsSingleInterval}" GroupName="FlexPunchMode" Margin="0,0,20,0" Foreground="#4E5D78"/>
-                            <RadioButton Content="Multi-Marcajes (Entradas/Salidas libres)" IsChecked="{Binding IsMultiInterval}" GroupName="FlexPunchMode" Foreground="#4E5D78"/>
+                            <RadioButton Content="Tiempo Corrido (1 Entrada / 1 Salida)" IsChecked="{Binding IsSingleInterval}" GroupName="FlexPunchMode" Margin="0,0,20,0" Foreground="{StaticResource Brush.Text}"/>
+                            <RadioButton Content="Multi-Marcajes (Entradas/Salidas libres)" IsChecked="{Binding IsMultiInterval}" GroupName="FlexPunchMode" Foreground="{StaticResource Brush.Text}"/>
                         </StackPanel>
 
-                        <TextBlock Text="Esquema de Horas Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Esquema de Horas Objetivo" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <RadioButton Content="Por Día (Horas Diarias)" IsChecked="{Binding IsDailyFlexibleMode}" GroupName="FlexTargetGroup" Margin="0,0,20,0" Foreground="#4E5D78"/>
-                            <RadioButton Content="Por Semana (Bolsa de Horas)" IsChecked="{Binding IsWeeklyFlexibleMode}" GroupName="FlexTargetGroup" Foreground="#4E5D78"/>
+                            <RadioButton Content="Por Día (Horas Diarias)" IsChecked="{Binding IsDailyFlexibleMode}" GroupName="FlexTargetGroup" Margin="0,0,20,0" Foreground="{StaticResource Brush.Text}"/>
+                            <RadioButton Content="Por Semana (Bolsa de Horas)" IsChecked="{Binding IsWeeklyFlexibleMode}" GroupName="FlexTargetGroup" Foreground="{StaticResource Brush.Text}"/>
                         </StackPanel>
 
                         <StackPanel Visibility="{Binding IsDailyFlexibleMode, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                            <TextBlock Text="Horas Diarias Objetivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Horas Diarias Objetivo" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <mah:NumericUpDown Value="{Binding TargetHours}" Minimum="1" Maximum="24" Interval="1"/>
-                            <TextBlock Text="Horas requeridas por cada día laborable." FontSize="11" Foreground="#858796" Margin="0,2,0,0" FontStyle="Italic"/>
+                            <TextBlock Text="Horas requeridas por cada día laborable." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="0,2,0,0" FontStyle="Italic"/>
                         </StackPanel>
 
                         <StackPanel Visibility="{Binding IsWeeklyFlexibleMode, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                            <TextBlock Text="Horas Semanales Objetivo (Bolsa)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Horas Semanales Objetivo (Bolsa)" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <mah:NumericUpDown Value="{Binding WeeklyHours}" Minimum="1" Maximum="168" Interval="1"/>
-                            <TextBlock Text="Meta acumulada de horas a cumplir durante la semana." FontSize="11" Foreground="#858796" Margin="0,2,0,0" FontStyle="Italic"/>
+                            <TextBlock Text="Meta acumulada de horas a cumplir durante la semana." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="0,2,0,0" FontStyle="Italic"/>
                         </StackPanel>
                         
-                        <CheckBox Content="Habilitar Redondeos en Entrada" IsChecked="{Binding RoundingsEnabled}" Foreground="#4E5D78" FontWeight="SemiBold" Margin="0,0,0,10"/>
+                        <CheckBox Content="Habilitar Redondeos en Entrada" IsChecked="{Binding RoundingsEnabled}" Foreground="{StaticResource Brush.Text}" FontWeight="SemiBold" Margin="0,0,0,10"/>
                         
                         <StackPanel Visibility="{Binding RoundingsEnabled, Converter={StaticResource BoolToVis}}">
-                            <TextBlock Text="Intervalo de Redondeo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Intervalo de Redondeo" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <ComboBox SelectedValue="{Binding RoundingInterval}" SelectedValuePath="Tag" Height="30" VerticalContentAlignment="Center">
                                 <ComboBoxItem Content="15 minutos">
                                     <ComboBoxItem.Tag>
@@ -204,40 +208,40 @@
 
                     <!-- Partido / Doble Turno Shift -->
                     <StackPanel Visibility="{Binding IsSplitShift, Converter={StaticResource BoolToVis}}" Margin="0,0,0,15">
-                        <TextBlock Text="Primer Bloque" FontWeight="Bold" Foreground="#4E5D78" Margin="0,5,0,8"/>
+                        <TextBlock Text="Primer Bloque" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,5,0,8"/>
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,10,0">
-                                <TextBlock Text="Entrada Bloque 1" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Entrada Bloque 1" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding StartDateTime}" 
                                                 mah:TextBoxHelper.Watermark="9:00 AM"
                                                 Culture="es-MX" IsClockVisible="False"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Salida Bloque 1" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Salida Bloque 1" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding EndDateTime}" 
                                                 mah:TextBoxHelper.Watermark="2:00 PM"
                                                 Culture="es-MX" IsClockVisible="False"/>
                             </StackPanel>
                         </Grid>
 
-                        <TextBlock Text="Segundo Bloque" FontWeight="Bold" Foreground="#4E5D78" Margin="0,10,0,8"/>
+                        <TextBlock Text="Segundo Bloque" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,10,0,8"/>
                         <Grid Margin="0,0,0,10">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*"/>
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
                             <StackPanel Margin="0,0,10,0">
-                                <TextBlock Text="Entrada Bloque 2" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Entrada Bloque 2" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding SecondBlockStartDateTime}" 
                                                 mah:TextBoxHelper.Watermark="4:00 PM"
                                                 Culture="es-MX" IsClockVisible="False"/>
                             </StackPanel>
                             <StackPanel Grid.Column="1">
-                                <TextBlock Text="Salida Bloque 2" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                                <TextBlock Text="Salida Bloque 2" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                                 <mah:TimePicker SelectedDateTime="{Binding SecondBlockEndDateTime}" 
                                                 mah:TextBoxHelper.Watermark="8:00 PM"
                                                 Culture="es-MX" IsClockVisible="False"/>
@@ -245,12 +249,12 @@
                         </Grid>
 
                         <StackPanel Margin="0,0,0,15">
-                            <TextBlock Text="Tolerancia Bloque 2 (min)" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Tolerancia Bloque 2 (min)" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <mah:NumericUpDown Value="{Binding SecondBlockToleranceMinutes}" Minimum="0" Maximum="60" Interval="1"/>
-                            <TextBlock Text="Tolerancia independiente para la entrada del segundo bloque." FontSize="11" Foreground="#858796" Margin="0,2,0,0" FontStyle="Italic"/>
+                            <TextBlock Text="Tolerancia independiente para la entrada del segundo bloque." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="0,2,0,0" FontStyle="Italic"/>
                         </StackPanel>
 
-                        <TextBlock Text="* Horario partido con 4 marcajes obligatorios. Admite salida de segundo bloque al día siguiente." FontSize="11" Foreground="#858796" Margin="0,0,0,10" FontStyle="Italic"/>
+                        <TextBlock Text="* Horario partido con 4 marcajes obligatorios. Admite salida de segundo bloque al día siguiente." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="0,0,0,10" FontStyle="Italic"/>
                     </StackPanel>
                 </StackPanel>
             </ScrollViewer>
@@ -264,8 +268,8 @@
                         Padding="20,10"/>
                 
                 <Button Content="Guardar" 
-                        Command="{Binding SaveCommand}"
-                        Background="#4E73DF"
+                        Command="{Binding SaveCommand}" IsDefault="True"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="30,10"
                         BorderThickness="0">

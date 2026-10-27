@@ -3,7 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
     
     <UserControl.Resources>
         <!-- Shadow Effect -->
@@ -32,10 +32,10 @@
                 <TextBlock Text="Generación de Reportes" 
                            FontSize="28" 
                            FontWeight="Bold"
-                           Foreground="#4E5D78"/>
+                           Foreground="{StaticResource Brush.Text}"/>
                 <TextBlock Text="Analice el rendimiento y puntualidad de su equipo"
                            FontSize="14"
-                           Foreground="#858796"/>
+                           Foreground="{StaticResource Brush.TextMuted}"/>
             </StackPanel>
         </Grid>
 
@@ -58,12 +58,12 @@
                     
                     <!-- Report Selection -->
                     <StackPanel Grid.Row="0" Margin="0,0,0,25">
-                        <TextBlock Text="Tipo de Reporte" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                        <TextBlock Text="Tipo de Reporte" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
                         <ComboBox ItemsSource="{Binding ReportTypes}" 
                                   SelectedItem="{Binding SelectedReportType}" 
                                   Padding="12,10"
                                   BorderThickness="1"
-                                  BorderBrush="#EAECF4"/>
+                                  BorderBrush="{StaticResource Brush.Border}"/>
                     </StackPanel>
 
                     <!-- Date Range -->
@@ -75,14 +75,14 @@
                         </Grid.ColumnDefinitions>
                         
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="Fecha Inicio" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                            <TextBlock Text="Fecha Inicio" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
                             <DatePicker SelectedDate="{Binding StartDate}" 
                                        Padding="12,10"
                                        mah:TextBoxHelper.Watermark="Seleccione fecha inicio"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="2">
-                            <TextBlock Text="Fecha Fin" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                            <TextBlock Text="Fecha Fin" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
                             <DatePicker SelectedDate="{Binding EndDate}" 
                                        Padding="12,10"
                                        mah:TextBoxHelper.Watermark="Seleccione fecha fin"/>
@@ -100,65 +100,65 @@
                         </Grid.ColumnDefinitions>
                         
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="Empleado" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                            <TextBlock Text="Empleado" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
                             <ComboBox ItemsSource="{Binding Employees}" 
                                       SelectedItem="{Binding SelectedEmployee}" 
                                       Padding="12,10"
                                       BorderThickness="1"
-                                      BorderBrush="#EAECF4"/>
+                                      BorderBrush="{StaticResource Brush.Border}"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="2">
-                            <TextBlock Text="Departamento" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                            <TextBlock Text="Departamento" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
                             <ComboBox ItemsSource="{Binding Departments}" 
                                       SelectedItem="{Binding SelectedDepartment}" 
                                       Padding="12,10"
                                       BorderThickness="1"
-                                      BorderBrush="#EAECF4"/>
+                                      BorderBrush="{StaticResource Brush.Border}"/>
                         </StackPanel>
 
                         <StackPanel Grid.Column="4">
-                            <TextBlock Text="Sucursal" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                            <TextBlock Text="Sucursal" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
                             <ComboBox ItemsSource="{Binding Branches}" 
                                       SelectedItem="{Binding SelectedBranch}" 
                                       Padding="12,10"
                                       BorderThickness="1"
-                                      BorderBrush="#EAECF4"/>
+                                      BorderBrush="{StaticResource Brush.Border}"/>
                         </StackPanel>
                     </Grid>
 
                     <!-- Export Format -->
                     <StackPanel Grid.Row="3" Margin="0,0,0,40" Width="300" HorizontalAlignment="Left">
-                        <TextBlock Text="Formato de Exportación" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                        <TextBlock Text="Formato de Exportación" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
                         <ComboBox ItemsSource="{Binding ExportFormats}" 
                                   SelectedItem="{Binding SelectedFormat}" 
                                   Padding="12,10"
                                   BorderThickness="1"
-                                  BorderBrush="#EAECF4"/>
+                                  BorderBrush="{StaticResource Brush.Border}"/>
                     </StackPanel>
 
                     <!-- Actions -->
                     <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Command="{Binding PreviewReportCommand}" 
                                 Background="White"
-                                Foreground="#4E5D78"
+                                Foreground="{StaticResource Brush.Text}"
                                 Height="50"
                                 Padding="25,0"
                                 Margin="0,0,15,0"
-                                BorderBrush="#EAECF4">
+                                BorderBrush="{StaticResource Brush.Border}">
                             <Button.Resources>
                                 <Style TargetType="Border">
                                     <Setter Property="CornerRadius" Value="8"/>
                                 </Style>
                             </Button.Resources>
                             <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconMaterial Kind="Eye" Width="20" Height="20" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="#4E73DF"/>
+                                <iconPacks:PackIconMaterial Kind="Eye" Width="20" Height="20" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="{StaticResource Brush.Primary}"/>
                                 <TextBlock Text="Vista Previa" FontWeight="SemiBold" VerticalAlignment="Center"/>
                             </StackPanel>
                         </Button>
 
                         <Button Command="{Binding GenerateReportCommand}" 
-                                Background="#4E73DF"
+                                Background="{StaticResource Brush.Primary}"
                                 Foreground="White"
                                 Height="50"
                                 Padding="25,0"
@@ -180,7 +180,7 @@
 
         <!-- Loading Overlay -->
         <Border Grid.Row="0" Grid.RowSpan="2"
-                Background="#B3000000"
+                Background="{StaticResource Brush.BusyOverlay}"
                 CornerRadius="15"
                 Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
                 Margin="-30">
@@ -188,9 +188,9 @@
                 <mah:ProgressRing IsActive="{Binding IsBusy}" 
                                   Width="60" 
                                   Height="60"
-                                  Foreground="White"/>
+                                  Foreground="{StaticResource Brush.Primary}"/>
                 <TextBlock Text="{Binding BusyMessage}" 
-                           Foreground="White" 
+                           Foreground="{StaticResource Brush.Text}" 
                            FontSize="18"
                            FontWeight="SemiBold"
                            Margin="0,15,0,0"

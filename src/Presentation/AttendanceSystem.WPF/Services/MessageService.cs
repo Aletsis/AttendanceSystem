@@ -1,4 +1,6 @@
+using System.Collections.ObjectModel;
 using System.Windows;
+using System.Windows.Threading;
 
 namespace AttendanceSystem.WPF.Services
 {
@@ -9,10 +11,19 @@ namespace AttendanceSystem.WPF.Services
         Task ShowErrorAsync(string message);
         Task ShowSuccessAsync(string message);
         Task ShowWarningAsync(string message);
+
+        /// <summary>Avisos de éxito visibles en la ventana principal (se cierran solos).</summary>
+        ObservableCollection<ToastMessage> Toasts { get; }
     }
+
+    public sealed record ToastMessage(string Text);
 
     public class MessageService : IMessageService
     {
+        private static readonly TimeSpan ToastDuration = TimeSpan.FromSeconds(4);
+
+        public ObservableCollection<ToastMessage> Toasts { get; } = new();
+
         public Task ShowMessageAsync(string title, string message)
         {
             MessageBox.Show(message, title, MessageBoxButton.OK, MessageBoxImage.Information);
@@ -31,9 +42,30 @@ namespace AttendanceSystem.WPF.Services
             return Task.CompletedTask;
         }
 
+        /// <summary>
+        /// Un guardado correcto no necesita confirmación: se muestra un aviso breve en lugar de una ventana que hay
+        /// que cerrar. Los mensajes largos (p. ej. un resumen de importación) se siguen mostrando en ventana.
+        /// </summary>
         public Task ShowSuccessAsync(string message)
         {
-            MessageBox.Show(message, "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+            if (message.Contains('\n') || System.Windows.Application.Current?.Dispatcher is not { } dispatcher)
+            {
+                MessageBox.Show(message, "Éxito", MessageBoxButton.OK, MessageBoxImage.Information);
+                return Task.CompletedTask;
+            }
+
+            dispatcher.Invoke(() =>
+            {
+                var toast = new ToastMessage(message);
+                Toasts.Add(toast);
+                var timer = new DispatcherTimer { Interval = ToastDuration };
+                timer.Tick += (_, _) =>
+                {
+                    timer.Stop();
+                    Toasts.Remove(toast);
+                };
+                timer.Start();
+            });
             return Task.CompletedTask;
         }
 
