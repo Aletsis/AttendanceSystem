@@ -51,6 +51,12 @@
                                 <TextBlock Text="{Binding RoleName}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" TextTrimming="CharacterEllipsis"/>
                             </StackPanel>
                         </StackPanel>
+                        <Button Command="{Binding ChangePasswordCommand}" Style="{StaticResource NavItemButtonStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="KeyOutline" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="Cambiar contraseña" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
                         <Button Command="{Binding LogoutCommand}" Style="{StaticResource NavItemButtonStyle}" ToolTip="Cerrar sesión">
                             <StackPanel Orientation="Horizontal">
                                 <iconPacks:PackIconMaterial Kind="Logout" Width="16" Height="16" Foreground="{StaticResource Brush.Danger}" VerticalAlignment="Center"/>

@@ -48,7 +48,7 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Command="{Binding DownloadTemplateCommand}"
+                <Button Command="{Binding DownloadTemplateCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Width="42"
                         Height="42"
@@ -72,7 +72,7 @@
                     <iconPacks:PackIconMaterial Kind="FileExcel" Width="20" Height="20" Foreground="#1CC88A"/>
                 </Button>
 
-                <Button Command="{Binding ImportPositionsCommand}"
+                <Button Command="{Binding ImportPositionsCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Width="42"
                         Height="42"
@@ -84,7 +84,7 @@
                     <iconPacks:PackIconMaterial Kind="FileUpload" Width="20" Height="20" Foreground="#F6C23E"/>
                 </Button>
 
-                <Button Command="{Binding AddPositionCommand}"
+                <Button Command="{Binding AddPositionCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Background="#4E73DF"
                         Foreground="White"
                         Height="45"
@@ -233,12 +233,14 @@
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Command="{Binding DataContext.EditPositionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar">
                                             <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeletePositionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanDelete, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar">

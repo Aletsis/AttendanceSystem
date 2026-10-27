@@ -24,6 +24,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IDialogService _dialogService;
 
         private ObservableCollection<ShiftListItem> _shifts = new();
@@ -56,6 +57,9 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.ShiftsManage);
+
         public ICommand AddShiftCommand { get; }
         public ICommand EditShiftCommand { get; }
         public ICommand DeleteShiftCommand { get; }
@@ -65,8 +69,10 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;

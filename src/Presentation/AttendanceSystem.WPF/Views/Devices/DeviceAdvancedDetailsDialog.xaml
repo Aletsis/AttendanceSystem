@@ -137,7 +137,7 @@
                 </TabItem>
 
                 <!-- Users Tab -->
-                <TabItem Header="Usuarios en Dispositivo">
+                <TabItem Header="Usuarios en Dispositivo" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}">
                     <Grid Margin="0,15,0,0">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto"/>
@@ -145,7 +145,7 @@
                         </Grid.RowDefinitions>
 
                         <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
-                            <Button Command="{Binding LoadUsersCommand}"
+                            <Button Command="{Binding LoadUsersCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                                     Style="{StaticResource MahApps.Styles.Button.Flat}"
                                     Background="#4E73DF" Foreground="White">
                                 <StackPanel Orientation="Horizontal">
@@ -183,23 +183,23 @@
                 <TabItem Header="Configuración Remota">
                     <Grid Margin="0,15,0,0">
                         <StackPanel>
-                            <Label Content="Acciones de Control" FontWeight="Bold" Margin="0,0,0,10"/>
+                            <Label Content="Acciones de Control" FontWeight="Bold" Margin="0,0,0,10" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                             <WrapPanel>
-                                <Button Command="{Binding SetTimeCommand}" Margin="0,0,10,10" Padding="15,10">
+                                <Button Command="{Binding SetTimeCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,10,10" Padding="15,10">
                                     <StackPanel Orientation="Horizontal">
                                         <iconPacks:PackIconMaterial Kind="Clock" Width="16" Height="16" Margin="0,0,10,0"/>
                                         <TextBlock Text="Sincronizar Hora"/>
                                     </StackPanel>
                                 </Button>
                                 
-                                <Button Command="{Binding ResetToFactoryCommand}" Margin="0,0,10,10" Padding="15,10">
+                                <Button Command="{Binding ResetToFactoryCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,10,10" Padding="15,10">
                                     <StackPanel Orientation="Horizontal">
                                         <iconPacks:PackIconMaterial Kind="Factory" Width="16" Height="16" Margin="0,0,10,0"/>
                                         <TextBlock Text="Reiniciar Fábrica"/>
                                     </StackPanel>
                                 </Button>
 
-                                <Button Command="{Binding ClearLogsCommand}" Margin="0,0,10,10" Padding="15,10">
+                                <Button Command="{Binding ClearLogsCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,10,10" Padding="15,10">
                                     <StackPanel Orientation="Horizontal">
                                         <iconPacks:PackIconMaterial Kind="DeleteSweep" Width="16" Height="16" Margin="0,0,10,0"/>
                                         <TextBlock Text="Borrar Logs en Dispositivo"/>

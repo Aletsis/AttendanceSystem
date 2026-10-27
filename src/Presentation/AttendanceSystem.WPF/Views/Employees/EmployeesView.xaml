@@ -148,7 +148,7 @@
             <StackPanel Grid.Column="2" 
                         Orientation="Horizontal"
                         Visibility="{Binding IsInternalMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <Button Command="{Binding DownloadTemplateCommand}"
+                <Button Command="{Binding DownloadTemplateCommand}" Visibility="{Binding CanImport, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Width="42"
                         Height="42"
@@ -160,7 +160,7 @@
                     <iconPacks:PackIconMaterial Kind="FileDownloadOutline" Width="20" Height="20" Foreground="#36B9CC"/>
                 </Button>
                 
-                <Button Command="{Binding ExportEmployeesCommand}"
+                <Button Command="{Binding ExportEmployeesCommand}" Visibility="{Binding CanExport, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Width="42"
                         Height="42"
@@ -172,7 +172,7 @@
                     <iconPacks:PackIconMaterial Kind="FileExcel" Width="20" Height="20" Foreground="#1CC88A"/>
                 </Button>
 
-                <Button Command="{Binding ImportEmployeesCommand}"
+                <Button Command="{Binding ImportEmployeesCommand}" Visibility="{Binding CanImport, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Width="42"
                         Height="42"
@@ -184,7 +184,7 @@
                     <iconPacks:PackIconMaterial Kind="FileUpload" Width="20" Height="20" Foreground="#F6C23E"/>
                 </Button>
 
-                <Button Command="{Binding AddEmployeeCommand}"
+                <Button Command="{Binding AddEmployeeCommand}" Visibility="{Binding CanCreate, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Background="#4E73DF"
                         Foreground="White"
                         Height="45"
@@ -211,7 +211,7 @@
             <StackPanel Grid.Column="2" 
                         Orientation="Horizontal"
                         Visibility="{Binding IsExternalMode, Converter={StaticResource BooleanToVisibilityConverter}}">
-                <Button Command="{Binding AddExternalEmployeeCommand}"
+                <Button Command="{Binding AddExternalEmployeeCommand}" Visibility="{Binding CanCreateExternal, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Background="#1CC88A"
                         Foreground="White"
                         Height="45"
@@ -353,18 +353,21 @@
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Command="{Binding DataContext.SendToDeviceCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanSendToDevice, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Sincronizar con Reloj Checador">
                                             <iconPacks:PackIconMaterial Kind="CloudSync" Width="14" Height="14" Foreground="#36B9CC"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.EditEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanEdit, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar">
                                             <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeleteEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanDelete, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar">
@@ -451,12 +454,14 @@
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Command="{Binding DataContext.EditExternalEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanEditExternal, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar Empleado Externo">
                                             <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeleteExternalEmployeeCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanDeleteExternal, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar Empleado Externo">

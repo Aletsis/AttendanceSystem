@@ -25,6 +25,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private readonly IMediator _mediator;
         private readonly IDialogService _dialogService;
         private readonly IMessageService _messageService;
+        private readonly IAuthenticationStateService _authService;
         private DeviceDto? _device;
         private bool _isLoadingHistory;
         private bool _isLoadingUsers;
@@ -63,6 +64,9 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public ObservableCollection<DownloadLog> DownloadHistory { get => _downloadHistory; set => SetProperty(ref _downloadHistory, value); }
         public ObservableCollection<DeviceUserDto> DeviceUsers { get => _deviceUsers; set => SetProperty(ref _deviceUsers, value); }
 
+        /// <summary>Caso 13: ver usuarios, ajustar la hora, vaciar o reiniciar el reloj es de administración de dispositivos.</summary>
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.DevicesManage);
+
         public ICommand FilterHistoryCommand { get; }
         public ICommand ShowLogDetailsCommand { get; }
         public ICommand LoadUsersCommand { get; }
@@ -76,8 +80,10 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public DeviceAdvancedDetailsViewModel(
             IMediator mediator,
             IDialogService dialogService,
-            IMessageService messageService)
+            IMessageService messageService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _mediator = mediator;
             _dialogService = dialogService;
             _messageService = messageService;

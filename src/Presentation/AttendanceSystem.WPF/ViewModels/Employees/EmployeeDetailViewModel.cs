@@ -102,8 +102,14 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 RaisePropertyChanged(nameof(StatusChanged));
                 RaisePropertyChanged(nameof(StartsLeave));
                 RaisePropertyChanged(nameof(StatusDateLabel));
+                RaisePropertyChanged(nameof(CanEditSchedule));
             }
         }
+
+        // Caso 13 (igual que la web): el alta lleva horario; cambiarlo después es de RH y Administrador, igual que las extras.
+        public bool CanEditSchedule => !IsEditMode || (_authService?.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesEditSchedule) ?? true);
+        public bool CanEditOvertime => _authService?.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesEditOvertime) ?? true;
+        public bool OvertimeOptionsEnabled => OvertimeAuthorized && CanEditOvertime;
 
         public string Id
         {
@@ -190,7 +196,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             get => _overtimeAuthorized;
             set
             {
-                if (!SetProperty(ref _overtimeAuthorized, value) || value) return;
+                if (!SetProperty(ref _overtimeAuthorized, value)) return;
+                RaisePropertyChanged(nameof(OvertimeOptionsEnabled));
+                if (value) return;
                 // Caso 12: sin extras autorizadas no se configuran redondeo, topes ni extras antes de la entrada.
                 CalculateOvertimeBeforeEntry = false;
                 SelectedOvertimeCalculationMethod = OvertimeCalculationMethod.NoRounding;

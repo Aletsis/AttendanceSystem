@@ -27,6 +27,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IImportService _importService;
         private readonly IReportExportService _exportService;
         private readonly IDialogService _dialogService;
@@ -61,6 +62,10 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.PositionsManage);
+        public bool CanDelete => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.PositionsDelete);
+
         public ICommand AddPositionCommand { get; }
         public ICommand EditPositionCommand { get; }
         public ICommand DeletePositionCommand { get; }
@@ -75,8 +80,10 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             IMediator mediator,
             IImportService importService,
             IReportExportService exportService,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;

@@ -124,9 +124,12 @@ namespace AttendanceSystem.WPF
             // Necesario para validar contraseñas contra la misma tabla AspNetUsers que usa Blazor
             services.AddIdentityCore<ApplicationUser>(options =>
             {
-                options.Password.RequireDigit = false;
+                // Misma política que la versión web: al cambiar la contraseña desde aquí no debe aceptarse una más débil.
+                options.Password.RequireDigit = true;
+                options.Password.RequireLowercase = true;
+                options.Password.RequireUppercase = true;
                 options.Password.RequireNonAlphanumeric = false;
-                options.Password.RequiredLength = 4;
+                options.Password.RequiredLength = 6;
 
                 // Configuración de bloqueo compartida con el servidor web (H14)
                 options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
@@ -185,6 +188,7 @@ namespace AttendanceSystem.WPF
             containerRegistry.RegisterDialog<Views.Common.EffectiveDateDialog, ViewModels.Common.EffectiveDateViewModel>();
             containerRegistry.RegisterDialog<Views.Devices.DeviceAdvancedDetailsDialog, ViewModels.Devices.DeviceAdvancedDetailsViewModel>();
             containerRegistry.RegisterDialog<Views.Employees.ExternalEmployeeDetailDialog, ViewModels.Employees.ExternalEmployeeDetailViewModel>();
+            containerRegistry.RegisterDialog<Views.Auth.ChangePasswordDialog, ViewModels.Auth.ChangePasswordViewModel>();
         }
 
         protected override void OnExit(ExitEventArgs e)

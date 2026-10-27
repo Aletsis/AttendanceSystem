@@ -19,6 +19,7 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IReportExportService _reportExportService;
         private readonly IConfiguration _configuration;
 
@@ -50,6 +51,10 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             set { if (SetProperty(ref _searchText, value)) FilterLogs(); }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanCalculate => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.AttendanceCalculate);
+        public bool CanManualPunch => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.AttendanceManualPunch);
+
         public ICommand ManualEntryCommand { get; }
         public ICommand CalculateAttendanceCommand { get; }
         public ICommand ExportCommand { get; }
@@ -60,8 +65,10 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             IMessageService messageService,
             IMediator mediator,
             IReportExportService reportExportService,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;

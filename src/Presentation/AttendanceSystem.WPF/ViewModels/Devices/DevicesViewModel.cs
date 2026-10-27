@@ -60,6 +60,9 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.DevicesManage);
+
         public ICommand AddDeviceCommand { get; }
         public ICommand EditDeviceCommand { get; }
         public ICommand DeleteDeviceCommand { get; }

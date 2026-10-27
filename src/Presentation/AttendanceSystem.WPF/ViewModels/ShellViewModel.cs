@@ -21,6 +21,8 @@ namespace AttendanceSystem.WPF.ViewModels
         private readonly IFrameNavigationService _navigationService;
         private readonly IRegionManager _regionManager;
         private readonly IRestoreStateService _restoreState;
+        private readonly Prism.Dialogs.IDialogService _dialogService;
+        private readonly IMessageService _messageService;
         private readonly DispatcherTimer _maintenanceTimer;
         private string? _currentView;
         private string? _maintenanceMessage;
@@ -31,8 +33,12 @@ namespace AttendanceSystem.WPF.ViewModels
             IAuthenticationStateService authService,
             IFrameNavigationService navigationService,
             IRegionManager regionManager,
-            IRestoreStateService restoreState)
+            IRestoreStateService restoreState,
+            Prism.Dialogs.IDialogService dialogService,
+            IMessageService messageService)
         {
+            _dialogService = dialogService;
+            _messageService = messageService;
             _authService = authService;
             _navigationService = navigationService;
             _regionManager = regionManager;
@@ -40,6 +46,11 @@ namespace AttendanceSystem.WPF.ViewModels
 
             NavigateCommand = new DelegateCommand<NavItem>(item => { if (item?.ViewName != null) _navigationService.NavigateTo(item.ViewName); });
             LogoutCommand = new DelegateCommand(async () => await LogoutAsync());
+            ChangePasswordCommand = new DelegateCommand(() => _dialogService.ShowDialog("ChangePasswordDialog", null, async result =>
+            {
+                if (result.Result == Prism.Dialogs.ButtonResult.OK)
+                    await _messageService.ShowSuccessAsync("Su contraseña se cambió correctamente.");
+            }));
 
             _authService.SessionChanged += (_, _) => OnSessionChanged();
 
@@ -63,6 +74,7 @@ namespace AttendanceSystem.WPF.ViewModels
 
         public ICommand NavigateCommand { get; }
         public ICommand LogoutCommand { get; }
+        public ICommand ChangePasswordCommand { get; }
 
         /// <summary>Lo llama la ventana al cargarse, cuando la región principal ya existe.</summary>
         public void AttachToMainRegion()

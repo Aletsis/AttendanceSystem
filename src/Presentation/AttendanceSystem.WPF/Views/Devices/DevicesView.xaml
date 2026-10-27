@@ -59,7 +59,7 @@
                         Effect="{StaticResource CardShadow}">
                     <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
                 </Button>
-                <Button Command="{Binding AddDeviceCommand}"
+                <Button Command="{Binding AddDeviceCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Background="#4E73DF"
                         Foreground="White"
                         Height="45"
@@ -200,6 +200,7 @@
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Command="{Binding DataContext.SyncEmployeesCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Sincronizar Empleados">
@@ -212,6 +213,7 @@
                                             <iconPacks:PackIconMaterial Kind="Information" Width="14" Height="14" Foreground="#4E73DF"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.TestConnectionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Actualizar Info">
@@ -224,6 +226,7 @@
                                             <iconPacks:PackIconMaterial Kind="TrayArrowDown" Width="14" Height="14" Foreground="#1CC88A"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.EditDeviceCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar">

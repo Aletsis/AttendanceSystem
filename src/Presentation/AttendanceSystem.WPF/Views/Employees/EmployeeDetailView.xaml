@@ -202,13 +202,15 @@
                                 <TextBlock Text="Horario y Jornada" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
                                 
                                 <TextBlock Text="Tipo de Turno" Style="{StaticResource FieldLabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding ShiftTypeOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedShiftType}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                <ComboBox ItemsSource="{Binding ShiftTypeOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedShiftType}" Style="{StaticResource ModernComboBoxStyle}" IsEnabled="{Binding CanEditSchedule}"/>
 
                                 <TextBlock Text="Horario Asignado" Style="{StaticResource FieldLabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding VisibleShifts}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedShiftId}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                <ComboBox ItemsSource="{Binding VisibleShifts}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedShiftId}" Style="{StaticResource ModernComboBoxStyle}" IsEnabled="{Binding CanEditSchedule}"/>
 
                                 <TextBlock Text="Día de Descanso" Style="{StaticResource FieldLabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding DaysOfWeek}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding SelectedRestDay}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                <ComboBox ItemsSource="{Binding DaysOfWeek}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding SelectedRestDay}" Style="{StaticResource ModernComboBoxStyle}" IsEnabled="{Binding CanEditSchedule}"/>
+                                <TextBlock Text="Sólo RH o Administrador pueden cambiar el turno, el horario y el descanso." FontSize="11" Foreground="#858796" TextWrapping="Wrap"
+                                           Visibility="{Binding CanEditSchedule, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                             </StackPanel>
                         </Border>
 
@@ -231,10 +233,12 @@
                             <StackPanel>
                                 <TextBlock Text="Configuración de Tiempo Extra" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
                                 
-                                <CheckBox IsChecked="{Binding OvertimeAuthorized}" Content="Autorizar Tiempo Extra" Margin="0,0,0,10" FontWeight="SemiBold" Foreground="#4E5D78"/>
-                                <CheckBox IsChecked="{Binding CalculateOvertimeBeforeEntry}" Content="Calcular antes de la entrada" Margin="0,0,0,20" IsEnabled="{Binding OvertimeAuthorized}" Visibility="{Binding AllowsOvertimeBeforeEntry, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="#858796"/>
+                                <TextBlock Text="Sólo RH o Administrador pueden configurar el tiempo extra." FontSize="11" Foreground="#858796" TextWrapping="Wrap" Margin="0,0,0,10"
+                                           Visibility="{Binding CanEditOvertime, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                <CheckBox IsChecked="{Binding OvertimeAuthorized}" IsEnabled="{Binding CanEditOvertime}" Content="Autorizar Tiempo Extra" Margin="0,0,0,10" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                                <CheckBox IsChecked="{Binding CalculateOvertimeBeforeEntry}" Content="Calcular antes de la entrada" Margin="0,0,0,20" IsEnabled="{Binding OvertimeOptionsEnabled}" Visibility="{Binding AllowsOvertimeBeforeEntry, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="#858796"/>
 
-                                <StackPanel IsEnabled="{Binding OvertimeAuthorized}">
+                                <StackPanel IsEnabled="{Binding OvertimeOptionsEnabled}">
                                     <TextBlock Text="Método de Redondeo" Style="{StaticResource FieldLabelStyle}"/>
                                     <ComboBox ItemsSource="{Binding OvertimeCalculationMethodOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedOvertimeCalculationMethod}" Style="{StaticResource ModernComboBoxStyle}"/>
 

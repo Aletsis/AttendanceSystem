@@ -48,7 +48,7 @@
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Command="{Binding ManualEntryCommand}"
+                <Button Command="{Binding ManualEntryCommand}" Visibility="{Binding CanManualPunch, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Background="White"
                         Foreground="#4E5D78"
                         Height="45"
@@ -66,7 +66,7 @@
                         <TextBlock Text="Registro Manual" FontWeight="SemiBold" VerticalAlignment="Center"/>
                     </StackPanel>
                 </Button>
-                <Button Command="{Binding CalculateAttendanceCommand}"
+                <Button Command="{Binding CalculateAttendanceCommand}" Visibility="{Binding CanCalculate, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Background="#4E73DF"
                         Foreground="White"
                         Height="45"

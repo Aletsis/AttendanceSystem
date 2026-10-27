@@ -26,6 +26,7 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IImportService _importService;
         private readonly IReportExportService _exportService;
         private readonly IDialogService _dialogService;
@@ -60,6 +61,9 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.DepartmentsManage);
+
         public ICommand AddDepartmentCommand { get; }
         public ICommand EditDepartmentCommand { get; }
         public ICommand DeleteDepartmentCommand { get; }
@@ -74,8 +78,10 @@ namespace AttendanceSystem.WPF.ViewModels.Departments
             IMediator mediator,
             IImportService importService,
             IReportExportService exportService,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
