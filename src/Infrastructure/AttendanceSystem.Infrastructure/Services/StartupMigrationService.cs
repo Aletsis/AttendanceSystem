@@ -80,7 +80,7 @@ public class StartupMigrationService
             var known = context.Database.GetMigrations().ToList();
             var applied = (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
 
-            var unknown = applied.Except(known).ToList();
+            var unknown = RetiredMigrations.Unknown(applied, known);
             if (unknown.Count > 0)
             {
                 // Pasa al reinstalar una versión anterior: este código no sabe trabajar con ese esquema.

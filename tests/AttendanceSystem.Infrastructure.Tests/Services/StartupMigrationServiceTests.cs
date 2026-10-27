@@ -181,6 +181,25 @@ public class StartupMigrationServiceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task AnInstallWithTheRetiredOvertimeFlagsMigrationId_IsUpgraded_NotTreatedAsNewer()
+    {
+        if (!_available) return;
+        // Esas instalaciones aplicaron AddOvertimeFlagsToDailyAttendance con el identificador que tenía antes de regenerarse.
+        await MigrateToAsync(V223LastMigration);
+        await ExecuteAsync(_connectionString, @"
+DELETE FROM ""__EFMigrationsHistory"" WHERE ""MigrationId"" = '20260423210254_AddOvertimeFlagsToDailyAttendance';
+INSERT INTO ""__EFMigrationsHistory"" VALUES ('20260423195140_AddOvertimeFlagsToDailyAttendance', '9.0.0');");
+        _backupService.Setup(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupResultDto { Success = true, BackupFilePath = "/respaldos/PreMigration_Backup_x.backup" });
+
+        var result = await NewService().RunAsync();
+
+        result.Outcome.Should().Be(StartupMigrationOutcome.Migrated);
+        await using var context = new ContextFactory(_connectionString).CreateDbContext();
+        (await context.Database.GetPendingMigrationsAsync()).Should().BeEmpty("la migración regenerada no choca con las columnas que ya existen");
+    }
+
+    [Fact]
     public async Task WhenPostgresIsUnreachable_StartupRetriesAndThenStops()
     {
         var unreachable = new NpgsqlConnectionStringBuilder(_connectionString) { Port = 1, Timeout = 2 }.ConnectionString;

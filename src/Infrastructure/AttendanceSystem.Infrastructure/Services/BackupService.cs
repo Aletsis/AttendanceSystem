@@ -1952,7 +1952,7 @@ GRANT ALL ON SCHEMA public TO public;
             var known = context.Database.GetMigrations().ToList();
             var applied = (await context.Database.GetAppliedMigrationsAsync(cancellationToken)).ToList();
 
-            var unknown = applied.Except(known).ToList();
+            var unknown = RetiredMigrations.Unknown(applied, known);
             if (unknown.Count > 0)
             {
                 return (false, $"El respaldo proviene de una versión más nueva del sistema (migraciones desconocidas: {string.Join(", ", unknown.Take(3))}{(unknown.Count > 3 ? ", ..." : "")}). Actualice la aplicación antes de restaurarlo.");
