@@ -1973,7 +1973,7 @@ GRANT ALL ON SCHEMA public TO public;
             progress?.Report(new RestoreProgressReport(RestoreStage.Finalizing, "Actualización de Esquema",
                 $"El respaldo es de una versión anterior: aplicando {pending.Count} migración(es) pendiente(s)...", ProgressPercentage: 90));
 
-            await SchemaMigrator.ApplyAsync(context, applied, pending, _logger, cancellationToken);
+            await SchemaMigrator.ApplyAsync(context, applied, pending, migrationTimeout, deadlineUtc: null, _logger, cancellationToken);
             return (true, $"Se aplicaron {pending.Count} migraciones pendientes.");
         }
         catch (Exception ex)

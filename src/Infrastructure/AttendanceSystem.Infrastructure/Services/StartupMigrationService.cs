@@ -40,6 +40,7 @@ public class StartupMigrationService
     private readonly ILogger<StartupMigrationService> _logger;
     private readonly TimeSpan _migrationTimeout;
     private readonly TimeSpan _lockTimeout;
+    private readonly TimeSpan _startupBudget;
     private readonly int _connectAttempts;
     private readonly TimeSpan _connectRetryDelay;
 
@@ -56,6 +57,7 @@ public class StartupMigrationService
         _logger = logger;
         _migrationTimeout = MigrationTimeout(configuration);
         _lockTimeout = SchemaMigrator.LockTimeout(configuration);
+        _startupBudget = SchemaMigrator.StartupBudget(configuration);
         _connectAttempts = Math.Max(configuration.GetValue("Database:StartupConnectAttempts", 6), 1);
         _connectRetryDelay = TimeSpan.FromSeconds(Math.Max(configuration.GetValue("Database:StartupConnectRetrySeconds", 2), 0));
     }
@@ -69,6 +71,7 @@ public class StartupMigrationService
 
     public async Task<StartupMigrationResult> RunAsync(CancellationToken cancellationToken = default)
     {
+        var deadlineUtc = DateTime.UtcNow + _startupBudget;
         await using var context = await _contextFactory.CreateDbContextAsync(cancellationToken);
         await EnsureDatabaseReachableAsync(context, cancellationToken);
         var connectionString = context.Database.GetConnectionString()!;
@@ -78,7 +81,7 @@ public class StartupMigrationService
         try
         {
             await using var migrationLock = await DatabaseMigrationLock.AcquireAsync(
-                connectionString, _migrationTimeout, _logger, cancellationToken);
+                connectionString, _startupBudget < _migrationTimeout ? _startupBudget : _migrationTimeout, _logger, cancellationToken);
 
             // Se consulta con el bloqueo tomado: si otro proceso migró mientras se esperaba, ya no queda nada pendiente.
             var known = context.Database.GetMigrations().ToList();
@@ -127,7 +130,7 @@ public class StartupMigrationService
                     _lockTimeout.TotalSeconds, holders);
             }
 
-            await SchemaMigrator.ApplyAsync(context, applied, pending, _logger, cancellationToken);
+            await SchemaMigrator.ApplyAsync(context, applied, pending, _migrationTimeout, deadlineUtc, _logger, cancellationToken);
             _logger.LogInformation("Todas las migraciones se aplicaron correctamente");
             return new StartupMigrationResult(StartupMigrationOutcome.Migrated, $"Se aplicaron {pending.Count} migraciones.");
         }
@@ -138,7 +141,7 @@ public class StartupMigrationService
             var cause = SchemaMigrator.IsLockTimeout(ex)
                 ? SchemaMigrator.LockTimeoutMessage(_lockTimeout,
                     await SchemaMigrator.DescribeSessionsHoldingTablesAsync(connectionString, _logger, cancellationToken))
-                : $"{ex.Message}.";
+                : ex.Message.EndsWith('.') ? ex.Message : $"{ex.Message}.";
 
             // Cada migración se confirma por separado: la base queda en la última que terminó, no a medias.
             var lastApplied = await TryGetLastAppliedMigrationAsync(cancellationToken);

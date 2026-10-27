@@ -31,9 +31,21 @@ internal static class SchemaMigrator
         context.Database.SetCommandTimeout(commandTimeout);
     }
 
-    /// <summary>Aplica las pendientes de una en una, registrando cuál se aplica y cuánto tarda.</summary>
+    /// <summary>Tiempo total del arranque para respaldar y migrar; debe vencer antes que <c>startupTimeLimit</c> de IIS.</summary>
+    internal static TimeSpan StartupBudget(IConfiguration configuration) =>
+        TimeSpan.FromMinutes(Math.Max(configuration.GetValue("Database:StartupMigrationBudgetMinutes", 50), 1));
+
+    /// <summary>Por debajo de esto no se empieza otra migración: es preferible reiniciar y continuar.</summary>
+    private static readonly TimeSpan MinimumStepTime = TimeSpan.FromMinutes(1);
+
+    /// <summary>
+    /// Aplica las pendientes de una en una, registrando cuál se aplica y cuánto tarda. Con <paramref name="deadlineUtc"/>,
+    /// ningún comando pasa de esa hora: si IIS mata el arranque, no queda registro de qué pasó y la sesión que estaba
+    /// migrando sigue viva en PostgreSQL, bloqueando las tablas. Al vencer lanza <see cref="TimeoutException"/>; las
+    /// migraciones ya aplicadas quedan y el siguiente arranque continúa con las demás.
+    /// </summary>
     public static async Task ApplyAsync(AttendanceDbContext context, IReadOnlyList<string> applied, IReadOnlyList<string> pending,
-        ILogger logger, CancellationToken cancellationToken)
+        TimeSpan commandTimeout, DateTime? deadlineUtc, ILogger logger, CancellationToken cancellationToken)
     {
         // Migrar hasta una migración revierte las aplicadas posteriores: si alguna pendiente es anterior a la última
         // aplicada (un ID retirado), se aplican todas juntas.
@@ -42,7 +54,7 @@ internal static class SchemaMigrator
         {
             logger.LogInformation("Aplicando las {Count} migraciones juntas: hay pendientes anteriores a la última aplicada ({Last}).",
                 pending.Count, lastApplied);
-            await context.Database.MigrateAsync(cancellationToken);
+            await RunStepAsync(context, null, $"las {pending.Count} migraciones pendientes", commandTimeout, deadlineUtc, cancellationToken);
             return;
         }
 
@@ -51,10 +63,36 @@ internal static class SchemaMigrator
         {
             logger.LogInformation("Aplicando migración {Index}/{Count}: {Migration}...", i + 1, pending.Count, pending[i]);
             var step = Stopwatch.StartNew();
-            await context.Database.MigrateAsync(pending[i], cancellationToken);
+            await RunStepAsync(context, pending[i], $"la migración {i + 1} de {pending.Count} ({pending[i]})", commandTimeout, deadlineUtc, cancellationToken);
             logger.LogInformation("Migración {Migration} aplicada en {Elapsed:0.0} s.", pending[i], step.Elapsed.TotalSeconds);
         }
         logger.LogInformation("{Count} migraciones aplicadas en {Elapsed:0.0} s.", pending.Count, total.Elapsed.TotalSeconds);
+    }
+
+    private static async Task RunStepAsync(AttendanceDbContext context, string? target, string description,
+        TimeSpan commandTimeout, DateTime? deadlineUtc, CancellationToken cancellationToken)
+    {
+        if (deadlineUtc is { } deadline)
+        {
+            var remaining = deadline - DateTime.UtcNow;
+            if (remaining < MinimumStepTime)
+            {
+                throw new TimeoutException($"Se agotó el tiempo de arranque antes de {description}. Las anteriores quedaron " +
+                    "aplicadas: reinicie la aplicación para continuar.");
+            }
+            context.Database.SetCommandTimeout(remaining < commandTimeout ? remaining : commandTimeout);
+        }
+
+        try
+        {
+            await context.Database.MigrateAsync(target, cancellationToken);
+        }
+        catch (Exception ex) when (deadlineUtc is { } expires && DateTime.UtcNow >= expires - TimeSpan.FromSeconds(5))
+        {
+            throw new TimeoutException($"{char.ToUpper(description[0])}{description[1..]} no terminó dentro del tiempo de " +
+                "arranque y se deshizo. Las anteriores quedaron aplicadas: reinicie la aplicación para continuar, o aumente " +
+                "Database:StartupMigrationBudgetMinutes si esa migración necesita más tiempo.", ex);
+        }
     }
 
     public static bool IsLockTimeout(Exception ex)

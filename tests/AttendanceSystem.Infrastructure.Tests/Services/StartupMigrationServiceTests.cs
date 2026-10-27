@@ -237,6 +237,26 @@ INSERT INTO ""__EFMigrationsHistory"" VALUES ('20260423195140_AddOvertimeFlagsTo
     }
 
     [Fact]
+    public async Task WhenTheStartupBudgetRunsOut_TheAppStartsInMaintenance_AndTheNextStartContinues()
+    {
+        if (!_available) return;
+        await MigrateToAsync(V223LastMigration);
+        _backupService.Setup(b => b.CreatePreMigrationBackupAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupResultDto { Success = true, BackupFilePath = "/respaldos/PreMigration_Backup_x.backup" });
+
+        // Con un minuto no alcanza para empezar ninguna: se rinde antes de que IIS mate el proceso.
+        var result = await NewService(state: NewState(), startupBudgetMinutes: 1).RunAsync();
+
+        result.Outcome.Should().Be(StartupMigrationOutcome.Maintenance);
+        result.Message.Should().Contain("tiempo de arranque").And.Contain("migración 1 de").And.Contain("reinicie");
+        (await LastAppliedMigrationAsync()).Should().Be(V223LastMigration);
+
+        var restarted = NewState();
+        await restarted.LoadPersistedStateAsync();
+        (await NewService(state: restarted).RunAsync()).Outcome.Should().Be(StartupMigrationOutcome.Migrated);
+    }
+
+    [Fact]
     public async Task WhenPostgresIsUnreachable_StartupRetriesAndThenStops()
     {
         var unreachable = new NpgsqlConnectionStringBuilder(_connectionString) { Port = 1, Timeout = 2 }.ConnectionString;
@@ -257,14 +277,15 @@ INSERT INTO ""__EFMigrationsHistory"" VALUES ('20260423195140_AddOvertimeFlagsTo
     }
 
     private StartupMigrationService NewService(IBackupService? backupService = null, RestoreStateService? state = null,
-        int? lockTimeoutSeconds = null) => new(
+        int? lockTimeoutSeconds = null, int? startupBudgetMinutes = null) => new(
         new ContextFactory(_connectionString),
         backupService ?? _backupService.Object,
         state ?? NewState(),
         NullLogger<StartupMigrationService>.Instance,
         new ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
         {
-            ["Database:MigrationLockTimeoutSeconds"] = lockTimeoutSeconds?.ToString()
+            ["Database:MigrationLockTimeoutSeconds"] = lockTimeoutSeconds?.ToString(),
+            ["Database:StartupMigrationBudgetMinutes"] = startupBudgetMinutes?.ToString()
         }).Build());
 
     /// <summary>Otra sesión que ejecuta <paramref name="sql"/> y queda abierta hasta que se libere.</summary>
