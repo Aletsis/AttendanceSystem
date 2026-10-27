@@ -452,6 +452,24 @@ La seguridad de la interfaz de usuario web está construida sobre **ASP.NET Core
 * **Cookies de Sesión:** Configurada para expirar a las 8 horas por defecto con política de `SlidingExpiration = true`.
 * **Proveedor de Estado de Autenticación:** Se implementa un revalidador personalizado (`IdentityRevalidatingAuthenticationStateProvider.cs`) que verifica cada 30 minutos que el usuario sigue activo y con sus roles intactos en PostgreSQL.
 
+### 6.3 Cliente de escritorio (WPF)
+El cliente WPF (`src/Presentation/AttendanceSystem.WPF`) usa el mismo backend que el sitio web: los mismos comandos de
+MediatR y la misma base de datos, con su propio `appsettings.json` junto al ejecutable (ver
+`appsettings.example.json` y el `README.md` del proyecto). No ejecuta tareas programadas ni migraciones.
+
+* **Inicio de sesión:** cuentas, política de contraseñas y bloqueo por intentos fallidos iguales a los de la web.
+* **Permisos:** menú, pantallas, botones y campos siguen la matriz de roles (Usuario, RH, Administrador); el backend
+  vuelve a validar cada comando.
+* **Sesión:** al cerrar sesión se descartan todas las pantallas y el historial de navegación; tras restaurar un
+  respaldo desde el cliente se cierra la sesión.
+* **Mantenimiento:** consulta cada `Maintenance:PollIntervalSeconds` el estado compartido en PostgreSQL y muestra un
+  aviso mientras hay una restauración en curso o tras una fallida.
+* **Configuración:** al guardarla pide al sitio web (`BackendUrl`, `ApiKey`) recargar las tareas programadas; si el sitio
+  no responde se avisa que el horario nuevo se aplicará al reiniciarlo.
+* **Dispositivos:** "Eliminar" borra un reloj sin historial y desactiva uno con checadas o descargas (las checadas
+  nunca se borran). "Vaciar memoria del reloj" descarga todo y sólo borra del reloj el rango guardado, si la lectura
+  fue completa (no disponible para relojes ADMS).
+
 ---
 
 ## 7. Seguridad

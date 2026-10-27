@@ -3,7 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
+    </UserControl.InputBindings>
     
     <UserControl.Resources>
         <!-- Shadow Effect -->
@@ -18,7 +22,7 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="2"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="#F8F9FC"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
         </Style>
     </UserControl.Resources>
 
@@ -36,38 +40,28 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0"
-                    Command="{Binding BackToDashboardCommand}"
-                    Style="{StaticResource MahApps.Styles.Button.Circle}"
-                    Width="40"
-                    Height="40"
-                    Margin="0,0,15,0"
-                    Background="White"
-                    Effect="{StaticResource CardShadow}">
-                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
-            </Button>
 
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock Text="Gestión de Sucursales" 
                            FontSize="28" 
                            FontWeight="Bold"
-                           Foreground="#4E5D78"/>
+                           Foreground="{StaticResource Brush.Text}"/>
                 <TextBlock Text="Administre las ubicaciones físicas y sucursales de su empresa"
                            FontSize="14"
-                           Foreground="#858796"/>
+                           Foreground="{StaticResource Brush.TextMuted}"/>
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal">
-                <Button Command="{Binding DownloadTemplateCommand}"
+                <Button Command="{Binding DownloadTemplateCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Width="42"
                         Height="42"
                         Margin="0,0,10,0"
                         Background="White"
-                        BorderBrush="#EAECF4"
+                        BorderBrush="{StaticResource Brush.Border}"
                         ToolTip="Descargar Plantilla Excel"
                         Effect="{StaticResource CardShadow}">
-                    <iconPacks:PackIconMaterial Kind="FileDownloadOutline" Width="20" Height="20" Foreground="#36B9CC"/>
+                    <iconPacks:PackIconMaterial Kind="FileDownloadOutline" Width="20" Height="20" Foreground="{StaticResource Brush.Info}"/>
                 </Button>
                 
                 <Button Command="{Binding ExportBranchesCommand}"
@@ -76,26 +70,26 @@
                         Height="42"
                         Margin="0,0,10,0"
                         Background="White"
-                        BorderBrush="#EAECF4"
+                        BorderBrush="{StaticResource Brush.Border}"
                         ToolTip="Exportar a Excel"
                         Effect="{StaticResource CardShadow}">
-                    <iconPacks:PackIconMaterial Kind="FileExcel" Width="20" Height="20" Foreground="#1CC88A"/>
+                    <iconPacks:PackIconMaterial Kind="FileExcel" Width="20" Height="20" Foreground="{StaticResource Brush.Success}"/>
                 </Button>
 
-                <Button Command="{Binding ImportBranchesCommand}"
+                <Button Command="{Binding ImportBranchesCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Width="42"
                         Height="42"
                         Margin="0,0,10,0"
                         Background="White"
-                        BorderBrush="#EAECF4"
+                        BorderBrush="{StaticResource Brush.Border}"
                         ToolTip="Importar desde Excel"
                         Effect="{StaticResource CardShadow}">
-                    <iconPacks:PackIconMaterial Kind="FileUpload" Width="20" Height="20" Foreground="#F6C23E"/>
+                    <iconPacks:PackIconMaterial Kind="FileUpload" Width="20" Height="20" Foreground="{StaticResource Brush.Warning}"/>
                 </Button>
 
-                <Button Command="{Binding AddBranchCommand}"
-                        Background="#4E73DF"
+                <Button Command="{Binding AddBranchCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Height="45"
                         Padding="20,0"
@@ -143,8 +137,8 @@
                             FontSize="14"
                             Padding="12,10"
                             BorderThickness="1"
-                            BorderBrush="#EAECF4"
-                            Background="#F8F9FC"
+                            BorderBrush="{StaticResource Brush.Border}"
+                            Background="{StaticResource Brush.SurfaceAlt}"
                             Margin="0,0,10,0"/>
 
                     <Button Grid.Column="1"
@@ -152,43 +146,21 @@
                             Style="{StaticResource MahApps.Styles.Button.Square}"
                             Width="42"
                             Height="42"
-                            Background="#F8F9FC"
-                            BorderBrush="#EAECF4">
-                        <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
+                            Background="{StaticResource Brush.SurfaceAlt}"
+                            BorderBrush="{StaticResource Brush.Border}">
+                        <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}"/>
                     </Button>
                 </Grid>
 
                 <!-- Branch Table -->
-                <DataGrid Grid.Row="1"
+                <DataGrid Style="{StaticResource ModernDataGridStyle}"
+                          Grid.Row="1"
                           ItemsSource="{Binding Branches}"
-                          SelectedItem="{Binding SelectedBranch}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          SelectionMode="Single"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserResizeRows="False"
-                          GridLinesVisibility="None"
-                          HeadersVisibility="Column"
-                          BorderThickness="0"
-                          Background="Transparent"
-                          RowHeight="50">
-                    <DataGrid.ColumnHeaderStyle>
-                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
-                            <Setter Property="Background" Value="#F8F9FC"/>
-                            <Setter Property="Foreground" Value="#4E5D78"/>
-                            <Setter Property="FontWeight" Value="Bold"/>
-                            <Setter Property="Padding" Value="10,15"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#EAECF4"/>
-                        </Style>
-                    </DataGrid.ColumnHeaderStyle>
-                    <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MahApps.Styles.DataGridRow}">
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#F8F9FC"/>
-                        </Style>
-                    </DataGrid.RowStyle>
+                          SelectedItem="{Binding SelectedBranch}">
+                    <DataGrid.InputBindings>
+                        <MouseBinding Gesture="LeftDoubleClick" Command="{Binding EditBranchCommand}"
+                                      CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"/>
+                    </DataGrid.InputBindings>
                     
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Código" Binding="{Binding Code}" Width="100"/>
@@ -197,10 +169,10 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="5,0">
-                                        <Border Width="32" Height="32" Background="#EBF0F9" CornerRadius="16" Margin="0,0,10,0">
-                                            <iconPacks:PackIconMaterial Kind="OfficeBuilding" Width="16" Height="16" Foreground="#4E73DF" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        <Border Width="32" Height="32" Background="{StaticResource Brush.PrimarySoft}" CornerRadius="16" Margin="0,0,10,0">
+                                            <iconPacks:PackIconMaterial Kind="OfficeBuilding" Width="16" Height="16" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                         </Border>
-                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="#5A5C69"/>
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextSecondary}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -212,8 +184,8 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Left" Margin="10,0">
-                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Width="14" Height="14" Foreground="#858796" Margin="0,0,5,0" VerticalAlignment="Center"/>
-                                        <TextBlock Text="{Binding EmployeeCount}" VerticalAlignment="Center" Foreground="#5A5C69"/>
+                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Width="14" Height="14" Foreground="{StaticResource Brush.TextMuted}" Margin="0,0,5,0" VerticalAlignment="Center"/>
+                                        <TextBlock Text="{Binding EmployeeCount}" VerticalAlignment="Center" Foreground="{StaticResource Brush.TextSecondary}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -222,11 +194,31 @@
                         <DataGridTemplateColumn Header="Tipo" Width="100">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Border Background="{Binding IsExternal, Converter={StaticResource BooleanToStatusBrushConverter}, ConverterParameter='External'}" 
-                                            CornerRadius="10" Padding="8,3" HorizontalAlignment="Left" Margin="5,0">
-                                        <TextBlock Text="{Binding IsExternal, Converter={StaticResource BooleanToStatusTextConverter}, ConverterParameter='External'}" 
-                                                   Foreground="{Binding IsExternal, Converter={StaticResource BooleanToStatusBrushConverter}, ConverterParameter='ExternalText'}" 
-                                                   FontSize="11" FontWeight="Bold"/>
+                                    <Border CornerRadius="10" Padding="8,3" HorizontalAlignment="Left" Margin="5,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Background" Value="{StaticResource Brush.PrimarySoft}"/>
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsExternal}" Value="True">
+                                                        <Setter Property="Background" Value="#EDE9FE"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock FontSize="11" FontWeight="Bold">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Text" Value="Interna"/>
+                                                    <Setter Property="Foreground" Value="{StaticResource Brush.Primary}"/>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsExternal}" Value="True">
+                                                            <Setter Property="Text" Value="Externa"/>
+                                                            <Setter Property="Foreground" Value="#7C3AED"/>
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
                                     </Border>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -237,16 +229,18 @@
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Command="{Binding DataContext.EditBranchCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar">
-                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#4E73DF"/>
+                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DeleteBranchCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Eliminar">
-                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>
+                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}"/>
                                         </Button>
                                     </StackPanel>
                                 </DataTemplate>
@@ -259,7 +253,7 @@
 
         <!-- Loading Overlay -->
         <Border Grid.Row="0" Grid.RowSpan="2"
-                Background="#B3000000"
+                Background="{StaticResource Brush.BusyOverlay}"
                 CornerRadius="15"
                 Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
                 Margin="-30">
@@ -267,9 +261,9 @@
                 <mah:ProgressRing IsActive="{Binding IsBusy}" 
                                   Width="60" 
                                   Height="60"
-                                  Foreground="White"/>
+                                  Foreground="{StaticResource Brush.Primary}"/>
                 <TextBlock Text="{Binding BusyMessage}" 
-                           Foreground="White" 
+                           Foreground="{StaticResource Brush.Text}" 
                            FontSize="18"
                            FontWeight="SemiBold"
                            Margin="0,15,0,0"

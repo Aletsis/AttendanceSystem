@@ -12,6 +12,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
         private string _name = string.Empty;
         private string? _description;
         private decimal _baseSalary;
+        private bool _isCritical;
         private string _title = "Nuevo Puesto";
 
         public string Title
@@ -38,6 +39,13 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             set => SetProperty(ref _baseSalary, value);
         }
 
+        /// <summary>Puesto crítico: su ausencia genera alerta. Se conserva al editar (antes se guardaba siempre en false).</summary>
+        public bool IsCritical
+        {
+            get => _isCritical;
+            set => SetProperty(ref _isCritical, value);
+        }
+
         public ICommand SaveCommand { get; }
         public ICommand CancelCommand { get; }
 
@@ -62,7 +70,8 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             {
                 { "Name", Name },
                 { "Description", Description ?? string.Empty },
-                { "BaseSalary", BaseSalary }
+                { "BaseSalary", BaseSalary },
+                { "IsCritical", IsCritical }
             };
 
             if (_positionId.HasValue)
@@ -90,6 +99,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                 Name = parameters.GetValue<string>("Name");
                 Description = parameters.GetValue<string>("Description");
                 BaseSalary = parameters.GetValue<decimal>("BaseSalary");
+                IsCritical = parameters.GetValue<bool>("IsCritical");
                 Title = "Editar Puesto";
             }
         }

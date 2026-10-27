@@ -19,8 +19,10 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IReportExportService _reportExportService;
         private readonly IConfiguration _configuration;
+        private readonly Prism.Dialogs.IDialogService _dialogService;
 
         private ObservableCollection<AttendanceLogItem> _attendanceLogs = new();
         private AttendanceLogItem? _selectedLog;
@@ -50,36 +52,48 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             set { if (SetProperty(ref _searchText, value)) FilterLogs(); }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanCalculate => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.AttendanceCalculate);
+        public bool CanManualPunch => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.AttendanceManualPunch);
+
         public ICommand ManualEntryCommand { get; }
         public ICommand CalculateAttendanceCommand { get; }
         public ICommand ExportCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
 
         public AttendanceViewModel(
             IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
             IReportExportService reportExportService,
-            IConfiguration configuration)
+            IConfiguration configuration,
+            Prism.Dialogs.IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
             _reportExportService = reportExportService;
             _configuration = configuration;
+            _dialogService = dialogService;
 
             ManualEntryCommand = new DelegateCommand(ExecuteManualEntry);
             CalculateAttendanceCommand = new DelegateCommand(async () => await ExecuteCalculateAttendanceAsync());
             ExportCommand = new DelegateCommand(async () => await ExecuteExportAsync());
             RefreshCommand = new DelegateCommand(async () => await LoadAttendanceLogsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadAttendanceLogsAsync();
         }
 
         private async Task LoadAttendanceLogsAsync()
         {
+            if (EndDate < StartDate)
+            {
+                await _messageService.ShowWarningAsync("La fecha final debe ser igual o posterior a la inicial.");
+                return;
+            }
+
             SetBusy(true, "Cargando registros de asistencia...");
             try
             {
@@ -176,7 +190,13 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
 
         private void ExecuteManualEntry()
         {
-            _messageService.ShowMessageAsync("Entrada Manual", "Funcionalidad en desarrollo...");
+            _dialogService.ShowDialog("ManualPunchDialog", null, async result =>
+            {
+                if (result.Result != Prism.Dialogs.ButtonResult.OK) return;
+                var checkTime = result.Parameters.GetValue<DateTime>("CheckTime");
+                await _messageService.ShowSuccessAsync($"Marcaje registrado: {result.Parameters.GetValue<string>("EmployeeName")}, {checkTime:dd/MM/yyyy HH:mm}.");
+                await LoadAttendanceLogsAsync();
+            });
         }
 
         private async Task ExecuteCalculateAttendanceAsync()

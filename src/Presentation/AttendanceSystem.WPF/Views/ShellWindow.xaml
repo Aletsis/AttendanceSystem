@@ -5,12 +5,152 @@
                  xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
                  xmlns:prism="http://prismlibrary.com/"
                  Title="Sistema de Asistencia" Height="800" Width="1200"
+                 MinWidth="1024" MinHeight="640"
                  WindowState="Maximized"
                  WindowStartupLocation="CenterScreen"
                  GlowBrush="{DynamicResource MahApps.Brushes.Accent}"
-                 ResizeMode="CanResizeWithGrip">
+                 ResizeMode="CanResizeWithGrip"
+                 Background="{StaticResource Brush.Background}">
 
     <Grid>
-        <ContentControl prism:RegionManager.RegionName="MainRegion" />
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="Auto"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- Menú lateral: sólo con sesión iniciada. -->
+        <Border Grid.Column="0"
+                Width="240"
+                Background="{StaticResource Brush.Surface}"
+                BorderBrush="{StaticResource Brush.Border}"
+                BorderThickness="0,0,1,0"
+                Visibility="{Binding IsAuthenticated, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <DockPanel>
+                <!-- Marca -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="20,22,20,18">
+                    <Border Width="36" Height="36" CornerRadius="10" Background="{StaticResource Brush.PrimarySoft}">
+                        <iconPacks:PackIconMaterial Kind="Fingerprint" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}"
+                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Margin="10,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="Asistencia" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                        <TextBlock Text="Control de personal" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- Usuario y cierre de sesión -->
+                <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0" Padding="16,14">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="4,0,0,12">
+                            <Border Width="36" Height="36" CornerRadius="18" Background="{StaticResource Brush.Primary}">
+                                <TextBlock Text="{Binding Initials}" Foreground="White" FontWeight="Bold" FontSize="15"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <StackPanel Margin="10,0,0,0" VerticalAlignment="Center" MaxWidth="150">
+                                <TextBlock Text="{Binding UserName}" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" TextTrimming="CharacterEllipsis"/>
+                                <TextBlock Text="{Binding RoleName}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" TextTrimming="CharacterEllipsis"/>
+                            </StackPanel>
+                        </StackPanel>
+                        <Button Command="{Binding ChangePasswordCommand}" Style="{StaticResource NavItemButtonStyle}">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="KeyOutline" Width="16" Height="16" VerticalAlignment="Center"/>
+                                <TextBlock Text="Cambiar contraseña" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Command="{Binding LogoutCommand}" Style="{StaticResource NavItemButtonStyle}" ToolTip="Cerrar sesión">
+                            <StackPanel Orientation="Horizontal">
+                                <iconPacks:PackIconMaterial Kind="Logout" Width="16" Height="16" Foreground="{StaticResource Brush.Danger}" VerticalAlignment="Center"/>
+                                <TextBlock Text="Cerrar sesión" Margin="12,0,0,0" Foreground="{StaticResource Brush.Danger}" VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                </Border>
+
+                <!-- Secciones -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding NavItems}" Focusable="False">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <TextBlock Text="{Binding Title}"
+                                               FontSize="11" FontWeight="Bold" Foreground="{StaticResource Brush.TextMuted}"
+                                               Margin="22,16,0,6"
+                                               Visibility="{Binding IsHeader, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                    <Button Command="{Binding DataContext.NavigateCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                            CommandParameter="{Binding}"
+                                            Visibility="{Binding IsHeader, Converter={StaticResource InverseBooleanToVisibilityConverter}}">
+                                        <Button.Style>
+                                            <Style TargetType="Button" BasedOn="{StaticResource NavItemButtonStyle}">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                        <Setter Property="Background" Value="{StaticResource Brush.PrimarySoft}"/>
+                                                        <Setter Property="Foreground" Value="{StaticResource Brush.Primary}"/>
+                                                        <Setter Property="FontWeight" Value="SemiBold"/>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Button.Style>
+                                        <StackPanel Orientation="Horizontal">
+                                            <iconPacks:PackIconMaterial Kind="{Binding Icon}" Width="18" Height="18" VerticalAlignment="Center"
+                                                                        Foreground="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+                                            <TextBlock Text="{Binding Title}" Margin="12,0,0,0" VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+
+            <!-- Aviso de mantenimiento (restauración en curso o fallida): se ve también en el inicio de sesión. -->
+            <Border Grid.Row="0" Padding="20,10"
+                    Visibility="{Binding MaintenanceMessage, Converter={StaticResource NullToCollapsedConverter}}">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="{StaticResource Brush.WarningSoft}"/>
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding MaintenanceIsFailure}" Value="True">
+                                <Setter Property="Background" Value="{StaticResource Brush.DangerSoft}"/>
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <StackPanel Orientation="Horizontal">
+                    <iconPacks:PackIconMaterial Kind="AlertOutline" Width="18" Height="18" VerticalAlignment="Center" Foreground="{StaticResource Brush.WarningText}"/>
+                    <TextBlock Text="{Binding MaintenanceMessage}" Margin="10,0,0,0" TextWrapping="Wrap" VerticalAlignment="Center"
+                               Foreground="{StaticResource Brush.Text}" FontWeight="SemiBold"/>
+                </StackPanel>
+            </Border>
+
+            <ContentControl Grid.Row="1" prism:RegionManager.RegionName="MainRegion" Focusable="False"/>
+        </Grid>
+
+        <!-- Avisos de guardado correcto: no bloquean y se cierran solos (o con un clic). -->
+        <ItemsControl Grid.ColumnSpan="2" ItemsSource="{Binding Toasts}" Focusable="False"
+                      HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,24,24" Panel.ZIndex="100">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <Border Style="{StaticResource ToastBorderStyle}">
+                        <Border.InputBindings>
+                            <MouseBinding Gesture="LeftClick"
+                                          Command="{Binding DataContext.DismissToastCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                          CommandParameter="{Binding}"/>
+                        </Border.InputBindings>
+                        <StackPanel Orientation="Horizontal">
+                            <iconPacks:PackIconMaterial Kind="CheckCircle" Width="18" Height="18" Foreground="{StaticResource Brush.Success}" VerticalAlignment="Center"/>
+                            <TextBlock Text="{Binding Text}" Foreground="White" Margin="10,0,0,0" TextWrapping="Wrap" VerticalAlignment="Center" MaxWidth="360"/>
+                        </StackPanel>
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
     </Grid>
 </mah:MetroWindow>

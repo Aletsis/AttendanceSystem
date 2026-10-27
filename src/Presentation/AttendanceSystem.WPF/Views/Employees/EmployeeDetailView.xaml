@@ -7,7 +7,7 @@
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
              mc:Ignorable="d" 
              d:DesignHeight="800" d:DesignWidth="1000"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
 
     <UserControl.Resources>
         <!-- Shadow Effect -->
@@ -27,21 +27,21 @@
 
         <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="SemiBold"/>
-            <Setter Property="Foreground" Value="#4E5D78"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
             <Setter Property="Margin" Value="0,0,0,8"/>
         </Style>
 
         <Style x:Key="ModernTextBoxStyle" TargetType="TextBox" BasedOn="{StaticResource MahApps.Styles.TextBox}">
             <Setter Property="Padding" Value="10,12"/>
-            <Setter Property="BorderBrush" Value="#EAECF4"/>
-            <Setter Property="Background" Value="#F8F9FC"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
             <Setter Property="Margin" Value="0,0,0,15"/>
         </Style>
 
         <Style x:Key="ModernComboBoxStyle" TargetType="ComboBox" BasedOn="{StaticResource MahApps.Styles.ComboBox}">
             <Setter Property="Padding" Value="10,10"/>
-            <Setter Property="BorderBrush" Value="#EAECF4"/>
-            <Setter Property="Background" Value="#F8F9FC"/>
+            <Setter Property="BorderBrush" Value="{StaticResource Brush.Border}"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
             <Setter Property="Margin" Value="0,0,0,15"/>
         </Style>
     </UserControl.Resources>
@@ -68,17 +68,17 @@
                     Margin="0,0,15,0"
                     Background="White"
                     Effect="{StaticResource CardShadow}">
-                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
+                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}"/>
             </Button>
 
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock Text="{Binding Title}" 
                            FontSize="28" 
                            FontWeight="Bold"
-                           Foreground="#4E5D78"/>
+                           Foreground="{StaticResource Brush.Text}"/>
                 <TextBlock Text="Gestione la información detallada del colaborador"
                            FontSize="14"
-                           Foreground="#858796"/>
+                           Foreground="{StaticResource Brush.TextMuted}"/>
             </StackPanel>
         </Grid>
 
@@ -98,7 +98,7 @@
                         <!-- Personal Info Card -->
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
-                                <TextBlock Text="Información Personal" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                <TextBlock Text="Información Personal" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,20"/>
                                 
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -108,7 +108,7 @@
                                     </Grid.ColumnDefinitions>
                                     
                                     <!-- Photo Placeholder -->
-                                    <Border Grid.Column="0" Width="100" Height="100" CornerRadius="50" Background="#F8F9FC" BorderBrush="#EAECF4" BorderThickness="2" VerticalAlignment="Top">
+                                    <Border Grid.Column="0" Width="100" Height="100" CornerRadius="50" Background="{StaticResource Brush.SurfaceAlt}" BorderBrush="{StaticResource Brush.Border}" BorderThickness="2" VerticalAlignment="Top">
                                         <iconPacks:PackIconMaterial Kind="Account" Width="40" Height="40" Foreground="#D1D3E2" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                     </Border>
                                     
@@ -149,11 +149,11 @@
                                     
                                     <StackPanel Grid.Column="0">
                                         <TextBlock Text="Sexo" Style="{StaticResource FieldLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding GenderOptions}" SelectedItem="{Binding Gender}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                        <ComboBox ItemsSource="{Binding GenderOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding Gender}" Style="{StaticResource ModernComboBoxStyle}"/>
                                     </StackPanel>
                                     <StackPanel Grid.Column="2">
                                         <TextBlock Text="Estatus" Style="{StaticResource FieldLabelStyle}"/>
-                                        <ComboBox ItemsSource="{Binding StatusOptions}" SelectedItem="{Binding Status}" Style="{StaticResource ModernComboBoxStyle}"
+                                        <ComboBox ItemsSource="{Binding StatusOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding Status}" Style="{StaticResource ModernComboBoxStyle}"
                                                   IsEnabled="{Binding CanChangeStatus}"/>
                                     </StackPanel>
                                 </Grid>
@@ -165,7 +165,7 @@
                                     <StackPanel Visibility="{Binding StartsLeave, Converter={StaticResource BooleanToVisibilityConverter}}">
                                         <TextBlock Text="Hasta (opcional)" Style="{StaticResource FieldLabelStyle}"/>
                                         <DatePicker SelectedDate="{Binding LeaveTo}" Margin="0,0,0,4"/>
-                                        <TextBlock Text="Al día siguiente regresa solo a Alta. Sin fecha: hasta que RH lo regrese a Alta." FontSize="11" Foreground="#858796" TextWrapping="Wrap" Margin="0,0,0,10"/>
+                                        <TextBlock Text="Al día siguiente regresa solo a Alta. Sin fecha: hasta que RH lo regrese a Alta." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,0,0,10"/>
                                     </StackPanel>
                                 </StackPanel>
 
@@ -180,7 +180,7 @@
                         <!-- Labor Info Card -->
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
-                                <TextBlock Text="Estructura Organizacional" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                <TextBlock Text="Estructura Organizacional" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,20"/>
                                 
                                 <TextBlock Text="Sucursal" Style="{StaticResource FieldLabelStyle}"/>
                                 <ComboBox ItemsSource="{Binding Branches}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedBranchId}" Style="{StaticResource ModernComboBoxStyle}"/>
@@ -199,23 +199,25 @@
                         <!-- Schedule Info Card -->
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
-                                <TextBlock Text="Horario y Jornada" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                <TextBlock Text="Horario y Jornada" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,20"/>
                                 
                                 <TextBlock Text="Tipo de Turno" Style="{StaticResource FieldLabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding ShiftTypeOptions}" SelectedItem="{Binding SelectedShiftType}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                <ComboBox ItemsSource="{Binding ShiftTypeOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedShiftType}" Style="{StaticResource ModernComboBoxStyle}" IsEnabled="{Binding CanEditSchedule}"/>
 
                                 <TextBlock Text="Horario Asignado" Style="{StaticResource FieldLabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding VisibleShifts}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedShiftId}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                <ComboBox ItemsSource="{Binding VisibleShifts}" DisplayMemberPath="Name" SelectedValuePath="Id" SelectedValue="{Binding SelectedShiftId}" Style="{StaticResource ModernComboBoxStyle}" IsEnabled="{Binding CanEditSchedule}"/>
 
                                 <TextBlock Text="Día de Descanso" Style="{StaticResource FieldLabelStyle}"/>
-                                <ComboBox ItemsSource="{Binding DaysOfWeek}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding SelectedRestDay}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                <ComboBox ItemsSource="{Binding DaysOfWeek}" DisplayMemberPath="Value" SelectedValuePath="Key" SelectedValue="{Binding SelectedRestDay}" Style="{StaticResource ModernComboBoxStyle}" IsEnabled="{Binding CanEditSchedule}"/>
+                                <TextBlock Text="Sólo RH o Administrador pueden cambiar el turno, el horario y el descanso." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap"
+                                           Visibility="{Binding CanEditSchedule, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
                             </StackPanel>
                         </Border>
 
                         <!-- Device Config Card -->
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
-                                <TextBlock Text="Configuración de Dispositivo" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                <TextBlock Text="Configuración de Dispositivo" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,20"/>
                                 
                                 <TextBlock Text="Número de Tarjeta" Style="{StaticResource FieldLabelStyle}"/>
                                 <TextBox Text="{Binding CardNumber}" Style="{StaticResource ModernTextBoxStyle}" mah:TextBoxHelper.Watermark="Ej: 12345678"/>
@@ -223,35 +225,22 @@
                                 <TextBlock Text="Contraseña PIN" Style="{StaticResource FieldLabelStyle}"/>
                                 <TextBox Text="{Binding DevicePassword}" Style="{StaticResource ModernTextBoxStyle}" mah:TextBoxHelper.Watermark="Máx. 8 dígitos"/>
                                 
-                                <TextBlock Text="Biometría Registrada" Style="{StaticResource FieldLabelStyle}" Margin="0,10,0,10"/>
-                                <StackPanel Orientation="Horizontal">
-                                    <Border Background="#EBFBEE" CornerRadius="15" Padding="12,6" Margin="0,0,10,0">
-                                        <StackPanel Orientation="Horizontal">
-                                            <iconPacks:PackIconMaterial Kind="Fingerprint" Width="14" Height="14" Foreground="#28A745" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                            <TextBlock Text="2 Huellas" FontSize="12" Foreground="#28A745" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Border>
-                                    <Border Background="#F8F9FC" CornerRadius="15" Padding="12,6">
-                                        <StackPanel Orientation="Horizontal">
-                                            <iconPacks:PackIconMaterial Kind="FaceRecognition" Width="14" Height="14" Foreground="#858796" Margin="0,0,6,0" VerticalAlignment="Center"/>
-                                            <TextBlock Text="Sin Rostro" FontSize="12" Foreground="#858796" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                                        </StackPanel>
-                                    </Border>
-                                </StackPanel>
                             </StackPanel>
                         </Border>
 
                         <!-- Overtime Config Card -->
                         <Border Style="{StaticResource SectionCardStyle}">
                             <StackPanel>
-                                <TextBlock Text="Configuración de Tiempo Extra" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" Margin="0,0,0,20"/>
+                                <TextBlock Text="Configuración de Tiempo Extra" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,20"/>
                                 
-                                <CheckBox IsChecked="{Binding OvertimeAuthorized}" Content="Autorizar Tiempo Extra" Margin="0,0,0,10" FontWeight="SemiBold" Foreground="#4E5D78"/>
-                                <CheckBox IsChecked="{Binding CalculateOvertimeBeforeEntry}" Content="Calcular antes de la entrada" Margin="0,0,0,20" IsEnabled="{Binding OvertimeAuthorized}" Visibility="{Binding AllowsOvertimeBeforeEntry, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="#858796"/>
+                                <TextBlock Text="Sólo RH o Administrador pueden configurar el tiempo extra." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,0,0,10"
+                                           Visibility="{Binding CanEditOvertime, Converter={StaticResource InverseBooleanToVisibilityConverter}}"/>
+                                <CheckBox IsChecked="{Binding OvertimeAuthorized}" IsEnabled="{Binding CanEditOvertime}" Content="Autorizar Tiempo Extra" Margin="0,0,0,10" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
+                                <CheckBox IsChecked="{Binding CalculateOvertimeBeforeEntry}" Content="Calcular antes de la entrada" Margin="0,0,0,20" IsEnabled="{Binding OvertimeOptionsEnabled}" Visibility="{Binding AllowsOvertimeBeforeEntry, Converter={StaticResource BooleanToVisibilityConverter}}" Foreground="{StaticResource Brush.TextMuted}"/>
 
-                                <StackPanel IsEnabled="{Binding OvertimeAuthorized}">
+                                <StackPanel IsEnabled="{Binding OvertimeOptionsEnabled}">
                                     <TextBlock Text="Método de Redondeo" Style="{StaticResource FieldLabelStyle}"/>
-                                    <ComboBox ItemsSource="{Binding OvertimeCalculationMethodOptions}" SelectedItem="{Binding SelectedOvertimeCalculationMethod}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                    <ComboBox ItemsSource="{Binding OvertimeCalculationMethodOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedOvertimeCalculationMethod}" Style="{StaticResource ModernComboBoxStyle}"/>
 
                                     <Grid>
                                         <Grid.ColumnDefinitions>
@@ -262,11 +251,11 @@
                                         
                                         <StackPanel Grid.Column="0">
                                             <TextBlock Text="Tipo de Tope" Style="{StaticResource FieldLabelStyle}"/>
-                                            <ComboBox ItemsSource="{Binding OvertimeCapTypeOptions}" SelectedItem="{Binding SelectedOvertimeCapType}" Style="{StaticResource ModernComboBoxStyle}"/>
+                                            <ComboBox ItemsSource="{Binding OvertimeCapTypeOptions}" ItemTemplate="{StaticResource EnumItemTemplate}" SelectedItem="{Binding SelectedOvertimeCapType}" Style="{StaticResource ModernComboBoxStyle}"/>
                                         </StackPanel>
                                         <StackPanel Grid.Column="2">
                                             <TextBlock Text="Minutos Tope" Style="{StaticResource FieldLabelStyle}"/>
-                                            <mah:NumericUpDown Value="{Binding OvertimeCapMinutes}" Minimum="0" StringFormat="N0" Interval="1" Height="40" Background="#F8F9FC" BorderBrush="#EAECF4"/>
+                                            <mah:NumericUpDown Value="{Binding OvertimeCapMinutes}" Minimum="0" StringFormat="N0" Interval="1" Height="40" Background="{StaticResource Brush.SurfaceAlt}" BorderBrush="{StaticResource Brush.Border}"/>
                                         </StackPanel>
                                     </Grid>
                                 </StackPanel>
@@ -281,8 +270,8 @@
                         Margin="0,0,0,20">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,15">
-                            <iconPacks:PackIconMaterial Kind="History" Width="20" Height="20" Foreground="#4E73DF" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                            <TextBlock Text="Bitácora de Cambios y Auditoría" FontSize="18" FontWeight="Bold" Foreground="#4E73DF" VerticalAlignment="Center"/>
+                            <iconPacks:PackIconMaterial Kind="History" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBlock Text="Bitácora de Cambios y Auditoría" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center"/>
                         </StackPanel>
 
                         <!-- Summary of Creation and Modification -->
@@ -293,24 +282,24 @@
                                 <ColumnDefinition Width="*"/>
                             </Grid.ColumnDefinitions>
 
-                            <Border Grid.Column="0" Background="#F8F9FC" CornerRadius="8" Padding="15" BorderBrush="#EAECF4" BorderThickness="1">
+                            <Border Grid.Column="0" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
                                 <StackPanel>
-                                    <TextBlock Text="Alta en Sistema" FontWeight="Bold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                                    <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Foreground="#858796" Margin="0,0,0,3"/>
+                                    <TextBlock Text="Alta en Sistema" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
+                                    <TextBlock Text="{Binding CreatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Foreground="{StaticResource Brush.TextMuted}" Margin="0,0,0,3"/>
                                     <TextBlock>
-                                        <Run Text="Registrado por: " Foreground="#858796"/>
-                                        <Run Text="{Binding CreatedBy, TargetNullValue='Sistema'}" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                                        <Run Text="Registrado por: " Foreground="{StaticResource Brush.TextMuted}"/>
+                                        <Run Text="{Binding CreatedBy, TargetNullValue='Sistema'}" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
                                     </TextBlock>
                                 </StackPanel>
                             </Border>
 
-                            <Border Grid.Column="2" Background="#F8F9FC" CornerRadius="8" Padding="15" BorderBrush="#EAECF4" BorderThickness="1">
+                            <Border Grid.Column="2" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" BorderBrush="{StaticResource Brush.Border}" BorderThickness="1">
                                 <StackPanel>
-                                    <TextBlock Text="Última Modificación" FontWeight="Bold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                                    <TextBlock Text="{Binding UpdatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}', TargetNullValue='Sin modificaciones'}" Foreground="#858796" Margin="0,0,0,3"/>
+                                    <TextBlock Text="Última Modificación" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
+                                    <TextBlock Text="{Binding UpdatedAt, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}', TargetNullValue='Sin modificaciones'}" Foreground="{StaticResource Brush.TextMuted}" Margin="0,0,0,3"/>
                                     <TextBlock>
-                                        <Run Text="Modificado por: " Foreground="#858796"/>
-                                        <Run Text="{Binding UpdatedBy, TargetNullValue='-'}" FontWeight="SemiBold" Foreground="#4E5D78"/>
+                                        <Run Text="Modificado por: " Foreground="{StaticResource Brush.TextMuted}"/>
+                                        <Run Text="{Binding UpdatedBy, TargetNullValue='-'}" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
                                     </TextBlock>
                                 </StackPanel>
                             </Border>
@@ -325,7 +314,7 @@
                                   GridLinesVisibility="Horizontal"
                                   MaxHeight="250"
                                   Background="White"
-                                  BorderBrush="#EAECF4"
+                                  BorderBrush="{StaticResource Brush.Border}"
                                   BorderThickness="1">
                             <DataGrid.Columns>
                                 <DataGridTextColumn Header="Fecha / Hora" Binding="{Binding Timestamp, StringFormat='{}{0:dd/MM/yyyy HH:mm:ss}'}" Width="160"/>
@@ -342,15 +331,15 @@
         </ScrollViewer>
 
         <!-- Footer Actions -->
-        <Border Grid.Row="2" Background="White" Margin="-30,0" Padding="30,20" BorderBrush="#EAECF4" BorderThickness="0,1,0,0">
+        <Border Grid.Row="2" Background="White" Margin="-30,0" Padding="30,20" BorderBrush="{StaticResource Brush.Border}" BorderThickness="0,1,0,0">
             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                 <Button Command="{Binding CancelCommand}" 
                         Content="Cancelar" 
                         Width="140" 
                         Height="45" 
-                        Background="#F8F9FC"
-                        Foreground="#858796"
-                        BorderBrush="#EAECF4"
+                        Background="{StaticResource Brush.SurfaceAlt}"
+                        Foreground="{StaticResource Brush.TextMuted}"
+                        BorderBrush="{StaticResource Brush.Border}"
                         Margin="0,0,15,0">
                     <Button.Resources>
                         <Style TargetType="Border">
@@ -362,7 +351,7 @@
                         Content="Guardar Colaborador" 
                         Width="200" 
                         Height="45" 
-                        Background="#4E73DF"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         FontWeight="Bold"
                         BorderThickness="0"
@@ -377,10 +366,10 @@
         </Border>
 
         <!-- Loading Overlay -->
-        <Border Grid.RowSpan="3" Background="#B3000000" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="-30">
+        <Border Grid.RowSpan="3" Background="{StaticResource Brush.BusyOverlay}" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="-30">
             <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White" Margin="0,0,0,20"/>
-                <TextBlock Text="{Binding BusyMessage}" Foreground="White" HorizontalAlignment="Center" FontSize="18" FontWeight="Bold"/>
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,20"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" HorizontalAlignment="Center" FontSize="18" FontWeight="Bold"/>
             </StackPanel>
         </Border>
     </Grid>

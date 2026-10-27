@@ -3,208 +3,125 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Background="#F5F7FA">
-    
+             Background="{StaticResource Brush.Background}">
+
     <UserControl.Resources>
-        <!-- Shadow Effect -->
-        <DropShadowEffect x:Key="CardShadow" 
-                          BlurRadius="15" 
-                          ShadowDepth="2" 
-                          Opacity="0.1" 
-                          Color="Black"/>
+        <Style x:Key="FieldLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
+            <Setter Property="Margin" Value="0,0,0,6"/>
+        </Style>
     </UserControl.Resources>
 
-    <Grid Margin="30">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid Margin="30">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
 
-        <!-- Header -->
-        <Grid Grid.Row="0" Margin="0,0,0,25">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <Button Grid.Column="0"
-                    Command="{Binding BackToDashboardCommand}"
-                    Style="{StaticResource MahApps.Styles.Button.Circle}"
-                    Width="40"
-                    Height="40"
-                    Margin="0,0,15,0"
-                    Background="White"
-                    Effect="{StaticResource CardShadow}">
-                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
-            </Button>
-
-            <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Text="Generación de Reportes" 
-                           FontSize="28" 
-                           FontWeight="Bold"
-                           Foreground="#4E5D78"/>
-                <TextBlock Text="Analice el rendimiento y puntualidad de su equipo"
-                           FontSize="14"
-                           Foreground="#858796"/>
+            <!-- Encabezado -->
+            <StackPanel Grid.Row="0" Margin="0,0,0,25">
+                <TextBlock Text="Reportes" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Los mismos reportes de la versión web, a partir de la asistencia calculada."
+                           FontSize="14" Foreground="{StaticResource Brush.TextMuted}"/>
             </StackPanel>
+
+            <Grid Grid.Row="1">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="340"/>
+                    <ColumnDefinition Width="25"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- Tipo de reporte -->
+                <Border Grid.Column="0" Background="{StaticResource Brush.Surface}" CornerRadius="15" Effect="{StaticResource Effect.CardShadow}" Padding="10">
+                    <ListBox ItemsSource="{Binding Reports}" SelectedItem="{Binding SelectedReport}" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="8,10">
+                                    <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
+                                    <TextBlock Text="{Binding Description}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+
+                <!-- Opciones -->
+                <Border Grid.Column="2" Background="{StaticResource Brush.Surface}" CornerRadius="15" Effect="{StaticResource Effect.CardShadow}" Padding="30">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel MaxWidth="640" HorizontalAlignment="Left">
+                            <TextBlock Text="{Binding SelectedReport.Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Primary}"/>
+                            <TextBlock Text="{Binding SelectedReport.Description}" FontSize="13" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap" Margin="0,4,0,25"/>
+
+                            <Grid Margin="0,0,0,18">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="20"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Desde" Style="{StaticResource FieldLabelStyle}"/>
+                                    <DatePicker SelectedDate="{Binding StartDate}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2">
+                                    <TextBlock Text="Hasta" Style="{StaticResource FieldLabelStyle}"/>
+                                    <DatePicker SelectedDate="{Binding EndDate}"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,18">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="20"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="Sucursal" Style="{StaticResource FieldLabelStyle}"/>
+                                    <ComboBox ItemsSource="{Binding Branches}" SelectedItem="{Binding SelectedBranch}" DisplayMemberPath="Name"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" Visibility="{Binding ShowDepartment, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                    <TextBlock Text="Departamento" Style="{StaticResource FieldLabelStyle}"/>
+                                    <ComboBox ItemsSource="{Binding Departments}" SelectedItem="{Binding SelectedDepartment}" DisplayMemberPath="Name"/>
+                                </StackPanel>
+                            </Grid>
+
+                            <TextBlock Text="Empleado" Style="{StaticResource FieldLabelStyle}"/>
+                            <ComboBox ItemsSource="{Binding Employees}" SelectedItem="{Binding SelectedEmployee}" DisplayMemberPath="Name"
+                                      IsEditable="True" IsTextSearchEnabled="True" TextSearch.TextPath="Name" Margin="0,0,0,18"/>
+
+                            <TextBlock Text="Formato" Style="{StaticResource FieldLabelStyle}"/>
+                            <ComboBox ItemsSource="{Binding Formats}" SelectedItem="{Binding SelectedFormat}" Margin="0,0,0,18" HorizontalAlignment="Left" MinWidth="220"/>
+
+                            <CheckBox IsChecked="{Binding Detailed}" Content="Detallado (día por día)" Margin="0,0,0,10"
+                                      Visibility="{Binding ShowDetailed, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                            <CheckBox IsChecked="{Binding IncludeOvertime}" Content="Incluir horas extra en las tarjetas" Margin="0,0,0,10"
+                                      Visibility="{Binding ShowIncludeOvertime, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+
+                            <Button Command="{Binding GenerateReportCommand}" HorizontalAlignment="Left" Margin="0,15,0,0" Height="45" Padding="24,0"
+                                    Background="{StaticResource Brush.Primary}" Foreground="White" BorderThickness="0">
+                                <Button.Resources>
+                                    <Style TargetType="Border">
+                                        <Setter Property="CornerRadius" Value="8"/>
+                                    </Style>
+                                </Button.Resources>
+                                <StackPanel Orientation="Horizontal">
+                                    <iconPacks:PackIconMaterial Kind="FileDownloadOutline" Width="18" Height="18" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                    <TextBlock Text="Generar y guardar" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
         </Grid>
 
-        <!-- Form Card -->
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <Border Background="White" 
-                    CornerRadius="15" 
-                    Effect="{StaticResource CardShadow}"
-                    Padding="30"
-                    MaxWidth="1100"
-                    HorizontalAlignment="Center">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Report Selection -->
-                    <StackPanel Grid.Row="0" Margin="0,0,0,25">
-                        <TextBlock Text="Tipo de Reporte" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
-                        <ComboBox ItemsSource="{Binding ReportTypes}" 
-                                  SelectedItem="{Binding SelectedReportType}" 
-                                  Padding="12,10"
-                                  BorderThickness="1"
-                                  BorderBrush="#EAECF4"/>
-                    </StackPanel>
-
-                    <!-- Date Range -->
-                    <Grid Grid.Row="1" Margin="0,0,0,25">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Fecha Inicio" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
-                            <DatePicker SelectedDate="{Binding StartDate}" 
-                                       Padding="12,10"
-                                       mah:TextBoxHelper.Watermark="Seleccione fecha inicio"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="2">
-                            <TextBlock Text="Fecha Fin" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
-                            <DatePicker SelectedDate="{Binding EndDate}" 
-                                       Padding="12,10"
-                                       mah:TextBoxHelper.Watermark="Seleccione fecha fin"/>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- Filters -->
-                    <Grid Grid.Row="2" Margin="0,0,0,25">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                            <ColumnDefinition Width="*"/>
-                            <ColumnDefinition Width="20"/>
-                            <ColumnDefinition Width="*"/>
-                        </Grid.ColumnDefinitions>
-                        
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Empleado" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
-                            <ComboBox ItemsSource="{Binding Employees}" 
-                                      SelectedItem="{Binding SelectedEmployee}" 
-                                      Padding="12,10"
-                                      BorderThickness="1"
-                                      BorderBrush="#EAECF4"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="2">
-                            <TextBlock Text="Departamento" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
-                            <ComboBox ItemsSource="{Binding Departments}" 
-                                      SelectedItem="{Binding SelectedDepartment}" 
-                                      Padding="12,10"
-                                      BorderThickness="1"
-                                      BorderBrush="#EAECF4"/>
-                        </StackPanel>
-
-                        <StackPanel Grid.Column="4">
-                            <TextBlock Text="Sucursal" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
-                            <ComboBox ItemsSource="{Binding Branches}" 
-                                      SelectedItem="{Binding SelectedBranch}" 
-                                      Padding="12,10"
-                                      BorderThickness="1"
-                                      BorderBrush="#EAECF4"/>
-                        </StackPanel>
-                    </Grid>
-
-                    <!-- Export Format -->
-                    <StackPanel Grid.Row="3" Margin="0,0,0,40" Width="300" HorizontalAlignment="Left">
-                        <TextBlock Text="Formato de Exportación" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,10"/>
-                        <ComboBox ItemsSource="{Binding ExportFormats}" 
-                                  SelectedItem="{Binding SelectedFormat}" 
-                                  Padding="12,10"
-                                  BorderThickness="1"
-                                  BorderBrush="#EAECF4"/>
-                    </StackPanel>
-
-                    <!-- Actions -->
-                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right">
-                        <Button Command="{Binding PreviewReportCommand}" 
-                                Background="White"
-                                Foreground="#4E5D78"
-                                Height="50"
-                                Padding="25,0"
-                                Margin="0,0,15,0"
-                                BorderBrush="#EAECF4">
-                            <Button.Resources>
-                                <Style TargetType="Border">
-                                    <Setter Property="CornerRadius" Value="8"/>
-                                </Style>
-                            </Button.Resources>
-                            <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconMaterial Kind="Eye" Width="20" Height="20" Margin="0,0,10,0" VerticalAlignment="Center" Foreground="#4E73DF"/>
-                                <TextBlock Text="Vista Previa" FontWeight="SemiBold" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-
-                        <Button Command="{Binding GenerateReportCommand}" 
-                                Background="#4E73DF"
-                                Foreground="White"
-                                Height="50"
-                                Padding="25,0"
-                                BorderThickness="0">
-                            <Button.Resources>
-                                <Style TargetType="Border">
-                                    <Setter Property="CornerRadius" Value="8"/>
-                                </Style>
-                            </Button.Resources>
-                            <StackPanel Orientation="Horizontal">
-                                <iconPacks:PackIconMaterial Kind="FileChart" Width="20" Height="20" Margin="0,0,10,0" VerticalAlignment="Center"/>
-                                <TextBlock Text="Generar Reporte" FontWeight="Bold" VerticalAlignment="Center"/>
-                            </StackPanel>
-                        </Button>
-                    </StackPanel>
-                </Grid>
-            </Border>
-        </ScrollViewer>
-
-        <!-- Loading Overlay -->
-        <Border Grid.Row="0" Grid.RowSpan="2"
-                Background="#B3000000"
-                CornerRadius="15"
-                Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
-                Margin="-30">
-            <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <mah:ProgressRing IsActive="{Binding IsBusy}" 
-                                  Width="60" 
-                                  Height="60"
-                                  Foreground="White"/>
-                <TextBlock Text="{Binding BusyMessage}" 
-                           Foreground="White" 
-                           FontSize="18"
-                           FontWeight="SemiBold"
-                           Margin="0,15,0,0"
-                           HorizontalAlignment="Center"/>
+        <Border Background="{StaticResource Brush.BusyOverlay}" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="50" Height="50" Foreground="{StaticResource Brush.Primary}"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" FontSize="16" FontWeight="SemiBold" Margin="0,12,0,0" HorizontalAlignment="Center"/>
             </StackPanel>
         </Border>
     </Grid>

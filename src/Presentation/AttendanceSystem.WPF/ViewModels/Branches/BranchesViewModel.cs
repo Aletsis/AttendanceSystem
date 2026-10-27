@@ -25,6 +25,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IImportService _importService;
         private readonly IReportExportService _exportService;
         private readonly IDialogService _dialogService;
@@ -59,11 +60,13 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.BranchesManage);
+
         public ICommand AddBranchCommand { get; }
         public ICommand EditBranchCommand { get; }
         public ICommand DeleteBranchCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand ImportBranchesCommand { get; }
         public ICommand ExportBranchesCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
@@ -74,8 +77,10 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             IMediator mediator,
             IImportService importService,
             IReportExportService exportService,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
@@ -84,12 +89,9 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             _dialogService = dialogService;
 
             AddBranchCommand = new DelegateCommand(ExecuteAddBranch);
-            EditBranchCommand = new DelegateCommand(ExecuteEditBranch, CanExecuteEdit)
-                .ObservesProperty(() => SelectedBranch);
-            DeleteBranchCommand = new DelegateCommand(async () => await ExecuteDeleteBranchAsync(), CanExecuteEdit)
-                .ObservesProperty(() => SelectedBranch);
+            EditBranchCommand = new DelegateCommand<BranchListItem?>(x => ExecuteEditBranch(x ?? SelectedBranch));
+            DeleteBranchCommand = new DelegateCommand<BranchListItem?>(async x => await ExecuteDeleteBranchAsync(x ?? SelectedBranch));
             RefreshCommand = new DelegateCommand(async () => await LoadBranchesAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportBranchesCommand = new DelegateCommand(async () => await ExecuteImportBranchesAsync());
             ExportBranchesCommand = new DelegateCommand(async () => await ExecuteExportBranchesAsync());
             DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());
@@ -189,11 +191,12 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             });
         }
 
-        private void ExecuteEditBranch()
+        private void ExecuteEditBranch(BranchListItem? item)
         {
-            if (SelectedBranch == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (item == null || !CanManage) return;
 
-            var branchData = _allBranchesData.FirstOrDefault(b => b.Id == SelectedBranch.Id);
+            var branchData = _allBranchesData.FirstOrDefault(b => b.Id == item.Id);
             if (branchData == null) return;
 
             var parameters = new DialogParameters
@@ -232,35 +235,38 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             });
         }
 
-        private async Task ExecuteDeleteBranchAsync()
+        private async Task ExecuteDeleteBranchAsync(BranchListItem? item)
         {
-            if (SelectedBranch == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar la sucursal {SelectedBranch.Name}?\nEsta acción no se puede deshacer.");
+                $"¿Está seguro de eliminar la sucursal {item.Code} - {item.Name}?\n\nSólo se puede eliminar si no tiene empleados ni empleados externos asignados. Esta acción no se puede deshacer.");
 
             if (!confirmed) return;
 
-            // Nota: Aquí se asume que existe un DeleteBranchCommand en el Application layer.
-            // Si no existe, se mostrará un error de compilación o ejecución que el desarrollador deberá atender.
-            // Basado en el patrón de otras entidades, implementamos la llamada.
+            SetBusy(true, "Eliminando sucursal...");
             try
             {
-                // Buscamos si existe DeleteBranchCommand (usualmente en .Commands.DeleteBranch)
-                // Para evitar errores si no existe, por ahora mostramos el mensaje de "No Implementado" 
-                // o intentamos si estamos seguros.
-                await _messageService.ShowMessageAsync("Información", "La funcionalidad de eliminación física de sucursales está restringida por integridad de datos.");
+                var result = await _mediator.Send(new AttendanceSystem.Application.Features.Branches.Commands.DeleteBranch.DeleteBranchCommand(item.Id));
+                if (result.IsSuccess)
+                {
+                    await _messageService.ShowSuccessAsync("Sucursal eliminada correctamente.");
+                    await LoadBranchesAsync();
+                }
+                else
+                {
+                    await _messageService.ShowErrorAsync(result.Error);
+                }
             }
             catch (Exception ex)
             {
                 await _messageService.ShowErrorAsync($"Error al eliminar: {ex.Message}");
             }
-        }
-
-        private bool CanExecuteEdit()
-        {
-            return SelectedBranch != null;
+            finally
+            {
+                SetBusy(false);
+            }
         }
 
         private async Task ExecuteImportBranchesAsync()
@@ -281,8 +287,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
 
                     if (result.IsSuccess)
                     {
-                        int importedCount = 0;
-                        int errorCount = 0;
+                        var summary = new ImportSummary();
 
                         foreach (var item in result.Data)
                         {
@@ -295,13 +300,12 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
                             );
 
                             var createResult = await _mediator.Send(command);
-                            if (createResult.IsSuccess)
-                                importedCount++;
-                            else
-                                errorCount++;
+                            if (createResult.IsSuccess) summary.Success();
+                            else summary.Fail($"{item.Code} {item.Name}", createResult.Error);
                         }
 
-                        await _messageService.ShowSuccessAsync($"Importación finalizada. Éxito: {importedCount}, Errores: {errorCount}");
+                        if (summary.Failed == 0) await _messageService.ShowSuccessAsync(summary.ToMessage());
+                        else await _messageService.ShowWarningAsync(summary.ToMessage());
                         await LoadBranchesAsync();
                     }
                     else

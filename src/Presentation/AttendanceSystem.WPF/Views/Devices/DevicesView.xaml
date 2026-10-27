@@ -3,7 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
+    </UserControl.InputBindings>
     
     <UserControl.Resources>
         <!-- Shadow Effect -->
@@ -18,7 +22,7 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="2"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="#F8F9FC"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
         </Style>
     </UserControl.Resources>
 
@@ -36,25 +40,15 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0"
-                    Command="{Binding BackToDashboardCommand}"
-                    Style="{StaticResource MahApps.Styles.Button.Circle}"
-                    Width="40"
-                    Height="40"
-                    Margin="0,0,15,0"
-                    Background="White"
-                    Effect="{StaticResource CardShadow}">
-                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
-            </Button>
 
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
                 <TextBlock Text="Gestión de Dispositivos" 
                            FontSize="28" 
                            FontWeight="Bold"
-                           Foreground="#4E5D78"/>
+                           Foreground="{StaticResource Brush.Text}"/>
                 <TextBlock Text="Controle y sincronice sus terminales biométricas de asistencia"
                            FontSize="14"
-                           Foreground="#858796"/>
+                           Foreground="{StaticResource Brush.TextMuted}"/>
             </StackPanel>
 
             <StackPanel Grid.Column="2" Orientation="Horizontal">
@@ -64,13 +58,13 @@
                         Height="42"
                         Margin="0,0,10,0"
                         Background="White"
-                        BorderBrush="#EAECF4"
+                        BorderBrush="{StaticResource Brush.Border}"
                         ToolTip="Refrescar Lista"
                         Effect="{StaticResource CardShadow}">
-                    <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
+                    <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}"/>
                 </Button>
-                <Button Command="{Binding AddDeviceCommand}"
-                        Background="#4E73DF"
+                <Button Command="{Binding AddDeviceCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Height="45"
                         Padding="20,0"
@@ -112,52 +106,31 @@
                              FontSize="14"
                              Padding="12,10"
                              BorderThickness="1"
-                             BorderBrush="#EAECF4"
-                             Background="#F8F9FC"/>
+                             BorderBrush="{StaticResource Brush.Border}"
+                             Background="{StaticResource Brush.SurfaceAlt}"/>
                 </Grid>
 
-                <DataGrid Grid.Row="1"
+                <DataGrid Style="{StaticResource ModernDataGridStyle}"
+                          Grid.Row="1"
                           ItemsSource="{Binding Devices}"
                           SelectedItem="{Binding SelectedDevice}"
-                          AutoGenerateColumns="False"
-                          IsReadOnly="True"
-                          SelectionMode="Single"
-                          CanUserAddRows="False"
-                          CanUserDeleteRows="False"
-                          CanUserResizeRows="False"
-                          GridLinesVisibility="None"
-                          HeadersVisibility="Column"
-                          BorderThickness="0"
-                          Background="Transparent"
                           RowHeight="60">
-                    <DataGrid.ColumnHeaderStyle>
-                        <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
-                            <Setter Property="Background" Value="#F8F9FC"/>
-                            <Setter Property="Foreground" Value="#4E5D78"/>
-                            <Setter Property="FontWeight" Value="Bold"/>
-                            <Setter Property="Padding" Value="10,15"/>
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#EAECF4"/>
-                        </Style>
-                    </DataGrid.ColumnHeaderStyle>
-                    <DataGrid.RowStyle>
-                        <Style TargetType="DataGridRow" BasedOn="{StaticResource MahApps.Styles.DataGridRow}">
-                            <Setter Property="BorderThickness" Value="0,0,0,1"/>
-                            <Setter Property="BorderBrush" Value="#F8F9FC"/>
-                        </Style>
-                    </DataGrid.RowStyle>
+                    <DataGrid.InputBindings>
+                        <MouseBinding Gesture="LeftDoubleClick" Command="{Binding ViewDetailsCommand}"
+                                      CommandParameter="{Binding SelectedItem, RelativeSource={RelativeSource AncestorType=DataGrid}}"/>
+                    </DataGrid.InputBindings>
                     
                     <DataGrid.Columns>
                         <DataGridTemplateColumn Header="Dispositivo" Width="*">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" Margin="5,0">
-                                        <Border Width="32" Height="32" Background="#EBF0F9" CornerRadius="16" Margin="0,0,10,0">
-                                            <iconPacks:PackIconMaterial Kind="RouterWireless" Width="16" Height="16" Foreground="#4E73DF" VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        <Border Width="32" Height="32" Background="{StaticResource Brush.PrimarySoft}" CornerRadius="16" Margin="0,0,10,0">
+                                            <iconPacks:PackIconMaterial Kind="RouterWireless" Width="16" Height="16" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" HorizontalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#5A5C69"/>
-                                            <TextBlock Text="{Binding IpAddress}" FontSize="11" Foreground="#858796"/>
+                                            <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextSecondary}"/>
+                                            <TextBlock Text="{Binding IpAddress}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
                                         </StackPanel>
                                     </StackPanel>
                                 </DataTemplate>
@@ -189,7 +162,7 @@
                                                 </Style>
                                             </Ellipse.Style>
                                         </Ellipse>
-                                        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="12" Foreground="#5A5C69"/>
+                                        <TextBlock Text="{Binding Status}" VerticalAlignment="Center" FontSize="12" Foreground="{StaticResource Brush.TextSecondary}"/>
                                     </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
@@ -200,16 +173,17 @@
                                 <Style TargetType="TextBlock">
                                     <Setter Property="VerticalAlignment" Value="Center"/>
                                     <Setter Property="HorizontalAlignment" Value="Center"/>
-                                    <Setter Property="Foreground" Value="#858796"/>
+                                    <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}"/>
                                 </Style>
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         
-                        <DataGridTemplateColumn Header="Acciones" Width="250">
+                        <DataGridTemplateColumn Header="Acciones" Width="290">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                         <Button Command="{Binding DataContext.SyncEmployeesCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Sincronizar Empleados">
@@ -219,25 +193,34 @@
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Ver Detalles">
-                                            <iconPacks:PackIconMaterial Kind="Information" Width="14" Height="14" Foreground="#4E73DF"/>
+                                            <iconPacks:PackIconMaterial Kind="Information" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.TestConnectionCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Actualizar Info">
-                                            <iconPacks:PackIconMaterial Kind="Refresh" Width="14" Height="14" Foreground="#36B9CC"/>
+                                            <iconPacks:PackIconMaterial Kind="Refresh" Width="14" Height="14" Foreground="{StaticResource Brush.Info}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.DownloadLogsCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Descargar Logs">
-                                            <iconPacks:PackIconMaterial Kind="TrayArrowDown" Width="14" Height="14" Foreground="#1CC88A"/>
+                                            <iconPacks:PackIconMaterial Kind="TrayArrowDown" Width="14" Height="14" Foreground="{StaticResource Brush.Success}"/>
                                         </Button>
                                         <Button Command="{Binding DataContext.EditDeviceCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
                                                 CommandParameter="{Binding}"
                                                 Style="{StaticResource ActionButtonStyle}"
                                                 ToolTip="Editar">
-                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="#F6C23E"/>
+                                            <iconPacks:PackIconMaterial Kind="Pencil" Width="14" Height="14" Foreground="{StaticResource Brush.Warning}"/>
+                                        </Button>
+                                        <Button Command="{Binding DataContext.DeleteDeviceCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                Visibility="{Binding DataContext.CanManage, RelativeSource={RelativeSource AncestorType=DataGrid}, Converter={StaticResource BooleanToVisibilityConverter}}"
+                                                CommandParameter="{Binding}"
+                                                Style="{StaticResource ActionButtonStyle}"
+                                                ToolTip="Eliminar o desactivar">
+                                            <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}"/>
                                         </Button>
                                     </StackPanel>
                                 </DataTemplate>
@@ -250,7 +233,7 @@
 
         <!-- Loading Overlay -->
         <Border Grid.Row="0" Grid.RowSpan="2"
-                Background="#B3000000"
+                Background="{StaticResource Brush.BusyOverlay}"
                 CornerRadius="15"
                 Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}"
                 Margin="-30">
@@ -258,9 +241,9 @@
                 <mah:ProgressRing IsActive="{Binding IsBusy}" 
                                   Width="60" 
                                   Height="60"
-                                  Foreground="White"/>
+                                  Foreground="{StaticResource Brush.Primary}"/>
                 <TextBlock Text="{Binding BusyMessage}" 
-                           Foreground="White" 
+                           Foreground="{StaticResource Brush.Text}" 
                            FontSize="18"
                            FontWeight="SemiBold"
                            Margin="0,15,0,0"

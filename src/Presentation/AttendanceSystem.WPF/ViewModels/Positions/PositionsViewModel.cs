@@ -27,6 +27,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IImportService _importService;
         private readonly IReportExportService _exportService;
         private readonly IDialogService _dialogService;
@@ -61,11 +62,14 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.PositionsManage);
+        public bool CanDelete => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.PositionsDelete);
+
         public ICommand AddPositionCommand { get; }
         public ICommand EditPositionCommand { get; }
         public ICommand DeletePositionCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand ImportPositionsCommand { get; }
         public ICommand ExportPositionsCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
@@ -76,8 +80,10 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             IMediator mediator,
             IImportService importService,
             IReportExportService exportService,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
@@ -86,12 +92,9 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             _dialogService = dialogService;
 
             AddPositionCommand = new DelegateCommand(ExecuteAddPosition);
-            EditPositionCommand = new DelegateCommand(ExecuteEditPosition, CanExecuteEdit)
-                .ObservesProperty(() => SelectedPosition);
-            DeletePositionCommand = new DelegateCommand(async () => await ExecuteDeletePositionAsync(), CanExecuteEdit)
-                .ObservesProperty(() => SelectedPosition);
+            EditPositionCommand = new DelegateCommand<PositionListItem?>(x => ExecuteEditPosition(x ?? SelectedPosition));
+            DeletePositionCommand = new DelegateCommand<PositionListItem?>(async x => await ExecuteDeletePositionAsync(x ?? SelectedPosition));
             RefreshCommand = new DelegateCommand(async () => await LoadPositionsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportPositionsCommand = new DelegateCommand(async () => await ExecuteImportPositionsAsync());
             ExportPositionsCommand = new DelegateCommand(async () => await ExecuteExportPositionsAsync());
             DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());
@@ -101,7 +104,7 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
         private async Task LoadPositionsAsync()
         {
-            SetBusy(true, "Cargando posiciones...");
+            SetBusy(true, "Cargando puestos...");
             try
             {
                 var result = await _mediator.Send(new GetPositionsQuery());
@@ -146,12 +149,12 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                 }
                 else
                 {
-                    await _messageService.ShowErrorAsync($"Error al cargar posiciones: {result.Error}");
+                    await _messageService.ShowErrorAsync($"Error al cargar puestos: {result.Error}");
                 }
             }
             catch (Exception ex)
             {
-                await _messageService.ShowErrorAsync($"Error al cargar posiciones: {ex.Message}");
+                await _messageService.ShowErrorAsync($"Error al cargar puestos: {ex.Message}");
             }
             finally
             {
@@ -185,8 +188,9 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                     var name = result.Parameters.GetValue<string>("Name");
                     var description = result.Parameters.GetValue<string>("Description");
                     var baseSalary = result.Parameters.GetValue<decimal>("BaseSalary");
+                    var isCritical = result.Parameters.GetValue<bool>("IsCritical");
 
-                    var command = new CreatePositionCommand(name, description, baseSalary, false);
+                    var command = new CreatePositionCommand(name, description, baseSalary, isCritical);
                     var createResult = await _mediator.Send(command);
 
                     if (createResult.IsSuccess)
@@ -202,11 +206,12 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             });
         }
 
-        private void ExecuteEditPosition()
+        private void ExecuteEditPosition(PositionListItem? item)
         {
-            if (SelectedPosition == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (item == null || !CanManage) return;
 
-            var posData = _allPositionsData.FirstOrDefault(p => p.Id == SelectedPosition.Id);
+            var posData = _allPositionsData.FirstOrDefault(p => p.Id == item.Id);
             if (posData == null) return;
 
             var parameters = new DialogParameters
@@ -214,7 +219,8 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                 { "PositionId", posData.Id },
                 { "Name", posData.Name },
                 { "Description", posData.Description ?? string.Empty },
-                { "BaseSalary", posData.BaseSalary }
+                { "BaseSalary", posData.BaseSalary },
+                { "IsCritical", posData.IsCritical }
             };
 
             _dialogService.ShowDialog("PositionDetailDialog", parameters, async result =>
@@ -224,8 +230,9 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
                     var name = result.Parameters.GetValue<string>("Name");
                     var description = result.Parameters.GetValue<string>("Description");
                     var baseSalary = result.Parameters.GetValue<decimal>("BaseSalary");
+                    var isCritical = result.Parameters.GetValue<bool>("IsCritical");
 
-                    var command = new UpdatePositionCommand(posData.Id, name, description, baseSalary, false);
+                    var command = new UpdatePositionCommand(posData.Id, name, description, baseSalary, isCritical);
                     var updateResult = await _mediator.Send(command);
 
                     if (updateResult.IsSuccess)
@@ -241,45 +248,40 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
             });
         }
 
-        private async Task ExecuteDeletePositionAsync()
+        private async Task ExecuteDeletePositionAsync(PositionListItem? item)
         {
-            if (SelectedPosition == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar la posición {SelectedPosition.Name}?");
+                $"¿Está seguro de eliminar el puesto {item.Name}?");
 
             if (!confirmed) return;
 
-            SetBusy(true, "Eliminando posición...");
+            SetBusy(true, "Eliminando puesto...");
             try
             {
-                var command = new DeletePositionCommand(SelectedPosition.Id);
+                var command = new DeletePositionCommand(item.Id);
                 var result = await _mediator.Send(command);
 
                 if (result.IsSuccess)
                 {
-                    await _messageService.ShowSuccessAsync("Posición eliminada correctamente");
+                    await _messageService.ShowSuccessAsync("Puesto eliminado correctamente");
                     await LoadPositionsAsync();
                 }
                 else
                 {
-                    await _messageService.ShowErrorAsync($"Error al eliminar posición: {result.Error}");
+                    await _messageService.ShowErrorAsync($"Error al eliminar puesto: {result.Error}");
                 }
             }
             catch (Exception ex)
             {
-                await _messageService.ShowErrorAsync($"Error al eliminar posición: {ex.Message}");
+                await _messageService.ShowErrorAsync($"Error al eliminar puesto: {ex.Message}");
             }
             finally
             {
                 SetBusy(false);
             }
-        }
-
-        private bool CanExecuteEdit()
-        {
-            return SelectedPosition != null;
         }
 
         private async Task ExecuteImportPositionsAsync()
@@ -300,20 +302,18 @@ namespace AttendanceSystem.WPF.ViewModels.Positions
 
                     if (result.IsSuccess)
                     {
-                        int importedCount = 0;
-                        int errorCount = 0;
+                        var summary = new ImportSummary();
 
                         foreach (var item in result.Data)
                         {
                             var command = new CreatePositionCommand(item.Name, item.Description, item.BaseSalary, false);
                             var createResult = await _mediator.Send(command);
-                            if (createResult.IsSuccess)
-                                importedCount++;
-                            else
-                                errorCount++;
+                            if (createResult.IsSuccess) summary.Success();
+                            else summary.Fail(item.Name, createResult.Error);
                         }
 
-                        await _messageService.ShowSuccessAsync($"Importación finalizada. Éxito: {importedCount}, Errores: {errorCount}");
+                        if (summary.Failed == 0) await _messageService.ShowSuccessAsync(summary.ToMessage());
+                        else await _messageService.ShowWarningAsync(summary.ToMessage());
                         await LoadPositionsAsync();
                     }
                     else

@@ -32,6 +32,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IImportService _importService;
         private readonly IReportExportService _exportService;
         private readonly IDialogService _dialogService;
@@ -126,13 +127,25 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             }
         }
 
-        public List<string> StatusOptions { get; } = new() { "Todos", "Alta", "Baja" };
+        public List<string> StatusOptions { get; } = new[] { "Todos" }
+            .Concat(Enum.GetValues<EmployeeStatus>().Select(s => Converters.EnumDisplay.Text(s)))
+            .ToList();
+
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanCreate => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesCreate);
+        public bool CanEdit => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesEdit);
+        public bool CanDelete => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesDelete);
+        public bool CanImport => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesImport);
+        public bool CanExport => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesExport);
+        public bool CanSendToDevice => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.EmployeesSendToDevice);
+        public bool CanCreateExternal => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.ExternalEmployeesCreate);
+        public bool CanEditExternal => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.ExternalEmployeesEdit);
+        public bool CanDeleteExternal => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.ExternalEmployeesDelete);
 
         public ICommand AddEmployeeCommand { get; }
         public ICommand EditEmployeeCommand { get; }
         public ICommand DeleteEmployeeCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand ImportEmployeesCommand { get; }
         public ICommand ExportEmployeesCommand { get; }
         public ICommand DownloadTemplateCommand { get; }
@@ -150,8 +163,10 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             IMediator mediator,
             IImportService importService,
             IReportExportService exportService,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
@@ -160,16 +175,13 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             _dialogService = dialogService;
 
             AddEmployeeCommand = new DelegateCommand(ExecuteAddEmployee);
-            EditEmployeeCommand = new DelegateCommand(ExecuteEditEmployee, CanExecuteEditEmployee)
-                .ObservesProperty(() => SelectedEmployee);
-            DeleteEmployeeCommand = new DelegateCommand(async () => await ExecuteDeleteEmployeeAsync(), CanExecuteEditEmployee)
-                .ObservesProperty(() => SelectedEmployee);
+            // Los botones de cada fila mandan su empleado: la acción es sobre esa fila, no sobre la seleccionada.
+            EditEmployeeCommand = new DelegateCommand<EmployeeListItem?>(e => ExecuteEditEmployee(e ?? SelectedEmployee));
+            DeleteEmployeeCommand = new DelegateCommand<EmployeeListItem?>(async e => await ExecuteDeleteEmployeeAsync(e ?? SelectedEmployee));
 
             AddExternalEmployeeCommand = new DelegateCommand(ExecuteAddExternalEmployee);
-            EditExternalEmployeeCommand = new DelegateCommand(ExecuteEditExternalEmployee, () => SelectedExternalEmployee != null)
-                .ObservesProperty(() => SelectedExternalEmployee);
-            DeleteExternalEmployeeCommand = new DelegateCommand(async () => await ExecuteDeleteExternalEmployeeAsync(), () => SelectedExternalEmployee != null)
-                .ObservesProperty(() => SelectedExternalEmployee);
+            EditExternalEmployeeCommand = new DelegateCommand<ExternalEmployeeListItem?>(e => ExecuteEditExternalEmployee(e ?? SelectedExternalEmployee));
+            DeleteExternalEmployeeCommand = new DelegateCommand<ExternalEmployeeListItem?>(async e => await ExecuteDeleteExternalEmployeeAsync(e ?? SelectedExternalEmployee));
 
             SwitchToInternalCommand = new DelegateCommand(() => IsExternalMode = false);
             SwitchToExternalCommand = new DelegateCommand(() => IsExternalMode = true);
@@ -182,7 +194,6 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     await LoadEmployeesAsync();
             });
 
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
             ImportEmployeesCommand = new DelegateCommand(async () => await ExecuteImportEmployeesAsync());
             ExportEmployeesCommand = new DelegateCommand(async () => await ExecuteExportEmployeesAsync());
             DownloadTemplateCommand = new DelegateCommand(async () => await ExecuteDownloadTemplateAsync());
@@ -215,7 +226,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                             DepartmentName = emp.DepartmentName,
                             PositionName = emp.PositionName,
                             BranchName = emp.BranchName,
-                            Status = emp.Status == EmployeeStatus.Alta ? "Alta" : "Baja",
+                            // Antes vacaciones, incapacidad y baja temporal aparecían como "Baja".
+                            Status = Converters.EnumDisplay.Text(emp.Status),
+                            StatusValue = emp.Status,
                             HireDate = emp.HireDate
                         });
                     }
@@ -286,7 +299,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                             Department = emp.Department ?? "N/A",
                             Position = emp.Position ?? "N/A",
                             CardNumber = emp.CardNumber ?? "N/A",
-                            Status = emp.Status == EmployeeStatus.Alta ? "Alta" : "Baja",
+                            Status = Converters.EnumDisplay.Text(emp.Status),
+                            StatusValue = emp.Status,
                             CreatedAt = emp.CreatedAt
                         });
                     }
@@ -338,30 +352,31 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             _navigationService.NavigateTo("EmployeeDetailView", parameters);
         }
 
-        private void ExecuteEditEmployee()
+        private void ExecuteEditEmployee(EmployeeListItem? employee)
         {
-            if (SelectedEmployee == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (employee == null || !CanEdit) return;
 
             var parameters = new Prism.Navigation.NavigationParameters();
-            parameters.Add("EmployeeId", SelectedEmployee.Id);
+            parameters.Add("EmployeeId", employee.Id);
 
             _navigationService.NavigateTo("EmployeeDetailView", parameters);
         }
 
-        private async Task ExecuteDeleteEmployeeAsync()
+        private async Task ExecuteDeleteEmployeeAsync(EmployeeListItem? employee)
         {
-            if (SelectedEmployee == null) return;
+            if (employee == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar al empleado {SelectedEmployee.FullName}?");
+                $"¿Está seguro de eliminar al empleado {employee.EmployeeNumber} - {employee.FullName}?");
 
             if (!confirmed) return;
 
             SetBusy(true, "Eliminando empleado...");
             try
             {
-                var command = new DeleteEmployeeCommand(SelectedEmployee.EmployeeNumber);
+                var command = new DeleteEmployeeCommand(employee.Id);
                 var result = await _mediator.Send(command);
 
                 if (result.IsSuccess)
@@ -427,11 +442,12 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             });
         }
 
-        private void ExecuteEditExternalEmployee()
+        private void ExecuteEditExternalEmployee(ExternalEmployeeListItem? employee)
         {
-            if (SelectedExternalEmployee == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (employee == null || !CanEditExternal) return;
 
-            var empData = _allExternalEmployeesData.FirstOrDefault(e => e.Id == SelectedExternalEmployee.Id);
+            var empData = _allExternalEmployeesData.FirstOrDefault(e => e.Id == employee.Id);
             if (empData == null) return;
 
             var parameters = new DialogParameters
@@ -491,20 +507,20 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             });
         }
 
-        private async Task ExecuteDeleteExternalEmployeeAsync()
+        private async Task ExecuteDeleteExternalEmployeeAsync(ExternalEmployeeListItem? employee)
         {
-            if (SelectedExternalEmployee == null) return;
+            if (employee == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Confirmar eliminación",
-                $"¿Está seguro de eliminar al empleado externo {SelectedExternalEmployee.FullName} de la sucursal {SelectedExternalEmployee.BranchName}?");
+                $"¿Está seguro de eliminar al empleado externo {employee.FullName} de la sucursal {employee.BranchName}?");
 
             if (!confirmed) return;
 
             SetBusy(true, "Eliminando empleado externo...");
             try
             {
-                var command = new DeleteExternalEmployeeCommand(SelectedExternalEmployee.Id);
+                var command = new DeleteExternalEmployeeCommand(employee.Id);
                 var result = await _mediator.Send(command);
 
                 if (result.IsSuccess)
@@ -525,11 +541,6 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             {
                 SetBusy(false);
             }
-        }
-
-        private bool CanExecuteEditEmployee()
-        {
-            return SelectedEmployee != null;
         }
 
         private async Task ExecuteImportEmployeesAsync()
@@ -556,31 +567,36 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                         return;
                     }
 
-                    var branchMap = branchesResult.Value.ToDictionary(b => b.Name.Trim().ToLowerInvariant(), b => b.Id);
-                    var deptMap = departmentsResult.Value.ToDictionary(d => d.Name.Trim().ToLowerInvariant(), d => d.Id);
-                    var posMap = positionsResult.Value.ToDictionary(p => p.Name.Trim().ToLowerInvariant(), p => p.Id);
+                    // Por nombre sin distinguir mayúsculas; con nombres repetidos se usa el primero (antes la importación fallaba completa).
+                    static Dictionary<string, T> ByName<T>(IEnumerable<T> items, Func<T, string> name) =>
+                        items.GroupBy(i => name(i).Trim().ToLowerInvariant()).ToDictionary(g => g.Key, g => g.First());
+                    static string Key(string? value) => (value ?? string.Empty).Trim().ToLowerInvariant();
+
+                    var branchMap = ByName(branchesResult.Value.Where(b => !b.IsExternal), b => b.Name);
+                    var deptMap = ByName(departmentsResult.Value, d => d.Name);
+                    var posMap = ByName(positionsResult.Value, p => p.Name);
                     // Caso 10: cada empleado entra con el horario indicado; su turno es el del horario.
-                    var shiftMap = shiftsResult.Value
-                        .Where(s => s.ShiftType != ShiftType.Rotativo)
-                        .GroupBy(s => s.Name.Trim().ToLowerInvariant())
-                        .ToDictionary(g => g.Key, g => g.First());
+                    var shiftMap = ByName(shiftsResult.Value.Where(s => s.ShiftType != ShiftType.Rotativo), s => s.Name);
 
                     using var stream = File.OpenRead(openFileDialog.FileName);
                     var result = await _importService.ParseEmployeesAsync(stream);
 
                     if (result.IsSuccess)
                     {
-                        int successCount = 0;
-                        int failCount = 0;
+                        var summary = new ImportSummary();
 
                         foreach (var item in result.Data)
                         {
-                            if (!branchMap.TryGetValue((item.BranchName ?? string.Empty).Trim().ToLowerInvariant(), out var branchId) ||
-                                !deptMap.TryGetValue((item.DepartmentName ?? string.Empty).Trim().ToLowerInvariant(), out var deptId) ||
-                                !posMap.TryGetValue((item.PositionName ?? string.Empty).Trim().ToLowerInvariant(), out var posId) ||
-                                !shiftMap.TryGetValue((item.ScheduleName ?? string.Empty).Trim().ToLowerInvariant(), out var schedule))
+                            var label = $"{item.EmployeeId} {item.FirstName} {item.LastName}".Trim();
+                            string? missing =
+                                !branchMap.TryGetValue(Key(item.BranchName), out _) ? $"no existe la sucursal \"{item.BranchName}\""
+                                : !deptMap.TryGetValue(Key(item.DepartmentName), out _) ? $"no existe el departamento \"{item.DepartmentName}\""
+                                : !posMap.TryGetValue(Key(item.PositionName), out _) ? $"no existe el puesto \"{item.PositionName}\""
+                                : !shiftMap.TryGetValue(Key(item.ScheduleName), out _) ? $"no existe el horario \"{item.ScheduleName}\""
+                                : null;
+                            if (missing != null)
                             {
-                                failCount++;
+                                summary.Fail(label, missing);
                                 continue;
                             }
 
@@ -594,11 +610,11 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                                 null,
                                 item.HireDate,
                                 gender,
-                                branchId.ToString(),
-                                deptId.ToString(),
-                                posId.ToString(),
-                                schedule.ShiftType,
-                                schedule.Id.ToString(),
+                                branchMap[Key(item.BranchName)].Id.ToString(),
+                                deptMap[Key(item.DepartmentName)].Id.ToString(),
+                                posMap[Key(item.PositionName)].Id.ToString(),
+                                shiftMap[Key(item.ScheduleName)].ShiftType,
+                                shiftMap[Key(item.ScheduleName)].Id.ToString(),
                                 null,
                                 false,
                                 OvertimeCalculationMethod.NoRounding,
@@ -607,11 +623,12 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                                 false);
 
                             var createResult = await _mediator.Send(command);
-                            if (createResult.IsSuccess) successCount++;
-                            else failCount++;
+                            if (createResult.IsSuccess) summary.Success();
+                            else summary.Fail(label, createResult.Error);
                         }
 
-                        await _messageService.ShowSuccessAsync($"Importación finalizada. Exitosos: {successCount}, Fallidos: {failCount}");
+                        if (summary.Failed == 0) await _messageService.ShowSuccessAsync(summary.ToMessage());
+                        else await _messageService.ShowWarningAsync(summary.ToMessage());
                         await LoadEmployeesAsync();
                     }
                     else
@@ -740,6 +757,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public string PositionName { get; set; } = string.Empty;
         public string BranchName { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public EmployeeStatus StatusValue { get; set; }
         public DateTime HireDate { get; set; }
     }
 
@@ -757,6 +775,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public string Position { get; set; } = string.Empty;
         public string CardNumber { get; set; } = string.Empty;
         public string Status { get; set; } = string.Empty;
+        public EmployeeStatus StatusValue { get; set; }
         public DateTime CreatedAt { get; set; }
     }
 }

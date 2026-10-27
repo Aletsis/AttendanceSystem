@@ -18,7 +18,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -32,8 +36,8 @@
 
             <!-- Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="Seleccionar Reloj Checador" FontSize="20" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Elija el dispositivo al que desea enviar la información." FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+                <TextBlock Text="Seleccionar Reloj Checador" FontSize="20" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Elija el dispositivo al que desea enviar la información." FontSize="13" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0"/>
             </StackPanel>
 
             <!-- Device List -->
@@ -46,12 +50,12 @@
                 <ListBox.ItemTemplate>
                     <DataTemplate>
                         <Border x:Name="ItemBorder" 
-                                Background="#F8F9FC" 
+                                Background="{StaticResource Brush.SurfaceAlt}" 
                                 CornerRadius="8" 
                                 Margin="0,0,0,8" 
                                 Padding="15,10"
                                 BorderThickness="1"
-                                BorderBrush="#EAECF4">
+                                BorderBrush="{StaticResource Brush.Border}">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="Auto"/>
@@ -59,19 +63,19 @@
                                     <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
 
-                                <iconPacks:PackIconMaterial Kind="ClockOutline" Grid.Column="0" Width="20" Height="20" Foreground="#4E73DF" VerticalAlignment="Center" Margin="0,0,15,0"/>
+                                <iconPacks:PackIconMaterial Kind="ClockOutline" Grid.Column="0" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" Margin="0,0,15,0"/>
                                 
                                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="#4E5D78" FontSize="14"/>
-                                    <TextBlock Text="{Binding IpAddress}" FontSize="12" Foreground="#858796"/>
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" FontSize="14"/>
+                                    <TextBlock Text="{Binding IpAddress}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}"/>
                                 </StackPanel>
 
                                 <Border Grid.Column="2" 
-                                        Background="#E1F7EF" 
+                                        Background="{StaticResource Brush.SuccessSoft}" 
                                         CornerRadius="5" 
                                         Padding="8,2" 
                                         VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding Status}" Foreground="#1CC88A" FontSize="10" FontWeight="Bold"/>
+                                    <TextBlock Text="{Binding Status}" Foreground="{StaticResource Brush.Success}" FontSize="10" FontWeight="Bold"/>
                                 </Border>
                             </Grid>
                         </Border>
@@ -105,8 +109,8 @@
                         Padding="20,8"/>
                 
                 <Button Content="Enviar" 
-                        Command="{Binding SelectCommand}"
-                        Background="#4E73DF"
+                        Command="{Binding SelectCommand}" IsDefault="True"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="25,8"
                         BorderThickness="0">

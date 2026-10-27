@@ -28,6 +28,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
         private readonly IDialogService _dialogService;
+        private readonly IAuthenticationStateService _authService;
 
         private ObservableCollection<DeviceListItem> _devices = new();
         private ObservableCollection<DeviceListItem> _filteredDevices = new();
@@ -59,13 +60,15 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.DevicesManage);
+
         public ICommand AddDeviceCommand { get; }
         public ICommand EditDeviceCommand { get; }
         public ICommand DeleteDeviceCommand { get; }
         public ICommand TestConnectionCommand { get; }
         public ICommand DownloadLogsCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
         public ICommand SyncEmployeesCommand { get; }
         public ICommand ViewDetailsCommand { get; }
 
@@ -73,22 +76,23 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
             _dialogService = dialogService;
 
             AddDeviceCommand = new DelegateCommand(ExecuteAddDevice);
-            EditDeviceCommand = new DelegateCommand(ExecuteEditDevice, CanExecuteEdit).ObservesProperty(() => SelectedDevice);
-            DeleteDeviceCommand = new DelegateCommand(async () => await ExecuteDeleteDeviceAsync(), CanExecuteEdit).ObservesProperty(() => SelectedDevice);
-            TestConnectionCommand = new DelegateCommand(async () => await ExecuteTestConnectionAsync(), CanExecuteEdit).ObservesProperty(() => SelectedDevice);
-            DownloadLogsCommand = new DelegateCommand(async () => await ExecuteDownloadLogsAsync(), CanExecuteEdit).ObservesProperty(() => SelectedDevice);
-            SyncEmployeesCommand = new DelegateCommand(async () => await ExecuteSyncEmployeesAsync(), CanExecuteEdit).ObservesProperty(() => SelectedDevice);
-            ViewDetailsCommand = new DelegateCommand(ExecuteViewDetails, CanExecuteEdit).ObservesProperty(() => SelectedDevice);
+            EditDeviceCommand = new DelegateCommand<DeviceListItem?>(x => ExecuteEditDevice(x ?? SelectedDevice));
+            DeleteDeviceCommand = new DelegateCommand<DeviceListItem?>(async x => await ExecuteDeleteDeviceAsync(x ?? SelectedDevice));
+            TestConnectionCommand = new DelegateCommand<DeviceListItem?>(async x => await ExecuteTestConnectionAsync(x ?? SelectedDevice));
+            DownloadLogsCommand = new DelegateCommand<DeviceListItem?>(async x => await ExecuteDownloadLogsAsync(x ?? SelectedDevice));
+            SyncEmployeesCommand = new DelegateCommand<DeviceListItem?>(async x => await ExecuteSyncEmployeesAsync(x ?? SelectedDevice));
+            ViewDetailsCommand = new DelegateCommand<DeviceListItem?>(x => ExecuteViewDetails(x ?? SelectedDevice));
             RefreshCommand = new DelegateCommand(async () => await LoadDevicesAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadDevicesAsync();
         }
@@ -115,7 +119,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                             Port = device.Port,
                             BranchName = device.Location ?? "N/A",
                             IsActive = device.IsActive,
-                            Status = device.Status,
+                            Status = device.IsActive ? device.Status : "Inactivo",
                             LastSync = device.LastDownloadAt
                         });
                     }
@@ -187,10 +191,10 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             });
         }
 
-        private void ExecuteEditDevice()
+        private void ExecuteEditDevice(DeviceListItem? item)
         {
-            if (SelectedDevice == null) return;
-            var deviceData = _allDevicesData.FirstOrDefault(d => d.DeviceId == SelectedDevice.Id);
+            if (item == null) return;
+            var deviceData = _allDevicesData.FirstOrDefault(d => d.DeviceId == item.Id);
             if (deviceData == null) return;
 
             var parameters = new DialogParameters
@@ -242,22 +246,39 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             });
         }
 
-        private async Task ExecuteDeleteDeviceAsync()
+        private async Task ExecuteDeleteDeviceAsync(DeviceListItem? item)
         {
-            if (SelectedDevice == null) return;
-            var confirmed = await _messageService.ShowConfirmationAsync("Confirmar eliminación", $"¿Está seguro de eliminar el dispositivo {SelectedDevice.Name}?");
+            if (item == null) return;
+            var confirmed = await _messageService.ShowConfirmationAsync("Confirmar eliminación",
+                $"¿Está seguro de eliminar el dispositivo {item.Name}?\n\nSi ya tiene checadas o descargas no se borra: se desactiva (deja de descargarse y de recibir empleados) y sus checadas se conservan.");
             if (!confirmed) return;
 
-            await _messageService.ShowMessageAsync("No Implementado", "La funcionalidad de eliminar dispositivo aún no está implementada en el backend.");
-        }
-
-        private async Task ExecuteTestConnectionAsync()
-        {
-            if (SelectedDevice == null) return;
-            SetBusy(true, $"Conectando con {SelectedDevice.Name}...");
+            SetBusy(true, "Eliminando dispositivo...");
             try
             {
-                var result = await _mediator.Send(new RefreshDeviceInfoCommand(Guid.Parse(SelectedDevice.Id)));
+                var result = await _mediator.Send(new AttendanceSystem.Application.Features.Devices.Commands.DeleteDevice.DeleteDeviceCommand(Guid.Parse(item.Id)));
+                if (result.IsFailure)
+                {
+                    await _messageService.ShowErrorAsync($"Error al eliminar: {result.Error}");
+                    return;
+                }
+
+                await _messageService.ShowSuccessAsync(result.Value == AttendanceSystem.Application.Features.Devices.Commands.DeleteDevice.DeleteDeviceOutcome.Deleted
+                    ? "Dispositivo eliminado."
+                    : "El dispositivo tenía historial: quedó desactivado y sus checadas se conservan.");
+                await LoadDevicesAsync();
+            }
+            catch (Exception ex) { await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
+            finally { SetBusy(false); }
+        }
+
+        private async Task ExecuteTestConnectionAsync(DeviceListItem? item)
+        {
+            if (item == null) return;
+            SetBusy(true, $"Conectando con {item.Name}...");
+            try
+            {
+                var result = await _mediator.Send(new RefreshDeviceInfoCommand(Guid.Parse(item.Id)));
                 if (result.IsSuccess)
                 {
                     await _messageService.ShowSuccessAsync("Conexión exitosa. Información del dispositivo actualizada.");
@@ -272,9 +293,9 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             finally { SetBusy(false); }
         }
 
-        private async Task ExecuteDownloadLogsAsync()
+        private async Task ExecuteDownloadLogsAsync(DeviceListItem? item)
         {
-            if (SelectedDevice == null) return;
+            if (item == null) return;
 
             _dialogService.ShowDialog("DownloadLogsRangeDialog", null, async result =>
             {
@@ -283,11 +304,12 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                     var fromDate = result.Parameters.GetValue<DateTime?>("FromDate");
                     var toDate = result.Parameters.GetValue<DateTime?>("ToDate");
 
-                    SetBusy(true, $"Descargando registros de {SelectedDevice.Name}...");
+                    SetBusy(true, $"Descargando registros de {item.Name}...");
                     try
                     {
-                        // TODO: Obtener el usuario actual para InitiatedBy
-                        var command = new DownloadFromDeviceCommand(SelectedDevice.Id, fromDate, toDate, true, null, "Admin WPF");
+                        // La bitácora de descargas registra quién la inició, igual que en la versión web.
+                        var command = new DownloadFromDeviceCommand(item.Id, fromDate, toDate, true,
+                            _authService.CurrentUserId, _authService.CurrentUserName);
                         var downloadResult = await _mediator.Send(command);
 
                         if (downloadResult.IsSuccess)
@@ -306,20 +328,20 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             });
         }
 
-        private async Task ExecuteSyncEmployeesAsync()
+        private async Task ExecuteSyncEmployeesAsync(DeviceListItem? item)
         {
-            if (SelectedDevice == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Sincronizar Empleados",
-                $"¿Desea importar los usuarios y datos biométricos desde '{SelectedDevice.Name}'?\nEsto actualizará la base de datos local.");
+                $"¿Desea importar los usuarios y datos biométricos desde '{item.Name}'?\nEsto actualizará la base de datos local.");
 
             if (!confirmed) return;
 
             SetBusy(true, "Sincronizando empleados...");
             try
             {
-                var result = await _mediator.Send(new ImportUsersFromDeviceCommand(SelectedDevice.Id));
+                var result = await _mediator.Send(new ImportUsersFromDeviceCommand(item.Id));
                 if (result.IsSuccess)
                 {
                     await _messageService.ShowSuccessAsync($"Sincronización exitosa. {result.Value} empleados procesados.");
@@ -333,20 +355,15 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             finally { SetBusy(false); }
         }
 
-        private void ExecuteViewDetails()
+        private void ExecuteViewDetails(DeviceListItem? item)
         {
-            if (SelectedDevice == null) return;
+            if (item == null) return;
 
-            var deviceData = _allDevicesData.FirstOrDefault(d => d.DeviceId == SelectedDevice.Id);
+            var deviceData = _allDevicesData.FirstOrDefault(d => d.DeviceId == item.Id);
             if (deviceData == null) return;
 
             var parameters = new DialogParameters { { "Device", deviceData } };
             _dialogService.ShowDialog("DeviceAdvancedDetailsDialog", parameters);
-        }
-
-        private bool CanExecuteEdit()
-        {
-            return SelectedDevice != null;
         }
     }
 

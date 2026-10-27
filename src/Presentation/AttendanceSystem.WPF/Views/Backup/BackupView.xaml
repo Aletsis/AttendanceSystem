@@ -3,7 +3,11 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Background="#F5F7FA">
+             Background="{StaticResource Brush.Background}">
+
+    <UserControl.InputBindings>
+        <KeyBinding Key="F5" Command="{Binding RefreshCommand}"/>
+    </UserControl.InputBindings>
     
     <UserControl.Resources>
         <DropShadowEffect x:Key="CardShadow" BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
@@ -13,7 +17,7 @@
             <Setter Property="Height" Value="32"/>
             <Setter Property="Margin" Value="2"/>
             <Setter Property="BorderThickness" Value="0"/>
-            <Setter Property="Background" Value="#F8F9FC"/>
+            <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
         </Style>
 
         <Style x:Key="StatCardStyle" TargetType="Border">
@@ -40,21 +44,14 @@
                 <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
 
-            <Button Grid.Column="0"
-                    Command="{Binding BackToDashboardCommand}"
-                    Style="{StaticResource MahApps.Styles.Button.Circle}"
-                    Width="40" Height="40" Margin="0,0,15,0"
-                    Background="White" Effect="{StaticResource CardShadow}">
-                <iconPacks:PackIconMaterial Kind="ArrowLeft" Width="20" Height="20" Foreground="#4E73DF"/>
-            </Button>
 
             <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                <TextBlock Text="Respaldo y Restauración" FontSize="28" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Proteja y recupere su información de asistencia de forma segura" FontSize="14" Foreground="#858796"/>
+                <TextBlock Text="Respaldo y Restauración" FontSize="28" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Proteja y recupere su información de asistencia de forma segura" FontSize="14" Foreground="{StaticResource Brush.TextMuted}"/>
             </StackPanel>
 
-            <Button Grid.Column="2" Command="{Binding RefreshCommand}" Style="{StaticResource MahApps.Styles.Button.Circle}" Width="40" Height="40" Background="White" BorderBrush="#EAECF4" Effect="{StaticResource CardShadow}">
-                <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="#4E73DF"/>
+            <Button Grid.Column="2" Command="{Binding RefreshCommand}" Style="{StaticResource MahApps.Styles.Button.Circle}" Width="40" Height="40" Background="White" BorderBrush="{StaticResource Brush.Border}" Effect="{StaticResource CardShadow}">
+                <iconPacks:PackIconMaterial Kind="Refresh" Width="20" Height="20" Foreground="{StaticResource Brush.Primary}"/>
             </Button>
         </Grid>
 
@@ -63,11 +60,11 @@
             <Border Style="{StaticResource StatCardStyle}">
                 <StackPanel Orientation="Horizontal">
                     <Border Background="#E7F0FD" CornerRadius="10" Width="45" Height="45" Margin="0,0,15,0">
-                        <iconPacks:PackIconMaterial Kind="Counter" Foreground="#4E73DF" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <iconPacks:PackIconMaterial Kind="Counter" Foreground="{StaticResource Brush.Primary}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Total Respaldos" FontSize="11" Foreground="#858796" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding TotalBackups}" FontSize="18" FontWeight="Bold" Foreground="#4E5D78"/>
+                        <TextBlock Text="Total Respaldos" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding TotalBackups}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -75,11 +72,11 @@
             <Border Style="{StaticResource StatCardStyle}">
                 <StackPanel Orientation="Horizontal">
                     <Border Background="#E8F9F3" CornerRadius="10" Width="45" Height="45" Margin="0,0,15,0">
-                        <iconPacks:PackIconMaterial Kind="Server" Foreground="#1CC88A" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <iconPacks:PackIconMaterial Kind="Server" Foreground="{StaticResource Brush.Success}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Espacio Usado" FontSize="11" Foreground="#858796" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding UsedSpaceFormatted}" FontSize="18" FontWeight="Bold" Foreground="#4E5D78"/>
+                        <TextBlock Text="Espacio Usado" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding UsedSpaceFormatted}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -87,11 +84,11 @@
             <Border Style="{StaticResource StatCardStyle}" Margin="0">
                 <StackPanel Orientation="Horizontal">
                     <Border Background="#FFF7E6" CornerRadius="10" Width="45" Height="45" Margin="0,0,15,0">
-                        <iconPacks:PackIconMaterial Kind="CalendarClock" Foreground="#F6C23E" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        <iconPacks:PackIconMaterial Kind="CalendarClock" Foreground="{StaticResource Brush.Warning}" Width="20" Height="20" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                     </Border>
                     <StackPanel VerticalAlignment="Center">
-                        <TextBlock Text="Último Respaldo" FontSize="11" Foreground="#858796" FontWeight="Bold"/>
-                        <TextBlock Text="{Binding LastBackupDate}" FontSize="18" FontWeight="Bold" Foreground="#4E5D78"/>
+                        <TextBlock Text="Último Respaldo" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" FontWeight="Bold"/>
+                        <TextBlock Text="{Binding LastBackupDate}" FontSize="18" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
                     </StackPanel>
                 </StackPanel>
             </Border>
@@ -109,17 +106,17 @@
             <StackPanel Grid.Column="0">
                 <Border Background="White" CornerRadius="15" Padding="20" Effect="{StaticResource CardShadow}">
                     <StackPanel>
-                        <TextBlock Text="Crear Nuevo Respaldo" FontSize="16" FontWeight="Bold" Foreground="#4E5D78" Margin="0,0,0,15"/>
+                        <TextBlock Text="Crear Nuevo Respaldo" FontSize="16" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,15"/>
                         
-                        <TextBlock Text="Descripción (opcional)" FontSize="12" Foreground="#858796" Margin="0,0,0,5"/>
+                        <TextBlock Text="Descripción (opcional)" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding BackupDescription}" 
                                  mah:TextBoxHelper.Watermark="Escriba una referencia..."
                                  AcceptsReturn="True" Height="80" VerticalScrollBarVisibility="Auto" 
                                  Padding="10" Margin="0,0,0,15"
-                                 BorderBrush="#EAECF4" Background="#F8F9FC"/>
+                                 BorderBrush="{StaticResource Brush.Border}" Background="{StaticResource Brush.SurfaceAlt}"/>
 
                         <Button Command="{Binding CreateFullBackupCommand}" 
-                                Background="#4E73DF" Foreground="White" Height="45" Margin="0,0,0,10" BorderThickness="0">
+                                Background="{StaticResource Brush.Primary}" Foreground="White" Height="45" Margin="0,0,0,10" BorderThickness="0">
                             <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
                             <StackPanel Orientation="Horizontal">
                                 <iconPacks:PackIconMaterial Kind="CloudDownload" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
@@ -129,7 +126,7 @@
 
                         <Button Command="{Binding CreateDatabaseBackupCommand}" 
                                 Style="{StaticResource MahApps.Styles.Button.Flat}"
-                                Foreground="#4E73DF" BorderBrush="#EAECF4" Height="45" Margin="0,0,0,10">
+                                Foreground="{StaticResource Brush.Primary}" BorderBrush="{StaticResource Brush.Border}" Height="45" Margin="0,0,0,10">
                             <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
                             <StackPanel Orientation="Horizontal">
                                 <iconPacks:PackIconMaterial Kind="Database" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
@@ -139,7 +136,7 @@
 
                         <Button Command="{Binding UploadBackupCommand}" 
                                 Style="{StaticResource MahApps.Styles.Button.Flat}"
-                                Foreground="#1CC88A" BorderBrush="#EAECF4" Height="45" Margin="0,0,0,15">
+                                Foreground="{StaticResource Brush.Success}" BorderBrush="{StaticResource Brush.Border}" Height="45" Margin="0,0,0,15">
                             <Button.Resources><Style TargetType="Border"><Setter Property="CornerRadius" Value="8"/></Style></Button.Resources>
                             <StackPanel Orientation="Horizontal">
                                 <iconPacks:PackIconMaterial Kind="CloudUpload" Width="16" Height="16" Margin="0,0,10,0" VerticalAlignment="Center"/>
@@ -164,7 +161,7 @@
                             <iconPacks:PackIconMaterial Kind="Alert" Foreground="#856404" Width="16" Height="16" Margin="0,0,8,0"/>
                             <TextBlock Text="¡Advertencia!" FontWeight="Bold" Foreground="#856404"/>
                         </StackPanel>
-                        <TextBlock Text="La restauración sobrescribe los datos actuales y requiere reiniciar la aplicación." FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
+                        <TextBlock Text="La restauración sobrescribe los datos actuales (antes guarda una copia de la base) y al terminar cierra la sesión." FontSize="11" Foreground="#856404" TextWrapping="Wrap"/>
                     </StackPanel>
                 </Border>
             </StackPanel>
@@ -172,22 +169,17 @@
             <!-- List Panel -->
             <Border Grid.Column="2" Background="White" CornerRadius="15" Effect="{StaticResource CardShadow}">
                 <Grid Margin="15">
-                    <DataGrid ItemsSource="{Binding BackupFiles}"
-                              SelectedItem="{Binding SelectedBackup}"
-                              AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Single"
-                              GridLinesVisibility="None" HeadersVisibility="Column" BorderThickness="0" Background="Transparent" RowHeight="55">
-                        <DataGrid.ColumnHeaderStyle>
-                            <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource MahApps.Styles.DataGridColumnHeader}">
-                                <Setter Property="Background" Value="#F8F9FC"/><Setter Property="Foreground" Value="#4E5D78"/><Setter Property="FontWeight" Value="Bold"/><Setter Property="Padding" Value="10,15"/><Setter Property="BorderThickness" Value="0,0,0,1"/><Setter Property="BorderBrush" Value="#EAECF4"/>
-                            </Style>
-                        </DataGrid.ColumnHeaderStyle>
+                    <DataGrid Style="{StaticResource ModernDataGridStyle}"
+                          ItemsSource="{Binding BackupFiles}"
+                          SelectedItem="{Binding SelectedBackup}"
+                          RowHeight="55">
                         <DataGrid.Columns>
                             <DataGridTemplateColumn Header="Archivo" Width="*">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="{Binding FileName}" FontWeight="Bold" Foreground="#4E5D78"/>
-                                            <TextBlock Text="{Binding Description, TargetNullValue='Sin descripción'}" FontSize="10" Foreground="#858796" MaxWidth="250" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock Text="{Binding FileName}" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                                            <TextBlock Text="{Binding Description, TargetNullValue='Sin descripción'}" FontSize="10" Foreground="{StaticResource Brush.TextMuted}" MaxWidth="250" TextTrimming="CharacterEllipsis"/>
                                         </StackPanel>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -196,7 +188,7 @@
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Background="{Binding BackupType, Converter={StaticResource BackupTypeToBrushConverter}}" CornerRadius="8" Padding="6,2" HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding BackupType}" Foreground="White" FontSize="10" FontWeight="Bold"/>
+                                            <TextBlock Text="{Binding BackupType, Converter={StaticResource BackupTypeToTextConverter}}" Foreground="White" FontSize="10" FontWeight="Bold"/>
                                         </Border>
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
@@ -209,15 +201,15 @@
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                                             <Button Command="{Binding DataContext.RestoreBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                     CommandParameter="{Binding}" Style="{StaticResource ActionButtonStyle}" ToolTip="Restaurar">
-                                                <iconPacks:PackIconMaterial Kind="DatabaseRefresh" Width="14" Height="14" Foreground="#1CC88A"/>
+                                                <iconPacks:PackIconMaterial Kind="DatabaseRefresh" Width="14" Height="14" Foreground="{StaticResource Brush.Success}"/>
                                             </Button>
                                             <Button Command="{Binding DataContext.DownloadBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                     CommandParameter="{Binding}" Style="{StaticResource ActionButtonStyle}" ToolTip="Descargar">
-                                                <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14" Foreground="#36B9CC"/>
+                                                <iconPacks:PackIconMaterial Kind="Download" Width="14" Height="14" Foreground="{StaticResource Brush.Info}"/>
                                             </Button>
                                             <Button Command="{Binding DataContext.DeleteBackupCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
                                                     CommandParameter="{Binding}" Style="{StaticResource ActionButtonStyle}" ToolTip="Eliminar">
-                                                <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="#E74A3B"/>
+                                                <iconPacks:PackIconMaterial Kind="Delete" Width="14" Height="14" Foreground="{StaticResource Brush.Danger}"/>
                                             </Button>
                                         </StackPanel>
                                     </DataTemplate>
@@ -230,10 +222,10 @@
         </Grid>
         
         <!-- Loading Overlay -->
-        <Border Grid.Row="0" Grid.RowSpan="3" Background="#B3000000" CornerRadius="15" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="-30">
+        <Border Grid.Row="0" Grid.RowSpan="3" Background="{StaticResource Brush.BusyOverlay}" CornerRadius="15" Visibility="{Binding IsBusy, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="-30">
             <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="White"/>
-                <TextBlock Text="{Binding BusyMessage}" Foreground="White" FontSize="18" FontWeight="SemiBold" Margin="0,15,0,0" HorizontalAlignment="Center"/>
+                <mah:ProgressRing IsActive="{Binding IsBusy}" Width="60" Height="60" Foreground="{StaticResource Brush.Primary}"/>
+                <TextBlock Text="{Binding BusyMessage}" Foreground="{StaticResource Brush.Text}" FontSize="18" FontWeight="SemiBold" Margin="0,15,0,0" HorizontalAlignment="Center"/>
             </StackPanel>
         </Border>
     </Grid>

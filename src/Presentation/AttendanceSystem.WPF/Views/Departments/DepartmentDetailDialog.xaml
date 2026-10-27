@@ -18,7 +18,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -32,21 +36,21 @@
 
             <!-- Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Gestione la información y puestos del departamento" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Gestione la información y puestos del departamento" FontSize="13" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0"/>
             </StackPanel>
 
             <!-- Form -->
             <StackPanel Grid.Row="1">
                 <StackPanel Margin="0,0,0,15">
-                    <TextBlock Text="Nombre" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBlock Text="Nombre" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" 
                              mah:TextBoxHelper.Watermark="Nombre del departamento"
                              Padding="10,8"/>
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,15">
-                    <TextBlock Text="Descripción" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBlock Text="Descripción" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" 
                              mah:TextBoxHelper.Watermark="Breve descripción de las funciones"
                              AcceptsReturn="True"
@@ -56,8 +60,8 @@
                              Padding="10,8"/>
                 </StackPanel>
 
-                <TextBlock Text="Puestos Vinculados" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,8"/>
-                <Border BorderThickness="1" BorderBrush="#EAECF4" CornerRadius="8" MaxHeight="150">
+                <TextBlock Text="Puestos Vinculados" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,8"/>
+                <Border BorderThickness="1" BorderBrush="{StaticResource Brush.Border}" CornerRadius="8" MaxHeight="150">
                     <ListBox ItemsSource="{Binding Positions}" 
                              BorderThickness="0"
                              Background="Transparent"
@@ -66,7 +70,7 @@
                             <DataTemplate>
                                 <CheckBox IsChecked="{Binding IsSelected}" 
                                           Margin="5,2"
-                                          Foreground="#5A5C69">
+                                          Foreground="{StaticResource Brush.TextSecondary}">
                                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center"/>
                                 </CheckBox>
                             </DataTemplate>
@@ -86,7 +90,7 @@
                     </ListBox>
                 </Border>
                 <TextBlock Text="Los empleados de este departamento solo podrán tener estos puestos." 
-                           FontSize="11" Foreground="#858796" Margin="2,5,0,0" FontStyle="Italic"/>
+                           FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="2,5,0,0" FontStyle="Italic"/>
             </StackPanel>
 
             <!-- Actions -->
@@ -98,8 +102,8 @@
                         Padding="20,10"/>
                 
                 <Button Content="Guardar" 
-                        Command="{Binding SaveCommand}"
-                        Background="#4E73DF"
+                        Command="{Binding SaveCommand}" IsDefault="True"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="30,10"
                         BorderThickness="0">

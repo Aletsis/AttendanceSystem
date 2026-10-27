@@ -18,7 +18,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -32,21 +36,21 @@
 
             <!-- Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Defina las características y salario del puesto" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Defina las características y salario del puesto" FontSize="13" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0"/>
             </StackPanel>
 
             <!-- Form -->
             <StackPanel Grid.Row="1">
                 <StackPanel Margin="0,0,0,15">
-                    <TextBlock Text="Nombre" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBlock Text="Nombre" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" 
                              mah:TextBoxHelper.Watermark="Nombre del puesto"
                              Padding="10,8"/>
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,15">
-                    <TextBlock Text="Descripción" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBlock Text="Descripción" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <TextBox Text="{Binding Description, UpdateSourceTrigger=PropertyChanged}" 
                              mah:TextBoxHelper.Watermark="Descripción de responsabilidades"
                              AcceptsReturn="True"
@@ -57,7 +61,7 @@
                 </StackPanel>
 
                 <StackPanel Margin="0,0,0,15">
-                    <TextBlock Text="Salario Base" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                    <TextBlock Text="Salario Base" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <mah:NumericUpDown Value="{Binding BaseSalary, UpdateSourceTrigger=PropertyChanged}"
                                        Minimum="0"
                                        Interval="100"
@@ -65,6 +69,13 @@
                                        mah:TextBoxHelper.Watermark="0.00"
                                        Padding="10,8"/>
                 </StackPanel>
+
+                <CheckBox IsChecked="{Binding IsCritical}" Margin="0,0,0,5">
+                    <StackPanel>
+                        <TextBlock Text="Puesto crítico" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}"/>
+                        <TextBlock Text="Su ausencia genera una alerta de falta crítica." FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
+                    </StackPanel>
+                </CheckBox>
             </StackPanel>
 
             <!-- Actions -->
@@ -76,8 +87,8 @@
                         Padding="20,10"/>
                 
                 <Button Content="Guardar" 
-                        Command="{Binding SaveCommand}"
-                        Background="#4E73DF"
+                        Command="{Binding SaveCommand}" IsDefault="True"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="30,10"
                         BorderThickness="0">

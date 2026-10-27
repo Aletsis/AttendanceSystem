@@ -18,7 +18,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -32,8 +36,8 @@
 
             <!-- Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Gestione la información del personal en sucursales externas" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Gestione la información del personal en sucursales externas" FontSize="13" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0"/>
             </StackPanel>
 
             <!-- Form -->
@@ -46,7 +50,7 @@
 
                     <!-- Sucursal Externa -->
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="Sucursal Externa *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Sucursal Externa *" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <ComboBox ItemsSource="{Binding ExternalBranches}"
                                   SelectedItem="{Binding SelectedBranch}"
                                   DisplayMemberPath="DisplayName"
@@ -56,7 +60,7 @@
 
                     <!-- Número de Empleado -->
                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                        <TextBlock Text="No. Empleado *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="No. Empleado *" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding EmployeeNumber, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Ej: 101"
                                  Padding="10,8"/>
@@ -71,14 +75,14 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="Nombre(s) *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Nombre(s) *" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding FirstName, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Nombre del empleado"
                                  Padding="10,8"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                        <TextBlock Text="Apellidos *" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Apellidos *" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding LastName, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Apellidos"
                                  Padding="10,8"/>
@@ -93,14 +97,14 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="Puesto" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Puesto" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Position, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Puesto laboral"
                                  Padding="10,8"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                        <TextBlock Text="Departamento" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Departamento" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Department, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Área o departamento"
                                  Padding="10,8"/>
@@ -115,14 +119,14 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="Teléfono" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Teléfono" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding PhoneNumber, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Teléfono de contacto"
                                  Padding="10,8"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                        <TextBlock Text="Correo Electrónico" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Correo Electrónico" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Email, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="correo@ejemplo.com"
                                  Padding="10,8"/>
@@ -137,14 +141,14 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="0" Margin="0,0,10,0">
-                        <TextBlock Text="Estatus" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                        <ComboBox ItemsSource="{Binding StatusOptions}"
+                        <TextBlock Text="Estatus" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
+                        <ComboBox ItemsSource="{Binding StatusOptions}" ItemTemplate="{StaticResource EnumItemTemplate}"
                                   SelectedItem="{Binding Status}"
                                   Padding="10,8"/>
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                        <TextBlock Text="No. Tarjeta / RFID" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="No. Tarjeta / RFID" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding CardNumber, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Opcional"
                                  Padding="10,8"/>
@@ -158,15 +162,15 @@
                         Command="{Binding CancelCommand}"
                         Style="{StaticResource MahApps.Styles.Button.Square}"
                         Background="Transparent"
-                        Foreground="#858796"
+                        Foreground="{StaticResource Brush.TextMuted}"
                         BorderThickness="0"
                         Margin="0,0,10,0"
                         Padding="15,8"/>
                 
                 <Button Content="Guardar" 
-                        Command="{Binding SaveCommand}"
+                        Command="{Binding SaveCommand}" IsDefault="True"
                         Style="{StaticResource MahApps.Styles.Button.Square.Accent}"
-                        Background="#4E73DF"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         BorderThickness="0"
                         Padding="20,8"/>

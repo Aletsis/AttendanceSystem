@@ -24,6 +24,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
+        private readonly IAuthenticationStateService _authService;
         private readonly IDialogService _dialogService;
 
         private ObservableCollection<ShiftListItem> _shifts = new();
@@ -56,30 +57,31 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             }
         }
 
+        // Caso 13: sólo se muestran las acciones que el usuario puede hacer (los comandos también lo validan).
+        public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.ShiftsManage);
+
         public ICommand AddShiftCommand { get; }
         public ICommand EditShiftCommand { get; }
         public ICommand DeleteShiftCommand { get; }
         public ICommand RefreshCommand { get; }
-        public ICommand BackToDashboardCommand { get; }
 
         public ShiftsViewModel(
             IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
-            IDialogService dialogService)
+            IDialogService dialogService,
+            IAuthenticationStateService authService)
         {
+            _authService = authService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
             _dialogService = dialogService;
 
             AddShiftCommand = new DelegateCommand(ExecuteAddShift);
-            EditShiftCommand = new DelegateCommand(ExecuteEditShift, CanExecuteEdit)
-                .ObservesProperty(() => SelectedShift);
-            DeleteShiftCommand = new DelegateCommand(async () => await ExecuteDeleteShiftAsync(), CanExecuteEdit)
-                .ObservesProperty(() => SelectedShift);
+            EditShiftCommand = new DelegateCommand<ShiftListItem?>(x => ExecuteEditShift(x ?? SelectedShift));
+            DeleteShiftCommand = new DelegateCommand<ShiftListItem?>(async x => await ExecuteDeleteShiftAsync(x ?? SelectedShift));
             RefreshCommand = new DelegateCommand(async () => await LoadShiftsAsync());
-            BackToDashboardCommand = new DelegateCommand(() => _navigationService.NavigateTo<Views.Dashboard.DashboardView>());
 
             _ = LoadShiftsAsync();
         }
@@ -114,7 +116,7 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
                             EndTime = s.EndTime.ToString(@"hh\:mm"),
                             WorkingHours = s.WorkHours.ToString(@"hh\:mm"),
                             ToleranceMinutes = s.ToleranceMinutes,
-                            ShiftTypeDisplay = s.ShiftType.ToString(),
+                            ShiftTypeDisplay = Converters.EnumDisplay.Text(s.ShiftType),
                             IsNightShift = s.ShiftType == ShiftType.Nocturno,
                             EmployeeCount = employeeCounts.GetValueOrDefault(s.Id, 0)
                         });
@@ -203,11 +205,12 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             });
         }
 
-        private void ExecuteEditShift()
+        private void ExecuteEditShift(ShiftListItem? item)
         {
-            if (SelectedShift == null) return;
+            // El doble clic en la fila también llega aquí: sin permiso no se abre el formulario.
+            if (item == null || !CanManage) return;
 
-            var shiftData = _allShiftsData.FirstOrDefault(s => s.Id == SelectedShift.Id);
+            var shiftData = _allShiftsData.FirstOrDefault(s => s.Id == item.Id);
             if (shiftData == null) return;
 
             var parameters = new DialogParameters
@@ -287,20 +290,20 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             });
         }
 
-        private async Task ExecuteDeleteShiftAsync()
+        private async Task ExecuteDeleteShiftAsync(ShiftListItem? item)
         {
-            if (SelectedShift == null) return;
+            if (item == null) return;
 
             var confirmed = await _messageService.ShowConfirmationAsync(
                 "Eliminar Turno",
-                $"¿Está seguro de eliminar el turno {SelectedShift.Name}?");
+                $"¿Está seguro de eliminar el turno {item.Name}?");
 
             if (!confirmed) return;
 
             SetBusy(true, "Eliminando turno...");
             try
             {
-                var shiftId = ShiftId.From(SelectedShift.Id);
+                var shiftId = ShiftId.From(item.Id);
                 var command = new DeleteShiftCommand(shiftId);
                 var result = await _mediator.Send(command);
 
@@ -322,11 +325,6 @@ namespace AttendanceSystem.WPF.ViewModels.Shifts
             {
                 SetBusy(false);
             }
-        }
-
-        private bool CanExecuteEdit()
-        {
-            return SelectedShift != null;
         }
     }
 

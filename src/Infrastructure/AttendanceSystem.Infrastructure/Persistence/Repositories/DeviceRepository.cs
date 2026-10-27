@@ -147,4 +147,20 @@ public class DeviceRepository : IDeviceRepository
     {
         _context.ChangeTracker.Clear();
     }
+
+    public async Task<bool> HasHistoryAsync(
+        DeviceId deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        return await _context.AttendanceRecords.AnyAsync(x => x.DeviceId == deviceId, cancellationToken)
+            || await _context.DownloadLogs.AnyAsync(x => x.DeviceId == deviceId, cancellationToken)
+            || await _context.QuarantinedPunches.AnyAsync(x => x.DeviceId == deviceId, cancellationToken)
+            || await _context.DeviceClockIncidents.AnyAsync(x => x.DeviceId == deviceId, cancellationToken)
+            || await _context.PunchTimeCorrections.AnyAsync(x => x.DeviceId == deviceId, cancellationToken);
+    }
+
+    public void Delete(Device device)
+    {
+        _context.Devices.Remove(device);
+    }
 }

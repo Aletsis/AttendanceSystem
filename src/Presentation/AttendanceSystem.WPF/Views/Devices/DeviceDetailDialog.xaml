@@ -18,7 +18,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -32,15 +36,15 @@
 
             <!-- Header -->
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="Configure los parámetros de conexión del reloj checador" FontSize="13" Foreground="#858796" Margin="0,5,0,0"/>
+                <TextBlock Text="{Binding Title}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="Configure los parámetros de conexión del reloj checador" FontSize="13" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0"/>
             </StackPanel>
 
             <!-- Form -->
             <ScrollViewer Grid.Row="1" MaxHeight="550" VerticalScrollBarVisibility="Auto">
                 <StackPanel>
                     <StackPanel Margin="0,0,0,15">
-                        <TextBlock Text="Nombre del Dispositivo" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Nombre del Dispositivo" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Ej: Entrada Principal"
                                  Padding="10,8"/>
@@ -52,26 +56,26 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,10,0">
-                            <TextBlock Text="Dirección IP" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Dirección IP" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <TextBox Text="{Binding IpAddress, UpdateSourceTrigger=PropertyChanged}" 
                                      mah:TextBoxHelper.Watermark="192.168.1.100"
                                      Padding="10,8"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1">
-                            <TextBlock Text="Puerto" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Puerto" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <mah:NumericUpDown Value="{Binding Port}" Minimum="1" Maximum="65535" Padding="5"/>
                         </StackPanel>
                     </Grid>
 
                     <StackPanel Margin="0,0,0,15">
-                        <TextBlock Text="Ubicación / Sucursal" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Ubicación / Sucursal" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Location, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Ej: Sucursal Centro"
                                  Padding="10,8"/>
                     </StackPanel>
 
                     <StackPanel Margin="0,0,0,15">
-                        <TextBlock Text="Zona horaria del reloj" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Zona horaria del reloj" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <ComboBox ItemsSource="{Binding TimeZones}"
                                   SelectedValue="{Binding TimeZoneId}"
                                   SelectedValuePath="Id"
@@ -87,21 +91,21 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,10,0">
-                            <TextBlock Text="Marca" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                            <ComboBox ItemsSource="{Binding Brands}" 
+                            <TextBlock Text="Marca" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
+                            <ComboBox ItemsSource="{Binding Brands}" ItemTemplate="{StaticResource EnumItemTemplate}" 
                                       SelectedItem="{Binding SelectedBrand}"
                                       Padding="10,5"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1">
-                            <TextBlock Text="Método de Descarga" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
-                            <ComboBox ItemsSource="{Binding DownloadMethods}" 
+                            <TextBlock Text="Método de Descarga" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
+                            <ComboBox ItemsSource="{Binding DownloadMethods}" ItemTemplate="{StaticResource EnumItemTemplate}" 
                                       SelectedItem="{Binding SelectedDownloadMethod}"
                                       Padding="10,5"/>
                         </StackPanel>
                     </Grid>
 
                     <StackPanel Margin="0,0,0,15">
-                        <TextBlock Text="Número de Serie" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                        <TextBlock Text="Número de Serie" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding SerialNumber, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Requerido para ADMS (Push)"
                                  Padding="10,8"/>
@@ -111,8 +115,8 @@
                                       IsOn="{Binding ShouldClearAfterDownload}"
                                       Margin="0,0,0,15"/>
 
-                    <Border BorderThickness="0,1,0,0" BorderBrush="#EAECF4" Margin="0,5,0,15"/>
-                    <TextBlock Text="Credenciales (Opcional)" FontWeight="Bold" Foreground="#4E5D78" Margin="0,0,0,10"/>
+                    <Border BorderThickness="0,1,0,0" BorderBrush="{StaticResource Brush.Border}" Margin="0,5,0,15"/>
+                    <TextBlock Text="Credenciales (Opcional)" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
 
                     <Grid Margin="0,0,0,15">
                         <Grid.ColumnDefinitions>
@@ -120,13 +124,13 @@
                             <ColumnDefinition Width="*"/>
                         </Grid.ColumnDefinitions>
                         <StackPanel Margin="0,0,10,0">
-                            <TextBlock Text="Usuario" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Usuario" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <TextBox Text="{Binding Username, UpdateSourceTrigger=PropertyChanged}" 
                                      mah:TextBoxHelper.Watermark="admin"
                                      Padding="10,8"/>
                         </StackPanel>
                         <StackPanel Grid.Column="1">
-                            <TextBlock Text="Contraseña" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                            <TextBlock Text="Contraseña" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                             <TextBox Text="{Binding Password, UpdateSourceTrigger=PropertyChanged}"
                                      mah:TextBoxHelper.Watermark="••••••••"
                                      Padding="10,8"/>
@@ -144,8 +148,8 @@
                         Padding="20,10"/>
                 
                 <Button Content="Guardar" 
-                        Command="{Binding SaveCommand}"
-                        Background="#4E73DF"
+                        Command="{Binding SaveCommand}" IsDefault="True"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="30,10"
                         BorderThickness="0">

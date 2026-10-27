@@ -17,7 +17,11 @@
         </Style>
     </prism:Dialog.WindowStyle>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="#EAECF4">
+    <UserControl.InputBindings>
+        <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
+    </UserControl.InputBindings>
+
+    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
         <Border.Effect>
             <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
         </Border.Effect>
@@ -30,17 +34,17 @@
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0" Margin="0,0,0,20">
-                <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="Bold" Foreground="#4E5D78"/>
-                <TextBlock Text="{Binding Message}" FontSize="12" Foreground="#858796" Margin="0,5,0,0" TextWrapping="Wrap"/>
+                <TextBlock Text="{Binding Title}" FontSize="20" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                <TextBlock Text="{Binding Message}" FontSize="12" Foreground="{StaticResource Brush.TextMuted}" Margin="0,5,0,0" TextWrapping="Wrap"/>
             </StackPanel>
 
             <StackPanel Grid.Row="1">
-                <TextBlock Text="Aplica desde" FontWeight="SemiBold" Foreground="#4E5D78" Margin="0,0,0,5"/>
+                <TextBlock Text="Aplica desde" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                 <DatePicker SelectedDate="{Binding EffectiveDate}"/>
                 <TextBlock Text="Hoy o una fecha pasada recalcula los días ya calculados desde esa fecha; una fecha futura no recalcula nada."
-                           FontSize="11" Foreground="#858796" FontStyle="Italic" Margin="0,3,0,10" TextWrapping="Wrap"/>
+                           FontSize="11" Foreground="{StaticResource Brush.TextMuted}" FontStyle="Italic" Margin="0,3,0,10" TextWrapping="Wrap"/>
                 <Border Background="#FFF8E1" CornerRadius="8" Padding="10">
-                    <TextBlock Text="{Binding ImpactText}" TextWrapping="Wrap" Foreground="#4E5D78"/>
+                    <TextBlock Text="{Binding ImpactText}" TextWrapping="Wrap" Foreground="{StaticResource Brush.Text}"/>
                 </Border>
             </StackPanel>
 
@@ -51,8 +55,8 @@
                         Margin="0,0,10,0"/>
                 
                 <Button Content="Guardar" 
-                        Command="{Binding SaveCommand}"
-                        Background="#4E73DF"
+                        Command="{Binding SaveCommand}" IsDefault="True"
+                        Background="{StaticResource Brush.Primary}"
                         Foreground="White"
                         Padding="25,8"
                         BorderThickness="0">
