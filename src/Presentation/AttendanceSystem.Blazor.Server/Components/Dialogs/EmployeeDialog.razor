@@ -175,7 +175,7 @@
                                 </MudItem>
                             }
 
-                            @if (_showEditRotationForm || _existingRoster == null || !_existingRoster.HasRoster)
+                            @if (ShowRotationEditor)
                             {
                                 <MudItem xs="12">
                                     <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">
@@ -380,6 +380,15 @@
     private RosterEmployeeDto? _existingRoster;
     private bool _showEditRotationForm;
     private bool _applyRotationScheme = true;
+
+    /// <summary>El editor del esquema se muestra al asignarlo por primera vez o al pedir "Modificar Esquema".</summary>
+    private bool ShowRotationEditor => _showEditRotationForm || _existingRoster == null || !_existingRoster.HasRoster;
+
+    /// <summary>
+    /// Sólo se genera el roster (y se toman horario y descansos del esquema) cuando el editor está a la vista: con el
+    /// esquema vigente y el editor oculto, el modelo tiene valores por omisión y regeneraría el roster desde hoy.
+    /// </summary>
+    private bool SendsRotationScheme => _selectedShiftType == ShiftTypeEnum.Rotativo && ShowRotationEditor && _applyRotationScheme;
 
     private static readonly ShiftTypeEnum[] AvailableShiftTypes =
     [
@@ -684,7 +693,7 @@
                     _rotationModel.StartDate = _effectiveFrom.Value.Date;
                 }
 
-                if (_applyRotationScheme)
+                if (SendsRotationScheme)
                 {
                     var validation = _rotationModel.Validate();
                     if (!validation.IsValid)
@@ -812,7 +821,7 @@
             WeekDayEnum? effectiveRestDay = _selectedRestDays?.Cast<WeekDayEnum?>().FirstOrDefault() ?? RestDay;
             List<int>? effectiveRestDays = _selectedRestDays?.Select(d => (int)d).ToList();
 
-            if (_selectedShiftType == ShiftTypeEnum.Rotativo)
+            if (SendsRotationScheme)
             {
                 if (_rotationModel.SchemeType == RotationSchemeType.Rotativo3x8 || _rotationModel.SchemeType == RotationSchemeType.Rotativo2x8)
                 {
@@ -828,10 +837,7 @@
                     effectiveScheduleId = _rotationModel.BaseShift != Guid.Empty ? _rotationModel.BaseShift : ScheduleId;
                 }
 
-                if (_applyRotationScheme)
-                {
-                    result.RotationPatternCommand = _rotationModel.ToCommand(new List<string> { Id });
-                }
+                result.RotationPatternCommand = _rotationModel.ToCommand(new List<string> { Id });
             }
 
             if (!string.IsNullOrEmpty(EmployeeId))
