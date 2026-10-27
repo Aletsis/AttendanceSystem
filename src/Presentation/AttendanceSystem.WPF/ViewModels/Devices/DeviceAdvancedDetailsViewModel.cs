@@ -5,6 +5,7 @@ using System.Linq;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Threading.Tasks;
+using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Application.Features.DownloadLogs.Queries.GetDownloadLogs;
 using AttendanceSystem.Application.Features.Devices.Queries.GetDeviceUsers;
@@ -35,35 +36,64 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private ObservableCollection<DownloadLog> _downloadHistory = new();
         private ObservableCollection<DeviceUserDto> _deviceUsers = new();
 
-        public string Title => "Detalles Avanzados";
+        public string Title => "Detalles del reloj";
         public string Name => _device?.Name ?? "";
         public string IpAddress => _device?.IpAddress ?? "";
         public int Port => _device?.Port ?? 0;
+        public string Address => _device == null ? "" : $"{_device.IpAddress}:{_device.Port}";
         public string? Location => _device?.Location;
         public string Brand => _device?.Brand.ToString() ?? "";
         public string DownloadMethod => _device == null ? "" : Converters.EnumDisplay.Text(_device.DownloadMethod);
         public string? SerialNumber => _device?.SerialNumber;
         public string? FirmwareVersion => _device?.FirmwareVersion;
-        public string ShouldClearAfterDownloadText => (_device?.ShouldClearAfterDownload ?? false) ? "Sí" : "No";
-        public string StatusText => _device?.Status ?? "Desconectado";
-        public Brush StatusColor => (_device?.IsActive ?? false) ? Brushes.Green : Brushes.Red;
+        public string? Platform => _device?.Platform;
+        public string? MacAddress => _device?.MacAddress;
+        public string ShouldClearAfterDownloadText => (_device?.ShouldClearAfterDownload ?? false) ? "Sí, tras cada descarga completa" : "No";
+        public string TimeZoneText => string.IsNullOrWhiteSpace(_device?.TimeZoneId) ? "La del sistema" : TimeZoneCatalog.Describe(_device!.TimeZoneId!);
+        public string LastDownloadText => _device?.LastDownloadAt is { } last ? last.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Nunca";
+        public string LastActivityText => _device?.LastActivityAt is { } activity ? activity.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Sin registro";
+        public int TotalDownloadCount => _device?.TotalDownloadCount ?? 0;
 
-        // Stats
-        public int? UserCount => _device?.UserCount;
-        public int? FingerprintCount => _device?.FingerprintCount;
-        public int? FaceCount => _device?.FaceCount;
-        public int? AttendanceRecordCount => _device?.AttendanceRecordCount;
-        public int? UserCapacity => _device?.UserCapacity;
-        public int? FingerprintCapacity => _device?.FingerprintCapacity;
-        public int? FaceCapacity => _device?.FaceCapacity;
-        public int? AttendanceRecordCapacity => _device?.AttendanceRecordCapacity;
+        /// <summary>Estado real del reloj: un reloj dado de baja se muestra inactivo aunque su último estado fuera otro.</summary>
+        public string StatusText => _device == null ? "" : !_device.IsActive ? "Inactivo" : _device.Status;
+        /// <summary>online, offline, error o inactive: colorea la ficha del estado.</summary>
+        public string StatusKind => _device == null ? "offline"
+            : !_device.IsActive ? "inactive"
+            : _device.Status == "En Línea" || _device.Status == "Online" ? "online"
+            : _device.Status == "Error" ? "error"
+            : "offline";
+
+        /// <summary>Memoria del reloj: lo ocupado contra la capacidad que reporta el equipo.</summary>
+        public IReadOnlyList<CapacityItem> Capacities => _device == null ? Array.Empty<CapacityItem>() : new[]
+        {
+            new CapacityItem("Checadas", "History", _device.AttendanceRecordCount, _device.AttendanceRecordCapacity),
+            new CapacityItem("Usuarios", "AccountGroup", _device.UserCount, _device.UserCapacity),
+            new CapacityItem("Huellas", "Fingerprint", _device.FingerprintCount, _device.FingerprintCapacity),
+            new CapacityItem("Rostros", "FaceRecognition", _device.FaceCount, _device.FaceCapacity)
+        };
+
+        public bool IsAdms => _device?.DownloadMethod == DeviceDownloadMethod.Adms;
+        public string UsersSummary => DeviceUsers.Count == 0 ? "Consulte el reloj para ver sus usuarios." : $"{DeviceUsers.Count} usuario(s) en el reloj.";
+
+        private bool _isWorking;
+        private string _workingMessage = string.Empty;
+        /// <summary>Una acción sobre el reloj en curso (ajustar hora, reiniciar): se bloquea la ventana mientras responde.</summary>
+        public bool IsWorking { get => _isWorking; private set => SetProperty(ref _isWorking, value); }
+        public string WorkingMessage { get => _workingMessage; private set => SetProperty(ref _workingMessage, value); }
 
         public bool IsLoadingHistory { get => _isLoadingHistory; set => SetProperty(ref _isLoadingHistory, value); }
         public bool IsLoadingUsers { get => _isLoadingUsers; set => SetProperty(ref _isLoadingUsers, value); }
         public DateTime? HistoryFromDate { get => _historyFromDate; set => SetProperty(ref _historyFromDate, value); }
         public DateTime? HistoryToDate { get => _historyToDate; set => SetProperty(ref _historyToDate, value); }
         public ObservableCollection<DownloadLog> DownloadHistory { get => _downloadHistory; set => SetProperty(ref _downloadHistory, value); }
-        public ObservableCollection<DeviceUserDto> DeviceUsers { get => _deviceUsers; set => SetProperty(ref _deviceUsers, value); }
+        public ObservableCollection<DeviceUserDto> DeviceUsers
+        {
+            get => _deviceUsers;
+            set
+            {
+                if (SetProperty(ref _deviceUsers, value)) RaisePropertyChanged(nameof(UsersSummary));
+            }
+        }
 
         /// <summary>Caso 13: ver usuarios, ajustar la hora, vaciar o reiniciar el reloj es de administración de dispositivos.</summary>
         public bool CanManage => _authService.HasPermission(AttendanceSystem.Application.Authorization.Permissions.DevicesManage);
@@ -152,28 +182,34 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
             var confirmed = await _messageService.ShowConfirmationAsync("Sincronizar Hora", "¿Desea sincronizar la fecha y hora del dispositivo con la hora actual de su zona horaria?");
             if (!confirmed) return;
 
+            (IsWorking, WorkingMessage) = (true, "Ajustando la hora del reloj...");
             try
             {
                 var result = await _mediator.Send(new SetDeviceTimeCommand(_device.DeviceId));
+                IsWorking = false;
                 if (result.IsSuccess) await _messageService.ShowSuccessAsync("Hora sincronizada correctamente.");
                 else await _messageService.ShowErrorAsync($"Error: {result.Error}");
             }
-            catch (Exception ex) { await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
+            catch (Exception ex) { IsWorking = false; await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
         }
 
         private async Task ExecuteResetToFactoryAsync()
         {
             if (_device == null) return;
-            var confirmed = await _messageService.ShowConfirmationAsync("Reiniciar Fábrica", "¡ADVERTENCIA! Esta acción borrará toda la configuración del dispositivo. ¿Desea continuar?");
+            var confirmed = await _messageService.ShowConfirmationAsync("Restablecer de fábrica",
+                $"¡ADVERTENCIA! Se borrará toda la configuración de \"{_device.Name}\" y el reloj quedará como nuevo.\n\n" +
+                "Descargue antes sus checadas: las que no estén en el sistema se perderán. ¿Desea continuar?");
             if (!confirmed) return;
 
+            (IsWorking, WorkingMessage) = (true, "Enviando el restablecimiento al reloj...");
             try
             {
                 var result = await _mediator.Send(new ResetDeviceToFactoryCommand(_device.DeviceId));
-                if (result.IsSuccess) await _messageService.ShowSuccessAsync("Comando de reinicio enviado.");
+                IsWorking = false;
+                if (result.IsSuccess) await _messageService.ShowSuccessAsync("Comando de restablecimiento enviado.");
                 else await _messageService.ShowErrorAsync($"Error: {result.Error}");
             }
-            catch (Exception ex) { await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
+            catch (Exception ex) { IsWorking = false; await _messageService.ShowErrorAsync($"Error: {ex.Message}"); }
         }
 
         /// <summary>
@@ -257,5 +293,28 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 _ = LoadHistoryAsync();
             }
         }
+    }
+
+    /// <summary>Ocupación de una memoria del reloj (checadas, usuarios, huellas, rostros).</summary>
+    public sealed class CapacityItem
+    {
+        public CapacityItem(string label, string icon, int? count, int? capacity)
+        {
+            Label = label;
+            Icon = Enum.TryParse<MahApps.Metro.IconPacks.PackIconMaterialKind>(icon, out var kind) ? kind : MahApps.Metro.IconPacks.PackIconMaterialKind.Memory;
+            Count = count;
+            Capacity = capacity;
+        }
+
+        public string Label { get; }
+        public MahApps.Metro.IconPacks.PackIconMaterialKind Icon { get; }
+        public int? Count { get; }
+        public int? Capacity { get; }
+        public bool HasCapacity => Capacity is > 0;
+        public double Percent => HasCapacity && Count.HasValue ? Math.Min(100, Count.Value * 100.0 / Capacity!.Value) : 0;
+        /// <summary>A partir del 90 % conviene vaciar o depurar el reloj (como el aviso de la web).</summary>
+        public bool IsAlmostFull => Percent >= 90;
+        public string CountText => Count?.ToString("N0") ?? "—";
+        public string CapacityText => HasCapacity ? $"de {Capacity:N0} ({Percent:0}%)" : "Capacidad desconocida";
     }
 }

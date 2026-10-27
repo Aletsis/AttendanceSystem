@@ -4,8 +4,8 @@
              xmlns:prism="http://prismlibrary.com/"
              xmlns:mah="clr-namespace:MahApps.Metro.Controls;assembly=MahApps.Metro"
              xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
-             Width="900" Height="700">
-    
+             Width="920" Height="680">
+
     <prism:Dialog.WindowStyle>
         <Style TargetType="Window">
             <Setter Property="prism:Dialog.WindowStartupLocation" Value="CenterOwner" />
@@ -21,298 +21,341 @@
         <KeyBinding Key="Escape" Command="{Binding CancelCommand}"/>
     </UserControl.InputBindings>
 
-    <Border Background="White" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}">
-        <Border.Effect>
-            <DropShadowEffect BlurRadius="15" ShadowDepth="2" Opacity="0.1" Color="Black"/>
-        </Border.Effect>
-        
-        <Grid Margin="25">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto"/>
-                <RowDefinition Height="*"/>
-                <RowDefinition Height="Auto"/>
-            </Grid.RowDefinitions>
+    <UserControl.Resources>
+        <!-- Dato de la ficha del reloj: etiqueta pequeña y valor. -->
+        <Style x:Key="InfoLabelStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="11"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}"/>
+        </Style>
+        <Style x:Key="InfoValueStyle" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="Foreground" Value="{StaticResource Brush.Text}"/>
+            <Setter Property="Margin" Value="0,1,0,12"/>
+            <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+        </Style>
 
-            <!-- Header -->
-            <Grid Grid.Row="0" Margin="0,0,0,20">
-                <StackPanel>
-                    <TextBlock Text="Detalles del Dispositivo" FontSize="24" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
-                    <TextBlock Text="{Binding Name}" FontSize="14" Foreground="{StaticResource Brush.TextMuted}" Margin="0,2,0,0"/>
+        <!-- Tarjeta de una acción de mantenimiento. -->
+        <Style x:Key="ActionCardStyle" TargetType="Border" BasedOn="{StaticResource CardStyle}">
+            <Setter Property="Padding" Value="18"/>
+            <Setter Property="Margin" Value="0,0,0,12"/>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{StaticResource Brush.Background}" CornerRadius="15" BorderThickness="1" BorderBrush="{StaticResource Brush.Border}" Effect="{StaticResource Effect.CardShadow}">
+        <Grid>
+            <Grid Margin="28,24">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- Encabezado: reloj, dirección y estado -->
+                <Grid Grid.Row="0" Margin="0,0,0,16">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                        <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Width="48" Height="48" CornerRadius="24" Background="{StaticResource Brush.PrimarySoft}" Margin="0,0,14,0">
+                        <iconPacks:PackIconMaterial Kind="Fingerprint" Width="24" Height="24" Foreground="{StaticResource Brush.Primary}" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Name}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" TextTrimming="CharacterEllipsis"/>
+                        <TextBlock FontSize="13" Foreground="{StaticResource Brush.TextMuted}">
+                            <Run Text="{Binding Address, Mode=OneWay}"/>
+                            <Run Text=" · "/>
+                            <Run Text="{Binding Brand, Mode=OneWay}"/>
+                            <Run Text=" · "/>
+                            <Run Text="{Binding DownloadMethod, Mode=OneWay}"/>
+                        </TextBlock>
+                    </StackPanel>
+                    <Border Grid.Column="2" CornerRadius="12" Padding="12,4" VerticalAlignment="Center">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{StaticResource Brush.SurfaceAlt}"/>
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding StatusKind}" Value="online"><Setter Property="Background" Value="{StaticResource Brush.SuccessSoft}"/></DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusKind}" Value="error"><Setter Property="Background" Value="{StaticResource Brush.DangerSoft}"/></DataTrigger>
+                                    <DataTrigger Binding="{Binding StatusKind}" Value="offline"><Setter Property="Background" Value="{StaticResource Brush.WarningSoft}"/></DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <TextBlock Text="{Binding StatusText}" FontSize="12" FontWeight="Bold">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Foreground" Value="{StaticResource Brush.TextMuted}"/>
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding StatusKind}" Value="online"><Setter Property="Foreground" Value="{StaticResource Brush.Success}"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding StatusKind}" Value="error"><Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/></DataTrigger>
+                                        <DataTrigger Binding="{Binding StatusKind}" Value="offline"><Setter Property="Foreground" Value="{StaticResource Brush.WarningText}"/></DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Border>
+                </Grid>
+
+                <TabControl Grid.Row="1" Style="{StaticResource PageTabControlStyle}" ItemContainerStyle="{StaticResource PageTabItemStyle}">
+                    <!-- ===== Resumen ===== -->
+                    <TabItem Header="Resumen">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <!-- Memoria del reloj -->
+                                <ItemsControl ItemsSource="{Binding Capacities}" Focusable="False" Margin="-6,0,-6,10">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <UniformGrid Columns="4"/>
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Style="{StaticResource CardStyle}" Padding="14" Margin="6,0,6,6">
+                                                <StackPanel>
+                                                    <StackPanel Orientation="Horizontal">
+                                                        <iconPacks:PackIconMaterial Kind="{Binding Icon}" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                                                        <TextBlock Text="{Binding Label}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource Brush.TextSecondary}"/>
+                                                    </StackPanel>
+                                                    <TextBlock Text="{Binding CountText}" FontSize="22" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,6,0,2"/>
+                                                    <ProgressBar Value="{Binding Percent, Mode=OneWay}" Maximum="100" Height="6" BorderThickness="0" Background="{StaticResource Brush.SurfaceAlt}"
+                                                                 Visibility="{Binding HasCapacity, Converter={StaticResource BooleanToVisibilityConverter}}">
+                                                        <ProgressBar.Style>
+                                                            <Style TargetType="ProgressBar">
+                                                                <Setter Property="Foreground" Value="{StaticResource Brush.Primary}"/>
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding IsAlmostFull}" Value="True">
+                                                                        <Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/>
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </ProgressBar.Style>
+                                                    </ProgressBar>
+                                                    <TextBlock Text="{Binding CapacityText}" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="0,4,0,0"/>
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*"/>
+                                        <ColumnDefinition Width="12"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Border Style="{StaticResource CardStyle}" Padding="18,16,18,4">
+                                        <StackPanel>
+                                            <TextBlock Text="Conexión" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,12"/>
+                                            <TextBlock Text="Ubicación" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Text="{Binding Location, TargetNullValue='Sin ubicación'}" Style="{StaticResource InfoValueStyle}"/>
+                                            <TextBlock Text="Zona horaria" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Text="{Binding TimeZoneText}" Style="{StaticResource InfoValueStyle}"/>
+                                            <TextBlock Text="Última descarga" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Style="{StaticResource InfoValueStyle}">
+                                                <Run Text="{Binding LastDownloadText, Mode=OneWay}"/>
+                                                <Run Text="{Binding TotalDownloadCount, Mode=OneWay, StringFormat='({0} en total)'}" Foreground="{StaticResource Brush.TextMuted}"/>
+                                            </TextBlock>
+                                            <TextBlock Text="Última actividad (ADMS)" Style="{StaticResource InfoLabelStyle}" Visibility="{Binding IsAdms, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <TextBlock Text="{Binding LastActivityText}" Style="{StaticResource InfoValueStyle}" Visibility="{Binding IsAdms, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <TextBlock Text="Borrar el reloj tras descargar" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Text="{Binding ShouldClearAfterDownloadText}" Style="{StaticResource InfoValueStyle}"/>
+                                        </StackPanel>
+                                    </Border>
+                                    <Border Grid.Column="2" Style="{StaticResource CardStyle}" Padding="18,16,18,4">
+                                        <StackPanel>
+                                            <TextBlock Text="Equipo" Style="{StaticResource CardTitleStyle}" Margin="0,0,0,12"/>
+                                            <TextBlock Text="Número de serie" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Text="{Binding SerialNumber, TargetNullValue='No disponible'}" Style="{StaticResource InfoValueStyle}"/>
+                                            <TextBlock Text="Firmware" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Text="{Binding FirmwareVersion, TargetNullValue='No disponible'}" Style="{StaticResource InfoValueStyle}"/>
+                                            <TextBlock Text="Plataforma" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Text="{Binding Platform, TargetNullValue='No disponible'}" Style="{StaticResource InfoValueStyle}"/>
+                                            <TextBlock Text="MAC" Style="{StaticResource InfoLabelStyle}"/>
+                                            <TextBlock Text="{Binding MacAddress, TargetNullValue='No disponible'}" Style="{StaticResource InfoValueStyle}"/>
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                                <TextBlock Text="Las cifras son las de la última vez que el sistema leyó el reloj (al darlo de alta o al actualizar su información)."
+                                           Style="{StaticResource FormHelperStyle}" Margin="0,0,0,0"/>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+
+                    <!-- ===== Historial de descargas ===== -->
+                    <TabItem Header="Historial de descargas">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <StackPanel Margin="0,0,10,0">
+                                    <TextBlock Text="Desde" Style="{StaticResource FormLabelStyle}"/>
+                                    <DatePicker SelectedDate="{Binding HistoryFromDate}" Style="{StaticResource FormDatePickerStyle}" Width="150"/>
+                                </StackPanel>
+                                <StackPanel Margin="0,0,10,0">
+                                    <TextBlock Text="Hasta" Style="{StaticResource FormLabelStyle}"/>
+                                    <DatePicker SelectedDate="{Binding HistoryToDate}" Style="{StaticResource FormDatePickerStyle}" Width="150"/>
+                                </StackPanel>
+                                <Button Content="Filtrar" Command="{Binding FilterHistoryCommand}" Style="{StaticResource SecondaryButtonStyle}" Height="38" VerticalAlignment="Bottom"/>
+                            </StackPanel>
+
+                            <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="6" Margin="0">
+                                <Grid>
+                                    <DataGrid Style="{StaticResource ModernDataGridStyle}" ItemsSource="{Binding DownloadHistory}" RowHeight="44">
+                                        <DataGrid.Columns>
+                                            <DataGridTemplateColumn Header="" Width="44">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <iconPacks:PackIconMaterial Kind="{Binding IsSuccessful, Converter={StaticResource SuccessToIconConverter}}"
+                                                                                    Foreground="{Binding IsSuccessful, Converter={StaticResource SuccessToBrushConverter}}"
+                                                                                    HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                            <DataGridTextColumn Header="Inicio" Binding="{Binding StartedAt, StringFormat='dd/MM/yyyy HH:mm'}" Width="140"/>
+                                            <DataGridTextColumn Header="Leídas" Binding="{Binding TotalRecordsDownloaded}" Width="90"/>
+                                            <DataGridTextColumn Header="Nuevas" Binding="{Binding NewRecordsAdded}" Width="90"/>
+                                            <DataGridTextColumn Header="Error" Binding="{Binding ErrorMessage}" Width="*">
+                                                <DataGridTextColumn.ElementStyle>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource Brush.Danger}"/>
+                                                        <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+                                                        <Setter Property="VerticalAlignment" Value="Center"/>
+                                                    </Style>
+                                                </DataGridTextColumn.ElementStyle>
+                                            </DataGridTextColumn>
+                                            <DataGridTemplateColumn Header="" Width="60">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <Button Command="{Binding DataContext.ShowLogDetailsCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
+                                                                CommandParameter="{Binding}" Style="{StaticResource MahApps.Styles.Button.Circle}" Width="30" Height="30" ToolTip="Ver detalle">
+                                                            <iconPacks:PackIconMaterial Kind="InformationVariant" Width="14" Height="14"/>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <mah:ProgressRing IsActive="{Binding IsLoadingHistory}" Width="40" Height="40" Foreground="{StaticResource Brush.Primary}"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </TabItem>
+
+                    <!-- ===== Usuarios del reloj (administración) ===== -->
+                    <TabItem Header="Usuarios en el reloj" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            <Grid Margin="0,0,0,12">
+                                <TextBlock Text="{Binding UsersSummary}" VerticalAlignment="Center" Foreground="{StaticResource Brush.TextSecondary}"/>
+                                <Button Command="{Binding LoadUsersCommand}" Style="{StaticResource SecondaryButtonStyle}" HorizontalAlignment="Right" Height="36">
+                                    <StackPanel Orientation="Horizontal">
+                                        <iconPacks:PackIconMaterial Kind="Refresh" Width="14" Height="14" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <TextBlock Text="Consultar el reloj" VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                            </Grid>
+                            <Border Grid.Row="1" Style="{StaticResource CardStyle}" Padding="6" Margin="0">
+                                <Grid>
+                                    <DataGrid Style="{StaticResource ModernDataGridStyle}" ItemsSource="{Binding DeviceUsers}" RowHeight="40">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="No." Binding="{Binding UserId}" Width="90"/>
+                                            <DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="*"/>
+                                            <DataGridTextColumn Header="Privilegio" Binding="{Binding Privilege}" Width="100"/>
+                                            <DataGridTextColumn Header="Tarjeta" Binding="{Binding CardNumber, TargetNullValue='—'}" Width="110"/>
+                                            <DataGridTextColumn Header="Huellas" Binding="{Binding Fingerprints.Count, TargetNullValue=0}" Width="80"/>
+                                            <DataGridCheckBoxColumn Header="Habilitado" Binding="{Binding Enabled}" Width="90"/>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                    <mah:ProgressRing IsActive="{Binding IsLoadingUsers}" Width="40" Height="40" Foreground="{StaticResource Brush.Primary}"/>
+                                </Grid>
+                            </Border>
+                        </Grid>
+                    </TabItem>
+
+                    <!-- ===== Mantenimiento (administración) ===== -->
+                    <TabItem Header="Mantenimiento" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <StackPanel>
+                                <Border Style="{StaticResource ActionCardStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <iconPacks:PackIconMaterial Kind="ClockOutline" Width="22" Height="22" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                            <TextBlock Text="Sincronizar la hora" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                                            <TextBlock Text="Pone en el reloj la fecha y hora actuales de su zona horaria." FontSize="12" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap"/>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="Sincronizar" Command="{Binding SetTimeCommand}" Style="{StaticResource SecondaryButtonStyle}"/>
+                                    </Grid>
+                                </Border>
+
+                                <Border Style="{StaticResource ActionCardStyle}">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <iconPacks:PackIconMaterial Kind="DeleteSweepOutline" Width="22" Height="22" Foreground="{StaticResource Brush.Primary}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                            <TextBlock Text="Vaciar la memoria de checadas" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                                            <TextBlock FontSize="12" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap"
+                                                       Text="Descarga todas las checadas y sólo si la descarga es completa las borra del reloj. En el sistema no se borra nada. Sólo relojes SDK."/>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Command="{Binding ClearLogsCommand}" Style="{StaticResource SecondaryButtonStyle}"
+                                                IsEnabled="{Binding IsClearingLogs, Converter={StaticResource InverseBooleanConverter}}">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="Vaciar memoria" VerticalAlignment="Center"/>
+                                                <mah:ProgressRing IsActive="{Binding IsClearingLogs}" Width="14" Height="14" Margin="8,0,0,0"
+                                                                  Visibility="{Binding IsClearingLogs, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            </StackPanel>
+                                        </Button>
+                                    </Grid>
+                                </Border>
+
+                                <!-- Zona de riesgo -->
+                                <TextBlock Text="Zona de riesgo" FontWeight="Bold" Foreground="{StaticResource Brush.Danger}" Margin="0,12,0,8"/>
+                                <Border Style="{StaticResource ActionCardStyle}" BorderBrush="{StaticResource Brush.DangerSoft}" BorderThickness="2">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto"/>
+                                            <ColumnDefinition Width="*"/>
+                                            <ColumnDefinition Width="Auto"/>
+                                        </Grid.ColumnDefinitions>
+                                        <iconPacks:PackIconMaterial Kind="Factory" Width="22" Height="22" Foreground="{StaticResource Brush.Danger}" VerticalAlignment="Center" Margin="0,0,14,0"/>
+                                        <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0">
+                                            <TextBlock Text="Restablecer de fábrica" FontWeight="Bold" Foreground="{StaticResource Brush.Text}"/>
+                                            <TextBlock FontSize="12" Foreground="{StaticResource Brush.TextMuted}" TextWrapping="Wrap"
+                                                       Text="Borra toda la configuración del reloj. Descargue antes sus checadas: las que no estén en el sistema se pierden."/>
+                                        </StackPanel>
+                                        <Button Grid.Column="2" Content="Restablecer" Command="{Binding ResetToFactoryCommand}" Style="{StaticResource DangerButtonStyle}"/>
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </ScrollViewer>
+                    </TabItem>
+                </TabControl>
+
+                <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                    <Button Content="Cerrar" Command="{Binding CancelCommand}" Style="{StaticResource PrimaryButtonStyle}" MinWidth="120"/>
                 </StackPanel>
-                <Border Background="{Binding StatusColor}" CornerRadius="12" Padding="12,4" HorizontalAlignment="Right" VerticalAlignment="Top">
-                    <TextBlock Text="{Binding StatusText}" Foreground="White" FontSize="12" FontWeight="Bold"/>
-                </Border>
             </Grid>
 
-            <!-- Content Tabs -->
-            <mah:MetroAnimatedSingleRowTabControl Grid.Row="1">
-                <!-- Info & Stats Tab -->
-                <TabItem Header="Información General">
-                    <ScrollViewer Margin="0,15,0,0">
-                        <StackPanel>
-                            <!-- Stats Row -->
-                            <Grid Margin="0,0,0,20">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                
-                                <Border Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
-                                    <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="AccountGroup" Foreground="{StaticResource Brush.Primary}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="{Binding UserCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Usuarios" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Column="1" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
-                                    <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="Fingerprint" Foreground="{StaticResource Brush.Success}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="{Binding FingerprintCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Huellas" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Column="2" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
-                                    <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="History" Foreground="{StaticResource Brush.Info}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="{Binding AttendanceRecordCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Registros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-
-                                <Border Grid.Column="3" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
-                                    <StackPanel HorizontalAlignment="Center">
-                                        <iconPacks:PackIconMaterial Kind="ShieldAccount" Foreground="{StaticResource Brush.Warning}" Margin="0,0,0,5" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="{Binding FaceCount, TargetNullValue='-'}" FontSize="20" FontWeight="Bold" HorizontalAlignment="Center"/>
-                                        <TextBlock Text="Rostros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}" HorizontalAlignment="Center"/>
-                                    </StackPanel>
-                                </Border>
-                            </Grid>
-
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                
-                                <StackPanel Margin="0,0,15,0">
-                                    <Label Content="Identificación y Red" FontWeight="Bold" Margin="0,0,0,5"/>
-                                    <mah:ClipBorder Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
-                                        <StackPanel>
-                                            <TextBlock Text="Nombre" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding Name}" FontSize="15" Margin="0,0,0,10"/>
-                                            
-                                            <TextBlock Text="IP / Host" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding IpAddress}" FontSize="15" Margin="0,0,0,10"/>
-                                            
-                                            <TextBlock Text="Puerto" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding Port}" FontSize="15" Margin="0,0,0,10"/>
-                                            
-                                            <TextBlock Text="Ubicación" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding Location, TargetNullValue='Sin ubicación'}" FontSize="15"/>
-                                        </StackPanel>
-                                    </mah:ClipBorder>
-                                </StackPanel>
-
-                                <StackPanel Grid.Column="1">
-                                    <Label Content="Conexión y Hardware" FontWeight="Bold" Margin="0,0,0,5"/>
-                                    <mah:ClipBorder Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
-                                        <StackPanel>
-                                            <TextBlock Text="Marca" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding Brand}" FontSize="15" Margin="0,0,0,10"/>
-                                            
-                                            <TextBlock Text="Método de Descarga" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding DownloadMethod}" FontSize="15" Margin="0,0,0,10"/>
-                                            
-                                            <TextBlock Text="Número de Serie" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding SerialNumber, TargetNullValue='No disponible'}" FontSize="15" Margin="0,0,0,10"/>
-                                            
-                                            <TextBlock Text="Firmware" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                            <TextBlock Text="{Binding FirmwareVersion, TargetNullValue='No disponible'}" FontSize="15"/>
-                                        </StackPanel>
-                                    </mah:ClipBorder>
-                                </StackPanel>
-                            </Grid>
-                        </StackPanel>
-                    </ScrollViewer>
-                </TabItem>
-
-                <!-- Users Tab -->
-                <TabItem Header="Usuarios en Dispositivo" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <Grid Margin="0,15,0,0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
-                            <Button Command="{Binding LoadUsersCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"
-                                    Style="{StaticResource MahApps.Styles.Button.Flat}"
-                                    Background="{StaticResource Brush.Primary}" Foreground="White">
-                                <StackPanel Orientation="Horizontal">
-                                    <iconPacks:PackIconMaterial Kind="Refresh" Width="14" Height="14" Margin="0,0,8,0"/>
-                                    <TextBlock Text="Consultar Usuarios del Dispositivo"/>
-                                </StackPanel>
-                            </Button>
-                        </StackPanel>
-
-                        <DataGrid Grid.Row="1" ItemsSource="{Binding DeviceUsers}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="None">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="ID" Binding="{Binding UserId}" Width="80"/>
-                                <DataGridTextColumn Header="Nombre" Binding="{Binding Name}" Width="*"/>
-                                <DataGridTextColumn Header="Privilegio" Binding="{Binding Privilege}" Width="100"/>
-                                <DataGridTemplateColumn Header="Huellas" Width="80">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding Fingerprints.Count}" HorizontalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridCheckBoxColumn Header="Habilitado" Binding="{Binding Enabled}" Width="80"/>
-                            </DataGrid.Columns>
-                        </DataGrid>
-
-                        <mah:ProgressRing Grid.Row="1" IsActive="{Binding IsLoadingUsers}"/>
-                    </Grid>
-                </TabItem>
-
-                <!-- Remote Config Tab -->
-                <TabItem Header="Configuración Remota">
-                    <Grid Margin="0,15,0,0">
-                        <StackPanel>
-                            <Label Content="Acciones de Control" FontWeight="Bold" Margin="0,0,0,10" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                            <WrapPanel>
-                                <Button Command="{Binding SetTimeCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,10,10" Padding="15,10">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconMaterial Kind="Clock" Width="16" Height="16" Margin="0,0,10,0"/>
-                                        <TextBlock Text="Sincronizar Hora"/>
-                                    </StackPanel>
-                                </Button>
-                                
-                                <Button Command="{Binding ResetToFactoryCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,10,10" Padding="15,10">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconMaterial Kind="Factory" Width="16" Height="16" Margin="0,0,10,0"/>
-                                        <TextBlock Text="Reiniciar Fábrica"/>
-                                    </StackPanel>
-                                </Button>
-
-                                <Button Command="{Binding ClearLogsCommand}" Visibility="{Binding CanManage, Converter={StaticResource BooleanToVisibilityConverter}}" Margin="0,0,10,10" Padding="15,10">
-                                    <StackPanel Orientation="Horizontal">
-                                        <iconPacks:PackIconMaterial Kind="DeleteSweep" Width="16" Height="16" Margin="0,0,10,0"/>
-                                        <TextBlock Text="Vaciar memoria del reloj"/>
-                                        <mah:ProgressRing IsActive="{Binding IsClearingLogs}" Width="14" Height="14" Margin="8,0,0,0"
-                                                          Visibility="{Binding IsClearingLogs, Converter={StaticResource BooleanToVisibilityConverter}}"/>
-                                    </StackPanel>
-                                </Button>
-                            </WrapPanel>
-
-                            <Border BorderThickness="0,1,0,0" BorderBrush="{StaticResource Brush.Border}" Margin="0,10,0,20"/>
-                            
-                            <Label Content="Capacidades del Hardware" FontWeight="Bold" Margin="0,0,0,10"/>
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-                                <mah:ClipBorder Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15" Margin="0,0,10,0">
-                                    <StackPanel>
-                                        <TextBlock Text="Límite Usuarios" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                        <TextBlock Text="{Binding UserCapacity, TargetNullValue='Desconocido'}" FontSize="15" Margin="0,0,0,10"/>
-                                        
-                                        <TextBlock Text="Límite Huellas" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                        <TextBlock Text="{Binding FingerprintCapacity, TargetNullValue='Desconocido'}" FontSize="15" Margin="0,0,0,10"/>
-                                    </StackPanel>
-                                </mah:ClipBorder>
-                                <mah:ClipBorder Grid.Column="1" Background="{StaticResource Brush.SurfaceAlt}" CornerRadius="8" Padding="15">
-                                    <StackPanel>
-                                        <TextBlock Text="Límite Rostros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                        <TextBlock Text="{Binding FaceCapacity, TargetNullValue='Desconocido'}" FontSize="15" Margin="0,0,0,10"/>
-                                        
-                                        <TextBlock Text="Límite Registros" FontSize="11" Foreground="{StaticResource Brush.TextMuted}"/>
-                                        <TextBlock Text="{Binding AttendanceRecordCapacity, TargetNullValue='Desconocido'}" FontSize="15"/>
-                                    </StackPanel>
-                                </mah:ClipBorder>
-                            </Grid>
-                        </StackPanel>
-                    </Grid>
-                </TabItem>
-
-                <!-- History Tab -->
-                <TabItem Header="Historial de Descargas">
-                    <Grid Margin="0,15,0,0">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto"/>
-                            <RowDefinition Height="*"/>
-                        </Grid.RowDefinitions>
-
-                        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,15">
-                            <DatePicker SelectedDate="{Binding HistoryFromDate}" mah:TextBoxHelper.Watermark="Desde" Width="150" Margin="0,0,10,0"/>
-                            <DatePicker SelectedDate="{Binding HistoryToDate}" mah:TextBoxHelper.Watermark="Hasta" Width="150" Margin="0,0,10,0"/>
-                            <Button Content="Filtrar" Command="{Binding FilterHistoryCommand}" Style="{StaticResource MahApps.Styles.Button.Flat}"/>
-                        </StackPanel>
-
-                        <DataGrid Grid.Row="1" ItemsSource="{Binding DownloadHistory}"
-                                  AutoGenerateColumns="False"
-                                  IsReadOnly="True"
-                                  SelectionMode="Single"
-                                  HeadersVisibility="Column"
-                                  GridLinesVisibility="None"
-                                  RowHeight="45">
-                            <DataGrid.Columns>
-                                <DataGridTextColumn Header="Fecha" Binding="{Binding StartedAt, StringFormat='dd/MM/yyyy HH:mm'}" Width="130"/>
-                                <DataGridTemplateColumn Header="Estado" Width="100">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <iconPacks:PackIconMaterial Kind="{Binding IsSuccessful, Converter={StaticResource SuccessToIconConverter}}" 
-                                                                      Foreground="{Binding IsSuccessful, Converter={StaticResource SuccessToBrushConverter}}"
-                                                                      HorizontalAlignment="Center"/>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="Registros" Binding="{Binding TotalRecordsDownloaded}" Width="80"/>
-                                <DataGridTextColumn Header="Nuevos" Binding="{Binding NewRecordsAdded}" Width="80"/>
-                                <DataGridTemplateColumn Header="Acciones" Width="*">
-                                    <DataGridTemplateColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Button Command="{Binding DataContext.ShowLogDetailsCommand, RelativeSource={RelativeSource AncestorType=DataGrid}}"
-                                                    CommandParameter="{Binding}"
-                                                    Style="{StaticResource MahApps.Styles.Button.Circle}"
-                                                    Width="30" Height="30">
-                                                <iconPacks:PackIconMaterial Kind="InformationVariant" Width="14" Height="14"/>
-                                            </Button>
-                                        </DataTemplate>
-                                    </DataGridTemplateColumn.CellTemplate>
-                                </DataGridTemplateColumn>
-                            </DataGrid.Columns>
-                        </DataGrid>
-                        
-                        <mah:ProgressRing Grid.Row="1" IsActive="{Binding IsLoadingHistory}"/>
-                    </Grid>
-                </TabItem>
-            </mah:MetroAnimatedSingleRowTabControl>
-
-            <!-- Actions -->
-            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
-                <Button Content="Cerrar" 
-                        Command="{Binding CancelCommand}"
-                        Background="{StaticResource Brush.Primary}"
-                        Foreground="White"
-                        Padding="30,10"
-                        BorderThickness="0">
-                    <Button.Resources>
-                        <Style TargetType="Border">
-                            <Setter Property="CornerRadius" Value="8"/>
-                        </Style>
-                    </Button.Resources>
-                </Button>
-            </StackPanel>
+            <!-- Acción en curso sobre el reloj -->
+            <Border Background="{StaticResource Brush.BusyOverlay}" CornerRadius="15" Visibility="{Binding IsWorking, Converter={StaticResource BooleanToVisibilityConverter}}">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <mah:ProgressRing IsActive="{Binding IsWorking}" Width="48" Height="48" Foreground="{StaticResource Brush.Primary}"/>
+                    <TextBlock Text="{Binding WorkingMessage}" Foreground="{StaticResource Brush.Text}" FontSize="15" FontWeight="SemiBold" Margin="0,12,0,0" HorizontalAlignment="Center"/>
+                </StackPanel>
+            </Border>
         </Grid>
     </Border>
 </UserControl>
