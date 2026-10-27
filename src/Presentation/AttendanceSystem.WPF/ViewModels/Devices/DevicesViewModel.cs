@@ -177,7 +177,20 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                         result.Parameters.GetValue<string?>("TimeZoneId")
                     );
 
-                    var createResult = await _mediator.Send(command);
+                    // El alta (y la edición) se conecta al reloj para leer su información: puede tardar hasta que expire la conexión.
+                    SetBusy(true, "Guardando el reloj y leyendo su información...");
+                    AttendanceSystem.Application.Common.Result<Guid> createResult;
+                    try
+                    {
+                        createResult = await _mediator.Send(command);
+                    }
+                    catch (Exception ex)
+                    {
+                        SetBusy(false);
+                        await _messageService.ShowErrorAsync($"Error al crear: {ex.Message}");
+                        return;
+                    }
+                    SetBusy(false);
                     if (createResult.IsSuccess)
                     {
                         await _messageService.ShowSuccessAsync("Dispositivo creado correctamente.");
@@ -232,7 +245,20 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                         result.Parameters.GetValue<string?>("TimeZoneId")
                     );
 
-                    var updateResult = await _mediator.Send(command);
+                    // El alta (y la edición) se conecta al reloj para leer su información: puede tardar hasta que expire la conexión.
+                    SetBusy(true, "Guardando cambios del reloj...");
+                    AttendanceSystem.Application.Common.Result updateResult;
+                    try
+                    {
+                        updateResult = await _mediator.Send(command);
+                    }
+                    catch (Exception ex)
+                    {
+                        SetBusy(false);
+                        await _messageService.ShowErrorAsync($"Error al actualizar: {ex.Message}");
+                        return;
+                    }
+                    SetBusy(false);
                     if (updateResult.IsSuccess)
                     {
                         await _messageService.ShowSuccessAsync("Dispositivo actualizado correctamente.");

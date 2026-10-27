@@ -50,7 +50,12 @@ namespace AttendanceSystem.WPF.ViewModels.Auth
             try
             {
                 var result = await _mediator.Send(new ChangeOwnPasswordCommand(CurrentPassword, NewPassword));
-                if (result.IsSuccess) RequestClose.Invoke(ButtonResult.OK);
+                if (result.IsSuccess)
+                {
+                    // Antes de cerrar: CanCloseDialog rechaza el cierre mientras se guarda.
+                    _isSaving = false;
+                    RequestClose.Invoke(ButtonResult.OK);
+                }
                 else ErrorMessage = result.Error;
             }
             catch (Exception ex)
