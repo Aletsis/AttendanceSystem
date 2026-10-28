@@ -53,14 +53,17 @@ namespace AttendanceSystem.Infrastructure.Persistence.Migrations
                 });
             migrationBuilder.CreateIndex(name: "IX_EmployeeScheduleAssignments_EmployeeId", table: "EmployeeScheduleAssignments", column: "EmployeeId");
 
+            // HireDate y TerminationDate guardan la fecha a medianoche etiquetada como UTC: ::date a secas depende de la
+            // zona de la sesión y, al oeste de UTC, da el día anterior (ver 20261110120000_ConvertLegacyCivilTimes).
             migrationBuilder.Sql(@"
 INSERT INTO ""EmployeeEmploymentPeriods"" (""Id"", ""EmployeeId"", ""StartDate"", ""EndDate"")
-SELECT gen_random_uuid(), e.""Id"", e.""HireDate""::date,
-       CASE WHEN e.""TerminationDate"" IS NOT NULL AND e.""TerminationDate""::date >= e.""HireDate""::date THEN e.""TerminationDate""::date END
+SELECT gen_random_uuid(), e.""Id"", (e.""HireDate"" AT TIME ZONE 'UTC')::date,
+       CASE WHEN e.""TerminationDate"" IS NOT NULL AND e.""TerminationDate"" >= e.""HireDate""
+            THEN (e.""TerminationDate"" AT TIME ZONE 'UTC')::date END
   FROM ""Employees"" e;
 
 INSERT INTO ""EmployeeScheduleAssignments"" (""Id"", ""EmployeeId"", ""EffectiveFrom"", ""ScheduleId"", ""ShiftType"", ""BranchId"")
-SELECT gen_random_uuid(), e.""Id"", e.""HireDate""::date, e.""ScheduleId"", e.""ShiftType"", e.""BranchId""
+SELECT gen_random_uuid(), e.""Id"", (e.""HireDate"" AT TIME ZONE 'UTC')::date, e.""ScheduleId"", e.""ShiftType"", e.""BranchId""
   FROM ""Employees"" e;");
         }
 

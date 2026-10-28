@@ -175,16 +175,6 @@ public class AttendanceRecord : AggregateRoot<AttendanceRecordId>
         TimeZoneId = timeZoneId;
     }
 
-    public void UpdateTimeMetadata(DateTime originalCheckTime, DateOnly workDate, string? timeZoneId)
-    {
-        OriginalCheckTime = originalCheckTime;
-        WorkDate = workDate;
-        if (!string.IsNullOrWhiteSpace(timeZoneId))
-        {
-            TimeZoneId = timeZoneId;
-        }
-    }
-
     public DateTime GetCivilTime(string? fallbackTimeZoneId = null)
     {
         if (OriginalCheckTime.HasValue)

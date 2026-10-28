@@ -32,7 +32,6 @@ public static class ApplicationServiceExtensions
         services.AddScoped<AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService>();
         services.AddScoped<AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService>();
         services.AddScoped<AttendanceValidationService>();
-        services.AddScoped<AttendanceSystem.Application.Abstractions.IHistoricalAttendanceDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.HistoricalAttendanceTimeDiagnosticService>();
         services.AddScoped<AttendanceSystem.Application.Abstractions.IPunchAssignmentDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.PunchAssignmentDiagnosticService>();
         services.AddScoped<AttendanceSystem.Application.Features.Attendance.Consolidation.AttendanceConsolidationProcessor>();
         services.AddScoped<AttendanceSystem.Application.Features.Attendance.Decisions.AttendanceDecisionService>();
