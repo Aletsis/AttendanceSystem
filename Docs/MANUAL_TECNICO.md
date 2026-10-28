@@ -272,7 +272,7 @@ La aplicación Blazor aplica las migraciones de Entity Framework Core al arranca
 ```powershell
 dotnet ef migrations add <Nombre> --project src/Infrastructure/AttendanceSystem.Infrastructure --startup-project src/Presentation/AttendanceSystem.Blazor.Server
 ```
-* EF aplica las migraciones **por orden de ID**. Varias migraciones existentes tienen fechas futuras (hasta `20261109120000`); mientras la fecha real no las supere, renombre la migración nueva (archivos y atributo `[Migration]`) con un ID posterior a la última.
+* EF aplica las migraciones **por orden de ID**. Varias migraciones existentes tienen fechas futuras (hasta `20261110120000`); mientras la fecha real no las supere, renombre la migración nueva (archivos y atributo `[Migration]`) con un ID posterior a la última.
 * `MigrationsConsistencyTests` falla si el modelo tiene cambios sin migración o si la migración más reciente no es la última por ID. EF también se niega a migrar si el modelo no coincide con el snapshot (`PendingModelChangesWarning`), lo que en producción dejaría la aplicación en mantenimiento.
 * Una migración que transforma o borra datos debe poder ejecutarse sobre tablas grandes y, si no tiene `Down`, decirlo en un comentario: el respaldo previo es la única vuelta atrás.
 

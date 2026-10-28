@@ -32,10 +32,17 @@ namespace AttendanceSystem.Infrastructure.Persistence.Migrations
                 });
             migrationBuilder.CreateIndex(name: "IX_EmployeeStatusPeriods_EmployeeId", table: "EmployeeStatusPeriods", column: "EmployeeId");
 
-            // Estados 2 = Baja temporal, 3 = Vacaciones, 4 = Incapacidad.
+            // Estados 2 = Baja temporal, 3 = Vacaciones, 4 = Incapacidad. Hoy y la fecha de alta, sin depender de la
+            // zona de la sesión: hoy en la zona del sistema, y HireDate es una fecha etiquetada como UTC.
             migrationBuilder.Sql(@"
 INSERT INTO ""EmployeeStatusPeriods"" (""Id"", ""EmployeeId"", ""Status"", ""StartDate"", ""EndDate"")
-SELECT gen_random_uuid(), e.""Id"", e.""Status"", GREATEST(CURRENT_DATE, e.""HireDate""::date), NULL
+SELECT gen_random_uuid(), e.""Id"", e.""Status"",
+       GREATEST((now() AT TIME ZONE coalesce(
+                    (SELECT z.name FROM pg_timezone_names z
+                      WHERE z.name = (SELECT ""DefaultTimeZoneId"" FROM ""SystemConfiguration"" ORDER BY ""Id"" LIMIT 1)),
+                    'America/Mexico_City'))::date,
+                (e.""HireDate"" AT TIME ZONE 'UTC')::date),
+       NULL
   FROM ""Employees"" e
  WHERE e.""Status"" IN (2, 3, 4);");
         }
