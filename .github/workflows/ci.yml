@@ -117,8 +117,10 @@ jobs:
           sudo apt-get install -y -q postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -q postgresql-client-16
-          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
-          export PATH="/usr/lib/postgresql/16/bin:$PATH"
+          # /usr/bin/pg_dump es el envoltorio de Debian, que ejecuta la versión instalada más nueva: se quitan las demás.
+          for pkg in $(dpkg-query -W -f '${Package}\n' 'postgresql-client-[0-9]*' | grep -v -x postgresql-client-16); do
+            sudo apt-get remove -y -q "$pkg"
+          done
           pg_dump --version
           pg_restore --version
           psql --version
