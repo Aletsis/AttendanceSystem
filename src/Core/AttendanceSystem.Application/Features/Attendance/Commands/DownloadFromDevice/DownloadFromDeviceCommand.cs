@@ -368,7 +368,8 @@ public sealed class DownloadFromDeviceCommandHandler
                 if (raw.UserId.Length > 3)
                 {
                     var branchCode = raw.UserId.Substring(0, 3);
-                    var externalBranch = externalBranches.FirstOrDefault(b => b.Code == branchCode);
+                    // Sin distinguir mayúsculas, igual que ADMS.
+                    var externalBranch = externalBranches.FirstOrDefault(b => string.Equals(b.Code, branchCode, StringComparison.OrdinalIgnoreCase));
                     if (externalBranch != null)
                     {
                         isExternal = true;
