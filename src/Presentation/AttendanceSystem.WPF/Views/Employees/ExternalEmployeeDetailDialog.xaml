@@ -63,6 +63,8 @@
                         <TextBlock Text="No. Empleado *" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding EmployeeNumber, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Ej: 101"
+                                 IsReadOnly="{Binding IsEditMode}"
+                                 ToolTip="El número no se puede cambiar una vez registrado el empleado."
                                  Padding="10,8"/>
                     </StackPanel>
                 </Grid>

@@ -53,7 +53,7 @@ public class ExternalEmployeeTests
         // Act
         emp.Update(
             _branchId,
-            "102",
+            "101",
             "Carlos Eduardo",
             "Santana Gomez",
             "carlos.gomez@externa.com",
@@ -64,13 +64,24 @@ public class ExternalEmployeeTests
             "RFID-1000");
 
         // Assert
-        emp.EmployeeNumber.Should().Be("102");
+        emp.EmployeeNumber.Should().Be("101");
         emp.FirstName.Should().Be("Carlos Eduardo");
         emp.LastName.Should().Be("Santana Gomez");
         emp.Position.Should().Be("Gerente");
         emp.Department.Should().Be("Administracion");
         emp.CardNumber.Should().Be("RFID-1000");
         emp.UpdatedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void Update_WhenEmployeeNumberChanges_ShouldThrowDomainException()
+    {
+        var emp = ExternalEmployee.Create(_branchId, "101", "Carlos", "Santana");
+
+        var act = () => emp.Update(_branchId, "102", "Carlos", "Santana", null, null, null, null, EmployeeStatus.Alta);
+
+        act.Should().Throw<DomainException>().WithMessage("*no se puede cambiar*");
+        emp.EmployeeNumber.Should().Be("101");
     }
 
     [Fact]
