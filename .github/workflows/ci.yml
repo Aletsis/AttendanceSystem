@@ -117,15 +117,15 @@ jobs:
           sudo apt-get install -y -q postgresql-common
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -q postgresql-client-16
-          # /usr/bin/pg_dump es el envoltorio de Debian, que ejecuta la versión instalada más nueva: se quitan las demás.
-          for pkg in $(dpkg-query -W -f '${Package}\n' 'postgresql-client-[0-9]*' | grep -v -x postgresql-client-16); do
-            sudo apt-get remove -y -q "$pkg"
-          done
-          pg_dump --version
-          pg_restore --version
-          psql --version
+          # /usr/bin/pg_dump es el envoltorio de Debian, que ejecuta la versión más nueva: las pruebas usan la v16 directamente
+          # (TEST_PG_BIN_PATH, en el paso de pruebas).
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+          /usr/lib/postgresql/16/bin/psql --version
 
       - name: Run Infrastructure Tests (PostgreSQL)
+        env:
+          TEST_PG_BIN_PATH: /usr/lib/postgresql/16/bin
         run: >
           dotnet test tests/AttendanceSystem.Infrastructure.Tests/AttendanceSystem.Infrastructure.Tests.csproj
           -c Release
