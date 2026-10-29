@@ -19,11 +19,19 @@ public sealed record UpdateBranchCommand(
 public sealed class UpdateBranchCommandHandler : IRequestHandler<UpdateBranchCommand, Result<Unit>>
 {
     private readonly IBranchRepository _repository;
+    private readonly IEmployeeRepository _employeeRepository;
+    private readonly IExternalEmployeeRepository _externalEmployeeRepository;
     private readonly IUnitOfWork _unitOfWork;
 
-    public UpdateBranchCommandHandler(IBranchRepository repository, IUnitOfWork unitOfWork)
+    public UpdateBranchCommandHandler(
+        IBranchRepository repository,
+        IEmployeeRepository employeeRepository,
+        IExternalEmployeeRepository externalEmployeeRepository,
+        IUnitOfWork unitOfWork)
     {
         _repository = repository;
+        _employeeRepository = employeeRepository;
+        _externalEmployeeRepository = externalEmployeeRepository;
         _unitOfWork = unitOfWork;
     }
 
@@ -34,6 +42,20 @@ public sealed class UpdateBranchCommandHandler : IRequestHandler<UpdateBranchCom
             var branch = await _repository.GetByIdAsync(BranchId.From(request.Id), cancellationToken);
             if (branch is null)
                 return Result<Unit>.Failure("Sucursal no encontrada");
+
+            // Cambiar entre interna y externa dejaría huérfanos a los empleados del catálogo actual.
+            if (branch.IsExternal != request.IsExternal)
+            {
+                var assigned = branch.IsExternal
+                    ? (await _externalEmployeeRepository.GetByBranchAsync(branch.Id, cancellationToken)).Count
+                    : (await _employeeRepository.GetByBranchAsync(branch.Id, cancellationToken)).Count;
+                if (assigned > 0)
+                {
+                    var kind = branch.IsExternal ? "empleado(s) externo(s)" : "empleado(s)";
+                    return Result<Unit>.Failure(
+                        $"No se puede cambiar si la sucursal es externa porque tiene {assigned} {kind} asignados (incluidos los dados de baja).");
+                }
+            }
 
             branch.Update(
                 request.Code,

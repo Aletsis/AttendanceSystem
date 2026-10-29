@@ -72,13 +72,24 @@ public class BranchTests
         var branch = Branch.Create("C01", "Sucursal Vieja", "Dir Vieja");
 
         // Act
-        branch.Update("C02", "Sucursal Nueva", "Dir Nueva", isExternal: true, externalHost: "192.168.10.5");
+        branch.Update("c01", "Sucursal Nueva", "Dir Nueva", isExternal: true, externalHost: "192.168.10.5");
 
         // Assert
-        branch.Code.Should().Be("C02");
+        branch.Code.Should().Be("C01");
         branch.Name.Should().Be("Sucursal Nueva");
         branch.Address.Should().Be("Dir Nueva");
         branch.IsExternal.Should().BeTrue();
         branch.ExternalHost.Should().Be("192.168.10.5");
+    }
+
+    [Fact]
+    public void Update_WhenCodeChanges_ShouldThrowDomainException()
+    {
+        var branch = Branch.Create("C01", "Sucursal", null);
+
+        var act = () => branch.Update("C02", "Sucursal", null);
+
+        act.Should().Throw<DomainException>().WithMessage("*no se puede cambiar*");
+        branch.Code.Should().Be("C01");
     }
 }

@@ -52,6 +52,8 @@
                         <TextBlock Text="Código" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                         <TextBox Text="{Binding Code, UpdateSourceTrigger=PropertyChanged}" 
                                  mah:TextBoxHelper.Watermark="Ej: A01"
+                                 IsReadOnly="{Binding IsEditMode}"
+                                 ToolTip="El código no se puede cambiar una vez creada la sucursal."
                                  MaxLength="3"
                                  Padding="10,8"/>
                     </StackPanel>
