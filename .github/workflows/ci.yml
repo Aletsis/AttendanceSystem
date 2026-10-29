@@ -110,8 +110,12 @@ jobs:
       # Las pruebas de respaldo y restauración ejecutan pg_dump, pg_restore y psql reales.
       - name: Install PostgreSQL client tools
         run: |
+          # Las herramientas deben ser de la versión del servidor (postgres:16): un pg_dump más nuevo emite parámetros
+          # (p. ej. transaction_timeout en 17+) que el servidor 16 rechaza al restaurar.
           sudo apt-get update -q
-          sudo apt-get install -y -q postgresql-client
+          sudo apt-get install -y -q postgresql-client-16
+          echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/postgresql/16/bin:$PATH"
           pg_dump --version
           pg_restore --version
           psql --version
