@@ -319,7 +319,9 @@ public class AdmsDeviceClient : IDeviceClient
 
         // 1. Información de Usuario
         var admsPrivilege = DevicePrivilegeMapper.MapToProtocolValue(DeviceBrand.ZKTeco, DeviceDownloadMethod.Adms, (DevicePrivilege)user.Privilege);
-        var userCmd = $"PIN={user.UserId}\tName={user.Name}\tPri={admsPrivilege}";
+        // Mismo limpiado que por SDK: sin acentos y con el largo que acepta el reloj, o lo guarda sin nombre.
+        var name = AttendanceSystem.Application.Features.Devices.DeviceUserName.ForZkDevice(user.Name);
+        var userCmd = $"PIN={user.UserId}\tName={name}\tPri={admsPrivilege}";
         if (!string.IsNullOrEmpty(user.Password)) userCmd += $"\tPasswd={user.Password}";
         if (!string.IsNullOrEmpty(user.CardNumber)) userCmd += $"\tCard={user.CardNumber}";
 

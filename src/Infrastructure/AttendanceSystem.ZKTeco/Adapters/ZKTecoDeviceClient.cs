@@ -708,10 +708,8 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
                     // ya que la función de información de usuario asocia la tarjeta que está actualmente en el buffer)
                     _device.SetStrCardNumber(user.CardNumber ?? "");
 
-                    // 3. Información Básica - Limpiar nombre y limitar longitud
-                    // ZKTeco suele tener un límite de 24 caracteres para el nombre.
-                    string cleanName = CleanName(user.Name);
-                    if (cleanName.Length > 24) cleanName = cleanName.Substring(0, 24);
+                    // 3. Información Básica - Limpiar nombre y limitar longitud (mismo criterio que ADMS)
+                    string cleanName = AttendanceSystem.Application.Features.Devices.DeviceUserName.ForZkDevice(user.Name);
 
                     // Registrar información de usuario en el buffer
                     bool result = _device.SSR_SetUserInfo(1, user.UserId, cleanName, user.Password, user.Privilege, user.Enabled);
@@ -858,35 +856,6 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
             _lock.Release();
         }
     }
-    private string CleanName(string name)
-    {
-        if (string.IsNullOrEmpty(name)) return "";
-
-        // Muchos dispositivos ZKTeco no soportan acentos o eñes y muestran basura
-        try
-        {
-            var normalizedString = name.Normalize(System.Text.NormalizationForm.FormD);
-            var stringBuilder = new System.Text.StringBuilder();
-
-            foreach (var c in normalizedString)
-            {
-                var unicodeCategory = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c);
-                if (unicodeCategory != System.Globalization.UnicodeCategory.NonSpacingMark)
-                {
-                    stringBuilder.Append(c);
-                }
-            }
-
-            string clean = stringBuilder.ToString().Normalize(System.Text.NormalizationForm.FormC);
-            // Reemplazar ñ/Ñ manualmente si quedaron
-            return clean.Replace("ñ", "n").Replace("Ñ", "N");
-        }
-        catch
-        {
-            return name;
-        }
-    }
-
     private int _disposed;
     public void Dispose()
     {
