@@ -818,12 +818,15 @@ public class AdmsController : ControllerBase
         {
             try
             {
-                foreach (var extLog in pendingExternalLogs)
+                // El reloj reenvía checadas (redescargas, reintentos): solo se guardan las que no estaban.
+                var newExternalLogs = await _externalLogRepository.ExcludeAlreadyStoredAsync(pendingExternalLogs);
+                foreach (var extLog in newExternalLogs)
                 {
                     await _externalLogRepository.AddAsync(extLog);
                 }
                 await _unitOfWork.SaveChangesAsync();
-                _logger.LogInformation("ADMS: Se almacenaron localmente {Count} registros externos pendientes de sincronización cloud", pendingExternalLogs.Count);
+                _logger.LogInformation("ADMS: Se almacenaron localmente {New} de {Count} registros externos pendientes de sincronización cloud",
+                    newExternalLogs.Count, pendingExternalLogs.Count);
             }
             catch (Exception ex)
             {

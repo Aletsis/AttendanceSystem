@@ -35,9 +35,30 @@ public class ExternalAttendanceLogRepository : IExternalAttendanceLogRepository
     {
         return await _dbContext.ExternalAttendanceLogs
             .Where(x => x.Status == ExternalLogStatus.Pending || x.Status == ExternalLogStatus.Failed)
-            .OrderBy(x => x.CreatedAt)
+            // Los menos intentados primero: un log que falla siempre no bloquea a los nuevos.
+            .OrderBy(x => x.RetryCount)
+            .ThenBy(x => x.CreatedAt)
             .Take(maxCount)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<ExternalAttendanceLog>> ExcludeAlreadyStoredAsync(IReadOnlyList<ExternalAttendanceLog> candidates, CancellationToken cancellationToken = default)
+    {
+        if (candidates.Count == 0)
+            return candidates;
+
+        var employeeIds = candidates.Select(c => c.EmployeeId).Distinct().ToList();
+        var from = candidates.Min(c => c.CheckTime);
+        var to = candidates.Max(c => c.CheckTime);
+
+        var stored = await _dbContext.ExternalAttendanceLogs
+            .AsNoTracking()
+            .Where(x => employeeIds.Contains(x.EmployeeId) && x.CheckTime >= from && x.CheckTime <= to)
+            .Select(x => new { x.BranchCode, x.EmployeeId, x.CheckTime })
+            .ToListAsync(cancellationToken);
+
+        var seen = stored.Select(x => (x.BranchCode, x.EmployeeId, x.CheckTime)).ToHashSet();
+        return candidates.Where(c => seen.Add((c.BranchCode, c.EmployeeId, c.CheckTime))).ToList();
     }
 
     public async Task<IReadOnlyList<ExternalAttendanceLog>> GetRecentLogsAsync(int take = 50, CancellationToken cancellationToken = default)

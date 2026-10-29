@@ -57,6 +57,7 @@ public class CloudLogSyncService : ICloudLogSyncService
                 const string ddlSql = @"
                     ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_token VARCHAR(64);
                     ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP;
+                    ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS download_attempts INT NOT NULL DEFAULT 0;
                     CREATE INDEX IF NOT EXISTS ix_ext_logs_claim ON external_attendance_logs (branch_code, is_downloaded, claim_expires_at);";
                 try
                 {
@@ -81,7 +82,8 @@ public class CloudLogSyncService : ICloudLogSyncService
                     WHERE branch_code = @branchCode 
                       AND is_downloaded = FALSE
                       AND (claim_token IS NULL OR claim_expires_at < NOW())
-                    ORDER BY check_time ASC
+                    -- Los menos intentados primero: lo que falla siempre no bloquea a lo nuevo.
+                    ORDER BY download_attempts ASC, check_time ASC
                     LIMIT 200
                     FOR UPDATE SKIP LOCKED
                 )
@@ -139,6 +141,7 @@ public class CloudLogSyncService : ICloudLogSyncService
                 _logger.LogInformation("Descargando {Count} logs de la nube para sucursal local {Code}...", pendingLogs.Count, code);
 
                 var downloadedIds = new List<Guid>();
+                var failedIds = new List<Guid>();
 
                 foreach (var log in pendingLogs)
                 {
@@ -174,6 +177,7 @@ public class CloudLogSyncService : ICloudLogSyncService
                         {
                             _logger.LogWarning("No se pudo registrar log de empleado {EmpId} de la nube: {Error}",
                                 log.EmployeeId, recordResult.Error);
+                            failedIds.Add(log.Id);
                         }
                     }
                 }
@@ -187,6 +191,16 @@ public class CloudLogSyncService : ICloudLogSyncService
                             downloadedIds.Count, code, markResult.Error);
                     }
                 }
+
+                if (failedIds.Any())
+                {
+                    var releaseResult = await ReleaseFailedLogsAsync(failedIds, cancellationToken);
+                    if (!releaseResult.IsSuccess)
+                    {
+                        _logger.LogError("Error al liberar {Count} logs fallidos en la nube para {Code}: {Error}",
+                            failedIds.Count, code, releaseResult.Error);
+                    }
+                }
             }
 
             _logger.LogInformation("Sincronización desde la nube completada: {Count} registros importados", totalSynced);
@@ -196,6 +210,41 @@ public class CloudLogSyncService : ICloudLogSyncService
         {
             _logger.LogError(ex, "Error al sincronizar logs desde la nube");
             return Result<int>.Failure(ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Suma un intento a los logs que no se pudieron registrar y libera su reclamo, para que el
+    /// siguiente ciclo atienda primero a los que llevan menos intentos.
+    /// </summary>
+    private async Task<Result<bool>> ReleaseFailedLogsAsync(IReadOnlyList<Guid> logIds, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var connStr = await GetConnectionStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(connStr))
+                return Result<bool>.Failure("La cadena de conexión a la base de datos en la nube no está configurada.");
+
+            var dataSource = _dataSourceProvider.GetDataSource(connStr);
+            await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
+
+            const string sql = @"
+                UPDATE external_attendance_logs
+                SET download_attempts = download_attempts + 1,
+                    claim_token = NULL,
+                    claim_expires_at = NULL
+                WHERE id = ANY(@ids);";
+
+            await using var cmd = new NpgsqlCommand(sql, conn);
+            cmd.Parameters.AddWithValue("ids", logIds.ToArray());
+
+            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            return Result<bool>.Success(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error al liberar logs fallidos en la nube");
+            return Result<bool>.Failure(ex.Message);
         }
     }
 

@@ -246,7 +246,7 @@ public class RobustQuarantineTests
         var handler = new DownloadFromDeviceCommandHandler(
             devices.Object, rig.H.AttendanceRepository, Mock.Of<IDownloadLogRepository>(), factory.Object, rig.H.UnitOfWork,
             new AttendanceDeduplicationService(), NullLogger<DownloadFromDeviceCommandHandler>.Instance, Mock.Of<IMediator>(), locks.Object,
-            Mock.Of<IAdmsCommandService>(), branches.Object, Mock.Of<ILogTransferService>(), Mock.Of<IAttendanceJobScheduler>(),
+            Mock.Of<IAdmsCommandService>(), branches.Object, Mock.Of<IAttendanceJobScheduler>(),
             Mock.Of<IEmployeeRepository>(), Mock.Of<IExternalAttendanceLogRepository>(), DefaultTimeNormalizer.Instance, resolver.Object,
             clock: clock, quarantine: rig.Service);
 
