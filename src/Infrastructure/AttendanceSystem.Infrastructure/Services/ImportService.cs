@@ -186,7 +186,8 @@ public class ImportService : IImportService
                         var code = row.Cell(1).GetValue<string>();
                         var name = row.Cell(2).GetValue<string>();
                         var addr = row.Cell(3).GetValue<string>();
-                        var isExt = row.Cell(4).GetValue<string>()?.ToLower() == "si";
+                        // El export escribe "Sí"; la plantilla sugiere "Si". Se aceptan ambos.
+                        var isExt = row.Cell(4).GetValue<string>()?.Trim().ToLowerInvariant() is "si" or "sí";
                         var host = row.Cell(5).GetValue<string>();
 
                         if (!string.IsNullOrWhiteSpace(code) && !string.IsNullOrWhiteSpace(name))
@@ -390,7 +391,7 @@ public class ImportService : IImportService
         ws.Cell(1, 2).Value = "Nombre";
         ws.Cell(1, 3).Value = "Dirección";
         ws.Cell(1, 4).Value = "Es Externa (Si/No)";
-        ws.Cell(1, 5).Value = "Host Externo (URL)";
+        ws.Cell(1, 5).Value = "Host Externo (URL, opcional)";
 
         ws.Columns().AdjustToContents();
         using var ms = new MemoryStream();

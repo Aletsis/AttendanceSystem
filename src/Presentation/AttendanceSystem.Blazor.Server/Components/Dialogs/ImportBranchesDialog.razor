@@ -130,7 +130,7 @@
              if (result.ValidEntries.Count == 0) return;
         }
 
-        var commands = result.ValidEntries.Select(dto => new CreateBranchCommand(dto.Code, dto.Name, dto.Address, false, null)).ToList();
+        var commands = result.ValidEntries.Select(dto => new CreateBranchCommand(dto.Code, dto.Name, dto.Address, dto.IsExternal, dto.ExternalHost)).ToList();
 
         // 2. Send Commands
         _progressText = $"Importando {commands.Count} registros...";

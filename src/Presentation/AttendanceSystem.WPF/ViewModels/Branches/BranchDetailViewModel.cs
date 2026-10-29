@@ -61,9 +61,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
         {
             SaveCommand = new DelegateCommand(ExecuteSave, CanExecuteSave)
                 .ObservesProperty(() => Code)
-                .ObservesProperty(() => Name)
-                .ObservesProperty(() => IsExternal)
-                .ObservesProperty(() => ExternalHost);
+                .ObservesProperty(() => Name);
 
             CancelCommand = new DelegateCommand(ExecuteCancel);
         }
@@ -71,9 +69,6 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
         private bool CanExecuteSave()
         {
             if (string.IsNullOrWhiteSpace(Code) || string.IsNullOrWhiteSpace(Name))
-                return false;
-
-            if (IsExternal && string.IsNullOrWhiteSpace(ExternalHost))
                 return false;
 
             return true;

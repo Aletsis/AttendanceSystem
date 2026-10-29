@@ -22,15 +22,32 @@ public class BranchTests
         branch.ExternalHost.Should().BeNull();
     }
 
-    [Fact]
-    public void Create_WhenExternalBranchWithoutHost_ShouldThrowDomainException()
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void Create_WhenExternalBranchWithoutHost_ShouldAllowItAndStoreNull(string? host)
     {
         // Act
-        var act = () => Branch.Create("B02", "Sucursal Remota", "Calle 2", isExternal: true, externalHost: null);
+        var branch = Branch.Create("B02", "Sucursal Remota", "Calle 2", isExternal: true, externalHost: host);
 
         // Assert
-        act.Should().Throw<DomainException>()
-           .WithMessage("*host es requerido*");
+        branch.IsExternal.Should().BeTrue();
+        branch.ExternalHost.Should().BeNull();
+    }
+
+    [Fact]
+    public void Update_WhenBranchStopsBeingExternal_ShouldClearHost()
+    {
+        // Arrange
+        var branch = Branch.Create("B03", "Sucursal Remota", null, isExternal: true, externalHost: " https://api.sucursal.com ");
+
+        // Act
+        branch.Update("B03", "Sucursal Remota", null, isExternal: false, externalHost: "https://api.sucursal.com");
+
+        // Assert
+        branch.IsExternal.Should().BeFalse();
+        branch.ExternalHost.Should().BeNull();
     }
 
     [Theory]

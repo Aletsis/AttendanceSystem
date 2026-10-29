@@ -22,9 +22,6 @@ public sealed class Branch : AggregateRoot<BranchId>
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre de la sucursal es requerido.");
 
-        if (isExternal && string.IsNullOrWhiteSpace(externalHost))
-            throw new DomainException("El host es requerido para sucursales externas.");
-
         return new Branch
         {
             Id = BranchId.CreateNew(),
@@ -32,7 +29,7 @@ public sealed class Branch : AggregateRoot<BranchId>
             Name = name,
             Address = address,
             IsExternal = isExternal,
-            ExternalHost = externalHost,
+            ExternalHost = NormalizeExternalHost(isExternal, externalHost),
             TimeZoneId = timeZoneId
         };
     }
@@ -43,19 +40,20 @@ public sealed class Branch : AggregateRoot<BranchId>
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre de la sucursal es requerido.");
 
-        if (isExternal && string.IsNullOrWhiteSpace(externalHost))
-            throw new DomainException("El host es requerido para sucursales externas.");
-
         Code = code.ToUpper();
         Name = name;
         Address = address;
         IsExternal = isExternal;
-        ExternalHost = externalHost;
+        ExternalHost = NormalizeExternalHost(isExternal, externalHost);
         if (timeZoneId != null)
         {
             TimeZoneId = timeZoneId;
         }
     }
+
+    // El host de la API es opcional: una sucursal externa puede sincronizar solo por la BD en la nube.
+    private static string? NormalizeExternalHost(bool isExternal, string? externalHost) =>
+        isExternal && !string.IsNullOrWhiteSpace(externalHost) ? externalHost.Trim() : null;
 
     private static void ValidateCode(string code)
     {
