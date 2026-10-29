@@ -112,7 +112,10 @@ jobs:
         run: |
           # Las herramientas deben ser de la versión del servidor (postgres:16): un pg_dump más nuevo emite parámetros
           # (p. ej. transaction_timeout en 17+) que el servidor 16 rechaza al restaurar.
+          # La imagen del runner sólo trae el cliente más nuevo: se habilita el repositorio oficial (PGDG) para la v16.
           sudo apt-get update -q
+          sudo apt-get install -y -q postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y -q postgresql-client-16
           echo "/usr/lib/postgresql/16/bin" >> "$GITHUB_PATH"
           export PATH="/usr/lib/postgresql/16/bin:$PATH"
