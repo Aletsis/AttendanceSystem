@@ -80,25 +80,8 @@ public class LogTransferService : ILogTransferService
                 _dataSourceProvider.MarkSchemaEnsured(connStr);
             }
 
-            const string insertSql = @"
-                INSERT INTO external_attendance_logs 
-                (id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at, is_downloaded)
-                VALUES (@id, @branchCode, @employeeId, @checkTime, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE)
-                ON CONFLICT (id) DO NOTHING;";
-
             var targetId = logId ?? Guid.NewGuid();
-            var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
-
-            await using var cmd = new NpgsqlCommand(insertSql, conn);
-            cmd.Parameters.AddWithValue("id", targetId);
-            cmd.Parameters.AddWithValue("branchCode", branchCode.ToUpperInvariant());
-            cmd.Parameters.AddWithValue("employeeId", employeeId);
-            cmd.Parameters.AddWithValue("checkTime", utcCheckTime);
-            cmd.Parameters.AddWithValue("verifyMethod", verifyMethod);
-            cmd.Parameters.AddWithValue("checkType", checkType);
-            cmd.Parameters.AddWithValue("sourceDevice", (object?)sourceDevice ?? DBNull.Value);
-
-            await cmd.ExecuteNonQueryAsync(cancellationToken);
+            await InsertAsync(conn, targetId, branchCode, employeeId, checkTime, verifyMethod, checkType, sourceDevice, cancellationToken);
 
             _logger.LogInformation("Log para empleado externo {EmployeeId} (Sucursal: {BranchCode}) transferido a la BD en la nube. ID: {LogId}",
                 employeeId, branchCode, targetId);
@@ -120,29 +103,54 @@ public class LogTransferService : ILogTransferService
             if (!pendingLogs.Any())
                 return Result<int>.Success(0);
 
+            // Sin nube activa o configurada no se toca ningún log: no es culpa del registro y no debe contar como intento.
+            var config = await _configurationRepository.GetConfigurationAsync(cancellationToken);
+            if (config != null && !config.IsCloudSyncEnabled)
+            {
+                _logger.LogWarning("Hay {Count} logs externos pendientes, pero la sincronización en la nube está desactivada.", pendingLogs.Count);
+                return Result<int>.Success(0);
+            }
+
+            var connStr = await GetConnectionStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(connStr))
+            {
+                _logger.LogWarning("Hay {Count} logs externos pendientes, pero la cadena de conexión a la nube no está configurada.", pendingLogs.Count);
+                return Result<int>.Success(0);
+            }
+
             _logger.LogInformation("Reintentando transferencia de {Count} logs externos pendientes a la nube...", pendingLogs.Count);
 
+            // Una sola conexión para el lote: si la nube no responde se falla una vez, sin marcar los logs.
+            var dataSource = _dataSourceProvider.GetDataSource(connStr);
+            await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
+            if (!_dataSourceProvider.IsSchemaEnsured(connStr))
+            {
+                await EnsureSchemaAsync(conn, cancellationToken);
+                _dataSourceProvider.MarkSchemaEnsured(connStr);
+            }
+
             int successCount = 0;
+            string? connectionError = null;
             foreach (var log in pendingLogs)
             {
-                var result = await TransferLogAsync(
-                    log.BranchCode,
-                    log.EmployeeId,
-                    log.CheckTime,
-                    log.VerifyMethod,
-                    log.CheckType,
-                    log.SourceDevice,
-                    log.Id,
-                    cancellationToken);
-
-                if (result.IsSuccess)
+                try
                 {
+                    await InsertAsync(conn, log.Id, log.BranchCode, log.EmployeeId, log.CheckTime,
+                        log.VerifyMethod, log.CheckType, log.SourceDevice, cancellationToken);
                     log.MarkAsTransferred();
                     successCount++;
                 }
-                else
+                catch (PostgresException ex)
                 {
-                    log.MarkAsFailed(result.Error);
+                    // El servidor rechazó este registro en particular; los demás siguen.
+                    _logger.LogWarning(ex, "La nube rechazó el log externo {LogId} del empleado {EmployeeId}", log.Id, log.EmployeeId);
+                    log.MarkAsFailed($"Error al escribir en la BD en la nube: {ex.Message}");
+                }
+                catch (NpgsqlException ex)
+                {
+                    // Se perdió la conexión: se detiene el lote y lo restante queda para el siguiente ciclo.
+                    connectionError = ex.Message;
+                    break;
                 }
 
                 await _externalLogRepository.UpdateAsync(log, cancellationToken);
@@ -152,6 +160,9 @@ public class LogTransferService : ILogTransferService
             _logger.LogInformation("Reintento finalizado: {SuccessCount} de {Total} logs transferidos exitosamente",
                 successCount, pendingLogs.Count);
 
+            if (connectionError != null)
+                return Result<int>.Failure($"Se perdió la conexión con la BD en la nube: {connectionError}");
+
             return Result<int>.Success(successCount);
         }
         catch (Exception ex)
@@ -159,6 +170,37 @@ public class LogTransferService : ILogTransferService
             _logger.LogError(ex, "Error durante el reintento de logs externos pendientes");
             return Result<int>.Failure(ex.Message);
         }
+    }
+
+    private async Task InsertAsync(
+        NpgsqlConnection conn,
+        Guid id,
+        string branchCode,
+        string employeeId,
+        DateTime checkTime,
+        int verifyMethod,
+        int checkType,
+        string? sourceDevice,
+        CancellationToken cancellationToken)
+    {
+        // Sin destino en ON CONFLICT: un reenvío del mismo id o la misma checada (sucursal, empleado, hora)
+        // con otro id se ignora en lugar de fallar para siempre.
+        const string insertSql = @"
+            INSERT INTO external_attendance_logs 
+            (id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at, is_downloaded)
+            VALUES (@id, @branchCode, @employeeId, @checkTime, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE)
+            ON CONFLICT DO NOTHING;";
+
+        await using var cmd = new NpgsqlCommand(insertSql, conn);
+        cmd.Parameters.AddWithValue("id", id);
+        cmd.Parameters.AddWithValue("branchCode", branchCode.ToUpperInvariant());
+        cmd.Parameters.AddWithValue("employeeId", employeeId);
+        cmd.Parameters.AddWithValue("checkTime", _timeNormalizer.ToUtc(checkTime));
+        cmd.Parameters.AddWithValue("verifyMethod", verifyMethod);
+        cmd.Parameters.AddWithValue("checkType", checkType);
+        cmd.Parameters.AddWithValue("sourceDevice", (object?)sourceDevice ?? DBNull.Value);
+
+        await cmd.ExecuteNonQueryAsync(cancellationToken);
     }
 
     public async Task<Result<bool>> TestConnectionAsync(string? connectionString = null, CancellationToken cancellationToken = default)
@@ -210,8 +252,11 @@ public class LogTransferService : ILogTransferService
                 downloaded_at TIMESTAMP WITH TIME ZONE,
                 downloaded_by_branch VARCHAR(10),
                 claim_token VARCHAR(50),
-                claim_expires_at TIMESTAMP WITH TIME ZONE
+                claim_expires_at TIMESTAMP WITH TIME ZONE,
+                download_attempts INT NOT NULL DEFAULT 0
             );
+
+            ALTER TABLE external_attendance_logs ADD COLUMN IF NOT EXISTS download_attempts INT NOT NULL DEFAULT 0;
 
             CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_logs_branch_emp_time 
                 ON external_attendance_logs(branch_code, employee_id, check_time);

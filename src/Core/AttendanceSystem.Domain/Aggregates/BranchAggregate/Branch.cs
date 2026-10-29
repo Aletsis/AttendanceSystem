@@ -36,11 +36,13 @@ public sealed class Branch : AggregateRoot<BranchId>
 
     public void Update(string code, string name, string? address, bool isExternal = false, string? externalHost = null, string? timeZoneId = null)
     {
-        ValidateCode(code);
+        // El código no cambia: es el prefijo de los IDs en los relojes y el que identifica las checadas en la nube.
+        if (!string.Equals(code?.Trim(), Code, StringComparison.OrdinalIgnoreCase))
+            throw new DomainException("El código de la sucursal no se puede cambiar una vez creada.");
+
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre de la sucursal es requerido.");
 
-        Code = code.ToUpper();
         Name = name;
         Address = address;
         IsExternal = isExternal;

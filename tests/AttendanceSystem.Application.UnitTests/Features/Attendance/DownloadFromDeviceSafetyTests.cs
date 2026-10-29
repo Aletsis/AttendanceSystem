@@ -32,7 +32,6 @@ public class DownloadFromDeviceSafetyTests
     private readonly Mock<IDeviceLockService> _deviceLockServiceMock = new();
     private readonly Mock<IAdmsCommandService> _admsCommandServiceMock = new();
     private readonly Mock<IBranchRepository> _branchRepositoryMock = new();
-    private readonly Mock<ILogTransferService> _logTransferServiceMock = new();
     private readonly Mock<IAttendanceJobScheduler> _jobSchedulerMock = new();
     private readonly Mock<IEmployeeRepository> _employeeRepositoryMock = new();
     private readonly Mock<IExternalAttendanceLogRepository> _externalLogRepositoryMock = new();
@@ -95,7 +94,6 @@ public class DownloadFromDeviceSafetyTests
             _deviceLockServiceMock.Object,
             _admsCommandServiceMock.Object,
             _branchRepositoryMock.Object,
-            _logTransferServiceMock.Object,
             _jobSchedulerMock.Object,
             _employeeRepositoryMock.Object,
             _externalLogRepositoryMock.Object,
@@ -187,6 +185,58 @@ public class DownloadFromDeviceSafetyTests
 
         // H03: Verifica que ClearLogsAsync fue invocado estrictamente con el rango acotado [minDate, maxDate]
         _deviceClientMock.Verify(c => c.ClearLogsAsync("1", minDate, maxDate, It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
+    public async Task Handle_ExternalBranchPrefix_IsRecognizedRegardlessOfCase()
+    {
+        _branchRepositoryMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch>
+            {
+                AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch.Create("B01", "Remota", null, isExternal: true)
+            });
+        _deviceClientMock.Setup(c => c.GetAttendanceLogsAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeviceLogsResult.Success(new List<RawAttendanceRecord> { new("b01123", new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Utc), 1, 0, 0) }));
+        _externalLogRepositoryMock
+            .Setup(r => r.ExcludeAlreadyStoredAsync(It.IsAny<IReadOnlyList<ExternalAttendanceLog>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ExternalAttendanceLog> logs, CancellationToken _) => logs);
+
+        var result = await _handler.Handle(new DownloadFromDeviceCommand("1"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _externalLogRepositoryMock.Verify(r => r.AddAsync(
+            It.Is<ExternalAttendanceLog>(l => l.BranchCode == "B01" && l.EmployeeId == "123"), It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
+    public async Task Handle_ExternalBranchPunches_AreStoredOnlyWhenNew_AndUploadIsDeferred()
+    {
+        var checkTime = new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Utc);
+        _branchRepositoryMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch>
+            {
+                AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch.Create("B01", "Remota", null, isExternal: true)
+            });
+        _deviceClientMock.Setup(c => c.GetAttendanceLogsAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeviceLogsResult.Success(new List<RawAttendanceRecord>
+            {
+                new("B01123", checkTime, 1, 0, 0),
+                new("B01123", checkTime.AddHours(9), 1, 1, 0)
+            }));
+        // La primera ya estaba guardada por una descarga anterior.
+        _externalLogRepositoryMock
+            .Setup(r => r.ExcludeAlreadyStoredAsync(It.IsAny<IReadOnlyList<ExternalAttendanceLog>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ExternalAttendanceLog> logs, CancellationToken _) => logs.Skip(1).ToList());
+
+        var result = await _handler.Handle(new DownloadFromDeviceCommand("1"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _externalLogRepositoryMock.Verify(r => r.AddAsync(
+            It.Is<ExternalAttendanceLog>(l => l.BranchCode == "B01" && l.EmployeeId == "123" && l.CheckTime == checkTime.AddHours(9)),
+            It.IsAny<CancellationToken>()), Times.Once());
+        _externalLogRepositoryMock.Verify(r => r.AddAsync(It.IsAny<ExternalAttendanceLog>(), It.IsAny<CancellationToken>()), Times.Once());
+        _externalLogRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<ExternalAttendanceLog>(), It.IsAny<CancellationToken>()), Times.Never(),
+            "la subida a la nube la hace el trabajo de sincronización, no la descarga");
     }
     [Theory]
     [InlineData("att", "ATTLOG", false, false)]

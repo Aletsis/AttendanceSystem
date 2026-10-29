@@ -22,6 +22,9 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             set => SetProperty(ref _title, value);
         }
 
+        // El código es inmutable: solo se captura al crear la sucursal.
+        public bool IsEditMode => _branchId.HasValue;
+
         public string Code
         {
             get => _code;
@@ -107,6 +110,7 @@ namespace AttendanceSystem.WPF.ViewModels.Branches
             if (parameters.ContainsKey("BranchId"))
             {
                 _branchId = parameters.GetValue<Guid>("BranchId");
+                RaisePropertyChanged(nameof(IsEditMode));
                 Code = parameters.GetValue<string>("Code");
                 Name = parameters.GetValue<string>("Name");
                 Address = parameters.GetValue<string>("Address");

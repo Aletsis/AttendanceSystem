@@ -52,7 +52,6 @@ public sealed class DownloadFromDeviceCommandHandler
     private readonly IDeviceLockService _deviceLockService;
     private readonly IAdmsCommandService _admsCommandService;
     private readonly IBranchRepository _branchRepository;
-    private readonly ILogTransferService _logTransferService;
     private readonly IAttendanceJobScheduler _jobScheduler;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IExternalAttendanceLogRepository _externalLogRepository;
@@ -74,7 +73,6 @@ public sealed class DownloadFromDeviceCommandHandler
         IDeviceLockService deviceLockService,
         IAdmsCommandService admsCommandService,
         IBranchRepository branchRepository,
-        ILogTransferService logTransferService,
         IAttendanceJobScheduler jobScheduler,
         IEmployeeRepository employeeRepository,
         IExternalAttendanceLogRepository externalLogRepository,
@@ -97,7 +95,6 @@ public sealed class DownloadFromDeviceCommandHandler
         _deviceLockService = deviceLockService;
         _admsCommandService = admsCommandService;
         _branchRepository = branchRepository;
-        _logTransferService = logTransferService;
         _jobScheduler = jobScheduler;
         _employeeRepository = employeeRepository;
         _externalLogRepository = externalLogRepository;
@@ -361,6 +358,7 @@ public sealed class DownloadFromDeviceCommandHandler
             // Obtener todas las sucursales externas para filtrar rápido
             var allBranches = await _branchRepository.GetAllAsync(cancellationToken);
             var externalBranches = allBranches.Where(b => b.IsExternal).ToList();
+            var externalLogs = new List<ExternalAttendanceLog>();
 
             foreach (var raw in rawRecords)
             {
@@ -370,50 +368,25 @@ public sealed class DownloadFromDeviceCommandHandler
                 if (raw.UserId.Length > 3)
                 {
                     var branchCode = raw.UserId.Substring(0, 3);
-                    var externalBranch = externalBranches.FirstOrDefault(b => b.Code == branchCode);
+                    // Sin distinguir mayúsculas, igual que ADMS.
+                    var externalBranch = externalBranches.FirstOrDefault(b => string.Equals(b.Code, branchCode, StringComparison.OrdinalIgnoreCase));
                     if (externalBranch != null)
                     {
                         isExternal = true;
                         var actualEmployeeId = raw.UserId.Substring(3);
 
-                        _logger.LogInformation("Log detectado para sucursal externa {Code}. Almacenando localmente y transfiriendo empleado {Id} a Cloud DB",
-                            branchCode, actualEmployeeId);
-
                         var deviceSerial = deviceSerialNumber ?? command.DeviceId;
                         // Instante UTC con la zona del reloj (igual que ADMS): el destino no conoce la zona del reloj.
                         var externalUtc = _timeNormalizer.ToUtc(raw.CheckTime, authoritativeTimeZone);
-                        var localExtLog = ExternalAttendanceLog.Create(
+                        // Como en ADMS, la subida a la nube es diferida (trabajo de sincronización): si la nube
+                        // no responde, la descarga del reloj no espera un tiempo de conexión por cada checada.
+                        externalLogs.Add(ExternalAttendanceLog.Create(
                             branchCode,
                             actualEmployeeId,
                             externalUtc,
                             raw.VerifyMethod,
                             raw.InOutMode,
-                            deviceSerial);
-
-                        await _externalLogRepository.AddAsync(localExtLog, cancellationToken);
-                        await _unitOfWork.SaveChangesAsync(cancellationToken);
-
-                        var transferResult = await _logTransferService.TransferLogAsync(
-                            branchCode,
-                            actualEmployeeId,
-                            externalUtc,
-                            raw.VerifyMethod,
-                            raw.InOutMode,
-                            deviceSerial,
-                            localExtLog.Id,
-                            cancellationToken);
-
-                        if (transferResult.IsSuccess)
-                        {
-                            localExtLog.MarkAsTransferred();
-                        }
-                        else
-                        {
-                            localExtLog.MarkAsFailed(transferResult.Error);
-                        }
-
-                        await _externalLogRepository.UpdateAsync(localExtLog, cancellationToken);
-                        await _unitOfWork.SaveChangesAsync(cancellationToken);
+                            deviceSerial));
                     }
                 }
 
@@ -434,6 +407,20 @@ public sealed class DownloadFromDeviceCommandHandler
                         source: deviceBrand.ToString()
                     ));
                 }
+            }
+
+            if (externalLogs.Count > 0)
+            {
+                // Una redescarga trae otra vez las mismas checadas: solo se guardan las que no estaban.
+                var newExternalLogs = await _externalLogRepository.ExcludeAlreadyStoredAsync(externalLogs, cancellationToken);
+                foreach (var externalLog in newExternalLogs)
+                {
+                    await _externalLogRepository.AddAsync(externalLog, cancellationToken);
+                }
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+                _logger.LogInformation("Se almacenaron {New} de {Total} checadas de sucursales externas, pendientes de subir a la nube",
+                    newExternalLogs.Count, externalLogs.Count);
             }
 
             int quarantinedCount = 0, alreadyResolvedCount = 0;

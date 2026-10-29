@@ -35,6 +35,9 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             set => SetProperty(ref _title, value);
         }
 
+        // Sucursal y número son inmutables: solo se capturan al registrar al empleado.
+        public bool IsEditMode => _id.HasValue;
+
         public BranchLookupItem? SelectedBranch
         {
             get => _selectedBranch;
@@ -214,6 +217,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             if (parameters.ContainsKey("Id"))
             {
                 _id = parameters.GetValue<Guid>("Id");
+                RaisePropertyChanged(nameof(IsEditMode));
                 var branchId = parameters.GetValue<Guid>("BranchId");
                 SelectedBranch = ExternalBranches.FirstOrDefault(b => b.Id == branchId);
                 EmployeeNumber = parameters.GetValue<string>("EmployeeNumber");

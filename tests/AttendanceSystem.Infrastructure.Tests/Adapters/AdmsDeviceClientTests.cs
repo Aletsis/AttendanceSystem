@@ -82,4 +82,18 @@ public class AdmsDeviceClientTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => client.GetDeviceInfoAsync(cancellation.Token));
         commands.VerifyNoOtherCalls();
     }
+
+    [Fact]
+    public async Task SetUser_ByAdms_SendsTheNameCleanedLikeTheSdk()
+    {
+        var commands = new Mock<IAdmsCommandService>();
+        var client = new AdmsDeviceClient(commands.Object, new ServiceCollection().BuildServiceProvider(), NullLogger<AdmsDeviceClient>.Instance);
+        client.SetDevice(Serial);
+
+        var sent = await client.SetUserAsync(new DeviceUserDto("B01123", "Carlos Eduardo Santana Gómez", "", 0, true));
+
+        sent.Should().BeTrue();
+        commands.Verify(s => s.EnqueueCommand(Serial,
+            It.Is<string>(c => c.StartsWith("DATA UPDATE user\tPIN=B01123\tName=Carlos Eduardo Santana G\tPri=")), null), Times.Once);
+    }
 }

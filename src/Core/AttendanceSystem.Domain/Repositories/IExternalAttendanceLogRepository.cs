@@ -8,5 +8,10 @@ public interface IExternalAttendanceLogRepository
     Task UpdateAsync(ExternalAttendanceLog log, CancellationToken cancellationToken = default);
     Task<ExternalAttendanceLog?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ExternalAttendanceLog>> GetPendingOrFailedLogsAsync(int maxCount = 100, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Devuelve solo los candidatos que no están ya guardados (misma sucursal, empleado y hora),
+    /// descartando también los repetidos dentro del propio lote.
+    /// </summary>
+    Task<IReadOnlyList<ExternalAttendanceLog>> ExcludeAlreadyStoredAsync(IReadOnlyList<ExternalAttendanceLog> candidates, CancellationToken cancellationToken = default);
     Task<IReadOnlyList<ExternalAttendanceLog>> GetRecentLogsAsync(int take = 50, CancellationToken cancellationToken = default);
 }

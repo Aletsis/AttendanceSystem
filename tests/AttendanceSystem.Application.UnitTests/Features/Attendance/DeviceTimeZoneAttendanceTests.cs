@@ -60,7 +60,7 @@ public class DeviceTimeZoneAttendanceTests
         var handler = new DownloadFromDeviceCommandHandler(
             devices.Object, Mock.Of<IAttendanceRepository>(), Mock.Of<IDownloadLogRepository>(), factory.Object, Mock.Of<IUnitOfWork>(),
             new AttendanceDeduplicationService(), NullLogger<DownloadFromDeviceCommandHandler>.Instance, Mock.Of<IMediator>(), locks.Object,
-            Mock.Of<IAdmsCommandService>(), branches.Object, Mock.Of<ILogTransferService>(), Mock.Of<IAttendanceJobScheduler>(),
+            Mock.Of<IAdmsCommandService>(), branches.Object, Mock.Of<IAttendanceJobScheduler>(),
             Mock.Of<IEmployeeRepository>(), Mock.Of<IExternalAttendanceLogRepository>(), DefaultTimeNormalizer.Instance, resolver.Object);
 
         await handler.Handle(new DownloadFromDeviceCommand("Q1"), CancellationToken.None);

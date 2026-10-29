@@ -81,6 +81,13 @@ public class ExternalLogsController : ControllerBase
                     request.SourceDevice ?? "EXTERNAL_API"
                 );
 
+                // Un reenvío de la misma checada no crea otro pendiente (fallaría para siempre en la nube).
+                var isNew = (await _externalLogRepository.ExcludeAlreadyStoredAsync(new[] { externalLog })).Count > 0;
+                if (!isNew)
+                {
+                    return Ok(new { Success = true, Message = "La checada ya estaba registrada para la sucursal externa" });
+                }
+
                 await _externalLogRepository.AddAsync(externalLog);
                 await _unitOfWork.SaveChangesAsync();
 
