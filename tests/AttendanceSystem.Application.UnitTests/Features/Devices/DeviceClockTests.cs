@@ -7,8 +7,11 @@ using AttendanceSystem.Application.Features.Devices.Commands.SetDeviceTime;
 using AttendanceSystem.Application.Features.Devices.Commands.UpdateDevice;
 using AttendanceSystem.Application.Features.Devices.Queries;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
+using AttendanceSystem.Domain.Aggregates.SystemAlertAggregate;
+using AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Domain.Services;
 using AttendanceSystem.Domain.ValueObjects;
 using FluentAssertions;
 using MediatR;
@@ -80,6 +83,63 @@ public class DeviceClockTests
         check.Corrected.Should().BeTrue();
         check.Drift.Should().Be(TimeSpan.FromHours(-1));
         client.Verify(c => c.SetDeviceClockAsync(ClockNow, TimeSpan.FromHours(-5), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    private static Mock<IDeviceClient> ClientShowing(DateTime reported)
+    {
+        var client = new Mock<IDeviceClient>();
+        client.Setup(c => c.GetDeviceTimeAsync(It.IsAny<CancellationToken>())).ReturnsAsync(reported);
+        client.Setup(c => c.SetDeviceClockAsync(It.IsAny<DateTime>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        return client;
+    }
+
+    private static DeviceClockService ClockWith(Mock<ISystemAlertRepository> alerts, PunchQuarantinePolicy? policy = null)
+    {
+        var config = SystemConfiguration.CreateDefault();
+        if (policy != null) config.UpdateQuarantinePolicy(policy);
+        var configuration = new Mock<ISystemConfigurationRepository>();
+        configuration.Setup(r => r.GetConfigurationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(config);
+        return new(DefaultTimeNormalizer.Instance, Resolver().Object, NullLogger<DeviceClockService>.Instance, new FixedTime(UtcNow),
+            alerts.Object, Mock.Of<IUnitOfWork>(), configuration.Object);
+    }
+
+    [Fact]
+    public async Task Verify_DriftBelowTheAlertThreshold_ResyncsWithoutAlert()
+    {
+        var alerts = new Mock<ISystemAlertRepository>();
+        var client = ClientShowing(ClockNow.AddMinutes(-5));
+
+        var check = await ClockWith(alerts).VerifyAsync(client.Object, ClockZone, "Reloj QRoo", deviceId: "D1");
+
+        check.Corrected.Should().BeTrue();
+        alerts.Verify(a => a.AddAsync(It.IsAny<SystemAlert>(), It.IsAny<CancellationToken>()), Times.Never, "5 min no pasa de la alerta (10)");
+    }
+
+    [Fact]
+    public async Task Verify_DriftPastTheAlertThreshold_AlertsWithTheCallersDetail()
+    {
+        var alerts = new Mock<ISystemAlertRepository>();
+        SystemAlert? alert = null;
+        alerts.Setup(a => a.AddAsync(It.IsAny<SystemAlert>(), It.IsAny<CancellationToken>())).Callback<SystemAlert, CancellationToken>((a, _) => alert = a);
+        var client = ClientShowing(ClockNow.AddMinutes(-15));
+
+        await ClockWith(alerts).VerifyAsync(client.Object, ClockZone, "Reloj QRoo", deviceId: "D1",
+            alertDetail: drift => $"Detalle {drift.TotalMinutes:0}");
+
+        alert.Should().NotBeNull();
+        alert!.Message.Should().Contain("Se resincronizó.").And.Contain("Detalle -15");
+    }
+
+    [Fact]
+    public async Task Verify_UsesTheConfiguredSyncTolerance()
+    {
+        var client = ClientShowing(ClockNow.AddMinutes(4));
+
+        var check = await ClockWith(new Mock<ISystemAlertRepository>(), PunchQuarantinePolicy.Default with { ClockSyncToleranceMinutes = 5 })
+            .VerifyAsync(client.Object, ClockZone, "Reloj QRoo");
+
+        check.Corrected.Should().BeFalse();
+        client.Verify(c => c.SetDeviceClockAsync(It.IsAny<DateTime>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]

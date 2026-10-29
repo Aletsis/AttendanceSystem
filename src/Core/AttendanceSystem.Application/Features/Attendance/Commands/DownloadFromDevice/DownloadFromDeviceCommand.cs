@@ -277,35 +277,45 @@ public sealed class DownloadFromDeviceCommandHandler
             }
 
             // Zona del reloj: con ella se interpreta la hora que marca. Antes de leer se verifica que su hora coincida
-            // con la de esa zona; si se desvió, se resincroniza y queda una alerta (los marcajes ya capturados con la
-            // hora equivocada no se alteran aquí).
+            // con la de esa zona; si se desvió, se resincroniza (y, pasado el umbral de alerta, queda una alerta).
+            // Caso 18: pasado el umbral de cuarentena, los marcajes desde la descarga anterior se grabaron con la hora
+            // corrida (atrasada o adelantada): van a cuarentena con la corrección. Por debajo entran, y la alerta indica
+            // cómo corregirlos si la diferencia importa. Una re-descarga nunca pone en cuarentena por desfase.
             var authoritativeTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
-            var clockCheck = await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken, deviceIdValue);
+            var clockPolicy = await _clock.PolicyAsync(cancellationToken);
+            var previousCivil = filterDate.HasValue ? ToDeviceCivil(filterDate.Value, authoritativeTimeZone) : (DateTime?)null;
+            bool Quarantines(TimeSpan d) => !command.ForceFullSync && _quarantine != null && d.Duration() > clockPolicy.ClockDriftQuarantine;
+            string ClockImpact(TimeSpan d) => Quarantines(d)
+                ? "Sus marcajes desde la descarga anterior quedaron en cuarentena para revisarlos."
+                : $"Sus marcajes {(previousCivil is { } since ? $"desde el {since:dd/MM/yyyy HH:mm}" : "anteriores")} pudieron quedar corridos hasta " +
+                  $"{AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(d)}; si la diferencia importa, corríjalos en Hora de relojes → Corregir marcajes de un reloj.";
+            var clockCheck = await _clock.VerifyAsync(deviceClient, authoritativeTimeZone, deviceName, cancellationToken, deviceIdValue, ClockImpact);
 
-            // Caso 18: un reloj atrasado grabó los marcajes desde la descarga anterior con la hora corrida. Se lee más
-            // atrás (para no perderlos), se registra el incidente y esos marcajes van a cuarentena con la corrección.
             var arrival = command.ForceFullSync
                 ? new AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext(AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Redownload)
                 : AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext.Download;
             string? clockWarning = null;
-            if (!command.ForceFullSync && clockCheck.Drift is { } drift && -drift > AttendanceSystem.Application.Features.Devices.Clock.DeviceClockService.DriftTolerance && _quarantine != null)
+            if (clockCheck.Drift is { } drift && drift.Duration() > clockPolicy.ClockDriftAlert)
             {
-                var behind = -drift;
-                var policy = await _quarantine.PolicyAsync(cancellationToken);
-                var previousCivil = filterDate.HasValue ? ToDeviceCivil(filterDate.Value, authoritativeTimeZone) : (DateTime?)null;
+                clockWarning = $"El reloj estaba {(drift < TimeSpan.Zero ? "atrasado" : "adelantado")} " +
+                               $"{AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(drift)}: se resincronizó. {ClockImpact(drift)}";
+            }
+            if (clockCheck.Drift is { } quarantineDrift && Quarantines(quarantineDrift))
+            {
+                // Atrasado: los marcajes nuevos quedaron con horas anteriores a la descarga previa; se lee más atrás.
+                var behind = quarantineDrift < TimeSpan.Zero ? -quarantineDrift : TimeSpan.Zero;
+                var margin = TimeSpan.FromDays(clockPolicy.SdkReadMarginDays);
                 arrival = new AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrivalContext(
-                    AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Download, behind, previousCivil);
-                if (filterDate.HasValue) filterDate = filterDate.Value - behind - TimeSpan.FromDays(policy.SdkReadMarginDays);
+                    AttendanceSystem.Application.Features.Devices.Quarantine.PunchArrival.Download, quarantineDrift, previousCivil);
+                if (filterDate.HasValue && behind > TimeSpan.Zero) filterDate = filterDate.Value - behind - margin;
                 if (clockCheck.Reported is { } reportedNow)
                 {
-                    await _quarantine.RecordClockIncidentAsync(deviceId,
-                        (previousCivil ?? reportedNow.AddDays(-policy.SdkReadMarginDays)) - behind - TimeSpan.FromDays(policy.SdkReadMarginDays),
-                        reportedNow, behind,
+                    await _quarantine!.RecordClockIncidentAsync(deviceId,
+                        (previousCivil ?? reportedNow - margin) - behind - margin,
+                        reportedNow, -quarantineDrift,
                         $"Al descargar, el reloj marcaba {reportedNow:dd/MM/yyyy HH:mm} cuando eran las {clockCheck.Expected:dd/MM/yyyy HH:mm}",
                         cancellationToken);
                 }
-                clockWarning = $"El reloj estaba atrasado {AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(behind)}: " +
-                               "se resincronizó y sus marcajes desde la descarga anterior quedaron en cuarentena para revisarlos.";
             }
 
             // 5. Descargar registros mediante contrato explícito de resultados

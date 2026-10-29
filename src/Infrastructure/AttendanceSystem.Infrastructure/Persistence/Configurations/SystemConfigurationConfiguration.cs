@@ -63,6 +63,7 @@ public class SystemConfigurationConfiguration : IEntityTypeConfiguration<SystemC
         builder.Property(c => c.QuarantineRealtimeLagMinutes).IsRequired().HasDefaultValue(30);
         builder.Property(c => c.QuarantineClockDriftAlertMinutes).IsRequired().HasDefaultValue(10);
         builder.Property(c => c.QuarantineSdkReadMarginDays).IsRequired().HasDefaultValue(1);
+        builder.Property(c => c.QuarantineClockSyncToleranceMinutes).IsRequired().HasDefaultValue(2);
         builder.Ignore(c => c.QuarantinePolicy);
         builder.Property(c => c.NightLunchWindowStart).IsRequired().HasDefaultValue(new TimeSpan(23, 0, 0));
         builder.Property(c => c.NightLunchWindowEnd).IsRequired().HasDefaultValue(new TimeSpan(4, 0, 0));

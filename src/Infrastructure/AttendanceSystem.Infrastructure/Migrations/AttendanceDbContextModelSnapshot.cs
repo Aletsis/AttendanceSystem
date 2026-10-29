@@ -1868,6 +1868,11 @@ namespace AttendanceSystem.Infrastructure.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(10);
 
+                    b.Property<int>("QuarantineClockSyncToleranceMinutes")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(2);
+
                     b.Property<int>("QuarantineFutureToleranceMinutes")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")

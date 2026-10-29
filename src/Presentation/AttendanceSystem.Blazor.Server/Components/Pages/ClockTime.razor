@@ -78,6 +78,10 @@
                 }
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_bulkNote))"
                            OnClick="@(() => ReleaseDeviceAsync(group.Key.DeviceId, ReleaseOffset))">Liberar todos con el desfase de abajo (@FormatOffset(ReleaseOffset))</MudButton>
+                <MudText Typo="Typo.caption" Color="Color.Secondary" Style="flex-basis: 100%">
+                    La corrección sugerida supone que el reloj estuvo desfasado todo el periodo. Si el desfase empezó a mitad (corte de luz,
+                    cambio manual de hora), los marcajes anteriores al evento estaban bien: revíselos y libérelos uno por uno.
+                </MudText>
             </MudPaper>
         }
         <MudSelect T="QuarantineStatus?" Value="_statusFilter" ValueChanged="OnStatusFilterChanged" Label="Mostrar" Dense="true" Class="mb-3" Style="max-width: 240px">

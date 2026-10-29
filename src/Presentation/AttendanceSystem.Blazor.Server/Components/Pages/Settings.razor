@@ -120,10 +120,12 @@
                         </MudItem>
 
                         <MudItem xs="12">
-                            <MudText Typo="Typo.subtitle1" Class="mt-2">Cuarentena de marcajes</MudText>
+                            <MudText Typo="Typo.subtitle1" Class="mt-2">Hora de los relojes y cuarentena de marcajes</MudText>
                             <MudText Typo="Typo.caption" Color="Color.Secondary">
                                 Un marcaje con hora sospechosa no entra al cálculo: queda en cuarentena hasta que un administrador lo libere con la hora
-                                corregida o lo descarte (Hora de relojes). Ninguna regla lo corrige sola.
+                                corregida o lo descarte (Hora de relojes). Ninguna regla lo corrige sola. El desfase de un reloj, en tiempo real (ADMS) o
+                                al descargar (SDK), se trata igual: pasada la tolerancia se resincroniza; pasada la alerta, además se avisa; pasado el
+                                umbral de cuarentena, sus marcajes desfasados van a cuarentena.
                             </MudText>
                         </MudItem>
                         <MudItem xs="12" sm="4">
@@ -139,12 +141,16 @@
                                              HelperText="Si la hora retrocede más que esto entre marcajes del reloj." />
                         </MudItem>
                         <MudItem xs="12" sm="4">
-                            <MudNumericField Label="R4 Atraso en tiempo real (minutos)" @bind-Value="_quarantine.RealtimeLagMinutes" Min="5" Max="10080" Variant="Variant.Outlined"
-                                             HelperText="ADMS: un marcaje de hace más que esto, con el reloj conectado desde antes, es de un reloj atrasado." />
+                            <MudNumericField Label="R4 Desfase que manda a cuarentena (minutos)" @bind-Value="_quarantine.RealtimeLagMinutes" Min="5" Max="10080" Variant="Variant.Outlined"
+                                             HelperText="ADMS: marcaje en tiempo real de hace más que esto. SDK: reloj desfasado más que esto al descargar." />
                         </MudItem>
                         <MudItem xs="12" sm="4">
                             <MudNumericField Label="R5 Alerta de desfase (minutos)" @bind-Value="_quarantine.DriftAlertMinutes" Min="1" Max="10080" Variant="Variant.Outlined"
-                                             HelperText="ADMS: un desfase menor al de R4 sólo alerta y resincroniza el reloj." />
+                                             HelperText="Un desfase mayor, pero menor al de R4, alerta y resincroniza; los marcajes entran." />
+                        </MudItem>
+                        <MudItem xs="12" sm="4">
+                            <MudNumericField Label="Tolerancia de sincronización (minutos)" @bind-Value="_quarantine.SyncToleranceMinutes" Min="1" Max="1440" Variant="Variant.Outlined"
+                                             HelperText="Un desfase mayor resincroniza el reloj sin alerta. No mayor que R2 ni que R5." />
                         </MudItem>
                         <MudItem xs="12" sm="4">
                             <MudNumericField Label="Margen de lectura de un reloj atrasado (días)" @bind-Value="_quarantine.SdkReadMarginDays" Min="0" Max="30" Variant="Variant.Outlined"
@@ -452,14 +458,16 @@
         public int RealtimeLagMinutes { get; set; } = 30;
         public int DriftAlertMinutes { get; set; } = 10;
         public int SdkReadMarginDays { get; set; } = 1;
+        public int SyncToleranceMinutes { get; set; } = 2;
 
         public AttendanceSystem.Domain.Services.PunchQuarantinePolicy ToPolicy() =>
-            new(MinDateDays, FutureMinutes, BackwardJumpMinutes, RealtimeLagMinutes, DriftAlertMinutes, SdkReadMarginDays);
+            new(MinDateDays, FutureMinutes, BackwardJumpMinutes, RealtimeLagMinutes, DriftAlertMinutes, SdkReadMarginDays, SyncToleranceMinutes);
 
         public static QuarantineSettings From(AttendanceSystem.Domain.Services.PunchQuarantinePolicy? p) => p == null ? new() : new()
         {
             MinDateDays = p.MinDateDaysBeforeDevice, FutureMinutes = p.FutureToleranceMinutes, BackwardJumpMinutes = p.BackwardJumpMinutes,
-            RealtimeLagMinutes = p.RealtimeLagMinutes, DriftAlertMinutes = p.ClockDriftAlertMinutes, SdkReadMarginDays = p.SdkReadMarginDays
+            RealtimeLagMinutes = p.RealtimeLagMinutes, DriftAlertMinutes = p.ClockDriftAlertMinutes, SdkReadMarginDays = p.SdkReadMarginDays,
+            SyncToleranceMinutes = p.ClockSyncToleranceMinutes
         };
     }
 

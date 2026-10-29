@@ -110,13 +110,22 @@ jobs:
       # Las pruebas de respaldo y restauración ejecutan pg_dump, pg_restore y psql reales.
       - name: Install PostgreSQL client tools
         run: |
+          # Las herramientas deben ser de la versión del servidor (postgres:16): un pg_dump más nuevo emite parámetros
+          # (p. ej. transaction_timeout en 17+) que el servidor 16 rechaza al restaurar.
+          # La imagen del runner sólo trae el cliente más nuevo: se habilita el repositorio oficial (PGDG) para la v16.
           sudo apt-get update -q
-          sudo apt-get install -y -q postgresql-client
-          pg_dump --version
-          pg_restore --version
-          psql --version
+          sudo apt-get install -y -q postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y -q postgresql-client-16
+          # /usr/bin/pg_dump es el envoltorio de Debian, que ejecuta la versión más nueva: las pruebas usan la v16 directamente
+          # (TEST_PG_BIN_PATH, en el paso de pruebas).
+          /usr/lib/postgresql/16/bin/pg_dump --version
+          /usr/lib/postgresql/16/bin/pg_restore --version
+          /usr/lib/postgresql/16/bin/psql --version
 
       - name: Run Infrastructure Tests (PostgreSQL)
+        env:
+          TEST_PG_BIN_PATH: /usr/lib/postgresql/16/bin
         run: >
           dotnet test tests/AttendanceSystem.Infrastructure.Tests/AttendanceSystem.Infrastructure.Tests.csproj
           -c Release
