@@ -77,11 +77,11 @@
                           Foreground="{StaticResource Brush.Text}"/>
 
                 <StackPanel Visibility="{Binding IsExternal, Converter={StaticResource BooleanToVisibilityConverter}}">
-                    <TextBlock Text="Host (API URL)" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
+                    <TextBlock Text="Host (API URL, opcional)" FontWeight="SemiBold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,5"/>
                     <TextBox Text="{Binding ExternalHost, UpdateSourceTrigger=PropertyChanged}" 
                              mah:TextBoxHelper.Watermark="https://api.sucursal.com"
                              Padding="10,8"/>
-                    <TextBlock Text="Requerido para sincronización remota." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="2,5,0,0"/>
+                    <TextBlock Text="Opcional: no es necesario si la sucursal sincroniza por la BD en la nube." FontSize="11" Foreground="{StaticResource Brush.TextMuted}" Margin="2,5,0,0"/>
                 </StackPanel>
             </StackPanel>
 

@@ -9,7 +9,7 @@
         <MudCheckBox @bind-Value="IsExternal" Label="Externa" Color="Color.Primary" />
         @if (IsExternal)
         {
-            <MudTextField @bind-Value="ExternalHost" Label="Host (API URL)" Placeholder="https://api.sucursal.com" Required="true" RequiredError="El host es requerido para sucursales externas" />
+            <MudTextField @bind-Value="ExternalHost" Label="Host (API URL)" Placeholder="https://api.sucursal.com" HelperText="Opcional: no es necesario si la sucursal sincroniza por la BD en la nube" />
         }
     </DialogContent>
     <DialogActions>
@@ -33,11 +33,6 @@
     private void Submit()
     {
         if (string.IsNullOrWhiteSpace(Code) || string.IsNullOrWhiteSpace(Name))
-        {
-            return;
-        }
-
-        if (IsExternal && string.IsNullOrWhiteSpace(ExternalHost))
         {
             return;
         }
