@@ -580,7 +580,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
                 config = SystemConfiguration.CreateDefault();
                 context.SystemConfigurations.Add(config);
             }
-            config.UpdateQuarantinePolicy(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2));
+            config.UpdateQuarantinePolicy(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2, 3));
             context.Devices.Add(device);
             context.QuarantinedPunches.Add(punch);
             context.DeviceClockIncidents.Add(incident);
@@ -588,7 +588,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         }
 
         await using var verify = _fixture.CreateDbContext();
-        (await verify.SystemConfigurations.FirstAsync()).QuarantinePolicy.Should().Be(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2));
+        (await verify.SystemConfigurations.FirstAsync()).QuarantinePolicy.Should().Be(new AttendanceSystem.Domain.Services.PunchQuarantinePolicy(15, 3, 90, 45, 20, 2, 3));
         (await verify.Devices.SingleAsync(d => d.Id == device.Id)).AcceptPunchesFrom.Should().Be(new DateTime(2025, 1, 1));
         var storedPunch = await verify.QuarantinedPunches.SingleAsync(q => q.Id == punch.Id);
         storedPunch.Rule.Should().Be(AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.RuleRealtimeLag);

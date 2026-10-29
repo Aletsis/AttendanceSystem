@@ -202,9 +202,11 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
     public int QuarantineRealtimeLagMinutes { get; private set; } = 30;
     public int QuarantineClockDriftAlertMinutes { get; private set; } = 10;
     public int QuarantineSdkReadMarginDays { get; private set; } = 1;
+    public int QuarantineClockSyncToleranceMinutes { get; private set; } = 2;
 
     public Services.PunchQuarantinePolicy QuarantinePolicy => new(QuarantineMinDateDaysBeforeDevice, QuarantineFutureToleranceMinutes,
-        QuarantineBackwardJumpMinutes, QuarantineRealtimeLagMinutes, QuarantineClockDriftAlertMinutes, QuarantineSdkReadMarginDays);
+        QuarantineBackwardJumpMinutes, QuarantineRealtimeLagMinutes, QuarantineClockDriftAlertMinutes, QuarantineSdkReadMarginDays,
+        QuarantineClockSyncToleranceMinutes);
 
     public void UpdateQuarantinePolicy(Services.PunchQuarantinePolicy policy)
     {
@@ -215,6 +217,7 @@ public sealed class SystemConfiguration : AggregateRoot<Guid>
         QuarantineRealtimeLagMinutes = policy.RealtimeLagMinutes;
         QuarantineClockDriftAlertMinutes = policy.ClockDriftAlertMinutes;
         QuarantineSdkReadMarginDays = policy.SdkReadMarginDays;
+        QuarantineClockSyncToleranceMinutes = policy.ClockSyncToleranceMinutes;
     }
 
     public void UpdateDoubleTapMinutes(int minutes)

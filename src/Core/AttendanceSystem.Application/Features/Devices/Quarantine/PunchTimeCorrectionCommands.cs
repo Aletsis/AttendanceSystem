@@ -290,7 +290,7 @@ public sealed class QuarantinedPunchDecisionHandler :
         if (string.IsNullOrWhiteSpace(request.Note)) return Result<string>.Failure("Indique el motivo de la decisión.");
 
         var corrected = DateTime.SpecifyKind(punch.ReportedTime, DateTimeKind.Unspecified).AddMinutes(request.OffsetMinutes);
-        var problem = PunchTimePlausibility.Problem(corrected, _service.ClockNow(punch.TimeZoneId));
+        var problem = await _service.ImpossibleTimeAsync(punch.DeviceId, corrected, punch.TimeZoneId, cancellationToken);
         if (problem != null) return Result<string>.Failure($"La hora corregida sigue siendo imposible: {problem}");
 
         try

@@ -25,9 +25,10 @@ public enum PunchArrival
     Redownload,
 }
 
-/// <param name="SdkClockBehind">Atraso del reloj medido al conectarse por SDK (positivo), si superó la tolerancia.</param>
+/// <param name="SdkClockDrift">Desfase del reloj medido al conectarse por SDK (hora del reloj menos la real: negativo si
+/// estaba atrasado, positivo si adelantado), sólo si superó el umbral de cuarentena.</param>
 /// <param name="SdkPreviousDownloadCivil">Hora civil del reloj en la descarga anterior; desde ahí los marcajes nuevos están corridos.</param>
-public sealed record PunchArrivalContext(PunchArrival Arrival, TimeSpan? SdkClockBehind = null, DateTime? SdkPreviousDownloadCivil = null, string? DeviceSerial = null)
+public sealed record PunchArrivalContext(PunchArrival Arrival, TimeSpan? SdkClockDrift = null, DateTime? SdkPreviousDownloadCivil = null, string? DeviceSerial = null)
 {
     public static PunchArrivalContext Download { get; } = new(PunchArrival.Download);
 }
@@ -36,7 +37,8 @@ public sealed record PunchArrivalContext(PunchArrival Arrival, TimeSpan? SdkCloc
 /// Resultado de evaluar un lote: posiciones que no deben ingresarse (en cuarentena ahora o ya resueltas antes) y, en
 /// tiempo real, el atraso detectado del reloj para resincronizarlo.
 /// </summary>
-/// <param name="ClockBehind">En tiempo real: atraso del reloj (R4 si superó el umbral, R5 si sólo alerta).</param>
+/// <param name="ClockBehind">En tiempo real: atraso del reloj si superó la tolerancia de sincronización (R4 si además
+/// superó el umbral de cuarentena; R5 si sólo el de alerta).</param>
 /// <param name="LagQuarantined">En tiempo real: hubo marcajes en cuarentena por R4 (el reloj estuvo atrasado).</param>
 /// <param name="PreviousLatestCivil">Último marcaje bueno del reloj antes del lote (desde ahí pudo atrasarse).</param>
 public sealed record QuarantineOutcome(IReadOnlySet<int> Excluded, int Quarantined, int AlreadyResolved, TimeSpan? ClockBehind,
@@ -55,10 +57,11 @@ public sealed record QuarantineOutcome(IReadOnlySet<int> Excluded, int Quarantin
 /// <item><b>Incidente</b>: su hora reportada cae en un periodo en que el reloj estuvo atrasado.</item>
 /// <item><b>R1</b> fecha anterior a la mínima del reloj; <b>R2</b> en el futuro; <b>R3</b> la hora retrocede respecto al
 /// marcaje anterior del reloj (salto). Aplican siempre.</item>
-/// <item><b>Atraso al descargar</b> (SDK, descarga normal): el reloj estaba atrasado al conectarse; los marcajes
-/// nuevos desde la descarga anterior están corridos.</item>
+/// <item><b>Atraso / adelanto al descargar</b> (SDK, descarga normal): el reloj estaba desfasado más del umbral de
+/// cuarentena al conectarse; los marcajes nuevos desde la descarga anterior están corridos.</item>
 /// <item><b>R4</b> (ADMS en tiempo real): marcaje de hace más del umbral cuando el reloj estaba conectado desde antes
-/// de esa hora (lo habría enviado entonces). <b>R5</b>: un desfase menor sólo alerta y resincroniza.</item>
+/// de esa hora (lo habría enviado entonces). <b>R5</b>: un desfase menor sólo alerta y resincroniza; uno menor que la
+/// alerta, sólo resincroniza.</item>
 /// </list>
 /// Las reglas de desfase no aplican en re-descargas, donde lo viejo es normal.
 /// </summary>
@@ -69,6 +72,7 @@ public sealed class PunchQuarantineService
     public const string RuleBackwardJump = "R3 Salto hacia atrás";
     public const string RuleRealtimeLag = "R4 Atraso en tiempo real";
     public const string RuleSdkBehind = "Atraso al descargar";
+    public const string RuleSdkAhead = "Adelanto al descargar";
     public const string RuleIncident = "Periodo con hora atrasada";
 
     private readonly IQuarantinedPunchRepository _quarantine;
@@ -113,10 +117,20 @@ public sealed class PunchQuarantineService
     public DateTime ClockNow(string timeZoneId) =>
         DateTime.SpecifyKind(_timeNormalizer.ToCivilTime(_timeProvider.GetUtcNow().UtcDateTime, timeZoneId), DateTimeKind.Unspecified);
 
-    public async Task<PunchQuarantinePolicy> PolicyAsync(CancellationToken cancellationToken) =>
-        _configuration != null && await _configuration.GetConfigurationAsync(cancellationToken) is { } config
-            ? config.QuarantinePolicy
-            : PunchQuarantinePolicy.Default;
+    public Task<PunchQuarantinePolicy> PolicyAsync(CancellationToken cancellationToken) =>
+        _configuration.GetClockPolicyAsync(cancellationToken);
+
+    /// <summary>
+    /// Motivo por el que una hora (p. ej. la corregida al liberar) es imposible para el reloj según la política: anterior
+    /// a su fecha mínima o en el futuro. Null si es plausible.
+    /// </summary>
+    public async Task<string?> ImpossibleTimeAsync(DeviceId deviceId, DateTime civilTime, string timeZoneId, CancellationToken cancellationToken)
+    {
+        var policy = await PolicyAsync(cancellationToken);
+        var device = _devices != null ? await _devices.GetByIdAsync(deviceId, cancellationToken) : null;
+        return PunchTimePlausibility.Problem(DateTime.SpecifyKind(civilTime, DateTimeKind.Unspecified), ClockNow(timeZoneId),
+            PunchTimePlausibility.MinimumDate(device, policy), policy.FutureTolerance);
+    }
 
     /// <summary>Compatibilidad: evalúa como descarga normal y devuelve las posiciones que no deben ingresarse.</summary>
     public async Task<IReadOnlySet<int>> QuarantineImpossibleAsync(DeviceId deviceId, string deviceName, IReadOnlyList<PunchCandidate> candidates, CancellationToken cancellationToken = default) =>
@@ -136,8 +150,7 @@ public sealed class PunchQuarantineService
 
         var policy = await PolicyAsync(cancellationToken);
         var device = _devices != null ? await _devices.GetByIdAsync(deviceId, cancellationToken) : null;
-        var minDate = device?.MinimumPunchDate(policy.MinDateDaysBeforeDevice) ?? PunchTimePlausibility.EarliestValid;
-        if (minDate < PunchTimePlausibility.EarliestValid) minDate = PunchTimePlausibility.EarliestValid;
+        var minDate = PunchTimePlausibility.MinimumDate(device, policy);
 
         // 1. Ya ingresados (incluidos anulados): la ingesta los reconoce; sirven de contexto para el salto.
         var keys = candidates.Select(c => (EmployeeId.From(c.EmployeeId), _timeNormalizer.ToUtc(Civil(c), c.TimeZoneId))).ToList();
@@ -190,37 +203,44 @@ public sealed class PunchQuarantineService
             {
                 flag = new Flag(RuleIncident, $"Su hora ({civil:dd/MM/yyyy HH:mm}) cae en el periodo en que el reloj estuvo atrasado: {incident.Reason}", incident.OffsetMinutes);
             }
-            else if (civil < minDate)
+            else if (PunchTimePlausibility.MinDateProblem(civil, minDate) is { } minDateProblem)
             {
-                flag = new Flag(RuleMinDate, $"Fecha {civil:dd/MM/yyyy HH:mm} anterior a la fecha mínima del reloj ({minDate:dd/MM/yyyy}): el reloj perdió su fecha.", null);
+                flag = new Flag(RuleMinDate, minDateProblem, null);
             }
-            else if (civil - now > TimeSpan.FromMinutes(policy.FutureToleranceMinutes))
+            else if (PunchTimePlausibility.FutureProblem(civil, now, policy.FutureTolerance) is { } futureProblem)
             {
-                flag = new Flag(RuleFuture, $"Hora {civil:dd/MM/yyyy HH:mm} posterior a la actual del reloj ({now:dd/MM/yyyy HH:mm}): el reloj está adelantado.", null);
+                // Con el desfase medido (SDK) o en tiempo real (el marcaje es de este momento) se sabe cuánto adelanta.
+                int? suggested = context.Arrival == PunchArrival.Download && context.SdkClockDrift is { } ahead && ahead > TimeSpan.Zero ? -Minutes(ahead)
+                    : context.Arrival == PunchArrival.Realtime ? -Minutes(civil - now)
+                    : null;
+                flag = new Flag(RuleFuture, futureProblem, suggested);
             }
             else if (maxSoFar is { } max && max - civil > TimeSpan.FromMinutes(policy.BackwardJumpMinutes))
             {
                 flag = new Flag(RuleBackwardJump, $"La hora retrocedió de {max:dd/MM/yyyy HH:mm} a {civil:dd/MM/yyyy HH:mm} entre marcajes del reloj: alguien la cambió o se reinició.", null);
             }
-            else if (context.Arrival == PunchArrival.Download && context.SdkClockBehind is { } behind &&
-                     (context.SdkPreviousDownloadCivil is not { } previous || civil >= previous - behind - TimeSpan.FromDays(policy.SdkReadMarginDays)))
+            else if (context.Arrival == PunchArrival.Download && context.SdkClockDrift is { } drift &&
+                     (context.SdkPreviousDownloadCivil is not { } previous ||
+                      civil >= previous - (drift < TimeSpan.Zero ? -drift : TimeSpan.Zero) - TimeSpan.FromDays(policy.SdkReadMarginDays)))
             {
-                flag = new Flag(RuleSdkBehind, $"Al descargar, el reloj estaba atrasado {Describe(behind)}: este marcaje se registró con esa hora corrida.", Minutes(behind));
+                flag = drift < TimeSpan.Zero
+                    ? new Flag(RuleSdkBehind, $"Al descargar, el reloj estaba atrasado {Describe(drift)}: este marcaje se registró con esa hora corrida.", -Minutes(drift))
+                    : new Flag(RuleSdkAhead, $"Al descargar, el reloj estaba adelantado {Describe(drift)}: este marcaje se registró con esa hora corrida.", -Minutes(drift));
             }
             else if (context.Arrival == PunchArrival.Realtime)
             {
                 var lag = now - civil;
                 var newest = previousLatest == null || civil > previousLatest;
                 var connectedAtPunch = connectedSinceUtc is { } since && _timeNormalizer.ToUtc(civil, c.TimeZoneId) >= since;
-                if (newest && connectedAtPunch && lag > TimeSpan.FromMinutes(policy.RealtimeLagMinutes))
+                if (newest && connectedAtPunch && lag > policy.ClockDriftQuarantine)
                 {
                     flag = new Flag(RuleRealtimeLag, $"Llegó en tiempo real con hora de hace {Describe(lag)} aunque el reloj estaba conectado: su hora está atrasada.", Minutes(lag));
                     realtimeBehind = realtimeBehind is { } r && r > lag ? r : lag;
                 }
-                else if (newest && connectedAtPunch && lag > TimeSpan.FromMinutes(policy.ClockDriftAlertMinutes))
+                else if (newest && connectedAtPunch && lag > policy.ClockSyncTolerance)
                 {
-                    // R5: desfase menor; el marcaje entra y el reloj se resincroniza.
-                    realtimeBehind ??= lag;
+                    // R5 (o menos): el marcaje entra; el reloj se resincroniza y, si pasa del umbral de alerta, se avisa.
+                    realtimeBehind = realtimeBehind is { } r && r > lag ? r : lag;
                 }
             }
 
@@ -271,18 +291,19 @@ public sealed class PunchQuarantineService
     }
 
     /// <summary>
-    /// Caso 18: guarda el periodo (en horas reportadas por el reloj) en que estuvo atrasado, para que cualquier marcaje
+    /// Caso 18: guarda el periodo (en horas reportadas por el reloj) en que estuvo desfasado, para que cualquier marcaje
     /// de ese periodo que llegue después —también en una re-descarga— vaya a cuarentena con la corrección.
     /// </summary>
-    public async Task RecordClockIncidentAsync(DeviceId deviceId, DateTime reportedFrom, DateTime reportedTo, TimeSpan behind, string reason, CancellationToken cancellationToken)
+    /// <param name="correction">Lo que hay que sumar a la hora reportada: positivo si el reloj estaba atrasado, negativo si adelantado.</param>
+    public async Task RecordClockIncidentAsync(DeviceId deviceId, DateTime reportedFrom, DateTime reportedTo, TimeSpan correction, string reason, CancellationToken cancellationToken)
     {
         if (_incidents == null) return;
         var from = DateTime.SpecifyKind(reportedFrom, DateTimeKind.Unspecified);
         var to = DateTime.SpecifyKind(reportedTo, DateTimeKind.Unspecified);
         var existing = (await _incidents.GetForDeviceAsync(deviceId, cancellationToken))
-            .FirstOrDefault(x => x.OffsetMinutes == Minutes(behind) && x.ReportedTo >= from.AddHours(-1));
+            .FirstOrDefault(x => x.OffsetMinutes == Minutes(correction) && x.ReportedTo >= from.AddHours(-1));
         if (existing != null) existing.ExtendTo(to);
-        else await _incidents.AddAsync(DeviceClockIncident.Create(deviceId, from, to, Minutes(behind), reason), cancellationToken);
+        else await _incidents.AddAsync(DeviceClockIncident.Create(deviceId, from, to, Minutes(correction), reason), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
     }
 

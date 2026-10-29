@@ -4,15 +4,22 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.DTOs;
+using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
+using AttendanceSystem.Application.Features.Devices.Clock;
 using AttendanceSystem.Application.Features.Devices.Quarantine;
 using AttendanceSystem.Application.UnitTests.Features.Attendance.Phase02;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
+using AttendanceSystem.Domain.Aggregates.SystemAlertAggregate;
 using AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
+using AttendanceSystem.Domain.Services;
 using AttendanceSystem.Domain.ValueObjects;
 using FluentAssertions;
+using MediatR;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -146,7 +153,7 @@ public class RobustQuarantineTests
         var rig = new Rig();
         var previousDownload = Now.AddHours(-30);
         rig.Ingested("100", previousDownload.AddHours(-1)); // ya descargado antes: contexto, no se toca
-        var context = new PunchArrivalContext(PunchArrival.Download, TimeSpan.FromHours(24), Civil(previousDownload));
+        var context = new PunchArrivalContext(PunchArrival.Download, TimeSpan.FromHours(-24), Civil(previousDownload));
 
         var outcome = await rig.EvaluateAsync(context,
             ("100", previousDownload.AddHours(-1)),
@@ -155,6 +162,102 @@ public class RobustQuarantineTests
 
         outcome.Excluded.Should().BeEquivalentTo(new[] { 1, 2 });
         rig.Quarantine.Items.Should().OnlyContain(p => p.Rule == PunchQuarantineService.RuleSdkBehind && p.SuggestedOffsetMinutes == 1440);
+    }
+
+    [Fact]
+    public async Task AnSdkClockAheadAtDownload_QuarantinesWithANegativeCorrection()
+    {
+        var rig = new Rig();
+        var context = new PunchArrivalContext(PunchArrival.Download, TimeSpan.FromHours(2), Civil(Now.AddHours(-30)));
+
+        var outcome = await rig.EvaluateAsync(context,
+            ("200", Now.AddHours(-3)),  // checada de hace 5 h, grabada 2 h adelante
+            ("201", Now.AddHours(1)));  // checada de hace 1 h: quedó en el futuro
+
+        outcome.Excluded.Should().BeEquivalentTo(new[] { 0, 1 });
+        rig.Quarantine.Items.Select(p => (p.EmployeeId, p.Rule, p.SuggestedOffsetMinutes)).Should().BeEquivalentTo(new[]
+        {
+            ("200", PunchQuarantineService.RuleSdkAhead, (int?)-120),
+            ("201", PunchQuarantineService.RuleFuture, (int?)-120),
+        });
+    }
+
+    [Fact]
+    public async Task APunchFromTheFutureInRealTime_SuggestsHowFarAheadTheClockIs()
+    {
+        var rig = new Rig();
+        rig.Heartbeat.ConnectedSince = Now.AddDays(-1);
+
+        await rig.EvaluateAsync(Realtime, ("200", Now.AddMinutes(45)));
+
+        rig.Quarantine.Items.Single().Should().Match<QuarantinedPunch>(p => p.Rule == PunchQuarantineService.RuleFuture && p.SuggestedOffsetMinutes == -45);
+    }
+
+    [Theory]
+    [InlineData(1, null)]  // dentro de la tolerancia de sincronización: nada
+    [InlineData(5, 5)]     // pasa la tolerancia: se resincroniza (sin alerta, menos de 10)
+    public async Task ARealtimeDriftAboveTheSyncTolerance_Resyncs(int minutesBehind, int? expectedBehind)
+    {
+        var rig = new Rig();
+        rig.Heartbeat.ConnectedSince = Now.AddDays(-1);
+
+        var outcome = await rig.EvaluateAsync(Realtime, ("200", Now.AddMinutes(-minutesBehind)));
+
+        outcome.Excluded.Should().BeEmpty();
+        outcome.ClockBehind.Should().Be(expectedBehind is { } m ? TimeSpan.FromMinutes(m) : null);
+    }
+
+    // ---------- Descarga SDK: escalones del desfase ----------
+
+    [Theory]
+    [InlineData(-5, false, false)]  // sólo se resincroniza
+    [InlineData(-15, true, false)]  // alerta; los marcajes entran
+    [InlineData(-45, true, true)]   // cuarentena
+    [InlineData(45, true, true)]    // adelantado: también cuarentena
+    public async Task AnSdkDownload_HandlesTheClockDriftByTier(int driftMinutes, bool alerts, bool quarantines)
+    {
+        var rig = new Rig();
+        var previousDownload = Now.AddHours(-6);
+        rig.Device.UpdateLastDownloadAt(previousDownload);
+        var devices = new Mock<IDeviceRepository>();
+        devices.Setup(r => r.GetByIdAsync(It.IsAny<DeviceId>(), It.IsAny<CancellationToken>())).ReturnsAsync(rig.Device);
+
+        var client = new Mock<IDeviceClient>();
+        client.Setup(c => c.ConnectAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string?>(), It.IsAny<string?>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        client.Setup(c => c.GetDeviceTimeAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Civil(Now.AddMinutes(driftMinutes)));
+        client.Setup(c => c.SetDeviceClockAsync(It.IsAny<DateTime>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>())).ReturnsAsync(true);
+        DateTime? askedFrom = null;
+        client.Setup(c => c.GetAttendanceLogsAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .Callback<string, DateTime?, DateTime?, CancellationToken>((_, from, _, _) => askedFrom = from)
+            .ReturnsAsync(DeviceLogsResult.Empty());
+        var factory = new Mock<IDeviceClientFactory>();
+        factory.Setup(f => f.GetClient(It.IsAny<DeviceBrand>())).Returns(client.Object);
+        var resolver = new Mock<IAuthoritativeTimeZoneResolver>();
+        resolver.Setup(r => r.ResolveForDeviceAsync(It.IsAny<DeviceId?>(), It.IsAny<CancellationToken>())).ReturnsAsync(Zone);
+        var locks = new Mock<IDeviceLockService>();
+        locks.Setup(l => l.ExecuteWithLockAsync(It.IsAny<string>(), It.IsAny<Func<Task>>(), It.IsAny<CancellationToken>()))
+            .Returns<string, Func<Task>, CancellationToken>((_, action, _) => action());
+        var branches = new Mock<IBranchRepository>();
+        branches.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Domain.Aggregates.BranchAggregate.Branch>());
+        var alertRepository = new Mock<ISystemAlertRepository>();
+        var clock = new DeviceClockService(DefaultTimeNormalizer.Instance, resolver.Object, NullLogger<DeviceClockService>.Instance, new FixedTime(),
+            alertRepository.Object, rig.H.UnitOfWork);
+
+        var handler = new DownloadFromDeviceCommandHandler(
+            devices.Object, rig.H.AttendanceRepository, Mock.Of<IDownloadLogRepository>(), factory.Object, rig.H.UnitOfWork,
+            new AttendanceDeduplicationService(), NullLogger<DownloadFromDeviceCommandHandler>.Instance, Mock.Of<IMediator>(), locks.Object,
+            Mock.Of<IAdmsCommandService>(), branches.Object, Mock.Of<ILogTransferService>(), Mock.Of<IAttendanceJobScheduler>(),
+            Mock.Of<IEmployeeRepository>(), Mock.Of<IExternalAttendanceLogRepository>(), DefaultTimeNormalizer.Instance, resolver.Object,
+            clock: clock, quarantine: rig.Service);
+
+        await handler.Handle(new DownloadFromDeviceCommand(rig.Device.Id.Value), CancellationToken.None);
+
+        client.Verify(c => c.SetDeviceClockAsync(It.IsAny<DateTime>(), It.IsAny<TimeSpan>(), It.IsAny<CancellationToken>()), Times.Once);
+        alertRepository.Verify(a => a.AddAsync(It.IsAny<SystemAlert>(), It.IsAny<CancellationToken>()), alerts ? Times.Once() : Times.Never());
+        rig.Incidents.Items.Should().HaveCount(quarantines ? 1 : 0);
+        var behind = quarantines && driftMinutes < 0 ? TimeSpan.FromMinutes(-driftMinutes) + TimeSpan.FromDays(1) : TimeSpan.Zero;
+        askedFrom.Should().Be(Civil(previousDownload) - behind, "sólo un reloj atrasado en cuarentena obliga a leer más atrás");
+        if (quarantines) rig.Incidents.Items.Single().OffsetMinutes.Should().Be(-driftMinutes);
     }
 
     // ---------- Re-descargas ----------
@@ -211,6 +314,25 @@ public class RobustQuarantineTests
 
         rig.Device.SetAcceptPunchesFrom(Now.AddDays(-365));
         (await rig.EvaluateAsync(Redownload, ("501", Now.AddDays(-200)))).Excluded.Should().BeEmpty();
+    }
+
+    // ---------- Liberación ----------
+
+    [Fact]
+    public async Task Releasing_ValidatesTheCorrectedTimeAgainstTheConfiguredMinimumDate()
+    {
+        var rig = new Rig();
+        rig.Device.SetAcceptPunchesFrom(Now.AddDays(-10));
+        await rig.EvaluateAsync(Redownload, ("600", Now.AddDays(-20)));
+        var punch = rig.Quarantine.Items.Single();
+        var handler = new QuarantinedPunchDecisionHandler(rig.Quarantine, rig.H.AttendanceRepository, rig.H.UnitOfWork, DefaultTimeNormalizer.Instance, rig.Service);
+
+        var tooEarly = await handler.Handle(new ReleaseQuarantinedPunchCommand(punch.Id, 60, "Corregido"), CancellationToken.None);
+        tooEarly.IsFailure.Should().BeTrue("antes se aceptaba cualquier fecha posterior al año 2000");
+        tooEarly.Error.Should().Contain("fecha mínima");
+
+        var released = await handler.Handle(new ReleaseQuarantinedPunchCommand(punch.Id, 15 * 1440, "Corregido"), CancellationToken.None);
+        released.IsSuccess.Should().BeTrue();
     }
 
     // ---------- Liberación en bloque ----------

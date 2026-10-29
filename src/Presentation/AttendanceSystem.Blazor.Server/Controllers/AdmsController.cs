@@ -41,6 +41,7 @@ public class AdmsController : ControllerBase
     private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
     private readonly ISystemAlertRepository? _alerts;
     private readonly IDeviceHeartbeatTracker? _heartbeatTracker;
+    private readonly ISystemConfigurationRepository? _configuration;
 
     public AdmsController(
         ILogger<AdmsController> logger,
@@ -58,8 +59,10 @@ public class AdmsController : ControllerBase
         IServiceScopeFactory? scopeFactory = null,
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         ISystemAlertRepository? alerts = null,
-        IDeviceHeartbeatTracker? heartbeatTracker = null)
+        IDeviceHeartbeatTracker? heartbeatTracker = null,
+        ISystemConfigurationRepository? configuration = null)
     {
+        _configuration = configuration;
         _alerts = alerts;
         _logger = logger;
         _mediator = mediator;
@@ -889,9 +892,10 @@ public class AdmsController : ControllerBase
             await _deviceRepository.UpdateAsync(device);
 
             // Un marcaje posterior a la hora actual de la zona del reloj indica que su hora se adelantó: se le reenvían
-            // su zona y su hora (se aplican en su siguiente consulta de comandos) y queda una alerta.
+            // su zona y su hora (se aplican en su siguiente consulta de comandos) y, pasado el umbral, queda una alerta.
             var expectedNow = _timeNormalizer.ToCivilTime(DateTime.UtcNow, deviceTimeZone);
-            if (lastCheckTime.HasValue && lastCheckTime.Value - expectedNow > DeviceClockService.DriftTolerance)
+            var clockPolicy = await _configuration.GetClockPolicyAsync(CancellationToken.None);
+            if (lastCheckTime.HasValue && lastCheckTime.Value - expectedNow > clockPolicy.ClockSyncTolerance)
             {
                 var utcOffset = _timeNormalizer.ResolveTimeZone(deviceTimeZone).GetUtcOffset(DateTime.UtcNow);
                 foreach (var clockCommand in AdmsTimeZone.ClockCommands(expectedNow, utcOffset))
@@ -901,7 +905,7 @@ public class AdmsController : ControllerBase
                 AttendanceTelemetry.DeviceClockCorrections.Add(1, new KeyValuePair<string, object?>("outcome", "queued"));
                 _logger.LogWarning("ALERTA: el reloj ADMS {SN} envió un marcaje de {Reported:yyyy-MM-dd HH:mm:ss} cuando en su zona {TimeZone} eran las {Expected:yyyy-MM-dd HH:mm:ss}. Se encoló su resincronización.",
                     SN, lastCheckTime.Value, deviceTimeZone, expectedNow);
-                if (_alerts != null)
+                if (_alerts != null && lastCheckTime.Value - expectedNow > clockPolicy.ClockDriftAlert)
                 {
                     await _alerts.AddAsync(SystemAlert.Create(AlertType.DeviceClockDrift, device.Id.Value,
                         $"El reloj {device.Name} envió un marcaje de {lastCheckTime.Value:dd/MM/yyyy HH:mm} cuando en su zona eran las {expectedNow:dd/MM/yyyy HH:mm}; se reenviaron su zona y su hora."));
