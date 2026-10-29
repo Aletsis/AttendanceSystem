@@ -35,7 +35,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             set => SetProperty(ref _title, value);
         }
 
-        // El número es inmutable: solo se captura al registrar al empleado.
+        // Sucursal y número son inmutables: solo se capturan al registrar al empleado.
         public bool IsEditMode => _id.HasValue;
 
         public BranchLookupItem? SelectedBranch

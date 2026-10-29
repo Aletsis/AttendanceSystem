@@ -75,7 +75,10 @@ public sealed class ExternalEmployee : AggregateRoot<Guid>
         if (branchId is null)
             throw new DomainException("La sucursal es requerida.");
 
-        // El número no cambia: forma el ID del reloj (código de sucursal + número) y el de sus checadas en la nube.
+        // Sucursal y número no cambian: forman el ID del reloj (código de sucursal + número) y el de sus checadas en la nube.
+        if (branchId != BranchId)
+            throw new DomainException("La sucursal de un empleado externo no se puede cambiar una vez registrado.");
+
         if (!string.Equals(employeeNumber?.Trim(), EmployeeNumber, StringComparison.OrdinalIgnoreCase))
             throw new DomainException("El número de empleado externo no se puede cambiar una vez registrado.");
 
@@ -83,7 +86,6 @@ public sealed class ExternalEmployee : AggregateRoot<Guid>
         ValidateName(lastName, nameof(lastName));
         ValidateEmail(email);
 
-        BranchId = branchId;
         FirstName = firstName.Trim();
         LastName = lastName.Trim();
         Email = string.IsNullOrWhiteSpace(email) ? null : email.Trim();

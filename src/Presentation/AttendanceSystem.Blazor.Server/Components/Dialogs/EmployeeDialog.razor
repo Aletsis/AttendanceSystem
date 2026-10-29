@@ -94,7 +94,8 @@
                 <MudTabPanel Text="Puesto">
                     <MudGrid>
                         <MudItem xs="12" sm="6">
-                            <MudSelect T="Guid" Value="BranchId" ValueChanged="OnBranchChanged" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida">
+                            <MudSelect T="Guid" Value="BranchId" ValueChanged="OnBranchChanged" Label="Sucursal" Required="true" RequiredError="La sucursal es requerida"
+                                       Disabled="@ExternalEmployeeId.HasValue" HelperText="@(ExternalEmployeeId.HasValue ? "La sucursal de un empleado externo no se puede cambiar" : null)">
                                 @foreach (var branch in _branches)
                                 {
                                     <MudSelectItem T="Guid" Value="@branch.Id">@branch.Name</MudSelectItem>

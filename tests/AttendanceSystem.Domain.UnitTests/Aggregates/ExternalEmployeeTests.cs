@@ -85,6 +85,17 @@ public class ExternalEmployeeTests
     }
 
     [Fact]
+    public void Update_WhenBranchChanges_ShouldThrowDomainException()
+    {
+        var emp = ExternalEmployee.Create(_branchId, "101", "Carlos", "Santana");
+
+        var act = () => emp.Update(BranchId.CreateNew(), "101", "Carlos", "Santana", null, null, null, null, EmployeeStatus.Alta);
+
+        act.Should().Throw<DomainException>().WithMessage("*sucursal*no se puede cambiar*");
+        emp.BranchId.Should().Be(_branchId);
+    }
+
+    [Fact]
     public void Deactivate_And_Activate_ShouldUpdateStatus()
     {
         // Arrange
