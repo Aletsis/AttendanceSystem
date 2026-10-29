@@ -78,8 +78,17 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
 
                 if (externalEmployee == null)
                 {
+                    // El número solo es único dentro de su sucursal: si se repite en varias no se adivina cuál enviar.
                     var allExternals = await _externalEmployeeRepository.GetAllAsync(cancellationToken);
-                    externalEmployee = allExternals.FirstOrDefault(e => e.EmployeeNumber.Equals(request.EmployeeId.Trim(), StringComparison.OrdinalIgnoreCase));
+                    var matches = allExternals
+                        .Where(e => e.EmployeeNumber.Equals(request.EmployeeId.Trim(), StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                    if (matches.Count > 1)
+                    {
+                        return Result<bool>.Failure(
+                            $"El número {request.EmployeeId} existe en {matches.Count} sucursales externas. Seleccione al empleado desde su sucursal.");
+                    }
+                    externalEmployee = matches.SingleOrDefault();
                 }
             }
 
