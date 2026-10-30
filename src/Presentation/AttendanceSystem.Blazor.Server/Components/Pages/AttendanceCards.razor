@@ -296,13 +296,13 @@
                         {
                             <tr>
                                 <td>@day.Date.ToString("dd/MM/yyyy")</td>
-                                <td>@day.Date.ToString("ddd")</td>
+                                <td>@day.Date.ToString("ddd", CardCulture)</td>
                                 <td>
                                     @if (day.ShiftType == ShiftType.Partido && day.ScheduledBlock2CheckIn.HasValue)
                                     {
                                         <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>B1: @(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</div>
-                                            <div>B2: @(day.ScheduledBlock2CheckIn?.ToString(@"hh\:mm") ?? "--")</div>
+                                            <div>@(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</div>
+                                            <div>@(day.ScheduledBlock2CheckIn?.ToString(@"hh\:mm") ?? "--")</div>
                                         </div>
                                     }
                                     else
@@ -314,8 +314,8 @@
                                     @if (day.ShiftType == ShiftType.Partido && day.ScheduledBlock2CheckOut.HasValue)
                                     {
                                         <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>B1: @(day.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")</div>
-                                            <div>B2: @(day.ScheduledBlock2CheckOut?.ToString(@"hh\:mm") ?? "--")</div>
+                                            <div>@(day.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")</div>
+                                            <div>@(day.ScheduledBlock2CheckOut?.ToString(@"hh\:mm") ?? "--")</div>
                                         </div>
                                     }
                                     else
@@ -327,8 +327,8 @@
                                     @if (day.ShiftType == ShiftType.Partido)
                                     {
                                         <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>B1: @(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</div>
-                                            <div>B2: @(day.ActualBlock2CheckIn?.ToString("HH:mm") ?? (day.MissingBlock2CheckIn ? "--" : ""))</div>
+                                            <div>@(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</div>
+                                            <div>@(day.ActualBlock2CheckIn?.ToString("HH:mm") ?? (day.MissingBlock2CheckIn ? "--" : ""))</div>
                                         </div>
                                     }
                                     else
@@ -340,8 +340,8 @@
                                     @if (day.ShiftType == ShiftType.Partido)
                                     {
                                         <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>B1: @(day.ActualBlock1CheckOut?.ToString("HH:mm") ?? (day.MissingBlock1CheckOut ? "--" : ""))</div>
-                                            <div>B2: @(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</div>
+                                            <div>@(day.ActualBlock1CheckOut?.ToString("HH:mm") ?? (day.MissingBlock1CheckOut ? "--" : ""))</div>
+                                            <div>@(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</div>
                                         </div>
                                     }
                                     else
@@ -610,10 +610,26 @@ else if (HasSearched)
         }
     }
 
+    // Imprime el mismo PDF que "PDF" descarga, para que ambas salidas luzcan igual.
     private async Task Print()
     {
-        await JS.InvokeVoidAsync("print");
+        if (!GroupedData.Any()) return;
+
+        try
+        {
+            using var stream = new MemoryStream(GenerateCardsPdf());
+            using var streamRef = new DotNetStreamReference(stream: stream);
+
+            await JS.InvokeVoidAsync("printPdfFromStream", streamRef);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error al imprimir: {ex.Message}", Severity.Error);
+        }
     }
+
+    private byte[] GenerateCardsPdf() =>
+        ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo, IncludeOvertime);
 
     private async Task ExportPdf()
     {
@@ -621,7 +637,7 @@ else if (HasSearched)
         
         try
         {
-            var pdfBytes = ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo, IncludeOvertime);
+            var pdfBytes = GenerateCardsPdf();
             var fileName = $"Tarjetas_Asistencia_{DateTime.Now:yyyyMMdd_HHmm}.pdf";
             
             using var stream = new MemoryStream(pdfBytes);
@@ -634,6 +650,9 @@ else if (HasSearched)
             Snackbar.Add($"Error al exportar PDF: {ex.Message}", Severity.Error);
         }
     }
+
+    // La tarjeta se muestra en español sin importar el idioma del servidor, igual que el PDF.
+    private static readonly System.Globalization.CultureInfo CardCulture = new("es-MX");
 
     private string FormatMinuteString(int minutes)
     {
