@@ -9,6 +9,7 @@
 @using AttendanceSystem.Domain.ValueObjects
 @using AttendanceSystem.Application.Common
 @using AttendanceSystem.Domain.Enumerations
+@using AttendanceSystem.Application.Features.Reports
 @inject IMediator Mediator
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -110,6 +111,19 @@
     .total-row {
         font-weight: bold;
         background-color: #f0f0f0;
+    }
+
+    .observations-box {
+        border: 1px solid #000;
+        margin-top: 8px;
+        padding: 4px 6px;
+        min-height: 60px;
+        font-size: 0.75rem;
+        text-align: left;
+    }
+
+    .observations-title {
+        font-weight: bold;
     }
 
     .signature-section {
@@ -222,6 +236,13 @@
         <MudItem xs="12" sm="3" Class="d-flex align-center">
             <MudCheckBox T="bool" @bind-Value="IncludeOvertime" Label="Incluir Horas Extra" Color="Color.Primary" />
         </MudItem>
+        <MudItem xs="12" Class="d-flex align-center flex-wrap">
+            <MudText Typo="Typo.body2" Class="mr-2">Observaciones:</MudText>
+            @foreach (var (kind, label) in ObservationOptions)
+            {
+                <MudCheckBox T="bool" Value="@ObservationKinds.HasFlag(kind)" ValueChanged="@(on => ToggleObservation(kind, on))" Label="@label" Color="Color.Primary" Dense="true" />
+            }
+        </MudItem>
 
         @if (FilterType == "Range")
         {
@@ -294,61 +315,15 @@
                     <tbody>
                         @foreach (var day in group.Value.OrderBy(x => x.Date))
                         {
+                            var split = day.ShiftType == ShiftType.Partido;
                             <tr>
                                 <td>@day.Date.ToString("dd/MM/yyyy")</td>
                                 <td>@day.Date.ToString("ddd", CardCulture)</td>
-                                <td>
-                                    @if (day.ShiftType == ShiftType.Partido && day.ScheduledBlock2CheckIn.HasValue)
-                                    {
-                                        <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>@(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")</div>
-                                            <div>@(day.ScheduledBlock2CheckIn?.ToString(@"hh\:mm") ?? "--")</div>
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        @(day.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--")
-                                    }
-                                </td>
-                                <td>
-                                    @if (day.ShiftType == ShiftType.Partido && day.ScheduledBlock2CheckOut.HasValue)
-                                    {
-                                        <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>@(day.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")</div>
-                                            <div>@(day.ScheduledBlock2CheckOut?.ToString(@"hh\:mm") ?? "--")</div>
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        @(day.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--")
-                                    }
-                                </td>
-                                <td>
-                                    @if (day.ShiftType == ShiftType.Partido)
-                                    {
-                                        <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>@(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))</div>
-                                            <div>@(day.ActualBlock2CheckIn?.ToString("HH:mm") ?? (day.MissingBlock2CheckIn ? "--" : ""))</div>
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        @(day.ActualCheckIn?.ToString("HH:mm") ?? (day.MissingCheckIn ? "--" : ""))
-                                    }
-                                </td>
-                                <td>
-                                    @if (day.ShiftType == ShiftType.Partido)
-                                    {
-                                        <div style="font-size: 0.8em; line-height: 1.1;">
-                                            <div>@(day.ActualBlock1CheckOut?.ToString("HH:mm") ?? (day.MissingBlock1CheckOut ? "--" : ""))</div>
-                                            <div>@(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))</div>
-                                        </div>
-                                    }
-                                    else
-                                    {
-                                        @(day.ActualCheckOut?.ToString("HH:mm") ?? (day.MissingCheckOut ? "--" : ""))
-                                    }
-                                </td>
+                                @* Turno partido: los dos bloques en un renglón, igual que el PDF. *@
+                                <td>@(split && day.ScheduledBlock2CheckIn.HasValue ? $"{Scheduled(day.ScheduledCheckIn)} / {Scheduled(day.ScheduledBlock2CheckIn)}" : Scheduled(day.ScheduledCheckIn))</td>
+                                <td>@(split && day.ScheduledBlock2CheckOut.HasValue ? $"{Scheduled(day.ScheduledCheckOut)} / {Scheduled(day.ScheduledBlock2CheckOut)}" : Scheduled(day.ScheduledCheckOut))</td>
+                                <td>@(split ? $"{Punch(day.ActualCheckIn, day.MissingCheckIn)} / {Punch(day.ActualBlock2CheckIn, day.MissingBlock2CheckIn)}" : Punch(day.ActualCheckIn, day.MissingCheckIn))</td>
+                                <td>@(split ? $"{Punch(day.ActualBlock1CheckOut, day.MissingBlock1CheckOut)} / {Punch(day.ActualCheckOut, day.MissingCheckOut)}" : Punch(day.ActualCheckOut, day.MissingCheckOut))</td>
                                 @if (IncludeOvertime)
                                 {
                                     <td>@(FormatMinuteString(day.RoundedOvertimeMinutes))</td>
@@ -366,6 +341,14 @@
                         </tfoot>
                     }
                 </table>
+
+                <div class="observations-box">
+                    <div class="observations-title">Observaciones</div>
+                    @foreach (var line in AttendanceCardObservations.Lines(group.Value, ObservationKinds))
+                    {
+                        <div>@line</div>
+                    }
+                </div>
 
                 <div class="signature-section">
                     <div class="legal-text">
@@ -397,6 +380,16 @@ else if (HasSearched)
 
 @code {
     private bool IncludeOvertime = true;
+    private CardObservationKinds ObservationKinds = CardObservationKinds.All;
+
+    private static readonly (CardObservationKinds Kind, string Label)[] ObservationOptions =
+    {
+        (CardObservationKinds.Absence, "Falta"),
+        (CardObservationKinds.MissingCheckIn, "Sin entrada"),
+        (CardObservationKinds.MissingCheckOut, "Sin salida"),
+        (CardObservationKinds.EarlyDeparture, "Salida anticipada"),
+        (CardObservationKinds.TemporaryExit, "Salida temporal")
+    };
     private string DateSelectionMode = "Range"; // "Range" or "Period"
     private int SelectedYear = DateTime.Today.Year;
     private WorkPeriodMode SelectedPeriodMode;
@@ -629,7 +622,7 @@ else if (HasSearched)
     }
 
     private byte[] GenerateCardsPdf() =>
-        ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo, IncludeOvertime);
+        ReportService.GenerateAttendanceCardsPdf(GroupedData, StartDate!.Value, EndDate!.Value, _config?.CompanyName ?? "Mi Empresa", _config?.CompanyLogo, IncludeOvertime, ObservationKinds);
 
     private async Task ExportPdf()
     {
@@ -652,7 +645,14 @@ else if (HasSearched)
     }
 
     // La tarjeta se muestra en español sin importar el idioma del servidor, igual que el PDF.
-    private static readonly System.Globalization.CultureInfo CardCulture = new("es-MX");
+    private static readonly System.Globalization.CultureInfo CardCulture = AttendanceCardObservations.Culture;
+
+    private void ToggleObservation(CardObservationKinds kind, bool on) =>
+        ObservationKinds = on ? ObservationKinds | kind : ObservationKinds & ~kind;
+
+    private static string Scheduled(TimeSpan? time) => time?.ToString(@"hh\:mm") ?? "--";
+
+    private static string Punch(DateTime? time, bool missing) => time?.ToString("HH:mm") ?? (missing ? "--" : "");
 
     private string FormatMinuteString(int minutes)
     {
