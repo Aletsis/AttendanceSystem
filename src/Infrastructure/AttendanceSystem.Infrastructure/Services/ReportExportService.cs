@@ -794,7 +794,7 @@ public class ReportExportService : IReportExportService
                foreach (var record in records)
                {
                    table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("dd/MM/yyyy"));
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd"));
+                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd", CardCulture));
                    var schedInStr = (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido && record.ScheduledBlock2CheckIn.HasValue)
                        ? $"{record.ScheduledCheckIn:hh\\:mm}\n{record.ScheduledBlock2CheckIn:hh\\:mm}"
                        : (record.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
@@ -807,24 +807,24 @@ public class ReportExportService : IReportExportService
                    string outStr;
                    if (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido)
                    {
-                       var b1In = FormatDateTime(record.ActualCheckIn, record.Date);
+                       var b1In = FormatCardTime(record.ActualCheckIn);
                        if (string.IsNullOrEmpty(b1In) && record.MissingCheckIn) b1In = "--";
-                       var b2In = FormatDateTime(record.ActualBlock2CheckIn, record.Date);
+                       var b2In = FormatCardTime(record.ActualBlock2CheckIn);
                        if (string.IsNullOrEmpty(b2In) && record.MissingBlock2CheckIn) b2In = "--";
                        inStr = $"{b1In}\n{b2In}";
 
-                       var b1Out = FormatDateTime(record.ActualBlock1CheckOut, record.Date);
+                       var b1Out = FormatCardTime(record.ActualBlock1CheckOut);
                        if (string.IsNullOrEmpty(b1Out) && record.MissingBlock1CheckOut) b1Out = "--";
-                       var b2Out = FormatDateTime(record.ActualCheckOut, record.Date);
+                       var b2Out = FormatCardTime(record.ActualCheckOut);
                        if (string.IsNullOrEmpty(b2Out) && record.MissingCheckOut) b2Out = "--";
                        outStr = $"{b1Out}\n{b2Out}";
                    }
                    else
                    {
-                       inStr = FormatDateTime(record.ActualCheckIn, record.Date);
+                       inStr = FormatCardTime(record.ActualCheckIn);
                        if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
 
-                       outStr = FormatDateTime(record.ActualCheckOut, record.Date);
+                       outStr = FormatCardTime(record.ActualCheckOut);
                        if (string.IsNullOrEmpty(outStr) && record.MissingCheckOut) outStr = "--";
                    }
 
@@ -872,6 +872,12 @@ public class ReportExportService : IReportExportService
     }
 
 
+
+    // La tarjeta se imprime en español sin importar el idioma del servidor.
+    private static readonly CultureInfo CardCulture = new("es-MX");
+
+    // La tarjeta muestra solo la hora, también cuando la salida cae al día siguiente.
+    private static string FormatCardTime(DateTime? dt) => dt?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? string.Empty;
 
     private string FormatMinuteString(int minutes)
     {
