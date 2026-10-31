@@ -50,6 +50,31 @@
             anchorElement.remove();
             URL.revokeObjectURL(url);
         }
+
+        window.printPdfFromStream = async (contentStreamReference) => {
+            const arrayBuffer = await contentStreamReference.arrayBuffer();
+            const url = URL.createObjectURL(new Blob([arrayBuffer], { type: 'application/pdf' }));
+            // El marco anterior se quita hasta la siguiente impresión, por si el diálogo seguía abierto.
+            const previous = document.getElementById('pdf-print-frame');
+            if (previous) {
+                URL.revokeObjectURL(previous.src);
+                previous.remove();
+            }
+            const frame = document.createElement('iframe');
+            frame.id = 'pdf-print-frame';
+            frame.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+            frame.onload = () => {
+                try {
+                    frame.contentWindow.focus();
+                    frame.contentWindow.print();
+                } catch {
+                    // Navegadores que no permiten imprimir el visor de PDF desde un marco.
+                    window.open(url, '_blank');
+                }
+            };
+            frame.src = url;
+            document.body.appendChild(frame);
+        }
     </script>
 </body>
 

@@ -1,3 +1,4 @@
+using AttendanceSystem.Application.Features.Reports;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Application.Features.Employees;
@@ -663,7 +664,8 @@ public class ReportExportService : IReportExportService
         DateTime endDate,
         string companyName,
         byte[]? companyLogo,
-        bool includeOvertime = true)
+        bool includeOvertime = true,
+        CardObservationKinds observationKinds = CardObservationKinds.All)
     {
         var durationDays = (endDate.Date - startDate.Date).TotalDays + 1;
         bool useHalfPage = durationDays <= 7;
@@ -690,7 +692,7 @@ public class ReportExportService : IReportExportService
                             // Card 1
                             // Use Height to constrain it to half page (Letter height ~28cm, margin 2cm = 26cm. Half ~13cm).
                             // We use 12.5cm to be safe.
-                            col.Item().Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item1, startDate, endDate, companyName, companyLogo, includeOvertime));
+                            col.Item().Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item1, startDate, endDate, companyName, companyLogo, includeOvertime, observationKinds, ObservationsHeightCm(useHalfPage)));
 
                             if (item2.HasValue)
                             {
@@ -699,7 +701,7 @@ public class ReportExportService : IReportExportService
                                    .BorderBottom(1).BorderColor(Colors.Grey.Medium);
 
                                 // Card 2
-                                col.Item().PaddingTop(0.2f, Unit.Centimetre).Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item2.Value, startDate, endDate, companyName, companyLogo, includeOvertime));
+                                col.Item().PaddingTop(0.2f, Unit.Centimetre).Height(12.5f, Unit.Centimetre).Element(c => ComposeAttendanceCard(c, item2.Value, startDate, endDate, companyName, companyLogo, includeOvertime, observationKinds, ObservationsHeightCm(useHalfPage)));
                             }
                         });
                     });
@@ -717,14 +719,14 @@ public class ReportExportService : IReportExportService
                         page.PageColor(Colors.White);
                         page.DefaultTextStyle(x => x.FontSize(10).FontFamily(Fonts.Arial));
 
-                        page.Content().Element(c => ComposeAttendanceCard(c, group, startDate, endDate, companyName, companyLogo, includeOvertime));
+                        page.Content().Element(c => ComposeAttendanceCard(c, group, startDate, endDate, companyName, companyLogo, includeOvertime, observationKinds, ObservationsHeightCm(useHalfPage)));
                     });
                 }
             }
         }).GeneratePdf();
     }
 
-    private void ComposeAttendanceCard(IContainer container, KeyValuePair<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> group, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo, bool includeOvertime)
+    private void ComposeAttendanceCard(IContainer container, KeyValuePair<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> group, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo, bool includeOvertime, CardObservationKinds observationKinds, float observationsHeightCm)
     {
         var employeeInfo = group.Key;
         var records = group.Value.OrderBy(x => x.Date).ToList();
@@ -793,46 +795,30 @@ public class ReportExportService : IReportExportService
                // Table Body
                foreach (var record in records)
                {
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("dd/MM/yyyy"));
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(record.Date.ToString("ddd"));
-                   var schedInStr = (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido && record.ScheduledBlock2CheckIn.HasValue)
-                       ? $"{record.ScheduledCheckIn:hh\\:mm}\n{record.ScheduledBlock2CheckIn:hh\\:mm}"
-                       : (record.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--");
-                   var schedOutStr = (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido && record.ScheduledBlock2CheckOut.HasValue)
-                       ? $"{record.ScheduledCheckOut:hh\\:mm}\n{record.ScheduledBlock2CheckOut:hh\\:mm}"
-                       : (record.ScheduledCheckOut?.ToString(@"hh\:mm") ?? "--");
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(schedInStr);
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(schedOutStr);
-                   string inStr;
-                   string outStr;
-                   if (record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido)
-                   {
-                       var b1In = FormatDateTime(record.ActualCheckIn, record.Date);
-                       if (string.IsNullOrEmpty(b1In) && record.MissingCheckIn) b1In = "--";
-                       var b2In = FormatDateTime(record.ActualBlock2CheckIn, record.Date);
-                       if (string.IsNullOrEmpty(b2In) && record.MissingBlock2CheckIn) b2In = "--";
-                       inStr = $"{b1In}\n{b2In}";
+                   var split = record.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido;
+                   // Turno partido: las horas de los dos bloques en un renglón ("08:00 / 15:00").
+                   var schedInStr = split && record.ScheduledBlock2CheckIn.HasValue
+                       ? $"{FormatScheduled(record.ScheduledCheckIn)} / {FormatScheduled(record.ScheduledBlock2CheckIn)}"
+                       : FormatScheduled(record.ScheduledCheckIn);
+                   var schedOutStr = split && record.ScheduledBlock2CheckOut.HasValue
+                       ? $"{FormatScheduled(record.ScheduledCheckOut)} / {FormatScheduled(record.ScheduledBlock2CheckOut)}"
+                       : FormatScheduled(record.ScheduledCheckOut);
+                   var inStr = split
+                       ? $"{FormatCardPunch(record.ActualCheckIn, record.MissingCheckIn)} / {FormatCardPunch(record.ActualBlock2CheckIn, record.MissingBlock2CheckIn)}"
+                       : FormatCardPunch(record.ActualCheckIn, record.MissingCheckIn);
+                   var outStr = split
+                       ? $"{FormatCardPunch(record.ActualBlock1CheckOut, record.MissingBlock1CheckOut)} / {FormatCardPunch(record.ActualCheckOut, record.MissingCheckOut)}"
+                       : FormatCardPunch(record.ActualCheckOut, record.MissingCheckOut);
 
-                       var b1Out = FormatDateTime(record.ActualBlock1CheckOut, record.Date);
-                       if (string.IsNullOrEmpty(b1Out) && record.MissingBlock1CheckOut) b1Out = "--";
-                       var b2Out = FormatDateTime(record.ActualCheckOut, record.Date);
-                       if (string.IsNullOrEmpty(b2Out) && record.MissingCheckOut) b2Out = "--";
-                       outStr = $"{b1Out}\n{b2Out}";
-                   }
-                   else
-                   {
-                       inStr = FormatDateTime(record.ActualCheckIn, record.Date);
-                       if (string.IsNullOrEmpty(inStr) && record.MissingCheckIn) inStr = "--";
-
-                       outStr = FormatDateTime(record.ActualCheckOut, record.Date);
-                       if (string.IsNullOrEmpty(outStr) && record.MissingCheckOut) outStr = "--";
-                   }
-
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(inStr);
-                   table.Cell().Border(1).AlignCenter().Padding(2).Text(outStr);
+                   BodyCell(table).Text(record.Date.ToString("dd/MM/yyyy"));
+                   BodyCell(table).Text(record.Date.ToString("ddd", CardCulture));
+                   BodyCell(table).Text(schedInStr);
+                   BodyCell(table).Text(schedOutStr);
+                   BodyCell(table).Text(inStr);
+                   BodyCell(table).Text(outStr);
                    if (includeOvertime)
                    {
-                       table.Cell().Border(1).AlignCenter().Padding(2).Text(FormatMinuteString(record.RoundedOvertimeMinutes));
+                       BodyCell(table).Text(FormatMinuteString(record.RoundedOvertimeMinutes));
                    }
                }
 
@@ -847,8 +833,22 @@ public class ReportExportService : IReportExportService
                }
            });
 
+            // Observaciones: altura fija para no mover la firma; si no cabe, el texto se reduce.
+            var observations = AttendanceCardObservations.Lines(records, observationKinds);
+            col.Item().PaddingTop(6).Height(observationsHeightCm, Unit.Centimetre).Border(1).Padding(3).Column(box =>
+            {
+                box.Item().Text("Observaciones").Bold().FontSize(8);
+                box.Item().ScaleToFit().Column(lines =>
+                {
+                    foreach (var line in observations)
+                    {
+                        lines.Item().Text(line).FontSize(7);
+                    }
+                });
+            });
+
             // Signature Section 
-            col.Item().PaddingTop(15).Row(row =>
+            col.Item().PaddingTop(8).Row(row =>
              {
                  // Legal Text
                  row.RelativeItem(2).PaddingRight(10).Text("Previamente de asentar mi firma y mi huella digital en el presente documento, manifiesto que he revisado la relacion de entradas y salidas que el mismo contiene, por lo que acepto de conformidad dicha relacion de fechas y horas que se plasman en esta tarjeta, pues reflejan Fielmente los registros que hice de mis ingresos y egresos en el presente centro de trabajo.")
@@ -872,6 +872,20 @@ public class ReportExportService : IReportExportService
     }
 
 
+
+    // La tarjeta se imprime en español sin importar el idioma del servidor.
+    private static readonly CultureInfo CardCulture = AttendanceCardObservations.Culture;
+
+    private static float ObservationsHeightCm(bool halfPage) => halfPage ? 2.2f : 4.5f;
+
+    private static IContainer BodyCell(TableDescriptor table) =>
+        table.Cell().Border(1).AlignCenter().PaddingVertical(1).PaddingHorizontal(2).DefaultTextStyle(x => x.FontSize(9));
+
+    private static string FormatScheduled(TimeSpan? time) => time?.ToString(@"hh\:mm") ?? "--";
+
+    // La tarjeta muestra solo la hora, también cuando la salida cae al día siguiente.
+    private static string FormatCardPunch(DateTime? dt, bool missing) =>
+        dt?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? (missing ? "--" : string.Empty);
 
     private string FormatMinuteString(int minutes)
     {
