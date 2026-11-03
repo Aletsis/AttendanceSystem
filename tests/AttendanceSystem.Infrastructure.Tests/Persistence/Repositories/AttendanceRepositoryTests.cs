@@ -104,4 +104,18 @@ public class AttendanceRepositoryTests
         hasCheckIn.Should().BeTrue();
         hasCheckInOtherDate.Should().BeFalse();
     }
+
+    [Fact]
+    public async Task HasCheckInForDateAsync_IgnoresVoidedPunches()
+    {
+        using var context = CreateInMemoryDbContext();
+        var repository = new AttendanceRepository(context);
+        var emp = EmployeeId.From("EMP-002");
+        var rec = AttendanceRecord.Create(emp, DeviceId.From("DEV-01"), new DateTime(2026, 9, 17, 8, 15, 0, DateTimeKind.Utc), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        rec.Void("rh", "marcaje de otro empleado");
+        await repository.AddAsync(rec);
+        await context.SaveChangesAsync();
+
+        (await repository.HasCheckInForDateAsync(emp, new DateTime(2026, 9, 17))).Should().BeFalse();
+    }
 }
