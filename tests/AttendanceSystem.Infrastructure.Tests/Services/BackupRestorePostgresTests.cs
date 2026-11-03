@@ -300,6 +300,79 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
         toc.Should().Contain("restore_probe").And.NotContain("system_maintenance");
     }
 
+    private async Task SetHangfireMarkerAsync(string value) =>
+        await ExecAsync($@"
+            CREATE SCHEMA IF NOT EXISTS hangfire;
+            CREATE TABLE IF NOT EXISTS hangfire.audit_marker (id int PRIMARY KEY, value text NOT NULL);
+            INSERT INTO hangfire.audit_marker (id, value) VALUES (1, '{value}')
+            ON CONFLICT (id) DO UPDATE SET value = EXCLUDED.value;");
+
+    private async Task<string> TocAsync(BackupService service, string backupFile)
+    {
+        var psi = new System.Diagnostics.ProcessStartInfo(service.FindPgToolPath("pg_restore"), $"-l \"{backupFile}\"")
+        {
+            RedirectStandardOutput = true,
+            UseShellExecute = false
+        };
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        var toc = await process.StandardOutput.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        return toc;
+    }
+
+    /// <summary>Respaldo como los de versiones anteriores, que sí incluían el esquema de Hangfire.</summary>
+    private async Task<string> CreateBackupWithHangfireAsync(BackupService service)
+    {
+        var connection = new NpgsqlConnectionStringBuilder(_fixture.ConnectionString);
+        var path = Path.Combine(_backupDir, $"anterior_{Guid.NewGuid():N}.backup");
+        var psi = new System.Diagnostics.ProcessStartInfo(service.FindPgToolPath("pg_dump"),
+            $"-h {connection.Host} -p {connection.Port} -U \"{connection.Username}\" -w -F c -b -f \"{path}\" \"{connection.Database}\"")
+        {
+            UseShellExecute = false,
+            RedirectStandardError = true
+        };
+        psi.Environment["PGPASSWORD"] = connection.Password;
+        using var process = System.Diagnostics.Process.Start(psi)!;
+        var error = await process.StandardError.ReadToEndAsync();
+        await process.WaitForExitAsync();
+        process.ExitCode.Should().Be(0, error);
+        (await TocAsync(service, path)).Should().Contain("hangfire");
+        return path;
+    }
+
+    [Fact]
+    public async Task Backups_DoNotCarryTheHangfireSchema()
+    {
+        var (service, _) = CreateService();
+        if (!ToolsAvailable(service)) return;
+
+        await SetProbeAsync("antes");
+        await SetHangfireMarkerAsync("cola actual");
+        var backup = await service.CreateDatabaseBackupAsync();
+        backup.Success.Should().BeTrue(backup.Message);
+
+        (await TocAsync(service, backup.BackupFilePath!)).Should().Contain("restore_probe").And.NotContain("hangfire");
+    }
+
+    [Fact]
+    public async Task Restore_KeepsTheCurrentHangfireState_EvenFromABackupThatCarriedIt()
+    {
+        var (service, _) = CreateService();
+        if (!ToolsAvailable(service)) return;
+
+        await SetProbeAsync("antes");
+        await SetHangfireMarkerAsync("del respaldo");
+        var oldBackup = await CreateBackupWithHangfireAsync(service);
+        await SetProbeAsync("despues");
+        await SetHangfireMarkerAsync("vigente");
+
+        var result = await service.RestoreBackupAsync(oldBackup);
+
+        result.Success.Should().BeTrue(result.Message);
+        (await ProbeValueAsync()).Should().Be("antes", "los datos sí vuelven al respaldo");
+        (await ScalarAsync("SELECT value FROM hangfire.audit_marker WHERE id = 1")).Should().Be("vigente", "la cola y programación de Hangfire son del servidor");
+    }
+
     [Fact]
     public async Task PersistedFailedState_SurvivesARestart_AndASuccessfulRestoreClearsIt()
     {
