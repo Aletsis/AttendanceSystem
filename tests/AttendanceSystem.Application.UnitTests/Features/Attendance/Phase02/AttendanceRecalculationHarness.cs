@@ -213,7 +213,7 @@ internal sealed class InMemoryAttendanceRecordRepository : IAttendanceRepository
     public Task AddAsync(AttendanceRecord record, CancellationToken cancellationToken = default) { _store.Records.Add(record); return Task.CompletedTask; }
     public Task AddRangeAsync(IEnumerable<AttendanceRecord> records, CancellationToken cancellationToken = default) { _store.Records.AddRange(records); return Task.CompletedTask; }
     public Task UpdateAsync(AttendanceRecord record, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task<bool> HasCheckInForDateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<bool> HasPunchForDateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<AttendanceRecord>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AttendanceRecord>>(_store.Records.ToList());
 }
 

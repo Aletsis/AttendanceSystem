@@ -103,7 +103,7 @@ public class CriticalAbsenceAlertTests
             var shifts = new Mock<IShiftRepository>();
             shifts.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(Shifts);
             var attendance = new Mock<IAttendanceRepository>();
-            attendance.Setup(r => r.HasCheckInForDateAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
+            attendance.Setup(r => r.HasPunchForDateAsync(It.IsAny<EmployeeId>(), It.IsAny<DateTime>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((EmployeeId e, DateTime d, CancellationToken _) => CheckIns.Contains((e.Value, d.Date)));
             var alerts = new Mock<ISystemAlertRepository>();
             alerts.Setup(r => r.ExistsAsync(It.IsAny<AlertType>(), It.IsAny<string>(), It.IsAny<CancellationToken>()))

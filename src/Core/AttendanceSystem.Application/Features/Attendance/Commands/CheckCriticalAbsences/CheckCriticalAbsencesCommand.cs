@@ -113,10 +113,11 @@ public sealed class CheckCriticalAbsencesCommandHandler : IRequestHandler<CheckC
                     if (localNow < alertAt) continue;
                     if (workDate < today && alertAt.Date < today) continue; // ya se revisó ayer
 
-                    // 5. Check if already checked in (una entrada pasada la medianoche cuenta para la jornada de ayer)
-                    var hasCheckIn = await _attendanceRepository.HasCheckInForDateAsync(employee.Id, workDate, cancellationToken) ||
-                                     (workDate < today && await _attendanceRepository.HasCheckInForDateAsync(employee.Id, today, cancellationToken));
-                    if (hasCheckIn) continue;
+                    // 5. Sólo se avisa si no hay ningún marcaje: cualquiera (también uno registrado como salida por error)
+                    // prueba que llegó. Uno pasada la medianoche cuenta para la jornada de ayer.
+                    var hasPunch = await _attendanceRepository.HasPunchForDateAsync(employee.Id, workDate, cancellationToken) ||
+                                   (workDate < today && await _attendanceRepository.HasPunchForDateAsync(employee.Id, today, cancellationToken));
+                    if (hasPunch) continue;
 
                     // 6. Check if alert already sent for that day
                     var alertKey = $"{employee.Id.Value}_{workDate:yyyyMMdd}";

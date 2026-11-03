@@ -161,7 +161,7 @@ public class AttendanceRepository : IAttendanceRepository
         return Task.CompletedTask;
     }
 
-    public async Task<bool> HasCheckInForDateAsync(
+    public async Task<bool> HasPunchForDateAsync(
         EmployeeId employeeId,
         DateTime date,
         CancellationToken cancellationToken = default)
@@ -174,7 +174,6 @@ public class AttendanceRepository : IAttendanceRepository
             // Un marcaje anulado (corregido o reemplazado) no prueba que el empleado llegó.
             .AnyAsync(r => r.EmployeeId == employeeId &&
                            r.VoidedAt == null &&
-                           r.CheckType == AttendanceSystem.Domain.Enumerations.CheckType.CheckIn &&
                            ((r.WorkDate.HasValue && r.WorkDate.Value == targetDate) ||
                             (!r.WorkDate.HasValue && r.CheckTime >= expandedStartUtc && r.CheckTime <= expandedEndUtc)),
                       cancellationToken);
