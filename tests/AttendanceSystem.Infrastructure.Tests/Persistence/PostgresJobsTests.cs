@@ -123,4 +123,28 @@ public class PostgresJobsTests : IClassFixture<PostgresTestDatabaseFixture>
         (await check.SystemAlerts.AsNoTracking().CountAsync(a => a.Type == AlertType.DeviceMemoryFull && a.ReferenceId == deviceId && !a.IsResolved))
             .Should().Be(1);
     }
+
+    [Fact]
+    public async Task UnfinishedCalculations_AreCountedByTheDatesTheyTouch()
+    {
+        if (!_fixture.IsAvailable) return;
+
+        await using (var context = _fixture.CreateDbContext())
+        {
+            var repository = new AttendanceConsolidationRepository(context);
+            await repository.RequestAsync(EmployeeId.From("CIERRE-1"), new DateTime(2031, 3, 1), new DateTime(2031, 3, 5));
+            await repository.RequestAsync(EmployeeId.From("CIERRE-2"), new DateTime(2031, 3, 20), new DateTime(2031, 3, 21));
+        }
+
+        await using var check = _fixture.CreateDbContext();
+        var count = new AttendanceConsolidationRepository(check);
+        (await count.CountUnfinishedInRangeAsync(new DateTime(2031, 3, 5), new DateTime(2031, 3, 11))).Should().Be(1, "toca el último día de la primera");
+        (await count.CountUnfinishedInRangeAsync(new DateTime(2031, 3, 6), new DateTime(2031, 3, 12))).Should().Be(0);
+        (await count.CountUnfinishedInRangeAsync(new DateTime(2031, 3, 1), new DateTime(2031, 3, 31))).Should().Be(2);
+
+        var claims = await count.ClaimAsync("worker", 10, TimeSpan.FromMinutes(5), TimeSpan.Zero, TimeSpan.FromHours(1));
+        foreach (var claim in claims.Where(c => c.EmployeeId == EmployeeId.From("CIERRE-1")))
+            await count.CompleteAsync(claim.Id, "worker", claim.Version);
+        (await count.CountUnfinishedInRangeAsync(new DateTime(2031, 3, 1), new DateTime(2031, 3, 11))).Should().Be(0, "ya se calculó");
+    }
 }

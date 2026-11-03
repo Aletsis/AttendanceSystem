@@ -1,6 +1,8 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices;
 using Hangfire;
+using Hangfire.Server;
+using AttendanceSystem.Application.Features.Automation;
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -64,7 +66,7 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.AutoDownload,
-            jobs => jobs.DownloadFromAllDevices(CancellationToken.None),
+            jobs => jobs.DownloadFromAllDevices(null, CancellationToken.None),
             cron,
             options);
     }
@@ -89,7 +91,7 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.AutoBackup,
-            jobs => jobs.PerformAutoBackup(CancellationToken.None),
+            jobs => jobs.PerformAutoBackup(null, CancellationToken.None),
             cron,
             new RecurringJobOptions { TimeZone = timeZone });
     }
@@ -106,7 +108,7 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.AutoReport,
-            jobs => jobs.SendAutoReport(CancellationToken.None),
+            jobs => jobs.SendAutoReport(null, CancellationToken.None),
             cron,
             new RecurringJobOptions { TimeZone = timeZone });
     }
@@ -150,14 +152,14 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         // 00:05 en la zona del sistema: el día anterior ya terminó.
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.DailyCalculation,
-            jobs => jobs.CalculatePreviousDay(CancellationToken.None),
+            jobs => jobs.CalculatePreviousDay(null, CancellationToken.None),
             "5 0 * * *",
             new RecurringJobOptions { TimeZone = timeZone });
 
         // Caso 17: 00:30, cierra los periodos que terminaron hace más de 3 días.
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.AutoClosePeriods,
-            jobs => jobs.AutoClosePeriods(CancellationToken.None),
+            jobs => jobs.AutoClosePeriods(null, CancellationToken.None),
             "30 0 * * *",
             new RecurringJobOptions { TimeZone = timeZone });
     }
@@ -173,10 +175,16 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
 /// <summary>
 /// Tareas de Hangfire. Política común:
 /// <list type="bullet">
-/// <item>Sin reintentos automáticos: los de Hangfire (10, con esperas de horas o días) acumulaban ejecuciones de las
-/// tareas frecuentes y corrían las diarias a deshoras. Una periódica la cubre su siguiente pasada; una diaria fallida
-/// queda en "Failed" en el panel. Las frecuentes fallidas se borran (el error queda en el log) para no llenar el
-/// panel con cientos de fallos al día mientras dura una caída.</item>
+/// <item>Sin los reintentos por defecto de Hangfire (10, con esperas de horas o días), que acumulaban ejecuciones de las
+/// tareas frecuentes y corrían las diarias a deshoras. Una periódica la cubre su siguiente pasada; sus fallos se borran
+/// del panel (el error queda en el log) para no llenarlo con cientos al día mientras dura una caída.</item>
+/// <item>Respaldo y reporte: 2 reintentos dentro de la hora siguiente (a los 10 y a los 30 minutos).</item>
+/// <item>Descarga diaria: reintenta sólo los relojes que fallaron, 2 veces (a los 10 y a los 30 minutos); la tarea
+/// queda correcta y, si siguen fallando, deja una alerta con esos relojes.</item>
+/// <item>Las diarias que fallan del todo (agotados sus reintentos) quedan en "Failed" y dejan una alerta
+/// (<see cref="OperationalAlerts"/>), que se resuelve cuando la tarea vuelve a terminar bien.</item>
+/// <item>Fecha de negocio fija: la del momento en que se disparó la tarea, en la zona del sistema; un reintento después
+/// de medianoche no cambia de día.</item>
 /// <item>Una sola ejecución a la vez de cada tarea (<see cref="JobExclusionLock"/>): si la anterior sigue corriendo, la
 /// nueva se omite.</item>
 /// <item>Cancelables: Hangfire pasa el token de apagado, que se cancela al detener el servidor o pausarlo para una
@@ -186,16 +194,47 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
 [AutomaticRetry(Attempts = 0)]
 public class AttendanceJobs
 {
+    /// <summary>Reintentos de respaldo, reporte y relojes caídos; deben coincidir con los atributos de esas tareas.</summary>
+    public const int DailyRetries = 2;
+    /// <summary>Espera antes de cada reintento (10 y 30 minutos: los dos caen dentro de la hora siguiente).</summary>
+    public static readonly TimeSpan[] RetryDelays = { TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(30) };
+
+    public const string DownloadRetryJobName = "Reintento de relojes caídos";
+
     private readonly IMediator _mediator;
     private readonly JobExclusionLock? _exclusion;
     private readonly ILogger<AttendanceJobs> _logger;
+    private readonly OperationalAlerts? _alerts;
+    private readonly IBackgroundJobClient? _backgroundJobs;
+    private readonly IAuthoritativeTimeZoneResolver _timeZoneResolver;
+    private readonly ITimeNormalizer _timeNormalizer;
 
-    public AttendanceJobs(IMediator mediator, JobExclusionLock? exclusion = null, ILogger<AttendanceJobs>? logger = null)
+    public AttendanceJobs(
+        IMediator mediator,
+        JobExclusionLock? exclusion = null,
+        ILogger<AttendanceJobs>? logger = null,
+        OperationalAlerts? alerts = null,
+        IBackgroundJobClient? backgroundJobs = null,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
+        ITimeNormalizer? timeNormalizer = null)
     {
         _mediator = mediator;
         _exclusion = exclusion;
         _logger = logger ?? NullLogger<AttendanceJobs>.Instance;
+        _alerts = alerts;
+        _backgroundJobs = backgroundJobs;
+        _timeZoneResolver = timeZoneResolver ?? DefaultAuthoritativeTimeZoneResolver.Instance;
+        _timeNormalizer = timeNormalizer ?? DefaultTimeNormalizer.Instance;
     }
+
+    /// <summary>Cuándo se disparó la tarea (igual en todos sus reintentos) y cuántos reintentos lleva.</summary>
+    internal readonly record struct JobRun(DateTime TriggeredAtUtc, int RetryCount);
+
+    private static JobRun RunOf(PerformContext? context) =>
+        new(context?.BackgroundJob.CreatedAt ?? DateTime.UtcNow, context?.GetJobParameter<int>("RetryCount") ?? 0);
+
+    public static string FailureAlertPrefix(string jobId) => $"tarea:{jobId}:";
+    public const string FailedDevicesAlertPrefix = "relojes:";
 
     /// <summary>Ejecuta la tarea si no hay otra ejecución de la misma en curso; si la hay, la omite.</summary>
     private async Task RunExclusiveAsync(string jobId, CancellationToken cancellationToken, Func<Task> body)
@@ -215,35 +254,154 @@ public class AttendanceJobs
         await body();
     }
 
-    [JobDisplayName("Download Logs from All Devices")]
-    public Task DownloadFromAllDevices(CancellationToken cancellationToken) =>
-        RunExclusiveAsync(AttendanceJobIds.AutoDownload, cancellationToken, async () =>
+    /// <summary>
+    /// Tarea diaria: corre con su fecha de negocio; si falla en su último intento deja una alerta, y si termina bien
+    /// resuelve las de sus fallos anteriores.
+    /// </summary>
+    private Task RunDailyAsync(string jobId, string jobName, JobRun run, int retries, CancellationToken cancellationToken, Func<DateTime, Task> body) =>
+        RunExclusiveAsync(jobId, cancellationToken, async () =>
         {
-            var result = await _mediator.Send(new DownloadFromAllDevicesCommand(null, null), cancellationToken);
-            if (!result.IsSuccess)
+            var today = await BusinessDateAsync(run, cancellationToken);
+            try
             {
-                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                    "Download Logs from All Devices", result.Error);
+                await body(today);
             }
-
-            if (result.Value.Any(d => !d.Success))
+            catch (Exception ex) when (ex is not OperationCanceledException && run.RetryCount >= retries)
             {
-                var failedDevices = result.Value.Where(d => !d.Success).Select(d => $"{d.DeviceId}: {d.ErrorMessage}");
-                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                    "Download Logs from All Devices",
-                    $"Fallo en uno o más dispositivos: {string.Join("; ", failedDevices)}");
+                var afterRetries = retries > 0 ? $" después de {retries} reintentos" : "";
+                await TryRaiseAsync($"{FailureAlertPrefix(jobId)}{today:yyyyMMdd}", $"Falló la tarea automática: {jobName}",
+                    $"La tarea automática «{jobName}» del {today:dd/MM/yyyy} falló{afterRetries}: {ex.Message}", cancellationToken);
+                throw;
             }
+            await TryResolveAsync(FailureAlertPrefix(jobId), cancellationToken);
         });
 
+    private async Task<DateTime> BusinessDateAsync(JobRun run, CancellationToken cancellationToken)
+    {
+        var timeZoneId = await _timeZoneResolver.GetSystemDefaultTimeZoneAsync(cancellationToken);
+        return _timeNormalizer.ToCivilTime(run.TriggeredAtUtc, timeZoneId).Date;
+    }
+
+    // La alerta acompaña al fallo; si no se puede registrar, el fallo original sigue su curso.
+    private async Task TryRaiseAsync(string key, string subject, string message, CancellationToken cancellationToken)
+    {
+        if (_alerts == null)
+        {
+            _logger.LogWarning("ALERTA {Key}: {Message}", key, message);
+            return;
+        }
+        try
+        {
+            await _alerts.RaiseAsync(key, subject, message, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "No se pudo registrar la alerta {Key}: {Message}", key, message);
+        }
+    }
+
+    private async Task TryResolveAsync(string keyPrefix, CancellationToken cancellationToken)
+    {
+        if (_alerts == null) return;
+        try
+        {
+            await _alerts.ResolveAsync(keyPrefix, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "No se pudieron resolver las alertas {Prefix}*.", keyPrefix);
+        }
+    }
+
+    [JobDisplayName("Download Logs from All Devices")]
+    public Task DownloadFromAllDevices(PerformContext? context, CancellationToken cancellationToken) =>
+        DownloadFromAllDevicesAsync(RunOf(context), cancellationToken);
+
+    internal Task DownloadFromAllDevicesAsync(JobRun run, CancellationToken cancellationToken) =>
+        RunDailyAsync(AttendanceJobIds.AutoDownload, "Descarga automática de relojes", run, 0, cancellationToken, async today =>
+        {
+            var failed = await DownloadAsync(null, cancellationToken);
+            if (failed.Count == 0)
+            {
+                await TryResolveAsync(FailedDevicesAlertPrefix, cancellationToken);
+                return;
+            }
+
+            // Los relojes que respondieron ya quedaron descargados: sólo se reintentan los demás, y la tarea queda correcta.
+            _logger.LogWarning("Descarga automática: {Count} relojes fallaron; se reintentarán. {Errors}", failed.Count, Describe(failed));
+            await ScheduleDeviceRetryAsync(failed, 1, today, cancellationToken);
+        });
+
+    [JobDisplayName("Retry Download from Failed Devices (attempt {1})")]
+    public Task RetryDeviceDownloads(string[] deviceIds, int attempt, DateTime businessDate, CancellationToken cancellationToken) =>
+        RetryDeviceDownloadsAsync(deviceIds, attempt, businessDate, cancellationToken);
+
+    internal async Task RetryDeviceDownloadsAsync(string[] deviceIds, int attempt, DateTime businessDate, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<(string DeviceId, string? Error)> failed;
+        try
+        {
+            failed = await DownloadAsync(deviceIds, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            failed = deviceIds.Select(id => (id, (string?)ex.Message)).ToList();
+        }
+
+        if (failed.Count == 0)
+        {
+            _logger.LogInformation("Reintento {Attempt} de la descarga automática: los relojes {Devices} ya se descargaron.", attempt, string.Join(", ", deviceIds));
+            return;
+        }
+
+        if (attempt < DailyRetries)
+        {
+            await ScheduleDeviceRetryAsync(failed, attempt + 1, businessDate, cancellationToken);
+            return;
+        }
+
+        await TryRaiseAsync($"{FailedDevicesAlertPrefix}{businessDate:yyyyMMdd}", "Relojes sin descargar",
+            $"La descarga automática del {businessDate:dd/MM/yyyy} no pudo leer {failed.Count} reloj(es) después de {DailyRetries} reintentos: " +
+            $"{Describe(failed)}. Revise su conexión; sus marcajes se descargarán en la siguiente descarga automática o manual.", cancellationToken);
+    }
+
+    /// <summary>Descarga (todos o los indicados) y devuelve los relojes que fallaron; un fallo general es una excepción.</summary>
+    private async Task<IReadOnlyList<(string DeviceId, string? Error)>> DownloadAsync(IReadOnlyCollection<string>? deviceIds, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new DownloadFromAllDevicesCommand(null, null, DeviceIds: deviceIds), cancellationToken);
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException("Download Logs from All Devices", result.Error);
+        }
+        return result.Value.Where(d => !d.Success).Select(d => (d.DeviceId, d.ErrorMessage)).ToList();
+    }
+
+    private async Task ScheduleDeviceRetryAsync(IReadOnlyList<(string DeviceId, string? Error)> failed, int attempt, DateTime businessDate, CancellationToken cancellationToken)
+    {
+        var ids = failed.Select(f => f.DeviceId).ToArray();
+        if (_backgroundJobs == null)
+        {
+            await TryRaiseAsync($"{FailedDevicesAlertPrefix}{businessDate:yyyyMMdd}", "Relojes sin descargar",
+                $"La descarga automática del {businessDate:dd/MM/yyyy} no pudo leer {failed.Count} reloj(es): {Describe(failed)}.", cancellationToken);
+            return;
+        }
+        _backgroundJobs.Schedule<AttendanceJobs>(
+            jobs => jobs.RetryDeviceDownloads(ids, attempt, businessDate, CancellationToken.None),
+            RetryDelays[attempt - 1]);
+    }
+
+    private static string Describe(IEnumerable<(string DeviceId, string? Error)> failed) =>
+        string.Join("; ", failed.Select(f => $"{f.DeviceId}: {f.Error ?? "error desconocido"}"));
+
     [JobDisplayName("Calculate Previous Day Attendance")]
-    public Task CalculatePreviousDay(CancellationToken cancellationToken) =>
-        RunExclusiveAsync(AttendanceJobIds.DailyCalculation, cancellationToken, () =>
-            _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.CalculatePreviousDayCommand(), cancellationToken));
+    public Task CalculatePreviousDay(PerformContext? context, CancellationToken cancellationToken) =>
+        RunDailyAsync(AttendanceJobIds.DailyCalculation, "Cálculo del día anterior", RunOf(context), 0, cancellationToken, today =>
+            _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.CalculatePreviousDayCommand(today), cancellationToken));
 
     [JobDisplayName("Auto-close Attendance Periods")]
-    public Task AutoClosePeriods(CancellationToken cancellationToken) =>
-        RunExclusiveAsync(AttendanceJobIds.AutoClosePeriods, cancellationToken, () =>
-            _mediator.Send(new AttendanceSystem.Application.Features.Attendance.PeriodClosure.AutoClosePeriodsCommand(), cancellationToken));
+    public Task AutoClosePeriods(PerformContext? context, CancellationToken cancellationToken) =>
+        RunDailyAsync(AttendanceJobIds.AutoClosePeriods, "Cierre automático de periodos", RunOf(context), 0, cancellationToken, today =>
+            _mediator.Send(new AttendanceSystem.Application.Features.Attendance.PeriodClosure.AutoClosePeriodsCommand(today), cancellationToken));
 
     [JobDisplayName("Check for Critical Position Absences")]
     [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Delete)]
@@ -273,8 +431,12 @@ public class AttendanceJobs
         });
 
     [JobDisplayName("Automated Database Backup")]
-    public Task PerformAutoBackup(CancellationToken cancellationToken) =>
-        RunExclusiveAsync(AttendanceJobIds.AutoBackup, cancellationToken, async () =>
+    [AutomaticRetry(Attempts = DailyRetries, DelaysInSeconds = new[] { 600, 1800 })]
+    public Task PerformAutoBackup(PerformContext? context, CancellationToken cancellationToken) =>
+        PerformAutoBackupAsync(RunOf(context), cancellationToken);
+
+    internal Task PerformAutoBackupAsync(JobRun run, CancellationToken cancellationToken) =>
+        RunDailyAsync(AttendanceJobIds.AutoBackup, "Respaldo automático", run, DailyRetries, cancellationToken, async _ =>
         {
             var result = await _mediator.Send(new AttendanceSystem.Application.Features.Backup.Commands.CreateBackupCommand("Full", "Respaldo Automático Programado"), cancellationToken);
             if (!result.Success)
@@ -285,10 +447,14 @@ public class AttendanceJobs
         });
 
     [JobDisplayName("Automated Daily Report")]
-    public Task SendAutoReport(CancellationToken cancellationToken) =>
-        RunExclusiveAsync(AttendanceJobIds.AutoReport, cancellationToken, async () =>
+    [AutomaticRetry(Attempts = DailyRetries, DelaysInSeconds = new[] { 600, 1800 })]
+    public Task SendAutoReport(PerformContext? context, CancellationToken cancellationToken) =>
+        SendAutoReportAsync(RunOf(context), cancellationToken);
+
+    internal Task SendAutoReportAsync(JobRun run, CancellationToken cancellationToken) =>
+        RunDailyAsync(AttendanceJobIds.AutoReport, "Reporte diario automático", run, DailyRetries, cancellationToken, async today =>
         {
-            var result = await _mediator.Send(new AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand(), cancellationToken);
+            var result = await _mediator.Send(new AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand(today), cancellationToken);
             if (!result.IsSuccess)
             {
                 throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
@@ -333,17 +499,19 @@ public class AttendanceJobs
             }
         });
 
-    // Firmas anteriores: las tareas de horario configurable (descarga, respaldo, reporte) quedan guardadas en Hangfire sin
-    // token hasta que se vuelvan a programar, y los biométricos encolados antes, uno por empleado.
+    // Firmas anteriores de trabajos que pueden seguir en la cola de Hangfire: una ejecución de descarga, respaldo o
+    // reporte ya encolada antes de actualizar, y los biométricos encolados uno por empleado.
 
     [JobDisplayName("Download Logs from All Devices")]
-    public Task DownloadFromAllDevices() => DownloadFromAllDevices(CancellationToken.None);
+    public Task DownloadFromAllDevices() => DownloadFromAllDevices(null, CancellationToken.None);
 
     [JobDisplayName("Automated Database Backup")]
-    public Task PerformAutoBackup() => PerformAutoBackup(CancellationToken.None);
+    [AutomaticRetry(Attempts = DailyRetries, DelaysInSeconds = new[] { 600, 1800 })]
+    public Task PerformAutoBackup() => PerformAutoBackup(null, CancellationToken.None);
 
     [JobDisplayName("Automated Daily Report")]
-    public Task SendAutoReport() => SendAutoReport(CancellationToken.None);
+    [AutomaticRetry(Attempts = DailyRetries, DelaysInSeconds = new[] { 600, 1800 })]
+    public Task SendAutoReport() => SendAutoReport(null, CancellationToken.None);
 
     [JobDisplayName("Sync Biometrics for Employee {1} from Device {0}")]
     public Task SyncEmployeeBiometrics(string deviceId, string employeeId) =>

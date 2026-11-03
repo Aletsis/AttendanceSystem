@@ -274,6 +274,7 @@ internal sealed class InMemoryConsolidationRepository : IAttendanceConsolidation
     public Task<int> RetryFailedAsync(Guid? requestId = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<AttendanceConsolidationRequest?> GetActiveByEmployeeAsync(EmployeeId employeeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<ConsolidationHealth> GetHealthAsync(int recentFailures = 20, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<int> CountUnfinishedInRangeAsync(DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<int> PurgeFinishedAsync(TimeSpan retention, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 

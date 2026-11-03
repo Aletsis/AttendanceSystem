@@ -1,4 +1,6 @@
 using AttendanceSystem.Application.Common;
+using AttendanceSystem.Application.DTOs;
+using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices;
 using AttendanceSystem.Application.Features.Attendance.Commands.CheckCriticalAbsences;
 using AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs;
 using AttendanceSystem.Infrastructure.Exceptions;
@@ -151,8 +153,9 @@ public class HangfireAttendanceJobsTests
     public static TheoryData<string, int, AttemptsExceededAction> RetryPolicies => new()
     {
         { nameof(AttendanceJobs.DownloadFromAllDevices), 0, AttemptsExceededAction.Fail },
-        { nameof(AttendanceJobs.PerformAutoBackup), 0, AttemptsExceededAction.Fail },
-        { nameof(AttendanceJobs.SendAutoReport), 0, AttemptsExceededAction.Fail },
+        { nameof(AttendanceJobs.PerformAutoBackup), 2, AttemptsExceededAction.Fail },
+        { nameof(AttendanceJobs.SendAutoReport), 2, AttemptsExceededAction.Fail },
+        { nameof(AttendanceJobs.RetryDeviceDownloads), 0, AttemptsExceededAction.Fail },
         { nameof(AttendanceJobs.CalculatePreviousDay), 0, AttemptsExceededAction.Fail },
         { nameof(AttendanceJobs.AutoClosePeriods), 0, AttemptsExceededAction.Fail },
         { nameof(AttendanceJobs.SyncDeviceBiometrics), 0, AttemptsExceededAction.Fail },
@@ -205,4 +208,155 @@ public class HangfireAttendanceJobsTests
     [InlineData("Zona/Inexistente")]
     public void AnUnknownTimeZone_FallsBackToTheServerOne(string? timeZoneId) =>
         HangfireAttendanceJobScheduler.ResolveTimeZone(timeZoneId).Should().Be(TimeZoneInfo.Local);
+
+    // ===== Bloque G: reintentos, alertas y fecha de negocio =====
+
+    private readonly List<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert> _alerts = new();
+    private readonly List<string> _emails = new();
+    private readonly Mock<IBackgroundJobClient> _backgroundJobs = new();
+    private readonly List<(Hangfire.Common.Job Job, Hangfire.States.ScheduledState State)> _scheduled = new();
+
+    private AttendanceJobs JobsWithAlerts()
+    {
+        var repository = new Mock<AttendanceSystem.Domain.Repositories.ISystemAlertRepository>();
+        repository.Setup(r => r.GetActiveAlertsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => _alerts.Where(a => !a.IsResolved).ToList());
+        repository.Setup(r => r.AddAsync(It.IsAny<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert>(), It.IsAny<CancellationToken>()))
+            .Callback<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert, CancellationToken>((a, _) => _alerts.Add(a))
+            .Returns(Task.CompletedTask);
+        var email = new Mock<global::IEmailService>();
+        email.Setup(e => e.SendAlertAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<global::AlertLevel>(), It.IsAny<CancellationToken>()))
+            .Callback<string, string, global::AlertLevel, CancellationToken>((subject, _, _, _) => _emails.Add(subject))
+            .Returns(Task.CompletedTask);
+        var alerts = new AttendanceSystem.Application.Features.Automation.OperationalAlerts(repository.Object,
+            new Mock<AttendanceSystem.Application.Abstractions.IUnitOfWork>().Object, email.Object,
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<AttendanceSystem.Application.Features.Automation.OperationalAlerts>.Instance);
+        _backgroundJobs.Setup(c => c.Create(It.IsAny<Hangfire.Common.Job>(), It.IsAny<Hangfire.States.IState>()))
+            .Callback<Hangfire.Common.Job, Hangfire.States.IState>((job, state) => _scheduled.Add((job, (Hangfire.States.ScheduledState)state)))
+            .Returns("job-id");
+        return new AttendanceJobs(_mediatorMock.Object, alerts: alerts, backgroundJobs: _backgroundJobs.Object);
+    }
+
+    private void Downloads(params (string Id, bool Success)[] devices) =>
+        _mediatorMock.Setup(m => m.Send(It.IsAny<DownloadFromAllDevicesCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<IEnumerable<DownloadResultDto>>.Success(devices
+                .Select(d => new DownloadResultDto(d.Id, 0, DateTime.UtcNow, Success: d.Success, ErrorMessage: d.Success ? null : "sin respuesta"))
+                .ToList()));
+
+    // 15/10/2026 05:30 UTC = 14/10/2026 23:30 en America/Mexico_City.
+    private static readonly AttendanceJobs.JobRun LateEvening = new(new DateTime(2026, 10, 15, 5, 30, 0, DateTimeKind.Utc), 0);
+
+    [Fact]
+    public async Task ADailyDownloadWithFailedClocks_Succeeds_AndRetriesOnlyThoseIn10Minutes()
+    {
+        var jobs = JobsWithAlerts();
+        Downloads(("R1", true), ("R2", false), ("R3", false));
+
+        await jobs.DownloadFromAllDevicesAsync(LateEvening, CancellationToken.None);
+
+        var (job, state) = _scheduled.Single();
+        job.Method.Name.Should().Be(nameof(AttendanceJobs.RetryDeviceDownloads));
+        ((string[])job.Args[0]!).Should().Equal("R2", "R3");
+        job.Args[1].Should().Be(1);
+        job.Args[2].Should().Be(new DateTime(2026, 10, 14));
+        state.EnqueueAt.Should().BeCloseTo(DateTime.UtcNow.AddMinutes(10), TimeSpan.FromMinutes(1));
+        _alerts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TheFirstRetry_DownloadsOnlyTheFailedClocks_AndSchedulesTheSecondIn30Minutes()
+    {
+        var jobs = JobsWithAlerts();
+        Downloads(("R2", false));
+
+        await jobs.RetryDeviceDownloadsAsync(new[] { "R2", "R3" }, 1, new DateTime(2026, 10, 14), CancellationToken.None);
+
+        _mediatorMock.Verify(m => m.Send(It.Is<DownloadFromAllDevicesCommand>(c => c.DeviceIds!.SequenceEqual(new[] { "R2", "R3" })), It.IsAny<CancellationToken>()), Times.Once);
+        var (job, state) = _scheduled.Single();
+        ((string[])job.Args[0]!).Should().Equal("R2");
+        job.Args[1].Should().Be(2);
+        state.EnqueueAt.Should().BeCloseTo(DateTime.UtcNow.AddMinutes(30), TimeSpan.FromMinutes(1));
+    }
+
+    [Fact]
+    public async Task AfterTheSecondRetry_ClocksStillDown_LeaveOneAlert()
+    {
+        var jobs = JobsWithAlerts();
+        Downloads(("R2", false));
+
+        await jobs.RetryDeviceDownloadsAsync(new[] { "R2" }, 2, new DateTime(2026, 10, 14), CancellationToken.None);
+
+        _scheduled.Should().BeEmpty();
+        _alerts.Should().ContainSingle(a => a.ReferenceId == "relojes:20261014").Which.Message.Should().Contain("R2").And.Contain("sin respuesta");
+        _emails.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ARetryThatRecovers_LeavesNoAlert()
+    {
+        var jobs = JobsWithAlerts();
+        Downloads(("R2", true));
+
+        await jobs.RetryDeviceDownloadsAsync(new[] { "R2" }, 2, new DateTime(2026, 10, 14), CancellationToken.None);
+
+        _scheduled.Should().BeEmpty();
+        _alerts.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task AFullDownload_ResolvesThePreviousFailedClocksAlert()
+    {
+        var jobs = JobsWithAlerts();
+        _alerts.Add(AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert.Create(AttendanceSystem.Domain.Enumerations.AlertType.SystemError, "relojes:20261013", "R2 caído"));
+        Downloads(("R1", true), ("R2", true));
+
+        await jobs.DownloadFromAllDevicesAsync(LateEvening, CancellationToken.None);
+
+        _alerts.Should().OnlyContain(a => a.IsResolved);
+    }
+
+    [Fact]
+    public async Task ABackupThatFails_IsRetried_AndOnlyTheLastFailureLeavesAnAlert()
+    {
+        var jobs = JobsWithAlerts();
+        _mediatorMock.Setup(m => m.Send(It.IsAny<AttendanceSystem.Application.Features.Backup.Commands.CreateBackupCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupResultDto { Success = false, Message = "disco lleno" });
+
+        await jobs.Invoking(j => j.PerformAutoBackupAsync(LateEvening, CancellationToken.None)).Should().ThrowAsync<JobExecutionFailedException>();
+        await jobs.Invoking(j => j.PerformAutoBackupAsync(LateEvening with { RetryCount = 1 }, CancellationToken.None)).Should().ThrowAsync<JobExecutionFailedException>();
+        _alerts.Should().BeEmpty("aún le quedan reintentos");
+
+        await jobs.Invoking(j => j.PerformAutoBackupAsync(LateEvening with { RetryCount = 2 }, CancellationToken.None)).Should().ThrowAsync<JobExecutionFailedException>();
+
+        _alerts.Should().ContainSingle(a => a.ReferenceId == "tarea:automated-database-backup:20261014")
+            .Which.Message.Should().Contain("después de 2 reintentos").And.Contain("disco lleno");
+        _emails.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ABackupThatSucceeds_ResolvesItsPreviousFailureAlerts()
+    {
+        var jobs = JobsWithAlerts();
+        _alerts.Add(AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert.Create(AttendanceSystem.Domain.Enumerations.AlertType.SystemError, "tarea:automated-database-backup:20261013", "falló"));
+        _alerts.Add(AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert.Create(AttendanceSystem.Domain.Enumerations.AlertType.SystemError, "tarea:automated-daily-report:20261013", "falló"));
+        _mediatorMock.Setup(m => m.Send(It.IsAny<AttendanceSystem.Application.Features.Backup.Commands.CreateBackupCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new BackupResultDto { Success = true });
+
+        await jobs.PerformAutoBackupAsync(LateEvening, CancellationToken.None);
+
+        _alerts.Single(a => a.ReferenceId!.Contains("backup")).IsResolved.Should().BeTrue();
+        _alerts.Single(a => a.ReferenceId!.Contains("report")).IsResolved.Should().BeFalse("sólo resuelve las suyas");
+    }
+
+    [Fact]
+    public async Task TheReport_UsesTheDateItWasTriggered_InTheSystemTimeZone_EvenOnARetryAfterMidnight()
+    {
+        var jobs = JobsWithAlerts();
+        _mediatorMock.Setup(m => m.Send(It.IsAny<AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<bool>.Success(true));
+
+        // El reintento corre pasada la medianoche, pero el trabajo se disparó el 14 a las 23:30.
+        await jobs.SendAutoReportAsync(LateEvening with { RetryCount = 1 }, CancellationToken.None);
+
+        _mediatorMock.Verify(m => m.Send(It.Is<AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand>(c => c.Today == new DateTime(2026, 10, 14)), It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

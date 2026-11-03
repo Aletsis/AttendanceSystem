@@ -38,6 +38,7 @@ public static class ApplicationServiceExtensions
         services.AddScoped<AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation>();
         services.AddScoped<AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService>();
         services.AddScoped<AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer>();
+        services.AddScoped<AttendanceSystem.Application.Features.Automation.OperationalAlerts>();
         services.AddScoped<AttendanceSystem.Application.Abstractions.IConsolidationRequestTracker, AttendanceSystem.Application.Abstractions.ConsolidationRequestTracker>();
         services.AddScoped<AttendanceSystem.Application.Abstractions.IAdjustmentDiagnosticService, AttendanceSystem.Application.Features.Attendance.Services.AdjustmentDiagnosticService>();
 

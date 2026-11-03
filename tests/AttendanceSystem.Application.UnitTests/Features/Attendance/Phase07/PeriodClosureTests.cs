@@ -86,6 +86,46 @@ public class PeriodClosureTests
     }
 
     [Fact]
+    public async Task AnAutomaticClose_WithDaysStillToCalculate_IsPostponedWithAnAlert_AndClosesWhenTheyFinish()
+    {
+        var closures = new InMemoryPeriodClosureRepository();
+        var configuration = new Mock<ISystemConfigurationRepository>();
+        configuration.Setup(r => r.GetConfigurationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(SystemConfiguration.CreateDefault());
+        var unfinished = 3;
+        var consolidations = new Mock<IAttendanceConsolidationRepository>();
+        consolidations.Setup(r => r.CountUnfinishedInRangeAsync(WeekOf10, WeekOf10.AddDays(6), It.IsAny<CancellationToken>())).ReturnsAsync(() => unfinished);
+        var alertStore = new System.Collections.Generic.List<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert>();
+        var alertRepository = new Mock<ISystemAlertRepository>();
+        alertRepository.Setup(r => r.GetActiveAlertsAsync(It.IsAny<CancellationToken>())).ReturnsAsync(() => alertStore.Where(a => !a.IsResolved).ToList());
+        alertRepository.Setup(r => r.AddAsync(It.IsAny<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert>(), It.IsAny<CancellationToken>()))
+            .Callback<AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert, CancellationToken>((a, _) => alertStore.Add(a)).Returns(Task.CompletedTask);
+        var alerts = new AttendanceSystem.Application.Features.Automation.OperationalAlerts(alertRepository.Object, Mock.Of<IUnitOfWork>(),
+            Mock.Of<IEmailService>(), NullLogger<AttendanceSystem.Application.Features.Automation.OperationalAlerts>.Instance);
+        var handlers = new PeriodClosureHandlers(closures, configuration.Object, Mock.Of<IDailyAttendanceRepository>(), Mock.Of<IUnitOfWork>(),
+            Mock.Of<ISender>(), NullLogger<PeriodClosureHandlers>.Instance, timeProvider: new FixedToday(), consolidations: consolidations.Object, alerts: alerts);
+
+        (await handlers.Handle(new AutoClosePeriodsCommand(), CancellationToken.None)).Should().Be(0);
+        (await handlers.Handle(new AutoClosePeriodsCommand(), CancellationToken.None)).Should().Be(0);
+        closures.Items.Should().BeEmpty();
+        alertStore.Should().ContainSingle(a => a.ReferenceId == "cierre:20260810" && !a.IsResolved)
+            .Which.Message.Should().Contain("3 solicitudes");
+
+        unfinished = 0;
+        (await handlers.Handle(new AutoClosePeriodsCommand(), CancellationToken.None)).Should().Be(1);
+        alertStore.Should().OnlyContain(a => a.IsResolved);
+    }
+
+    [Fact]
+    public async Task TheAutomaticClose_UsesTheDateItWasGiven()
+    {
+        var (handlers, closures) = Handlers();
+
+        // El 16 la semana del 10 aún no cumple sus 3 días: no se cierra aunque el reloj diga 20.
+        (await handlers.Handle(new AutoClosePeriodsCommand(new DateTime(2026, 8, 16)), CancellationToken.None)).Should().Be(1, "cierra la del 3, ya vencida");
+        closures.Items.Single().StartDate.Should().Be(WeekOf3);
+    }
+
+    [Fact]
     public async Task PeriodsCloseByThemselves_ThreeDaysAfterEnding_ButNotAfterBeingReopened()
     {
         var (handlers, closures) = Handlers();
