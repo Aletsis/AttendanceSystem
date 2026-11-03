@@ -792,7 +792,7 @@ public class PostgresConcurrencyTests : IClassFixture<PostgresTestDatabaseFixtur
         public Task AddAsync(AttendanceRecord record, CancellationToken cancellationToken = default) => _inner.AddAsync(record, cancellationToken);
         public Task AddRangeAsync(IEnumerable<AttendanceRecord> records, CancellationToken cancellationToken = default) => _inner.AddRangeAsync(records, cancellationToken);
         public Task UpdateAsync(AttendanceRecord record, CancellationToken cancellationToken = default) => _inner.UpdateAsync(record, cancellationToken);
-        public Task<bool> HasCheckInForDateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default) => _inner.HasCheckInForDateAsync(employeeId, date, cancellationToken);
+        public Task<bool> HasPunchForDateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default) => _inner.HasPunchForDateAsync(employeeId, date, cancellationToken);
         public Task<IReadOnlyList<AttendanceRecord>> GetAllAsync(CancellationToken cancellationToken = default) => _inner.GetAllAsync(cancellationToken);
     }
 

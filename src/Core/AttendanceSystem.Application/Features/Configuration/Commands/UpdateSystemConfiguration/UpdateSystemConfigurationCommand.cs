@@ -58,17 +58,20 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
     private readonly IUnitOfWork _unitOfWork;
     private readonly IAttendanceJobScheduler _jobScheduler;
     private readonly AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation? _recalculation;
+    private readonly IAuthoritativeTimeZoneResolver? _timeZoneResolver;
 
     public UpdateSystemConfigurationCommandHandler(
         ISystemConfigurationRepository repository,
         IUnitOfWork unitOfWork,
         IAttendanceJobScheduler jobScheduler,
-        AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation? recalculation = null)
+        AttendanceSystem.Application.Features.Attendance.Consolidation.RetroactiveRecalculation? recalculation = null,
+        IAuthoritativeTimeZoneResolver? timeZoneResolver = null)
     {
         _repository = repository;
         _unitOfWork = unitOfWork;
         _jobScheduler = jobScheduler;
         _recalculation = recalculation;
+        _timeZoneResolver = timeZoneResolver;
     }
 
     public async Task<Result<Guid>> Handle(UpdateSystemConfigurationCommand command, CancellationToken cancellationToken)
@@ -152,34 +155,6 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
             command.IsCloudSyncEnabled,
             command.CloudDbConnectionString);
 
-        // Actualizar la programación de trabajos según la nueva configuración
-        if (config.IsAutoDownloadEnabled && config.AutoDownloadTime.HasValue)
-        {
-            _jobScheduler.ScheduleAutoDownload(config.AutoDownloadTime.Value);
-        }
-        else
-        {
-            _jobScheduler.DisableAutoDownload();
-        }
-
-        if (config.IsAutoBackupEnabled && config.AutoBackupTime.HasValue)
-        {
-            _jobScheduler.ScheduleAutoBackup(config.AutoBackupTime.Value);
-        }
-        else
-        {
-            _jobScheduler.DisableAutoBackup();
-        }
-
-        if (config.IsAutoReportEnabled && config.AutoReportTime.HasValue)
-        {
-            _jobScheduler.ScheduleAutoReport(config.AutoReportTime.Value);
-        }
-        else
-        {
-            _jobScheduler.DisableAutoReport();
-        }
-
         // Añadir llamada a Update del repositorio si el seguimiento no es automático
         if (await _repository.GetConfigurationAsync(cancellationToken) != null)
         {
@@ -187,6 +162,11 @@ public sealed class UpdateSystemConfigurationCommandHandler : IRequestHandler<Up
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Después de guardar: antes se programaba primero y, si el guardado fallaba, Hangfire quedaba con un horario que
+        // la configuración no tenía.
+        await new AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer(_repository, _jobScheduler, _timeZoneResolver)
+            .ApplyAsync(config, cancellationToken);
 
         // Caso 15: un cambio que afecta el cálculo (comida, toque doble, periodos) con vigencia de hoy o pasada
         // recalcula a todos los empleados activos desde esa fecha.

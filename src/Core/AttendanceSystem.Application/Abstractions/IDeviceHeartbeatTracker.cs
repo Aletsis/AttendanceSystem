@@ -26,4 +26,10 @@ public interface IDeviceHeartbeatTracker
     /// Se reinicia al reiniciar el servidor.
     /// </summary>
     DateTime? GetConnectedSince(string? serialNumber, string? deviceId = null) => null;
+
+    /// <summary>
+    /// Desde cuándo (UTC) se registran latidos: el registro vive en memoria y empieza vacío al arrancar el servidor, así
+    /// que antes de que los relojes vuelvan a reportarse no se puede concluir que estén desconectados.
+    /// </summary>
+    DateTime TrackingSinceUtc => DateTime.MinValue;
 }

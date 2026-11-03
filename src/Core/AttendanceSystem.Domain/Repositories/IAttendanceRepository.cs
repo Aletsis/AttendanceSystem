@@ -62,7 +62,11 @@ public interface IAttendanceRepository
         AttendanceRecord record,
         CancellationToken cancellationToken = default);
 
-    Task<bool> HasCheckInForDateAsync(
+    /// <summary>
+    /// Si el empleado tiene algún marcaje válido (no anulado) en esa fecha de trabajo, sea del tipo que sea: un marcaje
+    /// registrado como salida por error también prueba que llegó.
+    /// </summary>
+    Task<bool> HasPunchForDateAsync(
         EmployeeId employeeId,
         DateTime date,
         CancellationToken cancellationToken = default);

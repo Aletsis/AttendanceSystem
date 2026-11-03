@@ -1292,8 +1292,9 @@ public class BackupService : IBackupService
             // -w: No interactivo (falla si pide pass)
             // --lock-wait-timeout=30000: Falla en 30s si hay un lock en vez de congelarse
             // -T "logs" -T "Logs": Excluye tablas de logging para mantener respaldos ligeros y evitar tiempos excesivos
-            // -N system_maintenance: el estado de mantenimiento es del servidor, no de los datos; no viaja en los respaldos
-            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -w --lock-wait-timeout=30000 -T \"logs\" -T \"Logs\" -N \"{MaintenanceSchema}\" -F c -b -v -f \"{outputPath}\" \"{_postgresDatabase}\"";
+            // -N system_maintenance / -N hangfire: el estado de mantenimiento y la cola y programación de tareas son del
+            // servidor, no de los datos; no viajan en los respaldos
+            var arguments = $"-h {_postgresHost} -p {_postgresPort} -U \"{_postgresUser}\" -w --lock-wait-timeout=30000 -T \"logs\" -T \"Logs\" -N \"{MaintenanceSchema}\" -N \"{HangfireSchema}\" -F c -b -v -f \"{outputPath}\" \"{_postgresDatabase}\"";
             _logger.LogInformation("Configuración de conexión: Host={Host}, Port={Port}, User={User}, DB={Database}",
                 _postgresHost, _postgresPort, _postgresUser, _postgresDatabase);
             _logger.LogInformation("Comando: pg_dump {Arguments}", arguments.Replace(_postgresPassword, "***"));
@@ -1444,6 +1445,13 @@ public class BackupService : IBackupService
     /// <summary>Esquema propio del estado de mantenimiento: ni se respalda ni se restaura, para que una restauración no lo pise.</summary>
     private const string MaintenanceSchema = "system_maintenance";
 
+    /// <summary>
+    /// Esquema de Hangfire (misma base): tampoco se respalda ni se restaura. Restaurarlo devolvía la cola y la programación
+    /// del momento del respaldo; entre ellas, el propio respaldo automático en curso, que se volvía a ejecutar. Tras
+    /// restaurar, la programación se rehace con la configuración restaurada.
+    /// </summary>
+    private const string HangfireSchema = "hangfire";
+
     /// <summary>Marca que psql imprime sólo si el COMMIT se aplicó (con ON_ERROR_STOP, un COMMIT fallido termina psql antes).</summary>
     private const string CommitMarker = "attendance_restore_committed";
 
@@ -1452,7 +1460,6 @@ public class BackupService : IBackupService
 SET lock_timeout = '30s';
 BEGIN;
 DROP SCHEMA IF EXISTS public CASCADE;
-DROP SCHEMA IF EXISTS hangfire CASCADE;
 CREATE SCHEMA public;
 GRANT ALL ON SCHEMA public TO CURRENT_USER;
 GRANT ALL ON SCHEMA public TO public;
@@ -1494,7 +1501,7 @@ GRANT ALL ON SCHEMA public TO public;
 
         Directory.CreateDirectory(workDir);
         var listFile = Path.Combine(workDir, $"restore_{Guid.NewGuid():N}.list");
-        await File.WriteAllLinesAsync(listFile, ExcludeMaintenanceSchema(toc.Output), cancellationToken);
+        await File.WriteAllLinesAsync(listFile, ExcludeServerSchemas(toc.Output), cancellationToken);
 
         _logger.LogInformation("Terminando conexiones activas a {Database} antes de restaurar...", _postgresDatabase);
         progress?.Report(new RestoreProgressReport(RestoreStage.PreparingDatabase, "Preparación de Base de Datos", "Terminando conexiones activas en PostgreSQL...", ProgressPercentage: 40));
@@ -1779,10 +1786,10 @@ GRANT ALL ON SCHEMA public TO public;
         catch { }
     }
 
-    /// <summary>Quita del TOC las entradas del esquema de mantenimiento (respaldos anteriores sí lo incluían).</summary>
-    internal static IEnumerable<string> ExcludeMaintenanceSchema(string tocListing)
+    /// <summary>Quita del TOC las entradas de los esquemas del servidor, mantenimiento y Hangfire (respaldos anteriores sí los incluían).</summary>
+    internal static IEnumerable<string> ExcludeServerSchemas(string tocListing)
     {
-        var pattern = new System.Text.RegularExpressions.Regex($@"\b{MaintenanceSchema}\b");
+        var pattern = new System.Text.RegularExpressions.Regex($@"\b({MaintenanceSchema}|{HangfireSchema})\b");
         return tocListing
             .Split('\n')
             .Select(line => line.TrimEnd('\r'))

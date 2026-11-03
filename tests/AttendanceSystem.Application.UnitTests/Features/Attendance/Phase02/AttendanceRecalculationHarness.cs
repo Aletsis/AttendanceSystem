@@ -213,7 +213,7 @@ internal sealed class InMemoryAttendanceRecordRepository : IAttendanceRepository
     public Task AddAsync(AttendanceRecord record, CancellationToken cancellationToken = default) { _store.Records.Add(record); return Task.CompletedTask; }
     public Task AddRangeAsync(IEnumerable<AttendanceRecord> records, CancellationToken cancellationToken = default) { _store.Records.AddRange(records); return Task.CompletedTask; }
     public Task UpdateAsync(AttendanceRecord record, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    public Task<bool> HasCheckInForDateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<bool> HasPunchForDateAsync(EmployeeId employeeId, DateTime date, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<IReadOnlyList<AttendanceRecord>> GetAllAsync(CancellationToken cancellationToken = default) => Task.FromResult<IReadOnlyList<AttendanceRecord>>(_store.Records.ToList());
 }
 
@@ -274,6 +274,7 @@ internal sealed class InMemoryConsolidationRepository : IAttendanceConsolidation
     public Task<int> RetryFailedAsync(Guid? requestId = null, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<AttendanceConsolidationRequest?> GetActiveByEmployeeAsync(EmployeeId employeeId, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<ConsolidationHealth> GetHealthAsync(int recentFailures = 20, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    public Task<int> CountUnfinishedInRangeAsync(DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     public Task<int> PurgeFinishedAsync(TimeSpan retention, CancellationToken cancellationToken = default) => throw new NotSupportedException();
 }
 

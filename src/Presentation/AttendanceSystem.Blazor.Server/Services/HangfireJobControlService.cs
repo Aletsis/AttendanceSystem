@@ -94,11 +94,30 @@ public class HangfireJobControlService : IBackgroundJobControlService, IHostedSe
                 _logger.LogInformation("▶️ Reanudando el servidor de Hangfire tras la operación en la base de datos...");
                 StartServerUnsafe();
                 _logger.LogInformation("✅ Servidor de Hangfire reanudado exitosamente.");
+                await ApplyConfiguredScheduleAsync(cancellationToken);
             }
         }
         finally
         {
             _lock.Release();
+        }
+    }
+
+    /// <summary>
+    /// Tras restaurar, la configuración puede traer otros horarios (o tareas desactivadas): la programación se rehace con
+    /// lo restaurado. Un fallo no impide reanudar; queda la programación anterior hasta el siguiente arranque o guardado.
+    /// </summary>
+    private async Task ApplyConfiguredScheduleAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer>()
+                .ApplyAsync(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "⚠️ No se pudo reprogramar las tareas con la configuración restaurada.");
         }
     }
 

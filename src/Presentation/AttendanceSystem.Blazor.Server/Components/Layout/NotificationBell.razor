@@ -1,0 +1,134 @@
+@using System.Security.Claims
+@using AttendanceSystem.Application.Features.Notifications
+@implements IDisposable
+@inject IServiceScopeFactory ScopeFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject NavigationManager Navigation
+
+@* Alertas abiertas que el usuario puede atender; cada una lleva a la vista donde se atiende. *@
+<MudBadge Content="@_notifications.Count" Visible="@(_notifications.Count > 0)" Color="@BadgeColor" Overlap="true" Max="99" Class="mx-1">
+<MudMenu Icon="@(_notifications.Count > 0 ? Icons.Material.Filled.Notifications : Icons.Material.Outlined.Notifications)" Color="Color.Inherit"
+         AriaLabel="Notificaciones" title="Notificaciones" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight"
+         OpenChanged="OnOpenChanged" ListClass="pa-0">
+    <ChildContent>
+        <div class="notification-list" style="width: min(380px, 92vw); max-height: 70vh; overflow-y: auto;">
+            <MudText Typo="Typo.subtitle2" Class="px-4 pt-3 pb-2">Notificaciones</MudText>
+            <MudDivider />
+            @if (_notifications.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="pa-4 mud-text-secondary">No hay notificaciones pendientes.</MudText>
+            }
+            @foreach (var notification in _notifications)
+            {
+                <MudMenuItem OnClick="@(() => Navigation.NavigateTo(notification.Href))" Class="py-2">
+                    <div class="d-flex align-start gap-3">
+                        <MudIcon Icon="@IconOf(notification)" Color="@ColorOf(notification.Severity)" Size="Size.Small" Class="mt-1" />
+                        <div style="min-width: 0;">
+                            <MudText Typo="Typo.body2"><b>@notification.Title</b></MudText>
+                            <MudText Typo="Typo.caption" Style="white-space: normal; display: block;">@notification.Message</MudText>
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">@Ago(notification.TimestampUtc)</MudText>
+                        </div>
+                    </div>
+                </MudMenuItem>
+            }
+        </div>
+    </ChildContent>
+</MudMenu>
+</MudBadge>
+
+@code {
+    /// <summary>Cada cuánto se revisan las alertas mientras la página está abierta.</summary>
+    public static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(60);
+
+    private IReadOnlyList<NotificationDto> _notifications = Array.Empty<NotificationDto>();
+    private readonly CancellationTokenSource _cts = new();
+
+    private Color BadgeColor => _notifications.Any(n => n.Severity == NotificationSeverity.Error) ? Color.Error : Color.Warning;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _ = RefreshPeriodicallyAsync(_cts.Token);
+    }
+
+    private async Task RefreshPeriodicallyAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(RefreshInterval);
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                await LoadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Esperado al cerrar el circuito.
+        }
+    }
+
+    private async Task OnOpenChanged(bool open)
+    {
+        if (open) await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            var state = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            if (state.User.Identity?.IsAuthenticated != true)
+            {
+                _notifications = Array.Empty<NotificationDto>();
+                return;
+            }
+
+            var roles = state.User.FindAll(ClaimTypes.Role).Select(c => c.Value).ToList();
+            // Ámbito propio: la página puede estar usando el contexto de datos del circuito al mismo tiempo.
+            using var scope = ScopeFactory.CreateScope();
+            var mediator = scope.ServiceProvider.GetRequiredService<IMediator>();
+            _notifications = await mediator.Send(new GetNotificationsQuery(roles), _cts.Token) ?? Array.Empty<NotificationDto>();
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        catch (Exception)
+        {
+            // Sin base (p. ej. en mantenimiento) se conservan las últimas; la campana nunca rompe el layout.
+        }
+    }
+
+    private static string IconOf(NotificationDto notification) => notification.Href switch
+    {
+        "/devices" or "/devices/clock-time" or "/attendance/download" => Icons.Material.Filled.Router,
+        "/backup" => Icons.Material.Filled.Backup,
+        "/attendance/periods" => Icons.Material.Filled.EventAvailable,
+        "/" => Icons.Material.Filled.EventBusy,
+        "/attendance/logs" => Icons.Material.Filled.PersonOff,
+        _ => notification.Severity == NotificationSeverity.Error ? Icons.Material.Filled.ErrorOutline : Icons.Material.Filled.WarningAmber,
+    };
+
+    private static Color ColorOf(NotificationSeverity severity) => severity switch
+    {
+        NotificationSeverity.Error => Color.Error,
+        NotificationSeverity.Warning => Color.Warning,
+        _ => Color.Info,
+    };
+
+    private static string Ago(DateTime timestampUtc)
+    {
+        var elapsed = DateTime.UtcNow - timestampUtc;
+        if (elapsed < TimeSpan.FromMinutes(1)) return "hace un momento";
+        if (elapsed < TimeSpan.FromHours(1)) return $"hace {(int)elapsed.TotalMinutes} min";
+        if (elapsed < TimeSpan.FromDays(1)) return $"hace {(int)elapsed.TotalHours} h";
+        var days = (int)elapsed.TotalDays;
+        return days == 1 ? "hace 1 día" : $"hace {days} días";
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

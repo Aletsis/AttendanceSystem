@@ -157,18 +157,18 @@ public class WpfCompositionTests
 
     private class MockJobScheduler : IAttendanceJobScheduler
     {
-        public void ScheduleAutoDownload(TimeSpan timeOfDay) { }
+        public void ScheduleAutoDownload(TimeSpan timeOfDay, string timeZoneId) { }
         public void DisableAutoDownload() { }
         public void ScheduleCriticalAbsenceCheck() { }
-        public void ScheduleAutoBackup(TimeSpan timeOfDay) { }
+        public void ScheduleAutoBackup(TimeSpan timeOfDay, string timeZoneId) { }
         public void DisableAutoBackup() { }
-        public void ScheduleAutoReport(TimeSpan timeOfDay) { }
+        public void ScheduleAutoReport(TimeSpan timeOfDay, string timeZoneId) { }
         public void DisableAutoReport() { }
         public void ScheduleDeviceHeartbeat() { }
         public void ScheduleCloudSync() { }
         public void ScheduleScheduleIntegrityCheck() { }
-        public void ScheduleDailyCalculation() { }
-        public void EnqueueBiometricSync(string deviceId, string employeeId) { }
+        public void ScheduleDailyCalculation(string timeZoneId) { }
+        public void EnqueueBiometricSync(string deviceId, IReadOnlyCollection<string> employeeIds) { }
         public void EnqueueAttendanceProcessing(DateTime startDate, DateTime endDate, string? employeeId = null) { }
     }
 }

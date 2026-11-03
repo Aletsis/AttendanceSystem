@@ -67,6 +67,9 @@ public interface IAttendanceConsolidationRepository
 
     Task<ConsolidationHealth> GetHealthAsync(int recentFailures = 20, CancellationToken cancellationToken = default);
 
+    /// <summary>Solicitudes pendientes, en proceso o fallidas cuyo rango toca las fechas dadas (días aún sin calcular).</summary>
+    Task<int> CountUnfinishedInRangeAsync(DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default);
+
     /// <summary>Elimina solicitudes completadas o absorbidas más antiguas que la retención; conserva las fallidas.</summary>
     Task<int> PurgeFinishedAsync(TimeSpan retention, CancellationToken cancellationToken = default);
 }

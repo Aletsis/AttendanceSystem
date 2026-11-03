@@ -107,6 +107,8 @@ public static class InfrastructureServiceExtensions
             sp.GetRequiredService<AttendanceDbContext>(),
             sp.GetRequiredService<Microsoft.Extensions.Logging.ILogger<PostgresAttendanceCalculationLockService>>(),
             TimeSpan.FromSeconds(configuration.GetValue("AttendanceLocks:TimeoutSeconds", 30))));
+        // Una sola ejecución a la vez de cada tarea programada (pg_try_advisory_lock de sesión).
+        services.AddScoped<JobExclusionLock>();
         services.AddSingleton<IPersistenceFailureClassifier, NpgsqlPersistenceFailureClassifier>();
         services.AddSingleton<IRestoreStateService, RestoreStateService>();
         services.AddSingleton<ICloudDataSourceProvider, CloudDataSourceProvider>();

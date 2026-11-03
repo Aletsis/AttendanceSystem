@@ -82,7 +82,7 @@ public class AttendanceRepositoryTests
     }
 
     [Fact]
-    public async Task HasCheckInForDateAsync_ShouldReturnTrueWhenCheckInExists()
+    public async Task HasPunchForDateAsync_ShouldReturnTrueWhenAPunchExists()
     {
         // Arrange
         using var context = CreateInMemoryDbContext();
@@ -97,11 +97,38 @@ public class AttendanceRepositoryTests
         await context.SaveChangesAsync();
 
         // Act
-        var hasCheckIn = await repository.HasCheckInForDateAsync(emp, new DateTime(2026, 9, 17));
-        var hasCheckInOtherDate = await repository.HasCheckInForDateAsync(emp, new DateTime(2026, 9, 18));
+        var hasCheckIn = await repository.HasPunchForDateAsync(emp, new DateTime(2026, 9, 17));
+        var hasCheckInOtherDate = await repository.HasPunchForDateAsync(emp, new DateTime(2026, 9, 18));
 
         // Assert
         hasCheckIn.Should().BeTrue();
         hasCheckInOtherDate.Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasPunchForDateAsync_IgnoresVoidedPunches()
+    {
+        using var context = CreateInMemoryDbContext();
+        var repository = new AttendanceRepository(context);
+        var emp = EmployeeId.From("EMP-002");
+        var rec = AttendanceRecord.Create(emp, DeviceId.From("DEV-01"), new DateTime(2026, 9, 17, 8, 15, 0, DateTimeKind.Utc), VerifyMethod.Fingerprint, CheckType.CheckIn);
+        rec.Void("rh", "marcaje de otro empleado");
+        await repository.AddAsync(rec);
+        await context.SaveChangesAsync();
+
+        (await repository.HasPunchForDateAsync(emp, new DateTime(2026, 9, 17))).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task HasPunchForDateAsync_CountsAnyPunchType()
+    {
+        using var context = CreateInMemoryDbContext();
+        var repository = new AttendanceRepository(context);
+        var emp = EmployeeId.From("EMP-003");
+        // Llegó y marcó "salida" por error: también prueba que llegó.
+        await repository.AddAsync(AttendanceRecord.Create(emp, DeviceId.From("DEV-01"), new DateTime(2026, 9, 17, 8, 15, 0, DateTimeKind.Utc), VerifyMethod.Fingerprint, CheckType.CheckOut));
+        await context.SaveChangesAsync();
+
+        (await repository.HasPunchForDateAsync(emp, new DateTime(2026, 9, 17))).Should().BeTrue();
     }
 }

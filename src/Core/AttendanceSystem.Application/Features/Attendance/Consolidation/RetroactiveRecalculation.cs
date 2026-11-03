@@ -169,7 +169,8 @@ public sealed class RecalculationImpactQueryHandler :
 /// antes actualiza el estado de cada empleado al de hoy (empieza o termina sus vacaciones o incapacidad).
 /// </summary>
 [RequiresPermission(Permissions.AttendanceCalculate)]
-public sealed record CalculatePreviousDayCommand : IRequest<int>;
+/// <param name="Today">Fecha de negocio de la ejecución (la fija la tarea programada); sin ella, la fecha local.</param>
+public sealed record CalculatePreviousDayCommand(DateTime? Today = null) : IRequest<int>;
 
 public sealed class CalculatePreviousDayCommandHandler : IRequestHandler<CalculatePreviousDayCommand, int>
 {
@@ -199,7 +200,7 @@ public sealed class CalculatePreviousDayCommandHandler : IRequestHandler<Calcula
     /// <returns>Empleados solicitados.</returns>
     public async Task<int> Handle(CalculatePreviousDayCommand request, CancellationToken cancellationToken)
     {
-        var today = _timeProvider.GetLocalNow().Date;
+        var today = (request.Today ?? _timeProvider.GetLocalNow().DateTime).Date;
         var yesterday = today.AddDays(-1);
         var all = await _employees.GetAllAsync(cancellationToken);
 

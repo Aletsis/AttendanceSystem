@@ -6,6 +6,7 @@ using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
+using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
@@ -185,6 +186,31 @@ public class DownloadFromDeviceSafetyTests
 
         // H03: Verifica que ClearLogsAsync fue invocado estrictamente con el rango acotado [minDate, maxDate]
         _deviceClientMock.Verify(c => c.ClearLogsAsync("1", minDate, maxDate, It.IsAny<CancellationToken>()), Times.Once());
+    }
+
+    [Fact]
+    public async Task Handle_EmployeesWithoutBiometrics_AreSyncedInOneJobPerDevice()
+    {
+        var rawRecords = new List<RawAttendanceRecord>
+        {
+            new("101", new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Utc), 1, 0, 0),
+            new("102", new DateTime(2026, 10, 17, 9, 0, 0, DateTimeKind.Utc), 1, 0, 0),
+            new("103", new DateTime(2026, 10, 17, 9, 30, 0, DateTimeKind.Utc), 1, 0, 0),
+        };
+        _deviceClientMock.Setup(c => c.GetAttendanceLogsAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeviceLogsResult.Success(rawRecords));
+        foreach (var (id, card) in new[] { ("101", (string?)null), ("102", null), ("103", "555") })
+        {
+            var employee = Employee.Create(EmployeeId.From(id), "E", id, null, null, new DateTime(2024, 1, 1), Gender.Male,
+                BranchId.CreateNew(), DepartmentId.CreateNew(), PositionId.CreateNew(), ShiftType.Matutino, cardNumber: card);
+            _employeeRepositoryMock.Setup(r => r.GetByIdAsync(EmployeeId.From(id), It.IsAny<CancellationToken>())).ReturnsAsync(employee);
+        }
+
+        var result = await _handler.Handle(new DownloadFromDeviceCommand("1"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue(result.IsSuccess ? "" : result.Error);
+        _jobSchedulerMock.Verify(s => s.EnqueueBiometricSync("1", It.Is<IReadOnlyCollection<string>>(ids => ids.OrderBy(i => i).SequenceEqual(new[] { "101", "102" }))), Times.Once);
+        _jobSchedulerMock.Verify(s => s.EnqueueBiometricSync(It.IsAny<string>(), It.IsAny<IReadOnlyCollection<string>>()), Times.Once);
     }
 
     [Fact]

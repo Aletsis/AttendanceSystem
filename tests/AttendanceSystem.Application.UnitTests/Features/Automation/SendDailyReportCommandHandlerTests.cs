@@ -134,4 +134,22 @@ public class SendDailyReportCommandHandlerTests
             It.Is<List<(string Name, byte[] Content)>>(att => att.Count == 2),
             It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task Handle_ReportsTheDayBeforeTheGivenDate_NotTheServerClock()
+    {
+        var configDto = new SystemConfigurationDto(
+            CompanyName: "Mi Empresa", CompanyLogo: null, LateToleranceMinutes: TimeSpan.FromMinutes(10), StandardWorkHours: TimeSpan.FromHours(8),
+            AutoClearDevicesAfterDownload: false, IsAutoDownloadEnabled: false, AutoDownloadTime: null, AutoDownloadOnlyToday: false,
+            IsAutoReportEnabled: true, AutoReportEmails: "reportes@empresa.com", AutoReportForToday: false);
+        _mediatorMock.Setup(m => m.Send(It.IsAny<GetSystemConfigurationQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(Result<SystemConfigurationDto>.Success(configDto));
+        _mediatorMock.Setup(m => m.Send(It.IsAny<GetAttendanceReportQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceReportViewDto>());
+
+        await _handler.Handle(new SendDailyReportCommand(new DateTime(2026, 10, 14)), CancellationToken.None);
+
+        _mediatorMock.Verify(m => m.Send(It.Is<GetAttendanceReportQuery>(q => q.StartDate == new DateTime(2026, 10, 13) && q.EndDate == new DateTime(2026, 10, 13)),
+            It.IsAny<CancellationToken>()), Times.Once);
+    }
 }

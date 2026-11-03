@@ -273,21 +273,25 @@ public class BackupServiceTests : IDisposable
     }
 
     [Fact]
-    public void ExcludeMaintenanceSchema_DropsOnlyItsTocEntries()
+    public void ExcludeServerSchemas_DropsOnlyTheirTocEntries()
     {
         const string toc = ";\n; Archive created at 2026-10-26\n;\n" +
                            "5; 2615 16384 SCHEMA - system_maintenance attendanceuser\n" +
                            "220; 1259 16390 TABLE system_maintenance maintenance_lock attendanceuser\n" +
                            "3400; 0 16390 TABLE DATA system_maintenance maintenance_lock attendanceuser\n" +
                            "221; 1259 16400 TABLE public Employees attendanceuser\r\n" +
-                           "6; 2615 16385 SCHEMA - hangfire attendanceuser\n";
+                           "6; 2615 16385 SCHEMA - hangfire attendanceuser\n" +
+                           "230; 1259 16500 TABLE hangfire job attendanceuser\n" +
+                           "3410; 0 16500 TABLE DATA hangfire job attendanceuser\n" +
+                           "222; 1259 16410 TABLE public HangfireNotes attendanceuser\n";
 
-        var kept = BackupService.ExcludeMaintenanceSchema(toc).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
+        var kept = BackupService.ExcludeServerSchemas(toc).Where(l => !string.IsNullOrWhiteSpace(l)).ToList();
 
         kept.Should().Contain("221; 1259 16400 TABLE public Employees attendanceuser");
-        kept.Should().Contain("6; 2615 16385 SCHEMA - hangfire attendanceuser");
+        kept.Should().Contain("222; 1259 16410 TABLE public HangfireNotes attendanceuser", "sólo el esquema hangfire, no un nombre parecido");
         kept.Should().Contain(";");
         kept.Should().NotContain(l => l.Contains("system_maintenance"));
+        kept.Should().NotContain(l => l.Contains(" hangfire "));
     }
 
     [Fact]

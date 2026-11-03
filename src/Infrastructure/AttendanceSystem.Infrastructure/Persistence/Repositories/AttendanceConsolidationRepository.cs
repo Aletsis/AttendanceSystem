@@ -240,6 +240,16 @@ UPDATE {Table}
                 (x.Status == ConsolidationStatus.Pending || x.Status == ConsolidationStatus.Processing), cancellationToken);
     }
 
+    public Task<int> CountUnfinishedInRangeAsync(DateTime startDate, DateTime endDate, CancellationToken cancellationToken = default)
+    {
+        var start = startDate.Date;
+        var end = endDate.Date;
+        return _context.AttendanceConsolidationRequests
+            .AsNoTracking()
+            .CountAsync(x => (x.Status == ConsolidationStatus.Pending || x.Status == ConsolidationStatus.Processing || x.Status == ConsolidationStatus.Failed) &&
+                             x.StartDate <= end && x.EndDate >= start, cancellationToken);
+    }
+
     public async Task<ConsolidationHealth> GetHealthAsync(int recentFailures = 20, CancellationToken cancellationToken = default)
     {
         var requests = _context.AttendanceConsolidationRequests.AsNoTracking();

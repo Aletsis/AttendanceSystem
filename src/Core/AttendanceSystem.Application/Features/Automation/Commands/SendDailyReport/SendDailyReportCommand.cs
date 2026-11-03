@@ -6,8 +6,12 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport;
 
+/// <param name="Today">
+/// Fecha de negocio de la ejecución (la tarea programada la fija al dispararse, en la zona del sistema): un reintento
+/// después de medianoche manda el reporte del mismo día, no el del siguiente.
+/// </param>
 [RequiresPermission(Permissions.SettingsManage)]
-public record SendDailyReportCommand() : IRequest<Result<bool>>;
+public record SendDailyReportCommand(DateTime? Today = null) : IRequest<Result<bool>>;
 
 public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportCommand, Result<bool>>
 {
@@ -49,7 +53,8 @@ public class SendDailyReportCommandHandler : IRequestHandler<SendDailyReportComm
             }
 
             // Determinamos la fecha objetivo para el reporte
-            var targetDate = config.AutoReportForToday ? DateTime.Today : DateTime.Today.AddDays(-1);
+            var today = (request.Today ?? DateTime.Today).Date;
+            var targetDate = config.AutoReportForToday ? today : today.AddDays(-1);
 
             _logger.LogInformation("Generando reporte diario automatizado para el {Date}", targetDate.ToString("yyyy-MM-dd"));
 

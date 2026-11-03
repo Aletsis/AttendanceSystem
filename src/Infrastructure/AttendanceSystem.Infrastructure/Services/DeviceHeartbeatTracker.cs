@@ -18,6 +18,8 @@ public class DeviceHeartbeatTracker : IDeviceHeartbeatTracker
     private static readonly TimeSpan ConnectionGap = TimeSpan.FromMinutes(5);
     private readonly ConcurrentDictionary<string, DateTime> _connectedSince = new(StringComparer.OrdinalIgnoreCase);
 
+    public DateTime TrackingSinceUtc { get; } = DateTime.UtcNow;
+
     public void RecordActivity(string serialNumber, string? deviceId = null)
     {
         var now = DateTime.UtcNow;

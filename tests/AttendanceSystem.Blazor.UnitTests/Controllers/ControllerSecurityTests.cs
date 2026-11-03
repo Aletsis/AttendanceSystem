@@ -132,7 +132,7 @@ public class ControllerSecurityTests
 
         var controller = new ConfigurationController(
             repoMock.Object,
-            schedulerMock.Object,
+            new AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer(repoMock.Object, schedulerMock.Object),
             config,
             NullLogger<ConfigurationController>.Instance);
 
@@ -156,7 +156,7 @@ public class ControllerSecurityTests
 
         var controller = new ConfigurationController(
             repoMock.Object,
-            schedulerMock.Object,
+            new AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer(repoMock.Object, schedulerMock.Object),
             config,
             NullLogger<ConfigurationController>.Instance);
 
@@ -176,5 +176,28 @@ public class ControllerSecurityTests
 
         // Assert: passes auth (might be NotFound or Ok based on config, but NOT Unauthorized)
         result.Should().NotBeOfType<UnauthorizedObjectResult>();
+    }
+
+    [Fact]
+    public async Task ConfigurationController_ReloadJobs_AppliesTheSavedSchedule()
+    {
+        var saved = AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate.SystemConfiguration.CreateDefault();
+        var repoMock = new Mock<ISystemConfigurationRepository>();
+        repoMock.Setup(r => r.GetConfigurationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(saved);
+        var schedulerMock = new Mock<IAttendanceJobScheduler>();
+        var controller = new ConfigurationController(
+            repoMock.Object,
+            new AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer(repoMock.Object, schedulerMock.Object),
+            new ConfigurationBuilder().Build(),
+            NullLogger<ConfigurationController>.Instance);
+        controller.ControllerContext = new ControllerContext
+        {
+            HttpContext = new DefaultHttpContext { User = new ClaimsPrincipal(new ClaimsIdentity(new[] { new Claim(ClaimTypes.Role, "Administrador") }, "TestAuth")) }
+        };
+
+        (await controller.ReloadJobs()).Should().BeOfType<OkObjectResult>();
+
+        schedulerMock.Verify(s => s.ScheduleDailyCalculation("America/Mexico_City"), Times.Once);
+        schedulerMock.Verify(s => s.DisableAutoBackup(), Times.Once);
     }
 }

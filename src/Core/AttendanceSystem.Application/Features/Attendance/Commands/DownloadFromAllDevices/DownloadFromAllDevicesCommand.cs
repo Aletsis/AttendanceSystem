@@ -14,7 +14,8 @@ public sealed record DownloadFromAllDevicesCommand(
     DateTime? ToDate = null,
     string? InitiatedByUserId = null,
     string? InitiatedByUserName = null,
-    bool ForceFullSync = false) : IRequest<Result<IEnumerable<DownloadResultDto>>>;
+    bool ForceFullSync = false,
+    IReadOnlyCollection<string>? DeviceIds = null) : IRequest<Result<IEnumerable<DownloadResultDto>>>;
 
 public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<DownloadFromAllDevicesCommand, Result<IEnumerable<DownloadResultDto>>>
 {
@@ -44,6 +45,11 @@ public sealed class DownloadFromAllDevicesCommandHandler : IRequestHandler<Downl
     public async Task<Result<IEnumerable<DownloadResultDto>>> Handle(DownloadFromAllDevicesCommand request, CancellationToken cancellationToken)
     {
         var devices = await _deviceRepository.GetActiveDevicesAsync(cancellationToken);
+        // Reintento de la descarga automática: sólo los relojes que fallaron.
+        if (request.DeviceIds != null)
+        {
+            devices = devices.Where(d => request.DeviceIds.Contains(d.Id.Value)).ToList();
+        }
         var results = new List<DownloadResultDto>();
 
         DateTime? globalMinDate = null;
