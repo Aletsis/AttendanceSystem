@@ -30,6 +30,7 @@
 
         <AuthorizeView>
             <Authorized>
+                <NotificationBell />
                 <MudHidden Breakpoint="Breakpoint.SmAndUp">
                     <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
                         <MudMenuItem Disabled="true">@context.User.Identity?.Name</MudMenuItem>
