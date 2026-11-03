@@ -18,5 +18,6 @@ public interface IAttendanceJobScheduler
     /// después cierra solos los periodos que terminaron hace más de 3 días.
     /// </summary>
     void ScheduleDailyCalculation();
-    void EnqueueBiometricSync(string deviceId, string employeeId);
+    /// <summary>Una sola sincronización de biometría por reloj para todos los empleados que no la tienen.</summary>
+    void EnqueueBiometricSync(string deviceId, IReadOnlyCollection<string> employeeIds);
 }

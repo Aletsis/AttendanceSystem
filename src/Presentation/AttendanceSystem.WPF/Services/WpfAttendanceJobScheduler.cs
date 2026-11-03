@@ -59,7 +59,7 @@ namespace AttendanceSystem.WPF.Services
             // No-op for WPF Client - Handled by server
         }
 
-        public void EnqueueBiometricSync(string deviceId, string employeeId)
+        public void EnqueueBiometricSync(string deviceId, IReadOnlyCollection<string> employeeIds)
         {
             // No-op for WPF Client - Handled by server
         }

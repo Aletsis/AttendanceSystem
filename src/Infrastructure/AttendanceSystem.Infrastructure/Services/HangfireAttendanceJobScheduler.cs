@@ -148,10 +148,11 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
     }
 
-    public void EnqueueBiometricSync(string deviceId, string employeeId)
+    public void EnqueueBiometricSync(string deviceId, IReadOnlyCollection<string> employeeIds)
     {
+        var ids = employeeIds.ToArray();
         _backgroundJobClient.Enqueue<AttendanceJobs>(
-            jobs => jobs.SyncEmployeeBiometrics(deviceId, employeeId, CancellationToken.None));
+            jobs => jobs.SyncDeviceBiometrics(deviceId, ids, CancellationToken.None));
     }
 }
 
@@ -294,14 +295,14 @@ public class AttendanceJobs
             }
         });
 
-    [JobDisplayName("Sync Biometrics for Employee {1} from Device {0}")]
-    public async Task SyncEmployeeBiometrics(string deviceId, string employeeId, CancellationToken cancellationToken)
+    [JobDisplayName("Sync Missing Biometrics from Device {0}")]
+    public async Task SyncDeviceBiometrics(string deviceId, string[] employeeIds, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics.SyncEmployeeBiometricsCommand(deviceId, employeeId), cancellationToken);
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics.SyncEmployeeBiometricsCommand(deviceId, employeeIds), cancellationToken);
         if (!result.IsSuccess)
         {
             throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                $"Sync Biometrics for Employee {employeeId} from Device {deviceId}", result.Error);
+                $"Sync Missing Biometrics from Device {deviceId}", result.Error);
         }
     }
 
@@ -318,8 +319,8 @@ public class AttendanceJobs
             }
         });
 
-    // Firmas anteriores, sin token: las tareas de horario configurable (descarga, respaldo, reporte) y los biométricos
-    // encolados quedan guardados en Hangfire con ellas hasta que se vuelvan a programar.
+    // Firmas anteriores: las tareas de horario configurable (descarga, respaldo, reporte) quedan guardadas en Hangfire sin
+    // token hasta que se vuelvan a programar, y los biométricos encolados antes, uno por empleado.
 
     [JobDisplayName("Download Logs from All Devices")]
     public Task DownloadFromAllDevices() => DownloadFromAllDevices(CancellationToken.None);
@@ -332,7 +333,7 @@ public class AttendanceJobs
 
     [JobDisplayName("Sync Biometrics for Employee {1} from Device {0}")]
     public Task SyncEmployeeBiometrics(string deviceId, string employeeId) =>
-        SyncEmployeeBiometrics(deviceId, employeeId, CancellationToken.None);
+        SyncDeviceBiometrics(deviceId, new[] { employeeId }, CancellationToken.None);
 
     /// <summary>
     /// Ya no se encola: la consolidación la hace AttendanceConsolidationWorker desde solicitudes durables.

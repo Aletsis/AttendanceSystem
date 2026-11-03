@@ -155,6 +155,7 @@ public class HangfireAttendanceJobsTests
         { nameof(AttendanceJobs.SendAutoReport), 0, AttemptsExceededAction.Fail },
         { nameof(AttendanceJobs.CalculatePreviousDay), 0, AttemptsExceededAction.Fail },
         { nameof(AttendanceJobs.AutoClosePeriods), 0, AttemptsExceededAction.Fail },
+        { nameof(AttendanceJobs.SyncDeviceBiometrics), 0, AttemptsExceededAction.Fail },
         { nameof(AttendanceJobs.SyncEmployeeBiometrics), 0, AttemptsExceededAction.Fail },
         { nameof(AttendanceJobs.CheckCriticalAbsences), 0, AttemptsExceededAction.Delete },
         { nameof(AttendanceJobs.MonitorDeviceHealth), 0, AttemptsExceededAction.Delete },

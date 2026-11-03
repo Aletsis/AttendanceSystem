@@ -1,3 +1,4 @@
+using AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
@@ -545,28 +546,25 @@ public sealed class DownloadFromDeviceCommandHandler
             await deviceClient.DisconnectAsync(cancellationToken);
 
             // Trigger Process - solo para empleados afectados
+            // La consolidación no se encola aquí: cada marcaje insertado emite AttendanceRecordedEvent, que
+            // registra una solicitud durable por empleado desde el outbox (F04-01 / F04-05).
             if (affectedEmployeeIds.Any() && minDate.HasValue && maxDate.HasValue)
             {
+                // Una sola sincronización de biometría por reloj (antes, una por empleado: varias conexiones a la vez al mismo reloj).
+                var missingBiometrics = new List<string>();
                 foreach (var empId in affectedEmployeeIds)
                 {
-                    // La consolidación no se encola aquí: cada marcaje insertado emite AttendanceRecordedEvent, que
-                    // registra una solicitud durable por empleado desde el outbox (F04-01 / F04-05).
-
-                    // Queue missing biometrics sync
                     var emp = await _employeeRepository.GetByIdAsync(EmployeeId.From(empId), cancellationToken);
-                    if (emp != null)
+                    if (emp != null && SyncEmployeeBiometricsCommandHandler.IsMissingBiometrics(emp))
                     {
-                        bool isMissingBiometrics = !emp.Fingerprints.Any() &&
-                                                   string.IsNullOrEmpty(emp.DevicePassword) &&
-                                                   string.IsNullOrEmpty(emp.CardNumber) &&
-                                                   string.IsNullOrEmpty(emp.FaceTemplate);
-
-                        if (isMissingBiometrics)
-                        {
-                            _logger.LogInformation("Biometría faltante detectada para empleado {EmployeeId}. Encolando sincronización.", empId);
-                            _jobScheduler.EnqueueBiometricSync(deviceIdValue, empId);
-                        }
+                        missingBiometrics.Add(empId);
                     }
+                }
+
+                if (missingBiometrics.Count > 0)
+                {
+                    _logger.LogInformation("Biometría faltante para {Count} empleados en {DeviceId}. Encolando sincronización.", missingBiometrics.Count, deviceIdValue);
+                    _jobScheduler.EnqueueBiometricSync(deviceIdValue, missingBiometrics);
                 }
             }
 
