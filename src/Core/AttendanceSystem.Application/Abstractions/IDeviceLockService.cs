@@ -14,4 +14,9 @@ public interface IDeviceLockService
     /// <param name="action">The asynchronous action to execute.</param>
     /// <param name="cancellationToken">Cancellation token for the wait operation.</param>
     Task ExecuteWithLockAsync(string deviceId, Func<Task> action, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Ejecuta la acción sólo si el dispositivo está libre; si otra operación lo usa, no espera y devuelve <c>false</c>.
+    /// </summary>
+    Task<bool> TryExecuteWithLockAsync(string deviceId, Func<Task> action, CancellationToken cancellationToken);
 }

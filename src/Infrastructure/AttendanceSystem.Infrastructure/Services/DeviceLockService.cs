@@ -27,4 +27,20 @@ public class DeviceLockService : IDeviceLockService
             semaphore.Release();
         }
     }
+
+    public async Task<bool> TryExecuteWithLockAsync(string deviceId, Func<Task> action, CancellationToken cancellationToken)
+    {
+        var semaphore = _locks.GetOrAdd(deviceId, _ => new SemaphoreSlim(1, 1));
+        if (!await semaphore.WaitAsync(0, cancellationToken)) return false;
+
+        try
+        {
+            await action();
+            return true;
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+    }
 }
