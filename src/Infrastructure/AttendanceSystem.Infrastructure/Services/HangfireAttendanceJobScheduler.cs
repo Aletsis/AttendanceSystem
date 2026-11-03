@@ -2,14 +2,29 @@ using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromAllDevices;
 using Hangfire;
 using MediatR;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration;
 using AttendanceSystem.Application.Features.Attendance.Commands.CheckCriticalAbsences;
 
 namespace AttendanceSystem.Infrastructure.Services;
 
+/// <summary>Identificadores de las tareas recurrentes; también nombran su candado de ejecución única.</summary>
+public static class AttendanceJobIds
+{
+    public const string AutoDownload = "download-attendance-daily";
+    public const string AutoBackup = "automated-database-backup";
+    public const string AutoReport = "automated-daily-report";
+    public const string CriticalAbsences = "check-critical-absences";
+    public const string DeviceHeartbeat = "device-heartbeat-monitor";
+    public const string CloudSync = "cloud-log-sync";
+    public const string ScheduleIntegrity = "schedule-integrity-check";
+    public const string DailyCalculation = "daily-attendance-calculation";
+    public const string AutoClosePeriods = "auto-close-periods";
+}
+
 public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
 {
-    private const string JobId = "download-attendance-daily";
     private readonly IRecurringJobManager _recurringJobManager;
     private readonly IBackgroundJobClient _backgroundJobClient;
 
@@ -36,23 +51,23 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         };
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            JobId,
-            jobs => jobs.DownloadFromAllDevices(),
+            AttendanceJobIds.AutoDownload,
+            jobs => jobs.DownloadFromAllDevices(CancellationToken.None),
             cron,
             options);
     }
 
     public void DisableAutoDownload()
     {
-        _recurringJobManager.RemoveIfExists(JobId);
+        _recurringJobManager.RemoveIfExists(AttendanceJobIds.AutoDownload);
     }
 
     public void ScheduleCriticalAbsenceCheck()
     {
         // Every 15 minutes: "*/15 * * * *"
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "check-critical-absences",
-            jobs => jobs.CheckCriticalAbsences(),
+            AttendanceJobIds.CriticalAbsences,
+            jobs => jobs.CheckCriticalAbsences(CancellationToken.None),
             "*/15 * * * *");
     }
     public void ScheduleAutoBackup(TimeSpan timeOfDay)
@@ -61,15 +76,15 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         var timeZone = TimeZoneInfo.Local;
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "automated-database-backup",
-            jobs => jobs.PerformAutoBackup(),
+            AttendanceJobIds.AutoBackup,
+            jobs => jobs.PerformAutoBackup(CancellationToken.None),
             cron,
             new RecurringJobOptions { TimeZone = timeZone });
     }
 
     public void DisableAutoBackup()
     {
-        _recurringJobManager.RemoveIfExists("automated-database-backup");
+        _recurringJobManager.RemoveIfExists(AttendanceJobIds.AutoBackup);
     }
 
     public void ScheduleAutoReport(TimeSpan timeOfDay)
@@ -78,22 +93,22 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         var timeZone = TimeZoneInfo.Local;
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "automated-daily-report",
-            jobs => jobs.SendAutoReport(),
+            AttendanceJobIds.AutoReport,
+            jobs => jobs.SendAutoReport(CancellationToken.None),
             cron,
             new RecurringJobOptions { TimeZone = timeZone });
     }
 
     public void DisableAutoReport()
     {
-        _recurringJobManager.RemoveIfExists("automated-daily-report");
+        _recurringJobManager.RemoveIfExists(AttendanceJobIds.AutoReport);
     }
     public void ScheduleDeviceHeartbeat()
     {
         // Every 10 minutes
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "device-heartbeat-monitor",
-            jobs => jobs.MonitorDeviceHealth(),
+            AttendanceJobIds.DeviceHeartbeat,
+            jobs => jobs.MonitorDeviceHealth(CancellationToken.None),
             "*/10 * * * *");
     }
 
@@ -101,8 +116,8 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
     {
         // Every 5 minutes
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "cloud-log-sync",
-            jobs => jobs.SyncCloudLogs(),
+            AttendanceJobIds.CloudSync,
+            jobs => jobs.SyncCloudLogs(CancellationToken.None),
             "*/5 * * * *");
     }
 
@@ -110,25 +125,25 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
     {
         // Every hour, and once now so a fresh start reports at once
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "schedule-integrity-check",
-            jobs => jobs.CheckScheduleIntegrity(),
+            AttendanceJobIds.ScheduleIntegrity,
+            jobs => jobs.CheckScheduleIntegrity(CancellationToken.None),
             "0 * * * *");
-        _backgroundJobClient.Enqueue<AttendanceJobs>(jobs => jobs.CheckScheduleIntegrity());
+        _backgroundJobClient.Enqueue<AttendanceJobs>(jobs => jobs.CheckScheduleIntegrity(CancellationToken.None));
     }
 
     public void ScheduleDailyCalculation()
     {
         // 00:05 hora local del servidor: el día anterior ya terminó.
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "daily-attendance-calculation",
-            jobs => jobs.CalculatePreviousDay(),
+            AttendanceJobIds.DailyCalculation,
+            jobs => jobs.CalculatePreviousDay(CancellationToken.None),
             "5 0 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
 
         // Caso 17: 00:30, cierra los periodos que terminaron hace más de 3 días.
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
-            "auto-close-periods",
-            jobs => jobs.AutoClosePeriods(),
+            AttendanceJobIds.AutoClosePeriods,
+            jobs => jobs.AutoClosePeriods(CancellationToken.None),
             "30 0 * * *",
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
     }
@@ -136,108 +151,153 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
     public void EnqueueBiometricSync(string deviceId, string employeeId)
     {
         _backgroundJobClient.Enqueue<AttendanceJobs>(
-            jobs => jobs.SyncEmployeeBiometrics(deviceId, employeeId));
+            jobs => jobs.SyncEmployeeBiometrics(deviceId, employeeId, CancellationToken.None));
     }
 }
 
+/// <summary>
+/// Tareas de Hangfire. Política común:
+/// <list type="bullet">
+/// <item>Sin reintentos automáticos: los de Hangfire (10, con esperas de horas o días) acumulaban ejecuciones de las
+/// tareas frecuentes y corrían las diarias a deshoras. Una periódica la cubre su siguiente pasada; una diaria fallida
+/// queda en "Failed" en el panel. Las frecuentes fallidas se borran (el error queda en el log) para no llenar el
+/// panel con cientos de fallos al día mientras dura una caída.</item>
+/// <item>Una sola ejecución a la vez de cada tarea (<see cref="JobExclusionLock"/>): si la anterior sigue corriendo, la
+/// nueva se omite.</item>
+/// <item>Cancelables: Hangfire pasa el token de apagado, que se cancela al detener el servidor o pausarlo para una
+/// restauración.</item>
+/// </list>
+/// </summary>
+[AutomaticRetry(Attempts = 0)]
 public class AttendanceJobs
 {
     private readonly IMediator _mediator;
+    private readonly JobExclusionLock? _exclusion;
+    private readonly ILogger<AttendanceJobs> _logger;
 
-    public AttendanceJobs(IMediator mediator)
+    public AttendanceJobs(IMediator mediator, JobExclusionLock? exclusion = null, ILogger<AttendanceJobs>? logger = null)
     {
         _mediator = mediator;
+        _exclusion = exclusion;
+        _logger = logger ?? NullLogger<AttendanceJobs>.Instance;
+    }
+
+    /// <summary>Ejecuta la tarea si no hay otra ejecución de la misma en curso; si la hay, la omite.</summary>
+    private async Task RunExclusiveAsync(string jobId, CancellationToken cancellationToken, Func<Task> body)
+    {
+        if (_exclusion == null)
+        {
+            await body();
+            return;
+        }
+
+        await using var held = await _exclusion.TryAcquireAsync(jobId, cancellationToken);
+        if (held == null)
+        {
+            _logger.LogInformation("La tarea {JobId} sigue en ejecución desde la pasada anterior; se omite esta.", jobId);
+            return;
+        }
+        await body();
     }
 
     [JobDisplayName("Download Logs from All Devices")]
-    public async Task DownloadFromAllDevices()
-    {
-        var result = await _mediator.Send(new DownloadFromAllDevicesCommand(null, null));
-        if (!result.IsSuccess)
+    public Task DownloadFromAllDevices(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.AutoDownload, cancellationToken, async () =>
         {
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Download Logs from All Devices", result.Error);
-        }
+            var result = await _mediator.Send(new DownloadFromAllDevicesCommand(null, null), cancellationToken);
+            if (!result.IsSuccess)
+            {
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Download Logs from All Devices", result.Error);
+            }
 
-        if (result.Value.Any(d => !d.Success))
-        {
-            var failedDevices = result.Value.Where(d => !d.Success).Select(d => $"{d.DeviceId}: {d.ErrorMessage}");
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Download Logs from All Devices",
-                $"Fallo en uno o más dispositivos: {string.Join("; ", failedDevices)}");
-        }
-    }
+            if (result.Value.Any(d => !d.Success))
+            {
+                var failedDevices = result.Value.Where(d => !d.Success).Select(d => $"{d.DeviceId}: {d.ErrorMessage}");
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Download Logs from All Devices",
+                    $"Fallo en uno o más dispositivos: {string.Join("; ", failedDevices)}");
+            }
+        });
+
+    [JobDisplayName("Calculate Previous Day Attendance")]
+    public Task CalculatePreviousDay(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.DailyCalculation, cancellationToken, () =>
+            _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.CalculatePreviousDayCommand(), cancellationToken));
+
+    [JobDisplayName("Auto-close Attendance Periods")]
+    public Task AutoClosePeriods(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.AutoClosePeriods, cancellationToken, () =>
+            _mediator.Send(new AttendanceSystem.Application.Features.Attendance.PeriodClosure.AutoClosePeriodsCommand(), cancellationToken));
 
     [JobDisplayName("Check for Critical Position Absences")]
-    public async Task CalculatePreviousDay()
-    {
-        await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.Consolidation.CalculatePreviousDayCommand());
-    }
-
-    public async Task AutoClosePeriods()
-    {
-        await _mediator.Send(new AttendanceSystem.Application.Features.Attendance.PeriodClosure.AutoClosePeriodsCommand());
-    }
-
-    public async Task CheckCriticalAbsences()
-    {
-        var result = await _mediator.Send(new CheckCriticalAbsencesCommand());
-        if (!result.IsSuccess)
+    [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Delete)]
+    public Task CheckCriticalAbsences(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.CriticalAbsences, cancellationToken, async () =>
         {
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Check for Critical Position Absences", result.Error);
-        }
-    }
+            var result = await _mediator.Send(new CheckCriticalAbsencesCommand(), cancellationToken);
+            if (!result.IsSuccess)
+            {
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Check for Critical Position Absences", result.Error);
+            }
+        });
 
     [JobDisplayName("Extend Rotation Rosters and Check Schedules")]
-    public async Task CheckScheduleIntegrity()
-    {
-        await _mediator.Send(new AttendanceSystem.Application.Features.Roster.Commands.ExtendRotationPatterns.ExtendRotationPatternsCommand());
-        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Shifts.Commands.CheckScheduleIntegrity.CheckScheduleIntegrityCommand());
-        if (!result.IsSuccess)
+    [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Delete)]
+    public Task CheckScheduleIntegrity(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.ScheduleIntegrity, cancellationToken, async () =>
         {
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Extend Rotation Rosters and Check Schedules", result.Error);
-        }
-    }
+            await _mediator.Send(new AttendanceSystem.Application.Features.Roster.Commands.ExtendRotationPatterns.ExtendRotationPatternsCommand(), cancellationToken);
+            var result = await _mediator.Send(new AttendanceSystem.Application.Features.Shifts.Commands.CheckScheduleIntegrity.CheckScheduleIntegrityCommand(), cancellationToken);
+            if (!result.IsSuccess)
+            {
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Extend Rotation Rosters and Check Schedules", result.Error);
+            }
+        });
 
     [JobDisplayName("Automated Database Backup")]
-    public async Task PerformAutoBackup()
-    {
-        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Backup.Commands.CreateBackupCommand("Full", "Respaldo Automático Programado"));
-        if (!result.Success)
+    public Task PerformAutoBackup(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.AutoBackup, cancellationToken, async () =>
         {
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Automated Database Backup", result.Message);
-        }
-    }
+            var result = await _mediator.Send(new AttendanceSystem.Application.Features.Backup.Commands.CreateBackupCommand("Full", "Respaldo Automático Programado"), cancellationToken);
+            if (!result.Success)
+            {
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Automated Database Backup", result.Message);
+            }
+        });
 
     [JobDisplayName("Automated Daily Report")]
-    public async Task SendAutoReport()
-    {
-        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand());
-        if (!result.IsSuccess)
+    public Task SendAutoReport(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.AutoReport, cancellationToken, async () =>
         {
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Automated Daily Report", result.Error);
-        }
-    }
+            var result = await _mediator.Send(new AttendanceSystem.Application.Features.Automation.Commands.SendDailyReport.SendDailyReportCommand(), cancellationToken);
+            if (!result.IsSuccess)
+            {
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Automated Daily Report", result.Error);
+            }
+        });
 
     [JobDisplayName("Monitor Device Health (Heartbeat)")]
-    public async Task MonitorDeviceHealth()
-    {
-        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Devices.Commands.MonitorDeviceHealth.MonitorDeviceHealthCommand());
-        if (!result.IsSuccess)
+    [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Delete)]
+    public Task MonitorDeviceHealth(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.DeviceHeartbeat, cancellationToken, async () =>
         {
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Monitor Device Health (Heartbeat)", result.Error);
-        }
-    }
+            var result = await _mediator.Send(new AttendanceSystem.Application.Features.Devices.Commands.MonitorDeviceHealth.MonitorDeviceHealthCommand(), cancellationToken);
+            if (!result.IsSuccess)
+            {
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Monitor Device Health (Heartbeat)", result.Error);
+            }
+        });
 
     [JobDisplayName("Sync Biometrics for Employee {1} from Device {0}")]
-    public async Task SyncEmployeeBiometrics(string deviceId, string employeeId)
+    public async Task SyncEmployeeBiometrics(string deviceId, string employeeId, CancellationToken cancellationToken)
     {
-        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics.SyncEmployeeBiometricsCommand(deviceId, employeeId));
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.Employees.Commands.SyncEmployeeBiometrics.SyncEmployeeBiometricsCommand(deviceId, employeeId), cancellationToken);
         if (!result.IsSuccess)
         {
             throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
@@ -246,21 +306,40 @@ public class AttendanceJobs
     }
 
     [JobDisplayName("Sync Logs with Cloud DB")]
-    public async Task SyncCloudLogs()
-    {
-        var result = await _mediator.Send(new AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs.SyncCloudLogsCommand());
-        if (!result.IsSuccess)
+    [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Delete)]
+    public Task SyncCloudLogs(CancellationToken cancellationToken) =>
+        RunExclusiveAsync(AttendanceJobIds.CloudSync, cancellationToken, async () =>
         {
-            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
-                "Sync Logs with Cloud DB", result.Error);
-        }
-    }
+            var result = await _mediator.Send(new AttendanceSystem.Application.Features.CloudSync.Commands.SyncCloudLogs.SyncCloudLogsCommand(), cancellationToken);
+            if (!result.IsSuccess)
+            {
+                throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                    "Sync Logs with Cloud DB", result.Error);
+            }
+        });
+
+    // Firmas anteriores, sin token: las tareas de horario configurable (descarga, respaldo, reporte) y los biométricos
+    // encolados quedan guardados en Hangfire con ellas hasta que se vuelvan a programar.
+
+    [JobDisplayName("Download Logs from All Devices")]
+    public Task DownloadFromAllDevices() => DownloadFromAllDevices(CancellationToken.None);
+
+    [JobDisplayName("Automated Database Backup")]
+    public Task PerformAutoBackup() => PerformAutoBackup(CancellationToken.None);
+
+    [JobDisplayName("Automated Daily Report")]
+    public Task SendAutoReport() => SendAutoReport(CancellationToken.None);
+
+    [JobDisplayName("Sync Biometrics for Employee {1} from Device {0}")]
+    public Task SyncEmployeeBiometrics(string deviceId, string employeeId) =>
+        SyncEmployeeBiometrics(deviceId, employeeId, CancellationToken.None);
 
     /// <summary>
     /// Ya no se encola: la consolidación la hace AttendanceConsolidationWorker desde solicitudes durables.
     /// Se conserva para ejecutar los trabajos que quedaron en el almacenamiento de Hangfire antes del cambio.
     /// </summary>
     [JobDisplayName("Process Attendance for Employee {2} from {0:yyyy-MM-dd} to {1:yyyy-MM-dd}")]
+    [AutomaticRetry(Attempts = 10)]
     public async Task ProcessAttendance(DateTime startDate, DateTime endDate, string? employeeId)
     {
         var empId = string.IsNullOrEmpty(employeeId) ? null : AttendanceSystem.Domain.ValueObjects.EmployeeId.From(employeeId);

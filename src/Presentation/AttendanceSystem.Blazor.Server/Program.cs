@@ -137,9 +137,12 @@ try
     builder.Services.AddScoped<AuthenticationStateProvider, AttendanceSystem.Blazor.Server.Services.IdentityRevalidatingAuthenticationStateProvider>();
 
     // ===== HANGFIRE =====
+    // Ventana de invisibilidad deslizante: con la fija (30 min), una tarea que tarda más (respaldo completo, descarga de
+    // muchos relojes) la volvía a tomar otro worker mientras la primera seguía corriendo.
     builder.Services.AddHangfire(config => config
-        .UsePostgreSqlStorage(c =>
-            c.UseNpgsqlConnection(builder.Configuration.GetConnectionString("HangfireDb"))));
+        .UsePostgreSqlStorage(
+            c => c.UseNpgsqlConnection(builder.Configuration.GetConnectionString("HangfireDb")),
+            new PostgreSqlStorageOptions { UseSlidingInvisibilityTimeout = true }));
 
     // Servidor de Hangfire administrado como Singleton e IHostedService para permitir pausa/reanudación atómica durante restauraciones
     builder.Services.AddSingleton<HangfireJobControlService>();
