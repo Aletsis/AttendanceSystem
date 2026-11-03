@@ -158,6 +158,8 @@ try
     // Tras una restauración con fallo crítico la base puede tener datos sin validar: migrarla o sembrarla
     // ocultaría el problema. Se arranca en mantenimiento para que el administrador restaure un respaldo.
     var startupMaintenanceState = await app.Services.GetRequiredService<IRestoreStateService>().LoadPersistedStateAsync();
+    // Sólo con el esquema al día se puede leer la configuración para programar las tareas.
+    var databaseReady = false;
     if (startupMaintenanceState == AttendanceSystem.Application.Common.MaintenanceState.Failed)
     {
         Log.Fatal("Restauración con fallo crítico pendiente: se omiten migraciones y datos iniciales, y Hangfire queda en pausa hasta restaurar un respaldo.");
@@ -185,6 +187,8 @@ try
         }
         else
         {
+            databaseReady = true;
+
             // ===== INICIALIZAR DATOS DE IDENTITY =====
             using (var scope = app.Services.CreateScope())
             {
@@ -227,9 +231,6 @@ try
     app.UseAuthorization();
 
 
-    // Initial System Configuration for Hangfire
-    // (Normally we would query DB here to restore schedules, but Hangfire persists them in DB, so no need to re-schedule on startup if using SQL storage)
-
     // Hangfire
     app.UseHangfireDashboard("/hangfire", new DashboardOptions
     {
@@ -244,7 +245,21 @@ try
         scheduler.ScheduleDeviceHeartbeat();
         scheduler.ScheduleCloudSync();
         scheduler.ScheduleScheduleIntegrityCheck();
-        scheduler.ScheduleDailyCalculation();
+
+        // Las de horario configurable, desde la configuración guardada: antes dependían de lo que Hangfire tuviera
+        // guardado, que una restauración o un esquema nuevo de Hangfire dejaban distinto. En mantenimiento se conserva
+        // la programación que haya; se aplica al reanudar las tareas tras restaurar.
+        if (databaseReady)
+        {
+            try
+            {
+                await scope.ServiceProvider.GetRequiredService<AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer>().ApplyAsync();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "No se pudieron programar las tareas de horario configurable al iniciar; se conserva la programación anterior.");
+            }
+        }
     }
 
     app.UseAntiforgery();

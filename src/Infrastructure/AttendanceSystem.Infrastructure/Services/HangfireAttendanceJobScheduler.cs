@@ -36,18 +36,30 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         _backgroundJobClient = backgroundJobClient;
     }
 
-    public void ScheduleAutoDownload(TimeSpan timeOfDay)
+    /// <summary>
+    /// La zona del sistema (IANA, también en Windows); si el servidor no la conoce, la local del servidor, como antes.
+    /// </summary>
+    public static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
+    {
+        if (!string.IsNullOrWhiteSpace(timeZoneId))
+        {
+            if (TimeZoneInfo.TryFindSystemTimeZoneById(timeZoneId, out var zone)) return zone;
+            if (TimeZoneInfo.TryConvertIanaIdToWindowsId(timeZoneId, out var windowsId) &&
+                TimeZoneInfo.TryFindSystemTimeZoneById(windowsId, out zone)) return zone;
+        }
+        return TimeZoneInfo.Local;
+    }
+
+    public void ScheduleAutoDownload(TimeSpan timeOfDay, string timeZoneId)
     {
         // Cron: Minute Hour * * *
         // Example: 14:30 -> "30 14 * * *"
         var cron = $"{timeOfDay.Minutes} {timeOfDay.Hours} * * *";
 
-        // Use the server's local timezone to match the user's expected time exactly
-        var timeZone = TimeZoneInfo.Local;
-
+        // La hora configurada es la de la empresa (zona del sistema), no la del servidor.
         var options = new RecurringJobOptions
         {
-            TimeZone = timeZone
+            TimeZone = ResolveTimeZone(timeZoneId)
         };
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
@@ -70,10 +82,10 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
             jobs => jobs.CheckCriticalAbsences(CancellationToken.None),
             "*/15 * * * *");
     }
-    public void ScheduleAutoBackup(TimeSpan timeOfDay)
+    public void ScheduleAutoBackup(TimeSpan timeOfDay, string timeZoneId)
     {
         var cron = $"{timeOfDay.Minutes} {timeOfDay.Hours} * * *";
-        var timeZone = TimeZoneInfo.Local;
+        var timeZone = ResolveTimeZone(timeZoneId);
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.AutoBackup,
@@ -87,10 +99,10 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         _recurringJobManager.RemoveIfExists(AttendanceJobIds.AutoBackup);
     }
 
-    public void ScheduleAutoReport(TimeSpan timeOfDay)
+    public void ScheduleAutoReport(TimeSpan timeOfDay, string timeZoneId)
     {
         var cron = $"{timeOfDay.Minutes} {timeOfDay.Hours} * * *";
-        var timeZone = TimeZoneInfo.Local;
+        var timeZone = ResolveTimeZone(timeZoneId);
 
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.AutoReport,
@@ -131,21 +143,23 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         _backgroundJobClient.Enqueue<AttendanceJobs>(jobs => jobs.CheckScheduleIntegrity(CancellationToken.None));
     }
 
-    public void ScheduleDailyCalculation()
+    public void ScheduleDailyCalculation(string timeZoneId)
     {
-        // 00:05 hora local del servidor: el día anterior ya terminó.
+        var timeZone = ResolveTimeZone(timeZoneId);
+
+        // 00:05 en la zona del sistema: el día anterior ya terminó.
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.DailyCalculation,
             jobs => jobs.CalculatePreviousDay(CancellationToken.None),
             "5 0 * * *",
-            new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+            new RecurringJobOptions { TimeZone = timeZone });
 
         // Caso 17: 00:30, cierra los periodos que terminaron hace más de 3 días.
         _recurringJobManager.AddOrUpdate<AttendanceJobs>(
             AttendanceJobIds.AutoClosePeriods,
             jobs => jobs.AutoClosePeriods(CancellationToken.None),
             "30 0 * * *",
-            new RecurringJobOptions { TimeZone = TimeZoneInfo.Local });
+            new RecurringJobOptions { TimeZone = timeZone });
     }
 
     public void EnqueueBiometricSync(string deviceId, IReadOnlyCollection<string> employeeIds)

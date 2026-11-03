@@ -189,4 +189,20 @@ public class HangfireAttendanceJobsTests
         Name(nameof(AttendanceJobs.CheckCriticalAbsences)).Should().Be("Check for Critical Position Absences");
         Name(nameof(AttendanceJobs.AutoClosePeriods)).Should().Be("Auto-close Attendance Periods");
     }
+
+    [Theory]
+    [InlineData("America/Mexico_City", -6)]
+    [InlineData("America/Tijuana", -8)]
+    public void TheScheduleTimeZone_IsTheSystemOne(string timeZoneId, int januaryOffsetHours)
+    {
+        var zone = HangfireAttendanceJobScheduler.ResolveTimeZone(timeZoneId);
+
+        zone.GetUtcOffset(new DateTime(2026, 1, 15, 12, 0, 0, DateTimeKind.Utc)).Should().Be(TimeSpan.FromHours(januaryOffsetHours));
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("Zona/Inexistente")]
+    public void AnUnknownTimeZone_FallsBackToTheServerOne(string? timeZoneId) =>
+        HangfireAttendanceJobScheduler.ResolveTimeZone(timeZoneId).Should().Be(TimeZoneInfo.Local);
 }

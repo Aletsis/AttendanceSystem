@@ -4,7 +4,7 @@ namespace AttendanceSystem.WPF.Services
 {
     public class WpfAttendanceJobScheduler : IAttendanceJobScheduler
     {
-        public void ScheduleAutoDownload(TimeSpan timeOfDay)
+        public void ScheduleAutoDownload(TimeSpan timeOfDay, string timeZoneId)
         {
             // No-op for WPF Client
         }
@@ -19,7 +19,7 @@ namespace AttendanceSystem.WPF.Services
             // No-op for WPF Client
         }
 
-        public void ScheduleAutoBackup(TimeSpan timeOfDay)
+        public void ScheduleAutoBackup(TimeSpan timeOfDay, string timeZoneId)
         {
             // No-op
         }
@@ -29,7 +29,7 @@ namespace AttendanceSystem.WPF.Services
             // No-op
         }
 
-        public void ScheduleAutoReport(TimeSpan timeOfDay)
+        public void ScheduleAutoReport(TimeSpan timeOfDay, string timeZoneId)
         {
             // No-op
         }
@@ -54,7 +54,7 @@ namespace AttendanceSystem.WPF.Services
             // No-op for WPF Client - Handled by server
         }
 
-        public void ScheduleDailyCalculation()
+        public void ScheduleDailyCalculation(string timeZoneId)
         {
             // No-op for WPF Client - Handled by server
         }

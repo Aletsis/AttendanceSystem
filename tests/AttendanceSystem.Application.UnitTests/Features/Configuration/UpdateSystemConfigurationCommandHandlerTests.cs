@@ -84,10 +84,28 @@ public class UpdateSystemConfigurationCommandHandlerTests
         existingConfig.CompanyName.Should().Be("Empresa Actualizada");
         existingConfig.LateTolerance.Should().Be(TimeSpan.FromMinutes(10));
 
-        _jobSchedulerMock.Verify(s => s.ScheduleAutoDownload(autoDownloadTime), Times.Once);
-        _jobSchedulerMock.Verify(s => s.ScheduleAutoBackup(autoBackupTime), Times.Once);
-        _jobSchedulerMock.Verify(s => s.ScheduleAutoReport(autoReportTime), Times.Once);
+        _jobSchedulerMock.Verify(s => s.ScheduleAutoDownload(autoDownloadTime, "America/Mexico_City"), Times.Once);
+        _jobSchedulerMock.Verify(s => s.ScheduleAutoBackup(autoBackupTime, "America/Mexico_City"), Times.Once);
+        _jobSchedulerMock.Verify(s => s.ScheduleAutoReport(autoReportTime, "America/Mexico_City"), Times.Once);
 
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WhenSavingFails_DoesNotTouchTheSchedule()
+    {
+        _repositoryMock.Setup(r => r.GetConfigurationAsync(It.IsAny<CancellationToken>())).ReturnsAsync(SystemConfiguration.CreateDefault());
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).ThrowsAsync(new InvalidOperationException("base caída"));
+        var command = new UpdateSystemConfigurationCommand(
+            CompanyName: "Empresa", CompanyLogo: null, LateTolerance: TimeSpan.FromMinutes(10), StandardWorkHours: TimeSpan.FromHours(8),
+            AutoClearDevicesAfterDownload: false, IsAutoDownloadEnabled: true, AutoDownloadTime: new TimeSpan(14, 30, 0), AutoDownloadOnlyToday: false,
+            AdmsPort: 8080, BackupDirectory: null, BackupTimeoutMinutes: 10, WorkPeriodMode: WorkPeriodMode.Weekly, WeeklyStartDay: DayOfWeek.Monday,
+            FortnightFirstDay: 1, FortnightSecondDay: 16, MonthlyStartDay: 1, AreAlertsEnabled: false, AbsenceAlertEmails: null, LateAlertEmails: null,
+            SystemFailureAlertEmails: null, SmtpHost: null, SmtpPort: 587, SmtpUser: null, SmtpPassword: null, SmtpEnableSsl: true,
+            IsAutoBackupEnabled: false, AutoBackupTime: null, IsAutoReportEnabled: false, AutoReportTime: null, AutoReportEmails: null, AutoReportForToday: false);
+
+        await _handler.Invoking(h => h.Handle(command, CancellationToken.None)).Should().ThrowAsync<InvalidOperationException>();
+
+        _jobSchedulerMock.VerifyNoOtherCalls();
     }
 }

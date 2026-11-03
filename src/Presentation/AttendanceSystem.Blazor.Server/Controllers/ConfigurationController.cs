@@ -1,4 +1,4 @@
-using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.Application.Features.Configuration.Services;
 using AttendanceSystem.Domain.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -12,18 +12,18 @@ namespace AttendanceSystem.Blazor.Server.Controllers;
 public class ConfigurationController : ControllerBase
 {
     private readonly ISystemConfigurationRepository _repository;
-    private readonly IAttendanceJobScheduler _jobScheduler;
+    private readonly ScheduledJobsSynchronizer _synchronizer;
     private readonly Microsoft.Extensions.Configuration.IConfiguration _configuration;
     private readonly ILogger<ConfigurationController> _logger;
 
     public ConfigurationController(
         ISystemConfigurationRepository repository,
-        IAttendanceJobScheduler jobScheduler,
+        ScheduledJobsSynchronizer synchronizer,
         Microsoft.Extensions.Configuration.IConfiguration configuration,
         ILogger<ConfigurationController> logger)
     {
         _repository = repository;
-        _jobScheduler = jobScheduler;
+        _synchronizer = synchronizer;
         _configuration = configuration;
         _logger = logger;
     }
@@ -60,41 +60,11 @@ public class ConfigurationController : ControllerBase
                 return NotFound(new { Success = false, Message = "Configuración no encontrada en la base de datos." });
             }
 
-            // Aplicar descargas automáticas
-            if (config.IsAutoDownloadEnabled && config.AutoDownloadTime.HasValue)
-            {
-                _jobScheduler.ScheduleAutoDownload(config.AutoDownloadTime.Value);
-                _logger.LogInformation("Autodescarga programada a las: {Time}", config.AutoDownloadTime.Value);
-            }
-            else
-            {
-                _jobScheduler.DisableAutoDownload();
-                _logger.LogInformation("Autodescarga deshabilitada.");
-            }
-
-            // Aplicar respaldos automáticos
-            if (config.IsAutoBackupEnabled && config.AutoBackupTime.HasValue)
-            {
-                _jobScheduler.ScheduleAutoBackup(config.AutoBackupTime.Value);
-                _logger.LogInformation("Autorespaldo programado a las: {Time}", config.AutoBackupTime.Value);
-            }
-            else
-            {
-                _jobScheduler.DisableAutoBackup();
-                _logger.LogInformation("Autorespaldo deshabilitado.");
-            }
-
-            // Aplicar reportes automáticos
-            if (config.IsAutoReportEnabled && config.AutoReportTime.HasValue)
-            {
-                _jobScheduler.ScheduleAutoReport(config.AutoReportTime.Value);
-                _logger.LogInformation("Autoreporte programado a las: {Time}", config.AutoReportTime.Value);
-            }
-            else
-            {
-                _jobScheduler.DisableAutoReport();
-                _logger.LogInformation("Autoreporte deshabilitado.");
-            }
+            await _synchronizer.ApplyAsync(config, HttpContext.RequestAborted);
+            _logger.LogInformation("Tareas programadas recargadas: descarga {Download}, respaldo {Backup}, reporte {Report}.",
+                config.IsAutoDownloadEnabled ? config.AutoDownloadTime?.ToString() : "deshabilitada",
+                config.IsAutoBackupEnabled ? config.AutoBackupTime?.ToString() : "deshabilitado",
+                config.IsAutoReportEnabled ? config.AutoReportTime?.ToString() : "deshabilitado");
 
             return Ok(new { Success = true, Message = "Tareas en segundo plano actualizadas correctamente." });
         }
