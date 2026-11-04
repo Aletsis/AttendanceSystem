@@ -152,6 +152,11 @@ try
     builder.Services.AddScoped<IAttendanceJobScheduler, HangfireAttendanceJobScheduler>();
     builder.Services.AddScoped<AttendanceJobs>();
 
+    // Marcajes en tiempo real de los relojes SDK (ZKTecoService:Realtime:Enabled). Sólo aquí: el servicio ZKTeco admite
+    // un único suscriptor.
+    builder.Services.AddSingleton<AttendanceSystem.Infrastructure.Services.ZKTecoRealtime.ZKTecoRealtimeDispatcher>();
+    builder.Services.AddHostedService<AttendanceSystem.Infrastructure.Services.ZKTecoRealtime.ZKTecoRealtimeSubscriber>();
+
     var app = builder.Build();
 
     // ===== ESTADO DE MANTENIMIENTO, MIGRACIONES Y DATOS INICIALES =====

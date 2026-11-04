@@ -2,6 +2,7 @@ using Grpc.Core;
 using AttendanceSystem.ZKTeco.Grpc;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.ZKTeco.Adapters;
+using AttendanceSystem.ZKTeco.Realtime;
 using System.Globalization;
 
 namespace AttendanceSystem.ZKTeco.Service.Services;
@@ -11,15 +12,18 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
     private readonly ILogger<ZKTecoGrpcService> _logger;
     private readonly IZKTecoSessionManager _sessionManager;
     private readonly IDeviceDiscoveryService _discoveryService;
+    private readonly ZKTecoRealtimeChannel _realtimeChannel;
 
     public ZKTecoGrpcService(
         ILogger<ZKTecoGrpcService> logger,
         IZKTecoSessionManager sessionManager,
-        IDeviceDiscoveryService discoveryService)
+        IDeviceDiscoveryService discoveryService,
+        ZKTecoRealtimeChannel realtimeChannel)
     {
         _logger = logger;
         _sessionManager = sessionManager;
         _discoveryService = discoveryService;
+        _realtimeChannel = realtimeChannel;
     }
 
     private string GetSessionId(ServerCallContext context)
@@ -511,5 +515,82 @@ public class ZKTecoGrpcService : AttendanceSystem.ZKTeco.Grpc.ZKTecoService.ZKTe
                 Message = ex.Message
             };
         }
+    }
+
+    public override async Task<SetRealtimeDevicesResponse> SetRealtimeDevices(SetRealtimeDevicesRequest request, ServerCallContext context)
+    {
+        try
+        {
+            var targets = request.Devices
+                .Where(d => !string.IsNullOrWhiteSpace(d.DeviceId) && !string.IsNullOrWhiteSpace(d.IpAddress))
+                .Select(d => new RealtimeDeviceTarget(d.DeviceId, d.IpAddress.Trim(), d.Port > 0 ? d.Port : 4370))
+                .ToList();
+            var active = await _sessionManager.SetRealtimeDevicesAsync(targets, context.CancellationToken);
+            return new SetRealtimeDevicesResponse
+            {
+                Success = true,
+                Message = $"{active} relojes en escucha en tiempo real",
+                ActiveCount = active
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error configurando los relojes en tiempo real");
+            return new SetRealtimeDevicesResponse { Success = false, Message = ex.Message };
+        }
+    }
+
+    public override async Task SubscribeRealtime(SubscribeRealtimeRequest request, IServerStreamWriter<RealtimeUpdate> responseStream, ServerCallContext context)
+    {
+        _logger.LogInformation("Suscriptor de tiempo real conectado desde {Peer}.", context.Peer);
+        try
+        {
+            foreach (var status in _sessionManager.GetRealtimeStatuses())
+            {
+                await responseStream.WriteAsync(ToUpdate(status), context.CancellationToken);
+            }
+
+            await foreach (var realtimeEvent in _realtimeChannel.ReadAllAsync(context.CancellationToken))
+            {
+                // Si la escritura falla el evento se pierde: la descarga de respaldo lo recupera.
+                await responseStream.WriteAsync(ToUpdate(realtimeEvent), context.CancellationToken);
+            }
+        }
+        catch (OperationCanceledException) when (context.CancellationToken.IsCancellationRequested)
+        {
+        }
+        _logger.LogInformation("Suscriptor de tiempo real desconectado ({Peer}).", context.Peer);
+    }
+
+    private static RealtimeUpdate ToUpdate(RealtimeEvent realtimeEvent)
+    {
+        var update = new RealtimeUpdate
+        {
+            DeviceId = realtimeEvent.DeviceId,
+            OccurredAtUtc = realtimeEvent.OccurredAtUtc.ToString("o", CultureInfo.InvariantCulture)
+        };
+
+        if (realtimeEvent.Punch is { } punch)
+        {
+            update.Punch = new RealtimePunchRecord
+            {
+                UserId = punch.UserId,
+                CheckTime = punch.CheckTime.ToString("o", CultureInfo.InvariantCulture),
+                VerifyMode = punch.VerifyMethod,
+                InOutMode = punch.InOutMode,
+                WorkCode = punch.WorkCode
+            };
+        }
+        else if (realtimeEvent.Connection is { } connection)
+        {
+            update.Connection = new RealtimeConnectionState
+            {
+                Connected = connection.Connected,
+                LastAliveUtc = connection.LastAliveUtc?.ToString("o", CultureInfo.InvariantCulture) ?? "",
+                Message = connection.Message
+            };
+        }
+
+        return update;
     }
 }

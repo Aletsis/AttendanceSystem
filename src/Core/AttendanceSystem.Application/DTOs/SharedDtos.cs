@@ -53,7 +53,8 @@ public sealed record DeviceDto(
     string? TimeZoneId = null,
     DateTime? LastActivityAt = null,
     DateTime? AcceptPunchesFrom = null,
-    DateTime? CreatedAt = null)
+    DateTime? CreatedAt = null,
+    bool RealtimeEnabled = false)
 {
     public DeviceDto() : this(string.Empty, string.Empty, string.Empty, 4370, null, true, "Active", DeviceBrand.ZKTeco, DeviceDownloadMethod.Sdk, null, 0) { }
 }

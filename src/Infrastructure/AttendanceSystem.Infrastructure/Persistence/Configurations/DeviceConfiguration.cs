@@ -40,6 +40,10 @@ public class DeviceConfiguration : IEntityTypeConfiguration<Device>
         builder.Property(x => x.ShouldClearAfterDownload)
             .IsRequired();
 
+        builder.Property(x => x.RealtimeEnabled)
+            .IsRequired()
+            .HasDefaultValue(false);
+
         builder.Property(x => x.DownloadMethod)
             .IsRequired()
             .HasConversion<int>();

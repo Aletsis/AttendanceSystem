@@ -68,7 +68,8 @@ public class DeviceQueries : IDeviceQueries
                 d.TimeZoneId,
                 lastActivity,
                 d.AcceptPunchesFrom,
-                d.CreatedAt
+                d.CreatedAt,
+                d.RealtimeEnabled
             );
         });
     }
@@ -122,7 +123,8 @@ public class DeviceQueries : IDeviceQueries
             device.TimeZoneId,
             lastActivity,
             device.AcceptPunchesFrom,
-            device.CreatedAt
+            device.CreatedAt,
+            device.RealtimeEnabled
         );
     }
 

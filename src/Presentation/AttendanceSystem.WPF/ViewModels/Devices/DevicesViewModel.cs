@@ -174,7 +174,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                         result.Parameters.GetValue<string?>("SerialNumber"),
                         result.Parameters.GetValue<string?>("Username"),
                         result.Parameters.GetValue<string?>("Password"),
-                        result.Parameters.GetValue<string?>("TimeZoneId")
+                        result.Parameters.GetValue<string?>("TimeZoneId"),
+                        result.Parameters.GetValue<bool>("RealtimeEnabled")
                     );
 
                     // El alta (y la edición) se conecta al reloj para leer su información: puede tardar hasta que expire la conexión.
@@ -221,6 +222,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 { "DownloadMethod", deviceData.DownloadMethod },
                 { "SerialNumber", deviceData.SerialNumber ?? string.Empty },
                 { "ShouldClearAfterDownload", deviceData.ShouldClearAfterDownload },
+                { "RealtimeEnabled", deviceData.RealtimeEnabled },
                 { "Username", deviceData.Username ?? string.Empty },
                 { "Password", deviceData.Password ?? string.Empty },
                 { "TimeZoneId", deviceData.TimeZoneId ?? string.Empty }
@@ -242,7 +244,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                         result.Parameters.GetValue<string?>("SerialNumber"),
                         result.Parameters.GetValue<string?>("Username"),
                         result.Parameters.GetValue<string?>("Password"),
-                        result.Parameters.GetValue<string?>("TimeZoneId")
+                        result.Parameters.GetValue<string?>("TimeZoneId"),
+                        RealtimeEnabled: result.Parameters.GetValue<bool>("RealtimeEnabled")
                     );
 
                     // El alta (y la edición) se conecta al reloj para leer su información: puede tardar hasta que expire la conexión.

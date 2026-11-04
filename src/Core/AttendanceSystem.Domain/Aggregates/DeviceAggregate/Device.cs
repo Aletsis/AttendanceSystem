@@ -23,6 +23,22 @@ public class Device : AggregateRoot<DeviceId>
     public string? TimeZoneId { get; private set; }
 
     /// <summary>
+    /// Recibir sus marcajes en tiempo real por SDK además de las descargas. Sólo para relojes ZKTeco por SDK; se apaga
+    /// solo si el reloj deja de serlo.
+    /// </summary>
+    public bool RealtimeEnabled { get; private set; }
+
+    public bool SupportsRealtime => Brand == DeviceBrand.ZKTeco && DownloadMethod == DeviceDownloadMethod.Sdk;
+
+    public void SetRealtimeEnabled(bool enabled)
+    {
+        if (enabled && !SupportsRealtime)
+            throw new DomainException("El tiempo real sólo está disponible para relojes ZKTeco por SDK");
+
+        RealtimeEnabled = enabled;
+    }
+
+    /// <summary>
     /// Caso 18 (R1): marcajes anteriores a esta fecha son imposibles (el reloj perdió su fecha). Sin valor: la fecha de
     /// alta del reloj menos los días configurados. El Administrador la adelanta para aceptar el historial de un reloj
     /// migrado de otro sistema.
@@ -147,6 +163,10 @@ public class Device : AggregateRoot<DeviceId>
         DownloadMethod = downloadMethod;
         Username = username;
         Password = password;
+        if (!SupportsRealtime)
+        {
+            RealtimeEnabled = false;
+        }
         if (timeZoneId != null)
         {
             TimeZoneId = timeZoneId;

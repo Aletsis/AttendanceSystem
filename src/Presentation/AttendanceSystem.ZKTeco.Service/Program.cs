@@ -5,6 +5,7 @@ using Microsoft.AspNetCore.Server.Kestrel.Core;
 using AttendanceSystem.ZKTeco.Service.Services;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.ZKTeco.Adapters;
+using AttendanceSystem.ZKTeco.Realtime;
 using Serilog;
 using Serilog.Events;
 using AttendanceSystem.ZKTeco.Service.Interceptors;
@@ -128,6 +129,10 @@ public class Program
             builder.Services.AddGrpcHealthChecks();
 
             // Registro de gestor de sesiones ZKTeco (conexiones bajo demanda con aislamiento por reloj)
+            // y de la escucha en tiempo real, cuya conexión es la sesión fija del reloj
+            builder.Services.Configure<ZKTecoRealtimeOptions>(builder.Configuration.GetSection(ZKTecoRealtimeOptions.SectionName));
+            builder.Services.AddSingleton<IZKTecoClientFactory, ZKTecoClientFactory>();
+            builder.Services.AddSingleton<ZKTecoRealtimeChannel>();
             builder.Services.AddSingleton<IZKTecoSessionManager, ZKTecoSessionManager>();
             builder.Services.AddSingleton<IDeviceDiscoveryService, ZKTecoDiscoveryService>();
 

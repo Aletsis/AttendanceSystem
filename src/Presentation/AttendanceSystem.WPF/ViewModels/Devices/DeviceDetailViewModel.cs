@@ -21,6 +21,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         private DeviceDownloadMethod _selectedDownloadMethod = DeviceDownloadMethod.Sdk;
         private string? _serialNumber;
         private bool _shouldClearAfterDownload;
+        private bool _realtimeEnabled;
         private string? _username;
         private string? _password;
         private string? _timeZoneId = string.Empty;
@@ -31,10 +32,13 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public string IpAddress { get => _ipAddress; set => SetProperty(ref _ipAddress, value); }
         public int Port { get => _port; set => SetProperty(ref _port, value); }
         public string? Location { get => _location; set => SetProperty(ref _location, value); }
-        public DeviceBrand SelectedBrand { get => _selectedBrand; set => SetProperty(ref _selectedBrand, value); }
-        public DeviceDownloadMethod SelectedDownloadMethod { get => _selectedDownloadMethod; set => SetProperty(ref _selectedDownloadMethod, value); }
+        public DeviceBrand SelectedBrand { get => _selectedBrand; set => SetProperty(ref _selectedBrand, value, () => RaisePropertyChanged(nameof(SupportsRealtime))); }
+        public DeviceDownloadMethod SelectedDownloadMethod { get => _selectedDownloadMethod; set => SetProperty(ref _selectedDownloadMethod, value, () => RaisePropertyChanged(nameof(SupportsRealtime))); }
         public string? SerialNumber { get => _serialNumber; set => SetProperty(ref _serialNumber, value); }
         public bool ShouldClearAfterDownload { get => _shouldClearAfterDownload; set => SetProperty(ref _shouldClearAfterDownload, value); }
+        /// <summary>Recibir sus marcajes en tiempo real por SDK; sólo relojes ZKTeco por SDK.</summary>
+        public bool RealtimeEnabled { get => _realtimeEnabled; set => SetProperty(ref _realtimeEnabled, value); }
+        public bool SupportsRealtime => SelectedBrand == DeviceBrand.ZKTeco && SelectedDownloadMethod == DeviceDownloadMethod.Sdk;
         public string? Username { get => _username; set => SetProperty(ref _username, value); }
         public string? Password { get => _password; set => SetProperty(ref _password, value); }
         /// <summary>Zona horaria del reloj; vacía = la zona del sistema.</summary>
@@ -76,6 +80,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 { "DownloadMethod", SelectedDownloadMethod },
                 { "SerialNumber", SerialNumber ?? string.Empty },
                 { "ShouldClearAfterDownload", ShouldClearAfterDownload },
+                { "RealtimeEnabled", RealtimeEnabled && SupportsRealtime },
                 { "Username", Username ?? string.Empty },
                 { "Password", Password ?? string.Empty },
                 { "TimeZoneId", TimeZoneId ?? string.Empty }
@@ -110,6 +115,7 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
                 SelectedDownloadMethod = parameters.GetValue<DeviceDownloadMethod>("DownloadMethod");
                 SerialNumber = parameters.GetValue<string?>("SerialNumber");
                 ShouldClearAfterDownload = parameters.GetValue<bool>("ShouldClearAfterDownload");
+                RealtimeEnabled = parameters.ContainsKey("RealtimeEnabled") && parameters.GetValue<bool>("RealtimeEnabled");
                 Username = parameters.GetValue<string?>("Username");
                 Password = parameters.GetValue<string?>("Password");
                 var timeZoneId = parameters.ContainsKey("TimeZoneId") ? parameters.GetValue<string?>("TimeZoneId") : null;
