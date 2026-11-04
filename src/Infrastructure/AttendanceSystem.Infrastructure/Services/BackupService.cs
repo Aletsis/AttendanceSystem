@@ -1556,7 +1556,10 @@ GRANT ALL ON SCHEMA public TO public;
             await psqlInput.WriteAsync(Encoding.UTF8.GetBytes(RestorePreambleSql), cancellationToken);
 
             // -f - : genera el script SQL por stdout sin conectarse; --clean --if-exists elimina cada objeto antes de recrearlo.
-            pgRestore = CreatePgProcess(pgRestorePath, $"-f - --clean --if-exists -v -L \"{listFile}\" \"{backupFilePath}\"", applicationName: null);
+            // --no-owner --no-privileges: el respaldo puede venir de una base cuyos objetos eran de otro rol (p. ej. postgres);
+            // sus ALTER ... OWNER TO / ALTER DEFAULT PRIVILEGES FOR ROLE exigen poder hacer SET ROLE a ese rol y abortaban la
+            // restauración. Todo queda a nombre del usuario de la aplicación, que es quien lo usa.
+            pgRestore = CreatePgProcess(pgRestorePath, $"-f - --clean --if-exists --no-owner --no-privileges -v -L \"{listFile}\" \"{backupFilePath}\"", applicationName: null);
             pgRestore.ErrorDataReceived += (_, e) =>
             {
                 if (string.IsNullOrWhiteSpace(e.Data)) return;

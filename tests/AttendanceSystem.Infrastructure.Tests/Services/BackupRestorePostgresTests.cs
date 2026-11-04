@@ -202,22 +202,18 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
         var (service, state) = CreateService();
         if (!ToolsAvailable(service)) return;
 
-        // Un respaldo con una tabla cuyo dueño ya no existe: el ALTER ... OWNER TO falla a mitad del script,
-        // después de que el preámbulo borró los esquemas.
-        await ExecAsync(@"
-            DROP ROLE IF EXISTS restore_probe_owner;
-            CREATE ROLE restore_probe_owner;
-            CREATE TABLE public.owned_probe (id int);
-            ALTER TABLE public.owned_probe OWNER TO restore_probe_owner;");
+        // Un respaldo con una tabla cuyo DEFAULT llama a una función de un esquema que no viaja en el respaldo y que ya no
+        // existe: el CREATE TABLE falla a mitad del script, después de que el preámbulo borró los esquemas.
+        await CreateTableWithVanishingDefaultAsync("broken_default_probe", "restore_probe_fn");
         var backup = await service.CreateDatabaseBackupAsync();
         backup.Success.Should().BeTrue(backup.Message);
-        await ExecAsync("DROP TABLE public.owned_probe; DROP ROLE restore_probe_owner;");
+        await DropTableWithVanishingDefaultAsync("broken_default_probe", "restore_probe_fn");
         await SetProbeAsync("vigente");
 
         var result = await service.RestoreBackupAsync(backup.BackupFilePath!);
 
         result.Success.Should().BeFalse();
-        result.Message.Should().Contain("restore_probe_owner", "debe fallar dentro del script, después del borrado de esquemas");
+        result.Message.Should().Contain("restore_probe_fn", "debe fallar dentro del script, después del borrado de esquemas");
         result.Message.Should().Contain("no se modificó");
         (await ProbeValueAsync()).Should().Be("vigente");
         await AssertSchemaIntactAsync();
@@ -756,13 +752,9 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
         var (service, _) = CreateService(jobs);
         if (!ToolsAvailable(service)) return;
 
-        await ExecAsync(@"
-            DROP ROLE IF EXISTS restore_probe_owner2;
-            CREATE ROLE restore_probe_owner2;
-            CREATE TABLE public.owned_probe2 (id int);
-            ALTER TABLE public.owned_probe2 OWNER TO restore_probe_owner2;");
+        await CreateTableWithVanishingDefaultAsync("broken_default_probe2", "restore_probe_fn2");
         var backup = await service.CreateDatabaseBackupAsync();
-        await ExecAsync("DROP TABLE public.owned_probe2; DROP ROLE restore_probe_owner2;");
+        await DropTableWithVanishingDefaultAsync("broken_default_probe2", "restore_probe_fn2");
         backup.Success.Should().BeTrue(backup.Message);
 
         var result = await service.RestoreBackupAsync(backup.BackupFilePath!);
@@ -771,4 +763,46 @@ public class BackupRestorePostgresTests : IClassFixture<PostgresTestDatabaseFixt
         jobs.Pauses.Should().Be(1);
         jobs.Resumes.Should().Be(1);
     }
+
+    [Fact]
+    public async Task Restore_OfObjectsOwnedByARoleTheAppCannotBecome_Succeeds()
+    {
+        var (service, state) = CreateService();
+        if (!ToolsAvailable(service)) return;
+
+        // Caso real: respaldo de una base cuyos objetos eran de "postgres". Su ALTER ... OWNER TO fallaba con
+        // "debe ser capaz de hacer SET ROLE"; aquí el rol ni siquiera existe al restaurar, que es el caso extremo.
+        await ExecAsync(@"
+            DROP ROLE IF EXISTS restore_probe_owner;
+            CREATE ROLE restore_probe_owner;
+            CREATE TABLE public.owned_probe (id int);
+            INSERT INTO public.owned_probe VALUES (42);
+            ALTER TABLE public.owned_probe OWNER TO restore_probe_owner;
+            GRANT SELECT ON public.owned_probe TO restore_probe_owner;");
+        var backup = await service.CreateDatabaseBackupAsync();
+        backup.Success.Should().BeTrue(backup.Message);
+        await ExecAsync("DROP TABLE public.owned_probe; DROP ROLE restore_probe_owner;");
+
+        var result = await service.RestoreBackupAsync(backup.BackupFilePath!);
+
+        result.Success.Should().BeTrue(result.Message);
+        (await ScalarAsync("SELECT id::text FROM public.owned_probe")).Should().Be("42");
+        (await ScalarAsync("SELECT tableowner::text FROM pg_tables WHERE schemaname = 'public' AND tablename = 'owned_probe'"))
+            .Should().Be(await ScalarAsync("SELECT current_user::text"), "sin el dueño original, la tabla queda a nombre de quien restaura");
+        state.CurrentState.Should().Be(MaintenanceState.Normal);
+        await ExecAsync("DROP TABLE public.owned_probe;");
+    }
+
+    /// <summary>
+    /// Tabla cuyo DEFAULT usa una función del esquema de mantenimiento, que no viaja en los respaldos. Tras borrar la
+    /// función, restaurar ese respaldo falla en el CREATE TABLE: un error SQL a mitad del script, independiente de roles.
+    /// </summary>
+    private Task CreateTableWithVanishingDefaultAsync(string table, string function) => ExecAsync($@"
+        CREATE SCHEMA IF NOT EXISTS system_maintenance;
+        CREATE OR REPLACE FUNCTION system_maintenance.{function}() RETURNS int LANGUAGE sql AS 'SELECT 1';
+        CREATE TABLE public.{table} (id int DEFAULT system_maintenance.{function}());");
+
+    private Task DropTableWithVanishingDefaultAsync(string table, string function) => ExecAsync($@"
+        DROP TABLE public.{table};
+        DROP FUNCTION system_maintenance.{function}();");
 }
