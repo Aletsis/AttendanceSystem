@@ -18,8 +18,12 @@ Responde a estas preguntas antes de rediseñar el servicio ZKTeco:
 ## Cómo funciona
 
 Cada reloj tiene su propio hilo **STA** con bucle de mensajes de Windows (`Application.Run`). El objeto
-`zkemkeeper.CZKEMClass` se crea, se usa y recibe sus eventos solo en ese hilo: sin eso los eventos COM nunca se
-disparan. Ese es el modelo que tendría el servicio en la fase 2.
+`zkemkeeper.CZKEMClass` se crea, se usa y recibe sus eventos solo en ese hilo.
+
+> **Corregido por la prueba en un reloj real (2026-11-03):** el STA no es necesario. En un hilo MTA, con sólo
+> `RegEvent`, cada checada llega una vez y en menos de 1 s por un hilo interno del SDK; en STA con sondeo llegan
+> duplicadas y se repiten checadas de sesiones anteriores. `OnDisConnected` no llega al reiniciar el reloj. Ver
+> [`AttendanceSystem.ZKTeco.RealtimeProbe`](../AttendanceSystem.ZKTeco.RealtimeProbe/README.md).
 
 - `Connect_Net` → `RegEvent(máquina, máscara)` → espera eventos.
 - Latido `GetDeviceTime` cada 30 s: mide el desfase del reloj y detecta caídas (2 fallos seguidos).
