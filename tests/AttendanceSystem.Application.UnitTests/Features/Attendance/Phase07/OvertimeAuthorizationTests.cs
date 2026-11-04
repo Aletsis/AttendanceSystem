@@ -136,6 +136,27 @@ public class OvertimeAuthorizationTests
         Day(h).Notes.Should().Contain("Tiempo extra no autorizado: 80 min");
     }
 
+    [Theory]
+    [InlineData(OvertimeCalculationMethod.NoRounding, 80)]
+    [InlineData(OvertimeCalculationMethod.RoundByHalfHour, 60)]
+    [InlineData(OvertimeCalculationMethod.RoundByHour, 60)]
+    public async Task AuthorizedEmployee_StoredOvertimeIsRoundedWithTheEmployeeMethod(OvertimeCalculationMethod method, int expected)
+    {
+        var shift = Shift.Create("Fijo 9-17", new TimeSpan(9, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Matutino);
+        var h = new AttendanceRecalculationHarness { Configuration = SystemConfiguration.CreateDefault() };
+        h.Store.Shifts.Add(shift);
+        h.Store.Employees.Add(Employee.Create(Emp, "Empleado", "Extras", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
+            shift.ShiftType, shift.Id, restDays: new[] { WeekDay.Domingo }, overtimeAuthorized: true, overtimeCalculationMethod: method));
+        h.Store.Records.Add(AttendanceRegressionFixtures.CreatePunch(Emp, Monday.AddHours(9), CheckType.CheckIn));
+        h.Store.Records.Add(AttendanceRegressionFixtures.CreatePunch(Emp, Monday.AddHours(18).AddMinutes(20), CheckType.CheckIn));
+
+        await h.RecalculateAsync(Monday, Monday.AddDays(1));
+
+        Day(h).RawOvertimeMinutes.Should().Be(80);
+        Day(h).OvertimeMinutes.Should().Be(expected);
+    }
+
     [Fact]
     public void UnauthorizedEmployees_KeepNoRoundingCapsOrBeforeEntry()
     {
