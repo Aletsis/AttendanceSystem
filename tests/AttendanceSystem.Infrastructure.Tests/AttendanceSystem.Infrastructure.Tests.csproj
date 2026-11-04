@@ -25,6 +25,8 @@
     <ProjectReference Include="..\..\src\Infrastructure\AttendanceSystem.Infrastructure\AttendanceSystem.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\Core\AttendanceSystem.Application\AttendanceSystem.Application.csproj" />
     <ProjectReference Include="..\..\src\Core\AttendanceSystem.Domain\AttendanceSystem.Domain.csproj" />
+    <!-- Alias: el proyecto ZKTeco genera los tipos gRPC de servidor con los mismos nombres que los de cliente de Infrastructure -->
+    <ProjectReference Include="..\..\src\Infrastructure\AttendanceSystem.ZKTeco\AttendanceSystem.ZKTeco.csproj" Aliases="zkteco" />
   </ItemGroup>
 
 </Project>

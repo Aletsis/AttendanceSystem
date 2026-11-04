@@ -1,4 +1,5 @@
 using AttendanceSystem.Application.Abstractions;
+using AttendanceSystem.ZKTeco.Realtime;
 
 namespace AttendanceSystem.ZKTeco.Adapters;
 
@@ -34,7 +35,16 @@ public interface IZKTecoSessionManager : IAsyncDisposable
     Task<bool> DisconnectSessionAsync(string sessionId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Cierra y libera todas las sesiones activas (usado en apagado ordenado).
+    /// Cierra y libera todas las sesiones activas y detiene las escuchas en tiempo real (usado en apagado ordenado).
     /// </summary>
     Task CloseAllSessionsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Define los relojes que se escuchan en tiempo real: inicia los nuevos y detiene los que ya no están. Devuelve
+    /// cuántos quedan en escucha. Mientras un reloj se escucha, <see cref="ConnectSessionAsync"/> presta su conexión.
+    /// </summary>
+    Task<int> SetRealtimeDevicesAsync(IReadOnlyCollection<RealtimeDeviceTarget> devices, CancellationToken cancellationToken = default);
+
+    /// <summary>Estado actual de la conexión de cada reloj en escucha.</summary>
+    IReadOnlyList<RealtimeEvent> GetRealtimeStatuses();
 }

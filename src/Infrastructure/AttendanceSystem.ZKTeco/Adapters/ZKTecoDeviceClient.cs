@@ -1,17 +1,22 @@
 using Microsoft.Extensions.Logging;
-using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
+using AttendanceSystem.ZKTeco.Realtime;
 
 namespace AttendanceSystem.ZKTeco.Adapters;
 
 // Esta es la implementación del puerto IDeviceClient
-// Vive en Infrastructure pero se compila como x86
-public class ZKTecoDeviceClient : IDeviceClient, IDisposable
+// Vive en Infrastructure; el SDK es COM de 32 bits, así que corre en el proceso x86 del servicio ZKTeco
+public class ZKTecoDeviceClient : IZKTecoClient
 {
     private readonly zkemkeeper.CZKEMClass _device;
     private readonly ILogger<ZKTecoDeviceClient> _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private bool _isConnected;
+    private bool _realtimeSubscribed;
+
+    public bool IsConnected => _isConnected;
+
+    public event EventHandler<RealtimePunch>? PunchReceived;
 
     public ZKTecoDeviceClient(ILogger<ZKTecoDeviceClient> logger)
     {
@@ -244,6 +249,58 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
         finally
         {
             _lock.Release();
+        }
+    }
+
+    public async Task<bool> EnableRealtimeEventsAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_isConnected) throw new InvalidOperationException("Dispositivo no conectado");
+
+        await _lock.WaitAsync(cancellationToken);
+        try
+        {
+            return await Task.Run(() =>
+            {
+                // En un hilo MTA el SDK entrega cada marcaje una vez, en un hilo propio, sin sondear con ReadRTLog
+                // (prueba en reloj real: tools/AttendanceSystem.ZKTeco.RealtimeProbe).
+                if (!_realtimeSubscribed)
+                {
+                    _device.OnAttTransactionEx += OnAttTransactionEx;
+                    _realtimeSubscribed = true;
+                }
+
+                // 65535: todos los eventos. El reloj olvida el registro al desconectarse: se repite en cada conexión.
+                if (_device.RegEvent(1, 65535)) return true;
+
+                int errorCode = 0;
+                _device.GetLastError(ref errorCode);
+                _logger.LogError("RegEvent devolvió false. Código de error SDK: {ErrorCode}", errorCode);
+                return false;
+            }, cancellationToken);
+        }
+        finally
+        {
+            _lock.Release();
+        }
+    }
+
+    // Corre en un hilo del SDK: ninguna excepción debe volver a él.
+    private void OnAttTransactionEx(string enrollNumber, int isInValid, int attState, int verifyMethod,
+        int year, int month, int day, int hour, int minute, int second, int workCode)
+    {
+        try
+        {
+            var checkTime = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Unspecified);
+            PunchReceived?.Invoke(this, new RealtimePunch(enrollNumber, checkTime, verifyMethod, attState, workCode, isInValid != 0));
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            _logger.LogWarning("El reloj envió en tiempo real un marcaje con fecha inválida: {Year}-{Month}-{Day} {Hour}:{Minute}:{Second} (usuario {UserId})",
+                year, month, day, hour, minute, second, enrollNumber);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error procesando un marcaje en tiempo real del usuario {UserId}", enrollNumber);
         }
     }
 
@@ -877,6 +934,10 @@ public class ZKTecoDeviceClient : IDeviceClient, IDisposable
         finally
         {
             try { _lock.Release(); } catch { }
+            if (_realtimeSubscribed)
+            {
+                try { _device.OnAttTransactionEx -= OnAttTransactionEx; } catch { }
+            }
             if (OperatingSystem.IsWindows() && System.Runtime.InteropServices.Marshal.IsComObject(_device))
             {
                 try

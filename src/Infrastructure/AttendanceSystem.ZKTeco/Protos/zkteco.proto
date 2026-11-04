@@ -45,6 +45,13 @@ service ZKTecoService {
 
   // Buscar dispositivos en la red local (Discovery)
   rpc DiscoverDevices (DiscoverDevicesRequest) returns (DiscoverDevicesResponse);
+
+  // Definir los relojes que se escuchan en tiempo real (reemplaza la lista anterior)
+  rpc SetRealtimeDevices (SetRealtimeDevicesRequest) returns (SetRealtimeDevicesResponse);
+
+  // Recibir marcajes y cambios de conexión en tiempo real. Un solo suscriptor: uno nuevo reemplaza al anterior.
+  // Al suscribirse llega primero el estado actual de cada reloj en escucha.
+  rpc SubscribeRealtime (SubscribeRealtimeRequest) returns (stream RealtimeUpdate);
 }
 
 // ========== Mensajes de Conexión ==========
@@ -267,4 +274,50 @@ message DiscoveredDevice {
   string mac_address = 4;
   string firmware_version = 5;
   int32 port = 6;
+}
+
+// ========== Mensajes de Tiempo Real ==========
+
+message RealtimeDevice {
+  string device_id = 1; // Identificador del reloj en el sistema
+  string ip_address = 2;
+  int32 port = 3;
+}
+
+message SetRealtimeDevicesRequest {
+  repeated RealtimeDevice devices = 1;
+}
+
+message SetRealtimeDevicesResponse {
+  bool success = 1;
+  string message = 2;
+  int32 active_count = 3;
+}
+
+message SubscribeRealtimeRequest {
+}
+
+message RealtimeUpdate {
+  string device_id = 1;
+  string occurred_at_utc = 2; // Formato ISO 8601
+  oneof payload {
+    RealtimePunchRecord punch = 3;
+    RealtimeConnectionState connection = 4;
+  }
+}
+
+message RealtimePunchRecord {
+  string user_id = 1;
+  string check_time = 2; // Hora civil del reloj, ISO 8601 sin zona (igual que AttendanceRecord.check_time)
+  int32 verify_mode = 3;
+  int32 in_out_mode = 4;
+  int32 work_code = 5;
+}
+
+message RealtimeConnectionState {
+  bool connected = 1;
+  // Al conectarse: último contacto de la conexión anterior (vacío si es la primera). Lo marcado desde entonces se
+  // recupera con una descarga.
+  string last_alive_utc = 2;
+  string message = 3;
 }
