@@ -17,8 +17,9 @@ using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http;
 
-namespace AttendanceSystem.Blazor.Server.Controllers;
+namespace AttendanceSystem.Adms;
 
 [Route("iclock")]
 [Route("")]
@@ -432,14 +433,12 @@ public class AdmsController : ControllerBase
             await _unitOfWork.SaveChangesAsync();
         }
 
-        if (_admsCommandService.HasPendingCommands(SN))
+        // Se reclama directamente (una sola consulta): sin pendientes no se entrega nada.
+        var (cmdId, command, logId) = await _admsCommandService.GetNextCommandAsync(SN);
+        if (!string.IsNullOrEmpty(command) && !string.IsNullOrEmpty(cmdId))
         {
-            var (cmdId, command, logId) = _admsCommandService.GetNextCommand(SN);
-            if (!string.IsNullOrEmpty(command) && !string.IsNullOrEmpty(cmdId))
-            {
-                _logger.LogInformation("📤 Comando → {SN}: {Command}", SN, SanitizeCommand(command));
-                return Content($"C:{cmdId}:{command}\n", "text/plain;charset=ISO-8859-1");
-            }
+            _logger.LogInformation("📤 Comando → {SN}: {Command}", SN, SanitizeCommand(command));
+            return Content($"C:{cmdId}:{command}\n", "text/plain;charset=ISO-8859-1");
         }
 
         return Content("OK", "text/plain;charset=ISO-8859-1");
@@ -448,11 +447,11 @@ public class AdmsController : ControllerBase
     // Diagnostic endpoint to check pending commands
     [Authorize(Roles = "Administrador")]
     [HttpGet("debug/pending-commands")]
-    public IActionResult GetPendingCommandsDebug([FromQuery] string? SN = null)
+    public async Task<IActionResult> GetPendingCommandsDebug([FromQuery] string? SN = null)
     {
         if (!string.IsNullOrWhiteSpace(SN))
         {
-            var hasPending = _admsCommandService.HasPendingCommands(SN);
+            var hasPending = await _admsCommandService.HasPendingCommandsAsync(SN);
             return Ok(new { SerialNumber = SN, HasPendingCommands = hasPending });
         }
 
@@ -903,7 +902,7 @@ public class AdmsController : ControllerBase
                 var utcOffset = _timeNormalizer.ResolveTimeZone(deviceTimeZone).GetUtcOffset(DateTime.UtcNow);
                 foreach (var clockCommand in AdmsTimeZone.ClockCommands(expectedNow, utcOffset))
                 {
-                    _admsCommandService.EnqueueCommand(SN, clockCommand);
+                    await _admsCommandService.EnqueueCommandAsync(SN, clockCommand);
                 }
                 AttendanceTelemetry.DeviceClockCorrections.Add(1, new KeyValuePair<string, object?>("outcome", "queued"));
                 _logger.LogWarning("ALERTA: el reloj ADMS {SN} envió un marcaje de {Reported:yyyy-MM-dd HH:mm:ss} cuando en su zona {TimeZone} eran las {Expected:yyyy-MM-dd HH:mm:ss}. Se encoló su resincronización.",
@@ -1361,7 +1360,7 @@ public class AdmsController : ControllerBase
                 updatedHw.MacAddress
             );
 
-            _admsCommandService.NotifyDeviceInfoReceived(SN, deviceInfoDto, commandId);
+            await _admsCommandService.NotifyDeviceInfoReceivedAsync(SN, deviceInfoDto, commandId);
         }
         catch (Exception ex)
         {

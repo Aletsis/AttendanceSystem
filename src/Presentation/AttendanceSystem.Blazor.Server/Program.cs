@@ -15,7 +15,7 @@ using AttendanceSystem.Infrastructure.Persistence.Repositories;
 using AttendanceSystem.Infrastructure.Adapters;
 using AttendanceSystem.Infrastructure.Services;
 using AttendanceSystem.Blazor.Server.Services;
-using AttendanceSystem.Blazor.Server.Middleware;
+using AttendanceSystem.Adms;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
 using AttendanceSystem.ZKTeco.Grpc;
 using QuestPDF.Infrastructure;
@@ -71,7 +71,7 @@ try
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
     builder.Services.AddMudServices();
-    builder.Services.AddControllersWithViews(); // Enable Controllers with Views for Antiforgery support
+    builder.Services.AddControllersWithViews().AddAdmsReceiver(); // Enable Controllers with Views for Antiforgery support
     builder.Services.AddScoped<IReportExportService, ReportExportService>();
     builder.Services.AddScoped<IImportService, ImportService>();
 
@@ -154,50 +154,11 @@ try
 
     var app = builder.Build();
 
-    // ===== ESTADO DE MANTENIMIENTO PERSISTIDO =====
-    // Tras una restauración con fallo crítico la base puede tener datos sin validar: migrarla o sembrarla
-    // ocultaría el problema. Se arranca en mantenimiento para que el administrador restaure un respaldo.
-    var startupMaintenanceState = await app.Services.GetRequiredService<IRestoreStateService>().LoadPersistedStateAsync();
-    // Sólo con el esquema al día se puede leer la configuración para programar las tareas.
-    var databaseReady = false;
-    if (startupMaintenanceState == AttendanceSystem.Application.Common.MaintenanceState.Failed)
-    {
-        Log.Fatal("Restauración con fallo crítico pendiente: se omiten migraciones y datos iniciales, y Hangfire queda en pausa hasta restaurar un respaldo.");
-        await app.Services.GetRequiredService<IBackgroundJobControlService>().PauseBackgroundJobsAsync();
-    }
-    else if (startupMaintenanceState != AttendanceSystem.Application.Common.MaintenanceState.Normal)
-    {
-        // La restauración en curso deja el esquema al día al terminar; migrar a la vez chocaría con pg_restore.
-        Log.Warning("Otro proceso está restaurando la base ({State}): se omiten migraciones y datos iniciales.", startupMaintenanceState);
-    }
-    else
-    {
-        // ===== VERIFICAR Y APLICAR MIGRACIONES PENDIENTES =====
-        // Respaldo previo, bloqueo entre procesos y, si algo falla, arranque en mantenimiento (ver StartupMigrationService).
-        StartupMigrationResult migration;
-        using (var scope = app.Services.CreateScope())
-        {
-            migration = await scope.ServiceProvider.GetRequiredService<StartupMigrationService>().RunAsync();
-        }
-
-        if (migration.Outcome == StartupMigrationOutcome.Maintenance)
-        {
-            Log.Fatal("El esquema no quedó al día: se omiten los datos iniciales y Hangfire queda en pausa. {Reason}", migration.Message);
-            await app.Services.GetRequiredService<IBackgroundJobControlService>().PauseBackgroundJobsAsync();
-        }
-        else
-        {
-            databaseReady = true;
-
-            // ===== INICIALIZAR DATOS DE IDENTITY =====
-            using (var scope = app.Services.CreateScope())
-            {
-                var loggerFactory = scope.ServiceProvider.GetRequiredService<ILoggerFactory>();
-                var logger = loggerFactory.CreateLogger("IdentityDataSeeder");
-                await AttendanceSystem.Blazor.Server.Data.IdentityDataSeeder.SeedAsync(app.Services, logger);
-            }
-        }
-    }
+    // ===== ESTADO DE MANTENIMIENTO, MIGRACIONES Y DATOS INICIALES =====
+    // Común con el cliente WPF sin sitio web (ver ServerStartup). Sólo con el esquema al día se puede leer la
+    // configuración para programar las tareas.
+    var startupLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("ServerStartup");
+    var databaseReady = await ServerStartup.PrepareDatabaseAsync(app.Services, applyMigrations: true, startupLogger) == DatabaseStartupStatus.Ready;
 
     // ===== LOGGING MIDDLEWARE =====
     app.UseMiddleware<AdmsRequestLoggingMiddleware>();
@@ -237,30 +198,8 @@ try
         Authorization = new[] { new AttendanceSystem.Blazor.Server.Services.HangfireDashboardAuthorizationFilter() }
     });
 
-    // Programar alertas de puestos críticos al inicio
-    using (var scope = app.Services.CreateScope())
-    {
-        var scheduler = scope.ServiceProvider.GetRequiredService<IAttendanceJobScheduler>();
-        scheduler.ScheduleCriticalAbsenceCheck();
-        scheduler.ScheduleDeviceHeartbeat();
-        scheduler.ScheduleCloudSync();
-        scheduler.ScheduleScheduleIntegrityCheck();
-
-        // Las de horario configurable, desde la configuración guardada: antes dependían de lo que Hangfire tuviera
-        // guardado, que una restauración o un esquema nuevo de Hangfire dejaban distinto. En mantenimiento se conserva
-        // la programación que haya; se aplica al reanudar las tareas tras restaurar.
-        if (databaseReady)
-        {
-            try
-            {
-                await scope.ServiceProvider.GetRequiredService<AttendanceSystem.Application.Features.Configuration.Services.ScheduledJobsSynchronizer>().ApplyAsync();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "No se pudieron programar las tareas de horario configurable al iniciar; se conserva la programación anterior.");
-            }
-        }
-    }
+    // Programar las tareas recurrentes al inicio
+    await ServerStartup.ScheduleRecurringJobsAsync(app.Services, databaseReady, startupLogger);
 
     app.UseAntiforgery();
 

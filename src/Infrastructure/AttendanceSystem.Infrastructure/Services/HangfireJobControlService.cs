@@ -5,7 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace AttendanceSystem.Blazor.Server.Services;
+namespace AttendanceSystem.Infrastructure.Services;
 
 /// <summary>
 /// Controla el ciclo de vida, pausa y reanudación del servidor de Hangfire durante operaciones críticas como restauraciones de base de datos.

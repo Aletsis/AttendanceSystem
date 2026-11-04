@@ -39,13 +39,15 @@ public class AdmsDeviceClientTests
             .Returns(() => Reply(new DisconnectDeviceResponse { Success = true }));
 
         var commands = new Mock<IAdmsCommandService>(MockBehavior.Strict);
-        var response = new TaskCompletionSource<DeviceInfoDto?>();
+        var infoCommand = Guid.NewGuid();
         var expected = new DeviceInfoDto(Serial, "MiniAC Plus", "1.0", "ZKTeco", 1, 0, 1, 0, 100, 100, 100, 100);
-        commands.Setup(s => s.WaitForDeviceInfoAsync(Serial, TimeSpan.FromSeconds(30), It.IsAny<CancellationToken>()))
+        // La respuesta se espera sobre el comando encolado (su fila), así que primero se encola y luego se espera.
+        commands.Setup(s => s.EnqueueCommandAsync(Serial, "INFO", null, It.IsAny<CancellationToken>()))
+            .Callback(() => calls.Add("INFO"))
+            .ReturnsAsync(infoCommand);
+        commands.Setup(s => s.WaitForDeviceInfoAsync(infoCommand, TimeSpan.FromSeconds(30), It.IsAny<CancellationToken>()))
             .Callback(() => calls.Add("wait"))
-            .Returns(response.Task);
-        commands.Setup(s => s.EnqueueCommand(Serial, "INFO", null))
-            .Callback(() => { calls.Add("INFO"); response.SetResult(expected); });
+            .ReturnsAsync(expected);
 
         using var provider = new ServiceCollection()
             .AddSingleton(new GrpcZKTecoDeviceClient(grpc.Object, NullLogger<GrpcZKTecoDeviceClient>.Instance))
@@ -58,8 +60,8 @@ public class AdmsDeviceClientTests
 
         result!.SerialNumber.Should().Be(Serial);
         calls.Should().Equal(infoAvailable ? new[] { "sdk-connect", "sdk-info" } :
-            sdkAvailable ? new[] { "sdk-connect", "sdk-info", "wait", "INFO" } : new[] { "sdk-connect", "wait", "INFO" });
-        commands.Verify(s => s.EnqueueCommand(Serial, "INFO", null), infoAvailable ? Times.Never() : Times.Once());
+            sdkAvailable ? new[] { "sdk-connect", "sdk-info", "INFO", "wait" } : new[] { "sdk-connect", "INFO", "wait" });
+        commands.Verify(s => s.EnqueueCommandAsync(Serial, "INFO", null, It.IsAny<CancellationToken>()), infoAvailable ? Times.Never() : Times.Once());
         grpc.Verify(c => c.ConnectDeviceAsync(It.IsAny<ConnectDeviceRequest>(), It.IsAny<Metadata>(),
             It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), Times.Once());
         grpc.Verify(c => c.GetDeviceInfoAsync(It.IsAny<GetDeviceInfoRequest>(), It.IsAny<Metadata>(),
@@ -93,7 +95,7 @@ public class AdmsDeviceClientTests
         var sent = await client.SetUserAsync(new DeviceUserDto("B01123", "Carlos Eduardo Santana Gómez", "", 0, true));
 
         sent.Should().BeTrue();
-        commands.Verify(s => s.EnqueueCommand(Serial,
-            It.Is<string>(c => c.StartsWith("DATA UPDATE user\tPIN=B01123\tName=Carlos Eduardo Santana G\tPri=")), null), Times.Once);
+        commands.Verify(s => s.EnqueueCommandAsync(Serial,
+            It.Is<string>(c => c.StartsWith("DATA UPDATE user\tPIN=B01123\tName=Carlos Eduardo Santana G\tPri=")), null, It.IsAny<CancellationToken>()), Times.Once);
     }
 }

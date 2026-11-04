@@ -1,19 +1,34 @@
 # Cliente de escritorio (WPF)
 
-Cliente Windows del sistema de asistencia. Usa **el mismo backend que la versión web**: las capas `Application` e
-`Infrastructure`, los mismos comandos y consultas de MediatR y la misma base PostgreSQL. No tiene servidor propio ni
-ejecuta tareas programadas (descargas, respaldos y reportes automáticos los hace el sitio web); nunca aplica migraciones.
+Programa Windows del sistema de asistencia, para usarse en el mismo equipo que la base de datos. Usa **el mismo backend
+que la versión web**: las capas `Application` e `Infrastructure`, los mismos comandos y consultas de MediatR y la misma
+base PostgreSQL. No depende de que el sitio web esté encendido: mientras está abierto ejecuta también lo que corre en
+segundo plano (`Services/WpfBackendHost.cs`).
+
+## Instalación junto al sitio web o sin él
+
+| | Junto al sitio web (`Hosting:Standalone = false`) | Sólo el programa (`Hosting:Standalone = true`) |
+|---|---|---|
+| Esquema y datos iniciales | Los aplica el sitio web. Con el esquema atrasado avisa y deja las tareas en pausa. | Al arrancar, como el sitio: respaldo previo, migraciones y roles y administrador (`ServerStartup`). |
+| Tareas programadas (Hangfire) | Mismo almacenamiento que el sitio: cada tarea la ejecuta uno de los dos. | Las ejecuta el programa mientras está abierto; las que se perdieron corren al abrirlo. |
+| Consolidación y outbox | Igual que el sitio (varios procesos a la vez, sin duplicar). | Igual. |
+| Relojes ADMS | Los recibe el sitio web. Los comandos que encola el programa le llegan por la tabla `AdmsCommands`. | El programa los recibe en el puerto ADMS de la configuración del sistema (por defecto 18373). |
+
+Lo que corre en segundo plano actúa como Sistema, no como el usuario con sesión (`WpfOperationScope`): sólo lo que pide
+la interfaz requiere sesión iniciada. Al cerrar el programa se cancelan las tareas en curso (hasta 30 s de espera); una
+que no alcance a terminar la retoma otro proceso al vencer su reserva.
 
 ## Configuración
 
-`appsettings.json` junto al ejecutable (se lee de la carpeta del programa, no de la carpeta de trabajo). Partir de
-`appsettings.example.json`:
+`appsettings.json` junto al ejecutable (se lee de la carpeta del programa, no de la carpeta de trabajo; los logs y las
+rutas relativas también son de esa carpeta). Si falta, el programa lo avisa al abrir. Partir de `appsettings.example.json`:
 
 | Clave | Uso |
 |---|---|
 | `ConnectionStrings:AttendanceDb` | Base de datos compartida con el sitio web. |
-| `BackendUrl` | URL del sitio web; al guardar la configuración se le pide recargar las tareas programadas. |
-| `ApiKey` | La API key del sitio web para esa llamada. |
+| `ConnectionStrings:HangfireDb` | Almacenamiento de las tareas programadas; el mismo que el del sitio web (si falta se usa `AttendanceDb`). |
+| `Hosting:Standalone` | `true` cuando no está instalado el sitio web (ver arriba). Por defecto `false`. |
+| `ZKTecoService:Url`, `ZKTecoService:ApiKey` | Servicio de Windows de los relojes por SDK. |
 | `Maintenance:PollIntervalSeconds` | Cada cuánto se consulta si hay una restauración en curso (aviso en la ventana). |
 | `Serilog` | Registro de la aplicación (errores no controlados incluidos). |
 
