@@ -142,9 +142,11 @@ jobs:
           name: "AttendanceSystem v${{ env.VERSION }}"
           body_path: ./RELEASE_NOTES.md
           draft: ${{ github.event.inputs.is_draft == 'true' }}
-          prerelease: ${{ github.event.inputs.is_prerelease == 'true' }}
+          # Un tag con sufijo (v2.3.0-beta.1, v2.3.0-rc.1) es un pre-release aunque no se lance a mano.
+          prerelease: ${{ github.event.inputs.is_prerelease == 'true' || (github.ref_type == 'tag' && contains(github.ref_name, '-')) }}
           files: |
             ./Artifacts/AttendanceSystem_Setup_v${{ env.VERSION }}.exe
             ./Artifacts/AttendanceSystem_Web_v${{ env.VERSION }}.zip
+            ./Artifacts/AttendanceSystem_Desktop_v${{ env.VERSION }}.zip
             ./Artifacts/AttendanceSystem_ZKTecoService_v${{ env.VERSION }}.zip
           generate_release_notes: true
