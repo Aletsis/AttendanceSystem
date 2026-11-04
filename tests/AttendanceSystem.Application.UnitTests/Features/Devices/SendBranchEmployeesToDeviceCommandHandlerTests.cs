@@ -133,4 +133,50 @@ public class SendBranchEmployeesToDeviceCommandHandlerTests
         result.IsSuccess.Should().BeFalse();
         _client.Verify(c => c.SetUserAsync(It.IsAny<DeviceUserDto>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task Progress_IsReportedForEachEmployee()
+    {
+        var device = AddDevice();
+        var branch = AddBranch();
+        WithEmployees(branch, NewEmployee("501", branch), NewEmployee("502", branch));
+        var progress = new RecordingProgress();
+
+        await Handler().Handle(new SendBranchEmployeesToDeviceCommand(device.Id.Value, branch.Id.Value, progress), CancellationToken.None);
+
+        progress.Reports.Select(p => p.Done).Should().Equal(0, 0, 0, 1);
+        progress.Reports.Should().OnlyContain(p => p.Total == 2);
+        progress.Reports[2].Message.Should().Contain("501");
+        progress.Reports[3].Message.Should().Contain("502");
+    }
+
+    [Fact]
+    public async Task Cancelling_StopsBetweenEmployees_AndReturnsWhatWasSent()
+    {
+        var device = AddDevice();
+        var branch = AddBranch();
+        WithEmployees(branch, NewEmployee("601", branch), NewEmployee("602", branch), NewEmployee("603", branch));
+        using var cancellation = new CancellationTokenSource();
+        _client.Setup(c => c.SetUserAsync(It.IsAny<DeviceUserDto>(), It.IsAny<CancellationToken>()))
+            .Callback<DeviceUserDto, CancellationToken>((u, token) =>
+            {
+                token.CanBeCanceled.Should().BeFalse("cortar a media escritura dejaría al reloj deshabilitado");
+                _sent.Add(u);
+                cancellation.Cancel();
+            })
+            .ReturnsAsync(true);
+
+        var result = await Handler().Handle(new SendBranchEmployeesToDeviceCommand(device.Id.Value, branch.Id.Value), cancellation.Token);
+
+        result.Value.Should().BeEquivalentTo(new SendBranchEmployeesToDeviceResult(3, 1, Array.Empty<string>(), Cancelled: true));
+        _sent.Select(u => u.UserId).Should().Equal("601");
+        _client.Verify(c => c.DisconnectAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    /// <summary>Síncrono, a diferencia de <see cref="Progress{T}"/>, que publica en el pool de hilos.</summary>
+    private sealed class RecordingProgress : IProgress<SendBranchEmployeesProgress>
+    {
+        public List<SendBranchEmployeesProgress> Reports { get; } = new();
+        public void Report(SendBranchEmployeesProgress value) => Reports.Add(value);
+    }
 }

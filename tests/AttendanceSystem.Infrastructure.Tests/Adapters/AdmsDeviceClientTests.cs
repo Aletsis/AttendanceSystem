@@ -83,6 +83,44 @@ public class AdmsDeviceClientTests
         commands.VerifyNoOtherCalls();
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task SetUser_ForManyUsers_ConnectsBySdkOnce_UntilDisconnect(bool sdkAvailable)
+    {
+        var grpc = new Mock<ZKTecoService.ZKTecoServiceClient>();
+        grpc.Setup(c => c.ConnectDeviceAsync(It.IsAny<ConnectDeviceRequest>(), It.IsAny<Metadata>(),
+                It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Reply(new ConnectDeviceResponse { Success = sdkAvailable }));
+        grpc.Setup(c => c.RegisterEmployeeAsync(It.IsAny<RegisterEmployeeRequest>(), It.IsAny<Metadata>(),
+                It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Reply(new RegisterEmployeeResponse { Success = true }));
+        grpc.Setup(c => c.DisconnectDeviceAsync(It.IsAny<DisconnectDeviceRequest>(), It.IsAny<Metadata>(),
+                It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .Returns(() => Reply(new DisconnectDeviceResponse { Success = true }));
+        var commands = new Mock<IAdmsCommandService>();
+
+        using var provider = new ServiceCollection()
+            .AddTransient(_ => new GrpcZKTecoDeviceClient(grpc.Object, NullLogger<GrpcZKTecoDeviceClient>.Instance))
+            .BuildServiceProvider();
+        var client = new AdmsDeviceClient(commands.Object, provider, NullLogger<AdmsDeviceClient>.Instance);
+        client.SetDevice(Serial);
+        await client.ConnectAsync("192.0.2.1", 4370);
+
+        foreach (var id in new[] { "1", "2", "3" })
+            (await client.SetUserAsync(new DeviceUserDto(id, "E", "", 0, true))).Should().BeTrue();
+        await client.DisconnectAsync();
+
+        grpc.Verify(c => c.ConnectDeviceAsync(It.IsAny<ConnectDeviceRequest>(), It.IsAny<Metadata>(),
+            It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), Times.Once(), "sin SDK no se espera su timeout por cada usuario");
+        grpc.Verify(c => c.RegisterEmployeeAsync(It.IsAny<RegisterEmployeeRequest>(), It.IsAny<Metadata>(),
+            It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), sdkAvailable ? Times.Exactly(3) : Times.Never());
+        grpc.Verify(c => c.DisconnectDeviceAsync(It.IsAny<DisconnectDeviceRequest>(), It.IsAny<Metadata>(),
+            It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), sdkAvailable ? Times.Once() : Times.Never());
+        commands.Verify(s => s.EnqueueCommand(Serial, It.Is<string>(c => c.StartsWith("DATA UPDATE user")), null),
+            sdkAvailable ? Times.Never() : Times.Exactly(3));
+    }
+
     [Fact]
     public async Task SetUser_ByAdms_SendsTheNameCleanedLikeTheSdk()
     {

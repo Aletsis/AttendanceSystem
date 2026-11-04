@@ -272,7 +272,8 @@ else
         var parameters = new DialogParameters<SendBranchEmployeesToDeviceDialog>
         {
             { x => x.DeviceId, device.DeviceId },
-            { x => x.DeviceName, device.Name }
+            { x => x.DeviceName, device.Name },
+            { x => x.IsAdms, device.DownloadMethod == DeviceDownloadMethod.Adms }
         };
         var options = new DialogOptions { CloseButton = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
 
