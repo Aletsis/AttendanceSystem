@@ -1,8 +1,9 @@
 @echo off
 setlocal EnableDelayedExpansion
 
-REM Usar el directorio temporal para el log para evitar problemas de permisos
-set LOGFILE=%TEMP%\iis_install_log.txt
+REM Log: segundo argumento (el instalador usa {app}\Logs\iis_setup.log); por defecto, el directorio temporal
+set "LOGFILE=%~2"
+if "%LOGFILE%"=="" set "LOGFILE=%TEMP%\iis_install_log.txt"
 
 echo DO NOT CLOSE THIS WINDOW > "%LOGFILE%"
 echo ==================================== >> "%LOGFILE%"
@@ -71,11 +72,20 @@ if !ERRORLEVEL! NEQ 0 (
 )
 
 echo 3. Asignando AppPool... >> "%LOGFILE%"
-"!APPCMD!" set site "AttendanceSystem" -applicationPool:AttendanceSystem >> "%LOGFILE%" 2>&1
+"!APPCMD!" set app "AttendanceSystem/" /applicationPool:AttendanceSystem >> "%LOGFILE%" 2>&1
+
+REM Tercer argumento opcional: puerto ADMS. Los relojes ADMS envían a http://IP:puerto/iclock; bajo IIS ese puerto
+REM debe ser un enlace más del sitio (la app no abre puertos propios dentro de IIS).
+set "ADMS_PORT=%~3"
+if not "!ADMS_PORT!"=="" (
+    echo    - Agregando enlace ADMS en puerto !ADMS_PORT!... >> "%LOGFILE%"
+    "!APPCMD!" set site /site.name:AttendanceSystem /+bindings.[protocol='http',bindingInformation='*:!ADMS_PORT!:'] >> "%LOGFILE%" 2>&1
+)
 
 echo 4. Configurando permisos de Escritura/Modificación... >> "%LOGFILE%"
 REM Otorgamos permiso de Modificar (M) para que la App pueda escribir Logs y Backups
-icacls "!WEB_DIR!" /grant "IIS_IUSRS":(OI)(CI)M /T /Q >> "%LOGFILE%" 2>&1
+REM Se usa el SID de IIS_IUSRS (S-1-5-32-568) para no depender del idioma de Windows
+icacls "!WEB_DIR!" /grant *S-1-5-32-568:(OI)(CI)M /T /Q >> "%LOGFILE%" 2>&1
 
 REM Si existe una carpeta de Backups o Logs en el nivel superior, intentar dar permisos también
 REM Asumimos que WEB_DIR es ...\AttendanceSystem\Web, así que subimos un nivel
@@ -84,11 +94,11 @@ echo [INFO] Directorio Raiz detectado: "!ROOT_DIR!" >> "%LOGFILE%"
 
 if exist "!ROOT_DIR!\Backups" (
    echo    - Dando permisos a carpeta Backups... >> "%LOGFILE%"
-   icacls "!ROOT_DIR!\Backups" /grant "IIS_IUSRS":(OI)(CI)M /T /Q >> "%LOGFILE%" 2>&1
+   icacls "!ROOT_DIR!\Backups" /grant *S-1-5-32-568:(OI)(CI)M /T /Q >> "%LOGFILE%" 2>&1
 )
 if exist "!ROOT_DIR!\Logs" (
    echo    - Dando permisos a carpeta Logs... >> "%LOGFILE%"
-   icacls "!ROOT_DIR!\Logs" /grant "IIS_IUSRS":(OI)(CI)M /T /Q >> "%LOGFILE%" 2>&1
+   icacls "!ROOT_DIR!\Logs" /grant *S-1-5-32-568:(OI)(CI)M /T /Q >> "%LOGFILE%" 2>&1
 )
 
 echo 5. Iniciando Sitio... >> "%LOGFILE%"

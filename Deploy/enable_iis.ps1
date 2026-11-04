@@ -1,46 +1,56 @@
-# Script híbrido para habilitar IIS y WebSockets (Windows Desktop y Server)
+# Habilita IIS con lo que necesita una app ASP.NET Core / Blazor Server (incluido WebSockets).
+# Windows 10/11 usa Enable-WindowsOptionalFeature (DISM); Windows Server 2019+ usa Install-WindowsFeature.
+# No instala ASP.NET 4.x, ISAPI, FTP, WebDAV ni CGI: ASP.NET Core sólo necesita el módulo ANCM del Hosting Bundle.
+param(
+    [string]$LogFile = "$env:TEMP\enable_iis.log"
+)
+
 $ErrorActionPreference = "Stop"
+try { Start-Transcript -Path $LogFile -Append | Out-Null } catch { }
 
-function Enable-FeatureHybrid {
-    param(
-        [string]$DesktopName, # Nombre para Enable-WindowsOptionalFeature (DISM)
-        [string]$ServerName   # Nombre para Install-WindowsFeature (ServerManager)
-    )
+$exitCode = 0
+try {
+    $isServer = (Get-CimInstance Win32_OperatingSystem).ProductType -ne 1
+    Write-Host "Iniciando configuración de IIS ($(if ($isServer) { 'Windows Server' } else { 'Windows Desktop' }))..."
 
-    if (Get-Command "Install-WindowsFeature" -ErrorAction SilentlyContinue) {
-        # Entorno Windows Server
-        Write-Host "Server Detectado: Instalando $ServerName..."
-        try {
-            Install-WindowsFeature -Name $ServerName -IncludeAllSubFeature -IncludeManagementTools | Out-Null
-        }
-        catch {
-            Write-Warning "No se pudo instalar $ServerName con ServerManager. Intentando método alternativo..."
-            Enable-WindowsOptionalFeature -Online -FeatureName $DesktopName -All -NoRestart
-        }
+    if ($isServer) {
+        $features = @(
+            "Web-Server", "Web-WebServer",
+            "Web-Common-Http", "Web-Default-Doc", "Web-Static-Content", "Web-Http-Errors",
+            "Web-Health", "Web-Http-Logging",
+            "Web-Security", "Web-Filtering",
+            "Web-Performance", "Web-Stat-Compression",
+            "Web-App-Dev", "Web-WebSockets",   # WebSockets: CRÍTICO para Blazor Server (SignalR)
+            "Web-Mgmt-Tools", "Web-Mgmt-Console"
+        )
+        $result = Install-WindowsFeature -Name $features
+        Write-Host "Install-WindowsFeature: Success=$($result.Success) RestartNeeded=$($result.RestartNeeded)"
+        if (-not $result.Success) { throw "Install-WindowsFeature no pudo instalar IIS." }
     }
     else {
-        # Entorno Windows Desktop (10/11)
-        Write-Host "Desktop Detectado: Habilitando $DesktopName..."
-        Enable-WindowsOptionalFeature -Online -FeatureName $DesktopName -All -NoRestart
+        $features = @(
+            "IIS-WebServerRole", "IIS-WebServer",
+            "IIS-CommonHttpFeatures", "IIS-DefaultDocument", "IIS-StaticContent", "IIS-HttpErrors",
+            "IIS-HealthAndDiagnostics", "IIS-HttpLogging",
+            "IIS-Security", "IIS-RequestFiltering",
+            "IIS-Performance", "IIS-HttpCompressionStatic",
+            "IIS-ApplicationDevelopment", "IIS-WebSockets",   # WebSockets: CRÍTICO para Blazor Server (SignalR)
+            "IIS-WebServerManagementTools", "IIS-ManagementConsole"
+        )
+        $result = Enable-WindowsOptionalFeature -Online -FeatureName $features -All -NoRestart
+        Write-Host "Enable-WindowsOptionalFeature: RestartNeeded=$($result.RestartNeeded)"
     }
+
+    if (-not (Test-Path "$env:windir\System32\inetsrv\appcmd.exe")) {
+        throw "IIS no quedó instalado: no existe appcmd.exe."
+    }
+    Write-Host "IIS y WebSockets configurados correctamente."
 }
-
-Write-Host "Iniciando configuración de IIS..."
-
-# 1. Habilitar IIS Core
-Enable-FeatureHybrid -DesktopName "IIS-WebServerRole" -ServerName "Web-Server"
-
-# 2. Habilitar Herramientas de Administración
-Enable-FeatureHybrid -DesktopName "IIS-ManagementConsole" -ServerName "Web-Mgmt-Console"
-
-# 3. Habilitar ASP.NET y Extensiones
-Enable-FeatureHybrid -DesktopName "IIS-ASPNET45" -ServerName "Web-Asp-Net45"
-Enable-FeatureHybrid -DesktopName "IIS-NetFxExtensibility45" -ServerName "Web-Net-Ext45"
-Enable-FeatureHybrid -DesktopName "IIS-ISAPIExtensions" -ServerName "Web-ISAPI-Ext"
-Enable-FeatureHybrid -DesktopName "IIS-ISAPIGlobalFilter" -ServerName "Web-ISAPI-Filter"
-
-# 4. Habilitar WebSockets (CRÍTICO para Blazor Server)
-# Esto asegura que SignalR funcione correctamente y no falle en bucles de reconexión
-Enable-FeatureHybrid -DesktopName "IIS-WebSockets" -ServerName "Web-WebSockets"
-
-Write-Host "IIS y WebSockets configurados correctamente."
+catch {
+    Write-Host "ERROR: $_"
+    $exitCode = 1
+}
+finally {
+    try { Stop-Transcript | Out-Null } catch { }
+}
+exit $exitCode
