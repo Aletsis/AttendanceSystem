@@ -44,18 +44,18 @@ Este es el archivo único que debes entregar al usuario final.
 ### 1. SDK ZKTeco
 El instalador incluye automáticamente todas las librerías DLL necesarias para la comunicación con dispositivos ZKTeco (zkemkeeper.dll, plcommpro.dll, etc.) y las registra en el sistema. No es necesario instalar ningun SDK adicional por separado.
 
-### 2. Soporte para IIS (Opcional)
-El instalador ofrece una opción llamada **"Configurar como servidor IIS"**.
-
-- **Si NO se marca (Recomendado):** La aplicación web funcionará de forma independiente (Self-Hosted) en el puerto 8081. Se creará un acceso directo en el escritorio para iniciarla.
-- **Si SE marca:** El instalador intentará configurar un Sitio Web en el IIS local (puerto 80) y un AppPool dedicado.
-    - **Requisito Previo:** Para que esta opción funcione, el servidor debe tener instalado el **ASP.NET Core Hosting Bundle** y el rol de IIS activado.
-    - Si IIS no está instalado, esta opción simplemente se omitirá y la app quedará instalada pero sin configurar en IIS.
+### 2. Hospedaje en IIS (obligatorio)
+La aplicación web se hospeda siempre en IIS: el instalador habilita IIS (con WebSockets), instala el Hosting Bundle si falta y crea el AppPool y el sitio `AttendanceSystem` en el puerto 80 (o en el 8081 si el 80 está ocupado). No existe un modo independiente (Kestrel): la web no se registra como servicio ni tiene acceso directo.
 
 ## Notas Técnicas
-- **Usuario de Base de Datos**: El instalador crea un usuario PostgreSQL llamado `attendancesystem_user` con contraseña generada de forma dinámica y aleatoria o provista vía la variable de entorno `ATTENDANCE_DB_PASSWORD` (resolviendo H02 sin contraseñas predecibles).
-- **Puertos y Red**: El instalador expone el puerto 8081 (Web) en el Firewall de Windows. El servicio gRPC del puente de dispositivos (puerto 5001) permanece restringido a loopback (`127.0.0.1` / `localhost`) por defecto para máxima seguridad.
-- **Servicios**: Se instalan dos servicios de Windows:
-    - `postgresql-x64-16`: Motor de base de datos
-    - `AttendanceSystem.ZKTeco`: Servicio de comunicación con dispositivos
-- **Ejecución de la Web**: La aplicación web NO se instala como servicio de Windows por defecto en este script, sino como una aplicación independiente. Para ejecutarla, el usuario debe usar el acceso directo "AttendanceSystem" en el escritorio o menú inicio. Si deseas que la web también sea un servicio, se requiere una configuración adicional en `setup_script.iss`.
+- **Primera instalación vs. actualización**: el instalador considera "primera instalación" cuando no existe `{app}\Web\appsettings.Production.json`. Sólo entonces:
+    - Genera secretos aleatorios (contraseña del usuario de BD, ApiKey de gRPC y, si instala PostgreSQL, la del superusuario `postgres`).
+    - Ejecuta `init_db.sql` como `postgres`: crea/actualiza el usuario `attendancesystem_user`, la base `AttendanceSystem` (de su propiedad) y los esquemas `public` y `hangfire`.
+    - Escribe `Web\appsettings.Production.json` y `Service\appsettings.Production.json` (plantillas `appsettings.*.Production.template.json`) con esa cadena de conexión y la misma ApiKey.
+- **Actualizaciones**: los `appsettings.Production.json` existentes **no se tocan**; ahí deben ir los cambios propios de cada equipo. No se pide la contraseña de `postgres` ni se reconfigura la BD. `appsettings.json` sí se reemplaza en cada versión.
+- **Contraseña de `postgres`**: si el instalador instaló PostgreSQL, la guarda en `{app}\Database\postgres_superuser.txt` (sólo Administradores y SYSTEM). Si PostgreSQL ya existía, se pide en el asistente y sólo se usa durante la instalación (no se guarda).
+- **Errores de BD**: si no se puede configurar la base de datos, el instalador lo avisa al final y deja el detalle en `{app}\Logs\db_setup.log`; los `appsettings.Production.json` no se escriben, así que al volver a ejecutar el instalador se reintenta todo.
+- **Puertos y Red**: el instalador abre los puertos 80 y 8081 (Web) en el Firewall de Windows. El servicio gRPC del puente de dispositivos (puerto 5001) permanece restringido a loopback (`127.0.0.1` / `localhost`) por defecto para máxima seguridad.
+- **Servicios**: se instalan dos servicios de Windows:
+    - `postgresql-x64-15` (o la versión incluida en `postgresql-installer.exe`): motor de base de datos.
+    - `AttendanceSystem.ZKTeco.Service`: servicio de comunicación con dispositivos.

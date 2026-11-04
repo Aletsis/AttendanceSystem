@@ -34,7 +34,6 @@ if (Test-Path "$OutputDir\Service\lib") {
 
 Write-Host "6. Copiando scripts de base de datos..." -ForegroundColor Cyan
 Copy-Item ".\Deploy\init_db.sql" -Destination "$OutputDir\Database\" -ErrorAction SilentlyContinue
-Copy-Item ".\Deploy\configure_db.bat" -Destination "$OutputDir\Database\" -ErrorAction SilentlyContinue
 Copy-Item ".\Deploy\enable_iis.ps1" -Destination "$OutputDir\Database\" -ErrorAction SilentlyContinue
 Copy-Item ".\Deploy\configure_iis.bat" -Destination "$OutputDir\Web\" -ErrorAction SilentlyContinue
 

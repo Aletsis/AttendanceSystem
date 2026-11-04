@@ -139,19 +139,19 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 1. **Selección de Idioma:** Ventana emergente inicial para configurar el instalador en idioma Español.
 2. **Pantalla de Bienvenida:** Presentación del asistente de instalación de *Attendance System v2.1.6*.
 3. **Selección de Carpeta de Destino:** Por defecto se establece `C:\Program Files\AttendanceSystem`.
-4. **Selección de Tareas Adicionales:**
-   * checkbox **Configurar como servidor IIS:** Seleccione esta opción si está instalando en un Windows Server corporativo y desea que la aplicación Blazor se aloje dentro del Internet Information Services local en el puerto 80. Si no se marca, funcionará de manera independiente (Kestrel) en el puerto 8081.
-5. **Detección e Ingreso de Credenciales de BD:**
-   * Si el instalador detecta que **ya existe** una instancia de PostgreSQL local, desplegará una pantalla personalizada solicitando ingresar la contraseña del superusuario `postgres` para poder configurar los esquemas y privilegios del sistema.
-   * Si **no existe**, instalará PostgreSQL de forma desatendida usando la contraseña maestra por defecto `Blanquita.123`.
+4. **Hospedaje web:** la aplicación Blazor se aloja siempre en el IIS local (puerto 80, o 8081 si el 80 está ocupado). No hay modo independiente (Kestrel).
+5. **Detección e Ingreso de Credenciales de BD (sólo primera instalación):**
+   * Si el instalador detecta que **ya existe** una instancia de PostgreSQL local, desplegará una pantalla personalizada solicitando ingresar la contraseña del superusuario `postgres` para poder configurar los esquemas y privilegios del sistema. Esa contraseña no se guarda.
+   * Si **no existe**, instalará PostgreSQL de forma desatendida con una contraseña de `postgres` **aleatoria**, que deja en `{app}\Database\postgres_superuser.txt` (sólo Administradores y SYSTEM).
+   * En una actualización (ya existe `{app}\Web\appsettings.Production.json`) no se pide nada: la BD y la configuración se conservan.
 6. **Progreso de Instalación:**
    * Descompresión de archivos de la aplicación y el servicio.
    * Ejecución en segundo plano del instalador de PostgreSQL (`postgresql-installer.exe --mode unattended`).
    * Ejecución del Hosting Bundle de .NET 10 (`dotnet-hosting.exe /install /quiet /norestart`).
    * Registro del SDK ZKTeco en Windows (`regsvr32.exe /s zkemkeeper.dll` tanto en `System32` como en `SysWOW64` para entornos de 64 bits).
    * Creación del Servicio de Windows mediante `sc.exe create AttendanceSystem.ZKTeco.Service`.
-   * Configuración de la base de datos llamando a `configure_db.bat`.
-   * Apertura de los puertos 8081 y 5001 en el Firewall de Windows Defender.
+   * Configuración de la base de datos ejecutando `init_db.sql` con `psql` (sólo primera instalación) y escritura de los `appsettings.Production.json` de la web y del servicio.
+   * Apertura de los puertos 80 y 8081 en el Firewall de Windows Defender (el 5001 de gRPC queda sólo en loopback).
 7. **Pantalla de Finalización:** Opción de arrancar el servicio de forma inmediata y abrir el navegador para el acceso inicial.
 
 ### 3.3 Configuración Automática Realizada por el Instalador
@@ -165,16 +165,17 @@ El instalador realiza las siguientes tareas críticas en el sistema operativo:
   * `{app}\Logs` y `{app}\Backups`: Carpetas dedicadas a logs históricos y respaldos.
     * **Nota:** la aplicación **no** usa `{app}\Backups` de forma predeterminada: su directorio de respaldos por defecto es `{app}\Web\Backups`. Configure `{app}\Backups` (o, mejor, una carpeta en otro disco) en **Respaldo y Restauración → Directorio de Almacenamiento**. En IIS, `configure_iis.bat` otorga permiso de modificación a `IIS_IUSRS` sobre `{app}\Backups`; cualquier otra carpeta necesita ese permiso para la identidad del AppPool.
 * **Configuración de PostgreSQL:**
-  * Se crea un rol/usuario de base de datos exclusivo llamado `attendancesystem_user` con contraseña `Blanquita.123`.
-  * Se crea la base de datos `"AttendanceSystem"`.
-  * Se otorgan todos los privilegios sobre el esquema `public` y el esquema `hangfire` a dicho usuario.
+  * Se crea un rol/usuario de base de datos exclusivo llamado `attendancesystem_user` con una contraseña aleatoria generada en la instalación.
+  * Se crea la base de datos `"AttendanceSystem"`, propiedad de ese usuario.
+  * El usuario queda como dueño de los esquemas `public` y `hangfire` (requisito de la restauración de respaldos). No es superusuario.
+  * La cadena de conexión (con esa contraseña) y una ApiKey de gRPC aleatoria se escriben en `{app}\Web\appsettings.Production.json` y `{app}\Service\appsettings.Production.json`. Las actualizaciones no sobrescriben estos archivos.
 * **Instalación del Windows Service:**
   * Registra el servicio `AttendanceSystem.ZKTeco.Service` con el comando:
     ```cmd
     sc.exe create AttendanceSystem.ZKTeco.Service binPath= "C:\Program Files\AttendanceSystem\Service\AttendanceSystem.ZKTeco.Service.exe" start= auto displayname= "Attendance System ZKTeco Service"
     ```
   * Inicia automáticamente el servicio.
-* **Configuración de IIS (Si aplica):**
+* **Configuración de IIS:**
   * Ejecuta `enable_iis.ps1` que activa el rol de IIS en Windows con soporte para WebSockets y ASP.NET Core module.
   * Ejecuta `configure_iis.bat` que crea un AppPool dedicado e independiente (`AttendanceSystem`) y un sitio web asignado al puerto 80 apuntando a la carpeta `{app}\Web`.
 
@@ -189,7 +190,7 @@ Para validar que la instalación fue exitosa:
    Get-Service "postgresql-x64-16"
    Get-Service "AttendanceSystem.ZKTeco.Service"
    ```
-3. Abra el navegador web e ingrese a `http://localhost:8081` (o `http://localhost` si configuró IIS).
+3. Abra el navegador web e ingrese a `http://localhost` (o `http://localhost:8081` si el puerto 80 estaba ocupado).
 4. Inicie sesión con las credenciales maestras por defecto:
    * **Usuario:** `admin`
    * **Contraseña:** `Admin123!`

@@ -71,7 +71,7 @@ if !ERRORLEVEL! NEQ 0 (
 )
 
 echo 3. Asignando AppPool... >> "%LOGFILE%"
-"!APPCMD!" set site "AttendanceSystem" -applicationPool:AttendanceSystem >> "%LOGFILE%" 2>&1
+"!APPCMD!" set app "AttendanceSystem/" /applicationPool:AttendanceSystem >> "%LOGFILE%" 2>&1
 
 echo 4. Configurando permisos de Escritura/Modificación... >> "%LOGFILE%"
 REM Otorgamos permiso de Modificar (M) para que la App pueda escribir Logs y Backups
