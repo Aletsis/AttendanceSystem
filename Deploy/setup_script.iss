@@ -124,13 +124,16 @@ Name: "{app}\Web\Backups"; Permissions: users-modify; Components: web and deskto
 ; 1. Archivos de la Aplicación Web
 ; appsettings.Production.json NO se copia: lo genera el instalador la primera vez (cadena de conexión y
 ; ApiKey propias del equipo) y una actualización lo conserva, junto con lo que el cliente haya cambiado en él.
-Source: "..\Release\Web\*"; DestDir: "{app}\Web"; Excludes: "appsettings.Production.json"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: web
+; Tampoco los demás appsettings*.json: en el repositorio no existen (.gitignore) y un Release publicado en el equipo
+; de un desarrollador traería los suyos (su cadena de conexión y contraseña). Así el instalador es igual que el de CI.
+Source: "..\Release\Web\*"; DestDir: "{app}\Web"; Excludes: "appsettings.json,appsettings.*.json"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: web
 
 ; 1.1 Programa de escritorio. Igual que en la web, su appsettings.json lo genera el instalador y se conserva.
 Source: "..\Release\Desktop\*"; DestDir: "{app}\Desktop"; Excludes: "appsettings.json,appsettings.*.json"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: desktop
 
 ; 2. Archivos del Servicio Windows (incluyendo SDK ZKTeco, que Prepare-Release copia junto al ejecutable)
-Source: "..\Release\Service\*"; DestDir: "{app}\Service"; Excludes: "appsettings.Production.json,zkemkeeper.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+; Igual que en la web, ningún appsettings*.json del Release: el instalador genera appsettings.Production.json.
+Source: "..\Release\Service\*"; DestDir: "{app}\Service"; Excludes: "appsettings.json,appsettings.*.json,zkemkeeper.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 ; 2.1 SDK ZKTeco (32 bits): zkemkeeper.dll se registra desde la carpeta del servicio, junto a sus dependencias.
 ; regsvr32 y COM cargan un DLL registrado buscando sus dependencias primero en su propia carpeta, así que no importa
@@ -792,6 +795,76 @@ begin
     AddWarning('No se pudo fijar ' + Wanted + ' (Hosting) en ' + FileName + '. Ajústelo a mano.');
 end;
 
+function IsJsonSpace(C: Char): Boolean;
+begin
+  Result := (C = ' ') or (C = #9) or (C = #13) or (C = #10);
+end;
+
+// --- Quita "WriteTo": { ... } de la configuración del sitio ---
+// La plantilla de v2.3.0-beta.1 escribía "WriteTo": { "3": { "Args": {...} } }, que sólo completa el cuarto sink de un
+// appsettings.json base. El instalador no copia ese archivo, así que Serilog fallaba ("Serilog:WriteTo:3:Name") y el
+// sitio no arrancaba. Sólo se quita la forma de objeto (índices): una lista ("WriteTo": [...]) declara sinks completos
+// y se respeta.
+function RemoveSerilogWriteToOverlay(FileName: String): Boolean;
+var
+  Content: AnsiString;
+  Text: String;
+  KeyPos, P, Depth, StartPos, EndPos: Integer;
+  InString: Boolean;
+begin
+  Result := True;
+  if not LoadStringFromFile(FileName, Content) then Exit;
+  Text := String(Content);
+  KeyPos := Pos('"WriteTo"', Text);
+  if KeyPos = 0 then Exit;
+
+  P := KeyPos + Length('"WriteTo"');
+  while (P <= Length(Text)) and IsJsonSpace(Text[P]) do P := P + 1;
+  if (P > Length(Text)) or (Text[P] <> ':') then Exit;
+  P := P + 1;
+  while (P <= Length(Text)) and IsJsonSpace(Text[P]) do P := P + 1;
+  if (P > Length(Text)) or (Text[P] <> '{') then Exit;
+
+  // Llave que cierra el objeto (las que haya dentro de textos no cuentan)
+  Depth := 0;
+  EndPos := 0;
+  InString := False;
+  while (P <= Length(Text)) and (EndPos = 0) do
+  begin
+    if InString then
+    begin
+      if Text[P] = '\' then P := P + 1
+      else if Text[P] = '"' then InString := False;
+    end
+    else if Text[P] = '"' then InString := True
+    else if Text[P] = '{' then Depth := Depth + 1
+    else if Text[P] = '}' then
+    begin
+      Depth := Depth - 1;
+      if Depth = 0 then EndPos := P;
+    end;
+    P := P + 1;
+  end;
+  if EndPos = 0 then Exit;
+
+  // Con la coma que lo separa del miembro anterior o, si era el primero, la del siguiente
+  StartPos := KeyPos - 1;
+  while (StartPos > 0) and IsJsonSpace(Text[StartPos]) do StartPos := StartPos - 1;
+  if (StartPos > 0) and (Text[StartPos] = ',') then
+    Delete(Text, StartPos, EndPos - StartPos + 1)
+  else
+  begin
+    P := EndPos + 1;
+    while (P <= Length(Text)) and IsJsonSpace(Text[P]) do P := P + 1;
+    if (P <= Length(Text)) and (Text[P] = ',') then EndPos := P;
+    Delete(Text, KeyPos, EndPos - KeyPos + 1);
+  end;
+
+  Result := SaveStringToFile(FileName, AnsiString(Text), False);
+  if Result then
+    Log('Serilog:WriteTo (sin appsettings.json base) quitado de ' + FileName);
+end;
+
 // --- Escribe la configuración que falte de cada parte instalada ---
 function WriteMissingConfigs: Boolean;
 var
@@ -805,7 +878,15 @@ begin
   if not FileExists(ServiceConfigFile(AppDir)) then
     Result := WriteConfigFromTemplate('appsettings.Service.Production.template.json', ServiceConfigFile(AppDir), False) and Result;
   if WebInstalled and not FileExists(WebConfigFile(AppDir)) then
-    Result := WriteConfigFromTemplate('appsettings.Web.Production.template.json', WebConfigFile(AppDir), False) and Result;
+    Result := WriteConfigFromTemplate('appsettings.Web.Production.template.json', WebConfigFile(AppDir), False) and Result
+  // Actualización de v2.3.0-beta.1. Con un appsettings.json base (instalaciones hechas con un Release local) el
+  // WriteTo por índices sí completa sus sinks, así que se deja.
+  else if WebInstalled and not FileExists(AddBackslash(AppDir) + 'Web\appsettings.json') then
+  begin
+    if not RemoveSerilogWriteToOverlay(WebConfigFile(AppDir)) then
+      AddWarning('No se pudo quitar "WriteTo" de la sección Serilog de ' + WebConfigFile(AppDir) +
+        '; el sitio web no arrancará hasta quitarlo a mano.');
+  end;
   if IsDesktopInstalledAt(AppDir) then
   begin
     if not FileExists(DesktopConfigFile(AppDir)) then
