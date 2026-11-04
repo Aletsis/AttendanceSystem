@@ -83,6 +83,27 @@ La web no se registra como servicio ni se ejecuta fuera de IIS.
 ### 3. PostgreSQL existente
 Detecta cualquier PostgreSQL 14 o posterior, esté registrado o sólo en `C:\Program Files\PostgreSQL\<versión>`. Si hay varios, usa el de versión más alta y lee su puerto real de `postgresql.conf`. Comprueba la contraseña de `postgres` en el mismo asistente antes de instalar. La cadena de conexión y `Backup:PostgresBinPath` (para `pg_dump` / `pg_restore`) apuntan a esa instalación.
 
+### 3.1 Versiones: actualizar, reinstalar o volver atrás
+El instalador lee la versión instalada (`DisplayVersion` del registro) y la compara número por número con la suya (`2.10.0` es posterior a `2.9.5`; un sufijo como `-rc1` no cuenta).
+
+| Caso | Qué hace |
+|---|---|
+| Versión más nueva | Muestra "Actualización de la versión X a la Y" y continúa. |
+| Misma versión | Muestra "Reinstalación de la versión X" (reparación): los archivos se reemplazan, la configuración y los datos se conservan. |
+| Versión más vieja | **Se detiene** con un mensaje: la base ya tiene migraciones que esa versión no conoce (arrancaría en mantenimiento o podría dañar datos). Sólo para soporte: `/ALLOWDOWNGRADE` lo permite, con aviso. |
+
+En instalaciones silenciosas se aplica la misma regla.
+
+### 3.2 Crear una base de datos nueva
+En una instalación existente, la página "Instalación existente" ofrece **conservar la base actual** (por defecto) o **crear una base nueva y vacía**. En una primera instalación, si en el PostgreSQL ya hay una base `AttendanceSystem` (por ejemplo, de una instalación desinstalada), el instalador pregunta si usarla con sus datos o empezar con una nueva.
+
+- **Nada se borra:** la base `AttendanceSystem` existente se renombra como `AttendanceSystem_anterior_<fecha>_<hora>` (`rename_db.sql`). Antes se impiden conexiones nuevas y se cierran las abiertas. Si una instalación anterior usaba otra base (p. ej. `AttendanceSystemTest`), esa no se toca.
+- Se crea `AttendanceSystem` con `init_db.sql` y una contraseña nueva para `attendancesystem_user`. En las configuraciones existentes sólo se cambia la cadena de conexión: la ApiKey y lo demás se conservan. Al abrir el sitio o el programa se aplican las migraciones y se crea el administrador inicial.
+- Requiere la contraseña de `postgres`: se usa la que guardó el instalador en `{app}\Database\postgres_superuser.txt` (si él instaló PostgreSQL) o se pide en el asistente.
+- Sin asistente: `/NEWDATABASE` (con `/SILENT` o `/VERYSILENT` sólo funciona si existe la contraseña guardada).
+- Para volver a la base anterior, renómbrela de nuevo o restaure un respaldo desde la aplicación.
+- En instalaciones anteriores a esta versión, el log de Serilog en PostgreSQL puede seguir yendo a la base anterior hasta que `Web\appsettings.Production.json` tenga su propia cadena para ese destino (las nuevas ya la tienen).
+
 ### 4. Verificación final
 Al terminar, el instalador comprueba que IIS esté habilitado, que el módulo ASP.NET Core esté registrado, que exista el sitio y que el servicio ZKTeco esté en ejecución. Cualquier problema se muestra junto con su log en `{app}\Logs` (`db_setup.log`, `enable_iis.log`, `dotnet_hosting.log`, `iis_setup.log`).
 
