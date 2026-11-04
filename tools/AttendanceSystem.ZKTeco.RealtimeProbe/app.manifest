@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- COM sin registro: usa el zkemkeeper.dll junto al ejecutable, sin regsvr32 ni depender del registro de la máquina. -->
+<assembly manifestVersion="1.0" xmlns="urn:schemas-microsoft-com:asm.v1">
+  <assemblyIdentity version="1.0.0.0" name="AttendanceSystem.ZKTeco.RealtimeProbe" processorArchitecture="x86" type="win32" />
+  <file name="zkemkeeper.dll">
+    <comClass clsid="{00853A19-BD51-419B-9269-2DABE57EB61F}" progid="zkemkeeper.ZKEM" threadingModel="Both" />
+  </file>
+</assembly>
