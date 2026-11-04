@@ -65,7 +65,12 @@ El asistente ofrece **Sitio web y programa de escritorio**, **Sólo sitio web (I
 - El programa de escritorio requiere la versión con `Hosting:Standalone` (PR #22, `feat/wpf-standalone`).
 
 ### 1. SDK ZKTeco
-El instalador incluye las librerías DLL de 32 bits del SDK de ZKTeco (zkemkeeper.dll, plcommpro.dll, etc.). Las copia a `SysWOW64` y registra `zkemkeeper.dll` con el `regsvr32` de 32 bits, que es donde las busca el servicio (x86). No reemplaza una versión más nueva del SDK que haya instalado otro programa, y al desinstalar sólo las borra si nadie más las usa. No requieren el Visual C++ Redistributable (sólo dependen de DLLs de Windows).
+El instalador incluye las librerías DLL de 32 bits del SDK de ZKTeco (zkemkeeper.dll, plcommpro.dll, etc.). Las deja en `{app}\Service`, junto al servicio (x86), y registra `zkemkeeper.dll` desde ahí con el `regsvr32` de 32 bits. No copia nada a `System32` ni a `SysWOW64`:
+- `regsvr32` y COM buscan las dependencias de un DLL registrado primero en su propia carpeta, así que se usan siempre las del SDK incluido.
+- Otros programas de ZKTeco dejan en `SysWOW64` DLLs con el mismo nombre pero de otro SDK (por ejemplo `plcommpro.dll` 6.0.0.5 del PullSDK). Con ellos `zkemkeeper.dll` no carga y `regsvr32` sale con código 3; así, además, esos programas no se ven afectados.
+- La desinstalación quita el registro.
+
+No requieren el Visual C++ Redistributable (sólo dependen de DLLs de Windows).
 
 ### 2. Hospedaje en IIS (si se instala el sitio web)
 La aplicación web se hospeda siempre en IIS. El instalador:

@@ -85,7 +85,7 @@ Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue
 | **Puertos de Red Abiertos**| **8081** (Web Self-Hosted Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) | **80/443** (IIS Web), **8081** (Web Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) |
 
 > [!NOTE]
-> **Requisito Obligatorio de Windows (x64):** El servidor principal debe ser Windows de 64 bits debido a que el servicio puente de ZKTeco (`AttendanceSystem.ZKTeco.Service`) interactúa con librerías nativas COM/Win32 de 32 bits (`zkemkeeper.dll`) registradas en `SysWOW64`. El instalador se niega a ejecutarse en Windows de 32 bits o anterior a Windows 10 1809 / Server 2019 (`MinVersion=10.0.17763`).
+> **Requisito Obligatorio de Windows (x64):** El servidor principal debe ser Windows de 64 bits debido a que el servicio puente de ZKTeco (`AttendanceSystem.ZKTeco.Service`) interactúa con librerías nativas COM/Win32 de 32 bits (`zkemkeeper.dll`, registrada con el `regsvr32` de 32 bits desde la carpeta del servicio). El instalador se niega a ejecutarse en Windows de 32 bits o anterior a Windows 10 1809 / Server 2019 (`MinVersion=10.0.17763`).
 
 ### 2.2 Requisitos de Conectividad (Red)
 
@@ -150,7 +150,7 @@ El despliegue en producción se realiza mediante un instalador único compilado 
    * Descompresión de archivos de la aplicación y el servicio.
    * Ejecución en segundo plano del instalador de PostgreSQL (`postgresql-installer.exe --mode unattended`).
    * Ejecución del Hosting Bundle de .NET 10 (`dotnet-hosting.exe /install /quiet /norestart`, log en `{app}\Logs\dotnet_hosting.log`).
-   * Copia del SDK ZKTeco (32 bits) a `SysWOW64` y registro de `zkemkeeper.dll` con el `regsvr32` de 32 bits. Ya no se copia a `System32`. No reemplaza una versión más nueva del SDK instalada por otro programa, y la desinstalación sólo lo borra si ningún otro programa lo usa.
+   * Registro de `zkemkeeper.dll` con el `regsvr32` de 32 bits desde `{app}\Service`, donde quedan todas sus dependencias. No se copia nada a `System32` ni a `SysWOW64`: ahí otros programas de ZKTeco dejan DLLs homónimos de otro SDK con los que `zkemkeeper.dll` no carga.
    * Al final, una verificación comprueba IIS, el módulo ASP.NET Core, el sitio y el servicio ZKTeco, y avisa de cualquier problema con la ruta del log correspondiente.
    * Creación del Servicio de Windows mediante `sc.exe create AttendanceSystem.ZKTeco.Service`.
    * Configuración de la base de datos ejecutando `init_db.sql` con `psql` (sólo primera instalación) y escritura de los `appsettings.Production.json` de la web y del servicio.

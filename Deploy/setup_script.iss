@@ -129,23 +129,20 @@ Source: "..\Release\Web\*"; DestDir: "{app}\Web"; Excludes: "appsettings.Product
 ; 1.1 Programa de escritorio. Igual que en la web, su appsettings.json lo genera el instalador y se conserva.
 Source: "..\Release\Desktop\*"; DestDir: "{app}\Desktop"; Excludes: "appsettings.json,appsettings.*.json"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: desktop
 
-; 2. Archivos del Servicio Windows (incluyendo SDK ZKTeco)
-Source: "..\Release\Service\*"; DestDir: "{app}\Service"; Excludes: "appsettings.Production.json"; Flags: ignoreversion recursesubdirs createallsubdirs
+; 2. Archivos del Servicio Windows (incluyendo SDK ZKTeco, que Prepare-Release copia junto al ejecutable)
+Source: "..\Release\Service\*"; DestDir: "{app}\Service"; Excludes: "appsettings.Production.json,zkemkeeper.dll"; Flags: ignoreversion recursesubdirs createallsubdirs
+
+; 2.1 SDK ZKTeco (32 bits): zkemkeeper.dll se registra desde la carpeta del servicio, junto a sus dependencias.
+; regsvr32 y COM cargan un DLL registrado buscando sus dependencias primero en su propia carpeta, así que no importa
+; qué versiones del SDK haya en SysWOW64: otros programas de ZKTeco dejan ahí DLLs con el mismo nombre pero de otro
+; SDK (p. ej. plcommpro.dll 6.0.0.5 del PullSDK), con los que zkemkeeper.dll no carga (regsvr32 sale con código 3).
+; Tampoco se tocan los DLLs de esos programas. El registro (de 32 bits) se quita al desinstalar.
+Source: "..\Release\Service\zkemkeeper.dll"; DestDir: "{app}\Service"; Flags: ignoreversion restartreplace regserver 32bit
 
 ; Plantillas de configuración (se extraen a {tmp} sólo cuando falta el archivo de configuración)
 Source: "appsettings.Web.Production.template.json"; Flags: dontcopy
 Source: "appsettings.Desktop.template.json"; Flags: dontcopy
 Source: "appsettings.Service.Production.template.json"; Flags: dontcopy
-
-; 2.1 SDK ZKTeco (DLLs de 32 bits) en SysWOW64, que es donde los busca el COM de 32 bits del servicio x86.
-; Con la bandera 32bit, {sys} es SysWOW64 (Inno pide esto en vez de {syswow64} para llevar bien el conteo de sharedfile).
-; zkemkeeper.dll se registra con regsvr32 de 32 bits (regserver + 32bit) cuando ya se copiaron sus dependencias;
-; la desinstalación lo des-registra y borra los DLLs cuando ningún otro programa los usa (sharedfile).
-; Sin ignoreversion: no se reemplaza por una versión más vieja un SDK más nuevo instalado por otro programa.
-Source: "..\src\Infrastructure\AttendanceSystem.ZKTeco\lib\*"; DestDir: "{sys}"; Excludes: "zkemkeeper.dll,Interop.zkemkeeper.dll"; \
-    Flags: 32bit sharedfile uninsnosharedfileprompt restartreplace
-Source: "..\src\Infrastructure\AttendanceSystem.ZKTeco\lib\zkemkeeper.dll"; DestDir: "{sys}"; \
-    Flags: 32bit sharedfile uninsnosharedfileprompt restartreplace regserver
 
 ; 3. Scripts SQL y Herramientas
 Source: "init_db.sql"; DestDir: "{app}\Database"; Flags: ignoreversion
