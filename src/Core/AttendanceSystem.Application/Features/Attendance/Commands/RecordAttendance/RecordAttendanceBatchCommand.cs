@@ -231,7 +231,7 @@ public sealed class RecordAttendanceBatchCommandHandler
         if (_admsCommands != null && serial != null)
         {
             var offset = _timeNormalizer.ResolveTimeZone(timeZoneId).GetUtcOffset(DateTime.UtcNow);
-            foreach (var clockCommand in AdmsTimeZone.ClockCommands(expectedNow, offset)) _admsCommands.EnqueueCommand(serial, clockCommand);
+            foreach (var clockCommand in AdmsTimeZone.ClockCommands(expectedNow, offset)) await _admsCommands.EnqueueCommandAsync(serial, clockCommand, cancellationToken: cancellationToken);
             correction = "se le reenvió la hora";
         }
         else if (_jobScheduler != null && device?.DownloadMethod == DeviceDownloadMethod.Sdk)
@@ -269,7 +269,7 @@ public sealed class RecordAttendanceBatchCommandHandler
         if (_admsCommands != null && serial != null)
         {
             var table = device?.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true ? "Transaction" : "ATTLOG";
-            _admsCommands.EnqueueCommand(serial, FormattableString.Invariant($"DATA QUERY tablename={table},starttime={from:yyyy-MM-dd HH:mm:ss},endtime={to:yyyy-MM-dd HH:mm:ss}"));
+            await _admsCommands.EnqueueCommandAsync(serial, FormattableString.Invariant($"DATA QUERY tablename={table},starttime={from:yyyy-MM-dd HH:mm:ss},endtime={to:yyyy-MM-dd HH:mm:ss}"));
         }
     }
 }

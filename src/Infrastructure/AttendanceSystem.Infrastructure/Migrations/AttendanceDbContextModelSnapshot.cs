@@ -978,6 +978,9 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<bool>("IsDestructive")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("ResultPayload")
+                        .HasColumnType("text");
+
                     b.Property<int>("RetryCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")

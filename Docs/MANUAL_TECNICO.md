@@ -81,11 +81,11 @@ Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue
 | **Arquitectura de CPU** | Procesador x64 de 2 núcleos a 2.0 GHz | Procesador x64 de 4 núcleos o superior (ej. Intel Core i5 / Xeon) |
 | **Memoria RAM** | 4 GB a 8 GB | 16 GB (especialmente para entornos con múltiples terminales y Hangfire jobs continuos) |
 | **Almacenamiento** | 20 GB de espacio libre (SSD) | 50 GB a 100 GB de espacio libre (SSD NVMe para BD y copias de seguridad) |
-| **Sistema Operativo** | Windows 10/11 Pro o Enterprise (64-bit) | Windows Server 2019 / 2022 / 2025 Standard o Datacenter (64-bit) |
+| **Sistema Operativo** | Windows 10 (1809 o posterior) / 11 (64-bit) | Windows Server 2019 / 2022 / 2025 Standard o Datacenter (64-bit, con escritorio) |
 | **Puertos de Red Abiertos**| **8081** (Web Self-Hosted Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) | **80/443** (IIS Web), **8081** (Web Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) |
 
 > [!NOTE]
-> **Requisito Obligatorio de Windows (x64):** El servidor principal debe ser Windows de 64 bits debido a que el servicio puente de ZKTeco (`AttendanceSystem.ZKTeco.Service`) interactúa con librerías nativas COM/Win32 de 32 bits (`zkemkeeper.dll`) registradas en `SysWOW64`.
+> **Requisito Obligatorio de Windows (x64):** El servidor principal debe ser Windows de 64 bits debido a que el servicio puente de ZKTeco (`AttendanceSystem.ZKTeco.Service`) interactúa con librerías nativas COM/Win32 de 32 bits (`zkemkeeper.dll`) registradas en `SysWOW64`. El instalador se niega a ejecutarse en Windows de 32 bits o anterior a Windows 10 1809 / Server 2019 (`MinVersion=10.0.17763`).
 
 ### 2.2 Requisitos de Conectividad (Red)
 
@@ -114,13 +114,12 @@ Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue
 * **Herramientas cliente de PostgreSQL (respaldos y restauraciones):**
   * `pg_dump`, `pg_restore` y `psql` deben existir en el servidor de la aplicación, **de la misma instalación** y de versión **igual o mayor** que el servidor de PostgreSQL. El instalador de PostgreSQL para Windows las incluye en `C:\Program Files\PostgreSQL\<versión>\bin`.
   * Si la base de datos está en otro equipo, instale en el servidor de la aplicación sólo los *Command Line Tools* de PostgreSQL.
-  * Se localizan en este orden: `Backup:PostgresBinPath` (configuración), `C:\Program Files\PostgreSQL\{17..12}\bin` y el `PATH`. `psql` se toma de la misma carpeta que `pg_restore`: los scripts de versiones recientes usan metacomandos (`\restrict`) que un `psql` más antiguo no reconoce.
+  * Se localizan en este orden: `Backup:PostgresBinPath` (configuración; el instalador la fija a la carpeta `bin` del PostgreSQL que usa la app), `C:\Program Files\PostgreSQL\{18..12}\bin` y el `PATH`. `psql` se toma de la misma carpeta que `pg_restore`: los scripts de versiones recientes usan metacomandos (`\restrict`) que un `psql` más antiguo no reconoce.
 * **Espacio para restaurar:** además del respaldo, una restauración necesita espacio para el snapshot de seguridad (del tamaño de un respaldo de la base actual, en la carpeta de respaldos) y, si el respaldo es `.zip`, para extraerlo en la carpeta temporal del usuario del servicio.
 * **.NET Runtimes:**
-  * **Modo Autocontenido (Self-Hosted Kestrel - Recomendado):** El instalador Todo-en-Uno ya incluye los binarios autocontenidos de **.NET 10.0**, por lo que **no es necesario** instalar el .NET SDK ni Runtime por separado.
-  * **Modo IIS:** Requiere el **ASP.NET Core Hosting Bundle 10.0.x** (proporciona el módulo nativo `AspNetCoreModuleV2` en IIS).
-* **Librerías de Soporte de C++ (x86):**
-  * **Visual C++ Redistributable 2015-2022 (x86 / 32-bit):** Requerido para la ejecución adecuada de las DLLs COM nativas de ZKTeco (`zkemkeeper.dll`, `commpro.dll`).
+  * La web y el servicio se publican **autocontenidos (.NET 10.0)**: no es necesario instalar el .NET SDK ni el Runtime por separado.
+  * IIS requiere el módulo nativo `AspNetCoreModuleV2` versión **20.x o posterior**, que aporta el **ASP.NET Core Hosting Bundle 10.0.x**. El instalador lo incluye y lo instala (o lo repara) si falta.
+* **Librerías de Soporte de C++:** no se requieren. Las DLLs del SDK de ZKTeco sólo importan DLLs del propio Windows (MFC va enlazado estáticamente).
 
 ---
 
@@ -131,27 +130,31 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 ### 3.1 Pre-instalación
 1. Descargue el instalador y ejecútelo con **permisos de Administrador** (clic derecho $\rightarrow$ *Ejecutar como administrador*).
 2. El instalador detectará si los siguientes prerrequisitos ya se encuentran en el sistema:
-   * **PostgreSQL:** Comprueba los registros en `SOFTWARE\PostgreSQL\Installations`.
-   * **ASP.NET Core Hosting Bundle:** Comprueba los registros en `SOFTWARE\Microsoft\ASP.NET Core\Shared Framework\v10.0` (o `v9.0`).
+   * **PostgreSQL (cualquier versión 14 o posterior):** revisa `SOFTWARE\PostgreSQL\Installations` y las carpetas `C:\Program Files\PostgreSQL\<versión>` con servidor (`data`) y `psql.exe`. Si hay varias, usa la de versión más alta. El puerto se lee del `postgresql.conf` / `postgresql.auto.conf` de esa instalación (el del registro puede estar desactualizado). Si la versión es anterior a 14, el instalador se detiene.
+   * **ASP.NET Core Hosting Bundle:** comprueba, ya con IIS habilitado, que `%ProgramFiles%\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll` sea de la versión con que se publicó la app (20.x para .NET 10) y que `AspNetCoreModuleV2` esté registrado en `applicationHost.config`. Si el módulo existe pero IIS se habilitó después, ejecuta el Hosting Bundle con `/repair`.
    * Si falta alguno de los dos, el instalador procederá a ejecutarlos de forma desatendida desde sus instaladores temporales.
 
 ### 3.2 Paso a Paso de la Ejecución del Instalador
 1. **Selección de Idioma:** Ventana emergente inicial para configurar el instalador en idioma Español.
 2. **Pantalla de Bienvenida:** Presentación del asistente de instalación de *Attendance System v2.1.6*.
 3. **Selección de Carpeta de Destino:** Por defecto se establece `C:\Program Files\AttendanceSystem`.
-4. **Selección de Tareas Adicionales:**
-   * checkbox **Configurar como servidor IIS:** Seleccione esta opción si está instalando en un Windows Server corporativo y desea que la aplicación Blazor se aloje dentro del Internet Information Services local en el puerto 80. Si no se marca, funcionará de manera independiente (Kestrel) en el puerto 8081.
-5. **Detección e Ingreso de Credenciales de BD:**
-   * Si el instalador detecta que **ya existe** una instancia de PostgreSQL local, desplegará una pantalla personalizada solicitando ingresar la contraseña del superusuario `postgres` para poder configurar los esquemas y privilegios del sistema.
-   * Si **no existe**, instalará PostgreSQL de forma desatendida usando la contraseña maestra por defecto `Blanquita.123`.
+4. **Qué instalar:** *Sitio web y programa de escritorio*, *Sólo sitio web (IIS)*, *Sólo programa de escritorio* o personalizada. La base de datos y el servicio ZKTeco se instalan siempre.
+   * **Sitio web:** la aplicación Blazor se aloja en el IIS local (puerto 80, o 8081 si el 80 está ocupado, más un enlace en el puerto ADMS 18373).
+   * **Programa de escritorio (WPF):** queda en el menú Inicio, con acceso directo opcional en el escritorio y opción de abrirlo al iniciar sesión. Sin el sitio web funciona por su cuenta (`Hosting:Standalone = true`): aplica las migraciones, ejecuta las tareas programadas y recibe los relojes ADMS mientras está abierto. Junto al sitio, eso lo hace el sitio.
+   * Para agregar una parte, vuelva a ejecutar el instalador y márquela; para quitarla, desinstale y vuelva a instalar sólo lo necesario.
+5. **Detección e Ingreso de Credenciales de BD (sólo primera instalación):**
+   * Si el instalador detecta que **ya existe** una instancia de PostgreSQL local, desplegará una pantalla personalizada solicitando ingresar la contraseña del superusuario `postgres` para poder configurar los esquemas y privilegios del sistema. Esa contraseña no se guarda.
+   * Si **no existe**, instalará PostgreSQL de forma desatendida con una contraseña de `postgres` **aleatoria**, que deja en `{app}\Database\postgres_superuser.txt` (sólo Administradores y SYSTEM).
+   * En una actualización (ya existe `{app}\Web\appsettings.Production.json`) no se pide nada: la BD y la configuración se conservan.
 6. **Progreso de Instalación:**
    * Descompresión de archivos de la aplicación y el servicio.
    * Ejecución en segundo plano del instalador de PostgreSQL (`postgresql-installer.exe --mode unattended`).
-   * Ejecución del Hosting Bundle de .NET 10 (`dotnet-hosting.exe /install /quiet /norestart`).
-   * Registro del SDK ZKTeco en Windows (`regsvr32.exe /s zkemkeeper.dll` tanto en `System32` como en `SysWOW64` para entornos de 64 bits).
+   * Ejecución del Hosting Bundle de .NET 10 (`dotnet-hosting.exe /install /quiet /norestart`, log en `{app}\Logs\dotnet_hosting.log`).
+   * Copia del SDK ZKTeco (32 bits) a `SysWOW64` y registro de `zkemkeeper.dll` con el `regsvr32` de 32 bits. Ya no se copia a `System32`. No reemplaza una versión más nueva del SDK instalada por otro programa, y la desinstalación sólo lo borra si ningún otro programa lo usa.
+   * Al final, una verificación comprueba IIS, el módulo ASP.NET Core, el sitio y el servicio ZKTeco, y avisa de cualquier problema con la ruta del log correspondiente.
    * Creación del Servicio de Windows mediante `sc.exe create AttendanceSystem.ZKTeco.Service`.
-   * Configuración de la base de datos llamando a `configure_db.bat`.
-   * Apertura de los puertos 8081 y 5001 en el Firewall de Windows Defender.
+   * Configuración de la base de datos ejecutando `init_db.sql` con `psql` (sólo primera instalación) y escritura de los `appsettings.Production.json` de la web y del servicio.
+   * Apertura de los puertos 80 y 8081 en el Firewall de Windows Defender (el 5001 de gRPC queda sólo en loopback).
 7. **Pantalla de Finalización:** Opción de arrancar el servicio de forma inmediata y abrir el navegador para el acceso inicial.
 
 ### 3.3 Configuración Automática Realizada por el Instalador
@@ -160,21 +163,23 @@ El instalador realiza las siguientes tareas críticas en el sistema operativo:
 
 * **Estructura de Directorios:**
   * `{app}\Web`: Archivos de publicación de la aplicación Blazor Server.
+  * `{app}\Desktop`: Programa de escritorio WPF (autocontenido, x64), si se eligió. Su `appsettings.json` lo genera el instalador; *Usuarios* tienen permiso de modificación sobre sus carpetas `logs` y `Backups`.
   * `{app}\Service`: Archivos del Windows Service de ZKTeco (compilado en x86 autocontenido).
   * `{app}\Database`: Scripts de creación de base de datos e inicialización.
   * `{app}\Logs` y `{app}\Backups`: Carpetas dedicadas a logs históricos y respaldos.
     * **Nota:** la aplicación **no** usa `{app}\Backups` de forma predeterminada: su directorio de respaldos por defecto es `{app}\Web\Backups`. Configure `{app}\Backups` (o, mejor, una carpeta en otro disco) en **Respaldo y Restauración → Directorio de Almacenamiento**. En IIS, `configure_iis.bat` otorga permiso de modificación a `IIS_IUSRS` sobre `{app}\Backups`; cualquier otra carpeta necesita ese permiso para la identidad del AppPool.
 * **Configuración de PostgreSQL:**
-  * Se crea un rol/usuario de base de datos exclusivo llamado `attendancesystem_user` con contraseña `Blanquita.123`.
-  * Se crea la base de datos `"AttendanceSystem"`.
-  * Se otorgan todos los privilegios sobre el esquema `public` y el esquema `hangfire` a dicho usuario.
+  * Se crea un rol/usuario de base de datos exclusivo llamado `attendancesystem_user` con una contraseña aleatoria generada en la instalación.
+  * Se crea la base de datos `"AttendanceSystem"`, propiedad de ese usuario.
+  * El usuario queda como dueño de los esquemas `public` y `hangfire` (requisito de la restauración de respaldos). No es superusuario.
+  * La cadena de conexión (con esa contraseña) y una ApiKey de gRPC aleatoria se escriben en `{app}\Web\appsettings.Production.json` y `{app}\Service\appsettings.Production.json`. Las actualizaciones no sobrescriben estos archivos.
 * **Instalación del Windows Service:**
   * Registra el servicio `AttendanceSystem.ZKTeco.Service` con el comando:
     ```cmd
     sc.exe create AttendanceSystem.ZKTeco.Service binPath= "C:\Program Files\AttendanceSystem\Service\AttendanceSystem.ZKTeco.Service.exe" start= auto displayname= "Attendance System ZKTeco Service"
     ```
   * Inicia automáticamente el servicio.
-* **Configuración de IIS (Si aplica):**
+* **Configuración de IIS:**
   * Ejecuta `enable_iis.ps1` que activa el rol de IIS en Windows con soporte para WebSockets y ASP.NET Core module.
   * Ejecuta `configure_iis.bat` que crea un AppPool dedicado e independiente (`AttendanceSystem`) y un sitio web asignado al puerto 80 apuntando a la carpeta `{app}\Web`.
 
@@ -186,10 +191,10 @@ Para validar que la instalación fue exitosa:
    ```
 2. Verifique que los servicios de Windows estén en ejecución:
    ```powershell
-   Get-Service "postgresql-x64-16"
+   Get-Service "postgresql-x64-*"
    Get-Service "AttendanceSystem.ZKTeco.Service"
    ```
-3. Abra el navegador web e ingrese a `http://localhost:8081` (o `http://localhost` si configuró IIS).
+3. Con el sitio web: abra el navegador e ingrese a `http://localhost` (o `http://localhost:8081` si el puerto 80 estaba ocupado). Con el programa de escritorio: ábralo desde el menú Inicio (**AttendanceSystem**).
 4. Inicie sesión con las credenciales maestras por defecto:
    * **Usuario:** `admin`
    * **Contraseña:** `Admin123!`
@@ -238,7 +243,7 @@ erDiagram
 * **SystemAlerts:** Alertas internas generadas por el sistema cuando ocurren desconexiones de hardware o errores en segundo plano.
 
 ### 4.2 Migraciones y Actualizaciones de Esquema
-La aplicación Blazor aplica las migraciones de Entity Framework Core al arrancar, antes de atender peticiones. Implementación: `StartupMigrationService` (`src/Infrastructure/AttendanceSystem.Infrastructure/Services/StartupMigrationService.cs`), invocado desde `Program.cs`. Los clientes WPF y el servicio ZKTeco nunca migran.
+La aplicación Blazor aplica las migraciones de Entity Framework Core al arrancar, antes de atender peticiones. Implementación: `StartupMigrationService` (`src/Infrastructure/AttendanceSystem.Infrastructure/Services/StartupMigrationService.cs`), invocado desde `ServerStartup` (`Program.cs`). El cliente WPF migra igual sólo cuando se instala sin sitio web (`Hosting:Standalone`); junto al sitio, y el servicio ZKTeco, nunca migran.
 
 **Secuencia de arranque:**
 1. **Conexión:** si PostgreSQL todavía no responde (p. ej. el servidor se reinició y PostgreSQL arranca después que IIS), se reintenta con espera creciente (`Database:StartupConnectAttempts`). Si la base no existe se crea vacía (desarrollo; el instalador ya la crea). Si tras los reintentos no hay conexión, la aplicación **se detiene** y el siguiente arranque lo vuelve a intentar.
@@ -348,7 +353,7 @@ Se inicia en **Respaldo y Restauración** (rol Administrador). Sólo acepta arch
 7. Si la validación o la alineación fallan, **rollback automático** restaurando el snapshot con el mismo mecanismo atómico.
 8. Al terminar se libera el bloqueo, se reanuda Hangfire y se pide reiniciar la aplicación.
 
-**Requisitos de permisos:** el usuario de la cadena de conexión debe ser **dueño de la base de datos y de los esquemas `public` y `hangfire`** (así lo deja `configure_db.bat`/`init_db.sql`). No se requiere superusuario.
+**Requisitos de permisos:** el usuario de la cadena de conexión debe ser **dueño de la base de datos y de los esquemas `public` y `hangfire`** (así lo deja `init_db.sql`). No se requiere superusuario.
 
 #### Restauración con fallo crítico (estado `Failed`)
 Sólo ocurre si el respaldo se confirmó, no superó la validación posterior y además falló el rollback. Entonces:
@@ -459,7 +464,17 @@ La seguridad de la interfaz de usuario web está construida sobre **ASP.NET Core
 ### 6.3 Cliente de escritorio (WPF)
 El cliente WPF (`src/Presentation/AttendanceSystem.WPF`) usa el mismo backend que el sitio web: los mismos comandos de
 MediatR y la misma base de datos, con su propio `appsettings.json` junto al ejecutable (ver
-`appsettings.example.json` y el `README.md` del proyecto). No ejecuta tareas programadas ni migraciones.
+`appsettings.example.json` y el `README.md` del proyecto). Se usa en el mismo equipo que la base y no depende de que el
+sitio web esté encendido: mientras está abierto ejecuta las tareas programadas (mismo almacenamiento de Hangfire que el
+sitio: cada tarea la toma un solo proceso), la consolidación y el outbox. Lo que corre en segundo plano actúa como
+Sistema; sólo lo que pide la interfaz requiere sesión.
+
+* **Junto al sitio web** (`Hosting:Standalone = false`): el sitio aplica las migraciones; si el esquema está atrasado el
+  cliente lo avisa y deja sus tareas en pausa. Los relojes ADMS los recibe el sitio; los comandos que encola el cliente
+  le llegan por la tabla `AdmsCommands`.
+* **Sin sitio web** (`Hosting:Standalone = true`): al arrancar aplica las migraciones y los datos iniciales igual que el
+  sitio (`ServerStartup`) y recibe a los relojes ADMS en el puerto ADMS de la configuración del sistema mientras está
+  abierto.
 
 * **Inicio de sesión:** cuentas, política de contraseñas y bloqueo por intentos fallidos iguales a los de la web.
 * **Permisos:** menú, pantallas, botones y campos siguen la matriz de roles (Usuario, RH, Administrador); el backend
@@ -468,8 +483,8 @@ MediatR y la misma base de datos, con su propio `appsettings.json` junto al ejec
   respaldo desde el cliente se cierra la sesión.
 * **Mantenimiento:** consulta cada `Maintenance:PollIntervalSeconds` el estado compartido en PostgreSQL y muestra un
   aviso mientras hay una restauración en curso o tras una fallida.
-* **Configuración:** al guardarla pide al sitio web (`BackendUrl`, `ApiKey`) recargar las tareas programadas; si el sitio
-  no responde se avisa que el horario nuevo se aplicará al reiniciarlo.
+* **Configuración:** al guardarla se reprograman las tareas automáticas en el almacenamiento compartido de Hangfire; el
+  horario nuevo aplica también en el sitio web sin avisarle.
 * **Dispositivos:** "Eliminar" borra un reloj sin historial y desactiva uno con checadas o descargas (las checadas
   nunca se borran). "Vaciar memoria del reloj" descarga todo y sólo borra del reloj el rango guardado, si la lectura
   fue completa (no disponible para relojes ADMS).

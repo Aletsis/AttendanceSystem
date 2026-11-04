@@ -56,6 +56,9 @@ public class AdmsCommandConfiguration : IEntityTypeConfiguration<AdmsCommand>
         builder.Property(x => x.ErrorMessage)
             .IsRequired(false);
 
+        builder.Property(x => x.ResultPayload)
+            .IsRequired(false);
+
         builder.HasIndex(x => new { x.SerialNumber, x.Status });
         builder.HasIndex(x => new { x.SerialNumber, x.CommandId });
         builder.HasIndex(x => x.CreatedAtUtc);

@@ -290,8 +290,8 @@ public class DownloadFromDeviceSafetyTests
         var expected = fullSync
             ? $"DATA QUERY tablename={table},fields=*"
             : $"DATA QUERY tablename={table},starttime=2026-01-01 00:00:00,endtime=2026-01-02 23:59:59";
-        _admsCommandServiceMock.Verify(s => s.EnqueueCommand("SN123", expected,
-            It.Is<Guid?>(id => id.HasValue)), Times.Once);
+        _admsCommandServiceMock.Verify(s => s.EnqueueCommandAsync("SN123", expected,
+            It.Is<Guid?>(id => id.HasValue), It.IsAny<CancellationToken>()), Times.Once);
         _admsCommandServiceMock.VerifyNoOtherCalls();
         _deviceRepositoryMock.Verify(r => r.ResetAttLogTimestampAsync(It.IsAny<string>(),
             It.IsAny<CancellationToken>()), Times.Never);

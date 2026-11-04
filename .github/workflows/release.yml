@@ -108,8 +108,9 @@ jobs:
             exit 1
           }
 
-          # Crear paquetes portables ZIP para Web y Service
+          # Crear paquetes portables ZIP para Web, Escritorio y Service
           Compress-Archive -Path ".\Release\Web\*" -DestinationPath ".\Artifacts\AttendanceSystem_Web_v${{ env.VERSION }}.zip" -Force
+          Compress-Archive -Path ".\Release\Desktop\*" -DestinationPath ".\Artifacts\AttendanceSystem_Desktop_v${{ env.VERSION }}.zip" -Force
           Compress-Archive -Path ".\Release\Service\*" -DestinationPath ".\Artifacts\AttendanceSystem_ZKTecoService_v${{ env.VERSION }}.zip" -Force
 
           Write-Host "Artefactos generados:"
@@ -124,8 +125,9 @@ jobs:
             "## AttendanceSystem v$ver"
             ""
             "### 📦 Instalador y Paquetes de Despliegue"
-            "- **Instalador Todo-en-Uno**: AttendanceSystem_Setup_v${ver}.exe (incluye Blazor Server Web, Servicio ZKTeco x86 con SDK COM, PostgreSQL y configuraciones automáticas)."
+            "- **Instalador Todo-en-Uno**: AttendanceSystem_Setup_v${ver}.exe (sitio web Blazor en IIS y/o programa de escritorio WPF, Servicio ZKTeco x86 con SDK COM, PostgreSQL y configuraciones automáticas)."
             "- **Paquete Web Portable**: AttendanceSystem_Web_v${ver}.zip"
+            "- **Paquete Escritorio Portable**: AttendanceSystem_Desktop_v${ver}.zip"
             "- **Paquete Servicio Portable**: AttendanceSystem_ZKTecoService_v${ver}.zip"
             ""
             "### 🚀 Registro de Cambios"

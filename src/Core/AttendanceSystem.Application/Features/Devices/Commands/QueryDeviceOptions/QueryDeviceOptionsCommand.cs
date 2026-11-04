@@ -46,7 +46,7 @@ public class QueryDeviceOptionsHandler : IRequestHandler<QueryDeviceOptionsComma
 
                 _logger.LogInformation("ADMS: Encolando consulta de información técnica INFO para SN: {SerialNumber}", sn);
 
-                _admsCommandService.EnqueueCommand(sn, "INFO");
+                await _admsCommandService.EnqueueCommandAsync(sn, "INFO", cancellationToken: cancellationToken);
 
                 return Result.Success();
             }

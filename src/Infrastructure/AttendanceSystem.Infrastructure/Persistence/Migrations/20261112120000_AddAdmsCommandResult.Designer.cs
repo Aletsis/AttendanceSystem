@@ -13,8 +13,8 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AttendanceSystem.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(AttendanceDbContext))]
-    [Migration("20261112120000_AddDeviceRealtimeEnabled")]
-    partial class AddDeviceRealtimeEnabled
+    [Migration("20261112120000_AddAdmsCommandResult")]
+    partial class AddAdmsCommandResult
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -981,6 +981,9 @@ namespace AttendanceSystem.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsDestructive")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("ResultPayload")
+                        .HasColumnType("text");
+
                     b.Property<int>("RetryCount")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -1092,11 +1095,6 @@ namespace AttendanceSystem.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Port")
                         .HasColumnType("integer");
-
-                    b.Property<bool>("RealtimeEnabled")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(false);
 
                     b.Property<bool>("ShouldClearAfterDownload")
                         .HasColumnType("boolean");

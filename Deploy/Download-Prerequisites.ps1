@@ -104,17 +104,34 @@ if (-not (Test-Path $PostgresTarget) -or $Force -or ((Get-Item $PostgresTarget -
     Write-Host "PostgreSQL installer ya existe y es válido en $PostgresTarget" -ForegroundColor Yellow
 }
 
-# 2. Descargar ASP.NET Core Hosting Bundle si no existe
-if (-not (Test-Path $DotNetTarget) -or $Force -or ((Get-Item $DotNetTarget -ErrorAction SilentlyContinue).Length -lt 10MB)) {
-    Write-Host "Descargando ASP.NET Core Hosting Bundle..." -ForegroundColor Cyan
+# 2. Descargar ASP.NET Core Hosting Bundle de la misma versión mayor de .NET que la app (si falta o es de otra versión)
+# setup_script.iss verifica al compilar que coincida con Release\Web; aquí se toma del TargetFramework del proyecto web.
+$webCsproj = Join-Path $PSScriptRoot "..\src\Presentation\AttendanceSystem.Blazor.Server\AttendanceSystem.Blazor.Server.csproj"
+$tfm = ([xml](Get-Content $webCsproj -Raw)).Project.PropertyGroup.TargetFramework | Where-Object { $_ } | Select-Object -First 1
+if ($tfm -notmatch '^net(\d+)\.\d+') { throw "No se pudo leer el TargetFramework de $webCsproj ('$tfm')." }
+$DotNetMajor = [int]$Matches[1]
+
+function Get-BundleMajor([string]$Path) {
+    if (-not (Test-Path $Path)) { return 0 }
+    $version = (Get-Item $Path).VersionInfo.ProductVersion
+    if ($version -match '^(\d+)\.') { return [int]$Matches[1] }
+    return 0
+}
+
+$currentMajor = Get-BundleMajor $DotNetTarget
+if ($Force -or $currentMajor -ne $DotNetMajor -or ((Get-Item $DotNetTarget -ErrorAction SilentlyContinue).Length -lt 10MB)) {
+    Write-Host "Descargando ASP.NET Core $DotNetMajor.0 Hosting Bundle (actual: $(if ($currentMajor) { "$currentMajor.x" } else { 'ninguno' }))..." -ForegroundColor Cyan
     $dotnetUrls = @(
-        "https://aka.ms/dotnet/9.0/dotnet-hosting-win.exe",
-        "https://download.visualstudio.microsoft.com/download/pr/97738f6d-31ca-43bc-9387-a246d6b2c2fa/e36928da5e1b7e6515b804cb3603d36b/dotnet-hosting-9.0.2-win.exe"
+        "https://aka.ms/dotnet/$DotNetMajor.0/dotnet-hosting-win.exe"
     )
     Download-FileWithRetry -Urls $dotnetUrls -OutputFile $DotNetTarget -MinSizeBytes 20MB
-    Write-Host "ASP.NET Core Hosting Bundle listo en $DotNetTarget" -ForegroundColor Green
+    $downloadedMajor = Get-BundleMajor $DotNetTarget
+    if ($downloadedMajor -ne $DotNetMajor) {
+        throw "El Hosting Bundle descargado es $downloadedMajor.x, se esperaba $DotNetMajor.x."
+    }
+    Write-Host "ASP.NET Core Hosting Bundle $((Get-Item $DotNetTarget).VersionInfo.ProductVersion) listo en $DotNetTarget" -ForegroundColor Green
 } else {
-    Write-Host "ASP.NET Core Hosting Bundle ya existe y es válido en $DotNetTarget" -ForegroundColor Yellow
+    Write-Host "ASP.NET Core Hosting Bundle $((Get-Item $DotNetTarget).VersionInfo.ProductVersion) ya existe y es válido en $DotNetTarget" -ForegroundColor Yellow
 }
 
 Write-Host "Todos los prerrequisitos están listos en $DeployDir." -ForegroundColor Green

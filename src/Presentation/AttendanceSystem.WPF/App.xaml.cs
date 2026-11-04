@@ -1,43 +1,29 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Threading;
 using AttendanceSystem.Application.Exceptions;
 using AttendanceSystem.WPF.Views;
 using AttendanceSystem.WPF.Services;
 using Prism.Ioc;
 using Prism.Unity;
-using Prism.Navigation.Regions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using System.IO;
 using Serilog;
-using AttendanceSystem.Infrastructure.Persistence;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Infrastructure.Services;
-using AttendanceSystem.Domain.Repositories;
-using AttendanceSystem.Infrastructure.Persistence.Repositories;
-using AttendanceSystem.Domain.Services;
 using MediatR;
-using AttendanceSystem.Application.Features.Employees.Queries;
-using AttendanceSystem.Application.Features.Departments.Queries;
-using AttendanceSystem.Application.Features.Positions.Queries;
-using AttendanceSystem.Application.Features.Branches.Queries;
-using AttendanceSystem.Application.Features.Shifts.Queries;
-using AttendanceSystem.Application.Features.Devices.Queries;
-using AttendanceSystem.Infrastructure.Persistence.Queries;
-using Microsoft.AspNetCore.Identity;
-using AttendanceSystem.Application.DependencyInjection;
-using AttendanceSystem.Infrastructure.DependencyInjection;
-using AttendanceSystem.Domain.Entities;
 
 namespace AttendanceSystem.WPF
 {
     public partial class App : PrismApplication
     {
         public IConfiguration Configuration { get; private set; } = null!;
-        private ServiceProvider? _serviceProvider;
+        private IHost? _host;
 
-        protected override void OnStartup(StartupEventArgs e)
+        protected override async void OnStartup(StartupEventArgs e)
         {
             // Un error no controlado (p. ej. en el resultado de un diálogo) no debe cerrar la aplicación sin aviso.
             DispatcherUnhandledException += OnDispatcherUnhandledException;
@@ -58,7 +44,127 @@ namespace AttendanceSystem.WPF
             FrameworkElement.LanguageProperty.OverrideMetadata(typeof(FrameworkElement),
                 new FrameworkPropertyMetadata(System.Windows.Markup.XmlLanguage.GetLanguage(culture.IetfLanguageTag)));
 
+            // Las rutas relativas (logs, respaldos sin carpeta configurada) son de la carpeta del programa: un acceso
+            // directo puede arrancarlo en otra, o en una sin permiso de escritura.
+            Environment.CurrentDirectory = AppContext.BaseDirectory;
+
+            // Sin configuración no hay base a la que conectarse: antes se cerraba sin aviso al arrancar.
+            if (!File.Exists(Path.Combine(AppContext.BaseDirectory, "appsettings.json")))
+            {
+                MessageBox.Show($"No se encontró la configuración del programa (appsettings.json) en:\n{AppContext.BaseDirectory}\n\n" +
+                    "Vuelva a ejecutar el instalador o cree el archivo a partir de appsettings.example.json.",
+                    "Sistema de Asistencia", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(1);
+                return;
+            }
+
+            // La ventana de espera no debe cerrar la aplicación al cerrarse.
+            ShutdownMode = ShutdownMode.OnExplicitShutdown;
+            var wait = ShowWaitWindow();
+            string? startupWarning;
+            try
+            {
+                var settings = new ConfigurationBuilder()
+                    .SetBasePath(AppContext.BaseDirectory)
+                    .AddJsonFile("appsettings.json", optional: false)
+                    .Build();
+                var standalone = settings.GetValue<bool>(WpfBackendHost.StandaloneKey);
+                _host = WpfBackendHost.Build(standalone);
+                Configuration = _host.Services.GetRequiredService<IConfiguration>();
+                if (string.IsNullOrWhiteSpace(Configuration.GetConnectionString("AttendanceDb")))
+                {
+                    throw new InvalidOperationException("La configuración no tiene la cadena de conexión ConnectionStrings:AttendanceDb.");
+                }
+
+                var host = _host;
+                startupWarning = await Task.Run(() => StartBackendAsync(host, standalone));
+            }
+            catch (Exception ex)
+            {
+                Log.Fatal(ex, "No se pudo iniciar la aplicación");
+                wait.Close();
+                MessageBox.Show($"No se pudo iniciar el programa: {ex.Message}", "Sistema de Asistencia", MessageBoxButton.OK, MessageBoxImage.Error);
+                Shutdown(1);
+                return;
+            }
+            wait.Close();
+
+            ShutdownMode = ShutdownMode.OnMainWindowClose;
             base.OnStartup(e);
+
+            if (startupWarning != null)
+            {
+                MessageBox.Show(MainWindow!, startupWarning, "Sistema de Asistencia", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+        }
+
+        /// <summary>
+        /// Deja la base lista y arranca lo que corre en segundo plano (tareas, consolidación, outbox, receptor ADMS).
+        /// Devuelve un aviso para el usuario si algo quedó sin arrancar; la interfaz se abre de todos modos.
+        /// </summary>
+        private static async Task<string?> StartBackendAsync(IHost host, bool standalone)
+        {
+            var services = host.Services;
+            var logger = services.GetRequiredService<ILoggerFactory>().CreateLogger("WpfStartup");
+            DatabaseStartupStatus status;
+            try
+            {
+                status = await ServerStartup.PrepareDatabaseAsync(services, applyMigrations: standalone, logger);
+            }
+            catch (Exception ex)
+            {
+                // Sin base no se arranca nada en segundo plano: Hangfire no reintenta su arranque.
+                logger.LogError(ex, "No se pudo preparar la base de datos al iniciar");
+                return $"No se pudo conectar con la base de datos ({ex.Message}). Las tareas automáticas no se iniciaron; " +
+                       "cierre y vuelva a abrir el programa cuando la base esté disponible.";
+            }
+
+            try
+            {
+                await ServerStartup.ScheduleRecurringJobsAsync(services, status == DatabaseStartupStatus.Ready, logger);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "No se pudieron programar las tareas recurrentes al iniciar");
+            }
+
+            try
+            {
+                await host.StartAsync();
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "No se pudieron iniciar los servicios en segundo plano");
+                return standalone
+                    ? $"No se pudo iniciar el receptor de los relojes ADMS ni las tareas automáticas ({ex.Message}). Revise que el puerto ADMS no lo use otro programa."
+                    : $"No se pudieron iniciar las tareas automáticas ({ex.Message}).";
+            }
+
+            return status switch
+            {
+                DatabaseStartupStatus.SchemaOutdated =>
+                    "La base de datos todavía no está actualizada a esta versión del programa. Abra el sitio web para que la actualice " +
+                    "y vuelva a abrir este programa; mientras tanto las tareas automáticas quedan en pausa.",
+                DatabaseStartupStatus.Maintenance =>
+                    "La base de datos está en mantenimiento: las tareas automáticas quedan en pausa hasta restaurar un respaldo.",
+                _ => null
+            };
+        }
+
+        private static Window ShowWaitWindow()
+        {
+            var window = new Window
+            {
+                Title = "Sistema de Asistencia",
+                Content = new TextBlock { Text = "Preparando la base de datos…", Margin = new Thickness(32, 24, 32, 24), FontSize = 14 },
+                SizeToContent = SizeToContent.WidthAndHeight,
+                WindowStartupLocation = WindowStartupLocation.CenterScreen,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.ToolWindow,
+                ShowInTaskbar = true
+            };
+            window.Show();
+            return window;
         }
 
         private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
@@ -86,78 +192,22 @@ namespace AttendanceSystem.WPF
 
         protected override void RegisterTypes(IContainerRegistry containerRegistry)
         {
-            // Configuration
-            var builder = new ConfigurationBuilder()
-                // La carpeta del ejecutable, no la de trabajo: un acceso directo puede arrancar en otra carpeta.
-                .SetBasePath(AppContext.BaseDirectory)
-                .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
-                .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true);
-            Configuration = builder.Build();
+            var services = _host!.Services;
             containerRegistry.RegisterInstance(Configuration);
-
-            // Configure Serilog
-            Log.Logger = new LoggerConfiguration()
-                .ReadFrom.Configuration(Configuration)
-                .CreateLogger();
-
-            // Build a ServiceProvider for MediatR and EF Core
-            var services = new ServiceCollection();
-
-            // Add Configuration & Logging
-            services.AddSingleton<IConfiguration>(Configuration);
-            services.AddLogging(builder =>
-            {
-                builder.AddSerilog();
-            });
-
-            // Registrar servicios compartidos de Aplicación e Infraestructura (H13 & H15)
-            services.AddApplicationServices();
-            services.AddInfrastructureServices(Configuration);
-
-            // Servicios específicos de cliente WPF
-            services.AddSingleton<IAuthenticationStateService, AuthenticationStateService>();
-            services.AddSingleton<ICurrentUserService, WpfCurrentUserService>();
-            services.AddSingleton<IBackgroundJobControlService, NullBackgroundJobControlService>();
-            services.AddSingleton<IAttendanceJobScheduler, WpfAttendanceJobScheduler>();
-
-            // Add Identity Core (UserManager only — sin cookies, SignInManager ni HTTP context)
-            // Necesario para validar contraseñas contra la misma tabla AspNetUsers que usa Blazor
-            services.AddIdentityCore<ApplicationUser>(options =>
-            {
-                // Misma política que la versión web: al cambiar la contraseña desde aquí no debe aceptarse una más débil.
-                options.Password.RequireDigit = true;
-                options.Password.RequireLowercase = true;
-                options.Password.RequireUppercase = true;
-                options.Password.RequireNonAlphanumeric = false;
-                options.Password.RequiredLength = 6;
-
-                // Configuración de bloqueo compartida con el servidor web (H14)
-                options.Lockout.DefaultLockoutTimeSpan = TimeSpan.FromMinutes(15);
-                options.Lockout.MaxFailedAccessAttempts = 5;
-                options.Lockout.AllowedForNewUsers = true;
-            })
-            .AddRoles<IdentityRole>()
-            .AddEntityFrameworkStores<AttendanceDbContext>();
-
-            _serviceProvider = services.BuildServiceProvider(new ServiceProviderOptions
-            {
-                ValidateScopes = true
-            });
 
             // Register services in Prism container
             // Usar WpfScopedMediator para ejecutar cada operación en un IServiceScope aislado y dispuesto inmediatamente (H15)
-            containerRegistry.RegisterInstance<IMediator>(new WpfScopedMediator(_serviceProvider));
+            containerRegistry.RegisterInstance<IMediator>(new WpfScopedMediator(services));
 
             // WPF Services
-            containerRegistry.RegisterInstance<IAuthenticationStateService>(_serviceProvider.GetRequiredService<IAuthenticationStateService>());
-            containerRegistry.RegisterInstance<ICurrentUserService>(_serviceProvider.GetRequiredService<ICurrentUserService>());
-            containerRegistry.RegisterInstance<IRestoreStateService>(_serviceProvider.GetRequiredService<IRestoreStateService>());
+            containerRegistry.RegisterInstance<IAuthenticationStateService>(services.GetRequiredService<IAuthenticationStateService>());
+            containerRegistry.RegisterInstance<IRestoreStateService>(services.GetRequiredService<IRestoreStateService>());
             containerRegistry.RegisterSingleton<IFrameNavigationService, FrameNavigationService>();
             containerRegistry.RegisterSingleton<IMessageService, MessageService>();
             containerRegistry.RegisterSingleton<ViewModels.ShellViewModel>();
 
-            containerRegistry.RegisterInstance<IImportService>(_serviceProvider.GetRequiredService<IImportService>());
-            containerRegistry.RegisterInstance<IReportExportService>(_serviceProvider.GetRequiredService<IReportExportService>());
+            containerRegistry.RegisterInstance<IImportService>(services.GetRequiredService<IImportService>());
+            containerRegistry.RegisterInstance<IReportExportService>(services.GetRequiredService<IReportExportService>());
             // IBackupService no se registra aquí: es scoped (usa la base de datos) y las pantallas de respaldo usan los
             // comandos de MediatR, que crean su propio ámbito.
 
@@ -196,7 +246,20 @@ namespace AttendanceSystem.WPF
 
         protected override void OnExit(ExitEventArgs e)
         {
-            _serviceProvider?.Dispose();
+            if (_host != null)
+            {
+                // Las tareas en curso reciben la cancelación y se espera a que terminen (Hangfire, hasta 30 s); una que
+                // no alcance a terminar la retoma otro proceso al vencer su reserva.
+                try
+                {
+                    Task.Run(() => _host.StopAsync(TimeSpan.FromSeconds(30))).Wait(TimeSpan.FromSeconds(35));
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(ex, "Error al detener los servicios en segundo plano");
+                }
+                (_host as IDisposable)?.Dispose();
+            }
             Log.CloseAndFlush();
             base.OnExit(e);
         }

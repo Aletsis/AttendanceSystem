@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\Infrastructure\AttendanceSystem.Infrastructure\AttendanceSystem.Infrastructure.csproj" />
     <ProjectReference Include="..\..\Core\AttendanceSystem.Application\AttendanceSystem.Application.csproj" />
     <ProjectReference Include="..\..\Core\AttendanceSystem.Domain\AttendanceSystem.Domain.csproj" />
+    <ProjectReference Include="..\AttendanceSystem.Adms\AttendanceSystem.Adms.csproj" />
 
   </ItemGroup>
 

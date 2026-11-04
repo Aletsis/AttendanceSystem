@@ -2014,7 +2014,7 @@ GRANT ALL ON SCHEMA public TO public;
         // 2. Verificar rutas de instalación estándar
         if (isWindows)
         {
-            var standardVersions = new[] { "17", "16", "15", "14", "13", "12" };
+            var standardVersions = new[] { "18", "17", "16", "15", "14", "13", "12" };
             foreach (var version in standardVersions)
             {
                 var standardPath = Path.Combine(@"C:\Program Files\PostgreSQL", version, "bin", toolName);

@@ -1,4 +1,7 @@
 using System.Collections.Concurrent;
+using System.Data;
+using System.Data.Common;
+using System.Text.Json;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
@@ -9,14 +12,21 @@ using Microsoft.Extensions.Logging;
 
 namespace AttendanceSystem.Infrastructure.Services;
 
+/// <summary>
+/// Cola de comandos ADMS sobre la tabla AdmsCommands. La fila es la fuente de verdad: cualquier proceso encola (la web,
+/// sus workers o el cliente WPF) y el que atiende al reloj la reclama con <c>SKIP LOCKED</c>, así que un comando se
+/// entrega una sola vez aunque haya varios procesos. La respuesta a INFO vuelve en la misma fila (ResultPayload) a quien
+/// la espera, en este u otro proceso. Las sesiones de descarga (contadores de lo recibido) quedan en memoria del proceso
+/// que atiende al reloj: el reloj entrega datos y acuse al mismo servidor al que pidió el comando.
+/// </summary>
 public class AdmsCommandService : IAdmsCommandService
 {
-    private record QueuedCommand(Guid CommandGuid, string CommandText, Guid? DownloadLogId);
+    /// <summary>Un comando entregado sin acuse en este tiempo se da por perdido (el reloj se reinició o lo descartó).</summary>
+    public static readonly TimeSpan SentCommandTtl = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan DeviceInfoPollInterval = TimeSpan.FromMilliseconds(500);
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<AdmsCommandService> _logger;
-
-    private readonly ConcurrentDictionary<string, ConcurrentQueue<QueuedCommand>> _commandQueues = new(StringComparer.OrdinalIgnoreCase);
 
     // Map (SerialNumber, CommandID) -> DownloadLogId
     private readonly ConcurrentDictionary<string, Guid> _pendingExecutions = new(StringComparer.OrdinalIgnoreCase);
@@ -36,163 +46,159 @@ public class AdmsCommandService : IAdmsCommandService
 
     public event Action<string, Guid, bool, int, int, string?>? OnDownloadStatusChanged;
 
-    // SerialNumber -> TaskCompletionSource<DeviceInfoDto?>
-    private readonly ConcurrentDictionary<string, TaskCompletionSource<DeviceInfoDto?>> _deviceInfoWaiters = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, (string CommandId, TaskCompletionSource<DeviceInfoDto?> Waiter)> _deviceInfoExecutions = new(StringComparer.OrdinalIgnoreCase);
+    // Aviso inmediato cuando la respuesta a INFO llega en este mismo proceso; entre procesos se consulta la fila.
+    private readonly ConcurrentDictionary<Guid, TaskCompletionSource> _deviceInfoSignals = new();
 
-    private static int _commandCounter = 10000;
-
-    // Comandos que ya entraron a la cola en memoria: la carga inicial desde la base corre en segundo plano y no debe
-    // volver a encolar uno que se encoló mientras tanto (el reloj lo ejecutaría dos veces).
-    private readonly ConcurrentDictionary<Guid, byte> _knownCommandIds = new();
+    // Punto de partida aleatorio: dos procesos no reparten la misma secuencia de CommandID.
+    private static int _commandCounter = Random.Shared.Next(0, 90000);
 
     public AdmsCommandService(IServiceScopeFactory scopeFactory, ILogger<AdmsCommandService> logger)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
-        // Cargar comandos pendientes de base de datos en caso de reinicio del servicio
-        _ = Task.Run(LoadPendingCommandsFromDatabaseAsync);
+        _ = Task.Run(ExpireStaleSentCommandsAsync);
     }
 
-    private async Task LoadPendingCommandsFromDatabaseAsync()
+    /// <summary>
+    /// Al arrancar: los comandos entregados hace más de <see cref="SentCommandTtl"/> sin acuse ya no se esperan. No se
+    /// reenvían (pueden ser destructivos y el reloj quizá sí los ejecutó); los pendientes siguen en la tabla.
+    /// </summary>
+    internal async Task ExpireStaleSentCommandsAsync()
     {
         try
         {
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
 
-            // Recuperar comandos pendientes y comandos enviados que expiraron sin acuse (> 10 minutos)
-            var staleThreshold = DateTime.UtcNow.AddMinutes(-10);
-            var commands = await dbContext.AdmsCommands
-                .Where(c => c.Status == AdmsCommandStatus.Pending ||
-                           (c.Status == AdmsCommandStatus.Sent && c.SentAtUtc < staleThreshold))
-                .OrderBy(c => c.CreatedAtUtc)
+            var staleThreshold = DateTime.UtcNow - SentCommandTtl;
+            var stale = await dbContext.AdmsCommands
+                .Where(c => c.Status == AdmsCommandStatus.Sent && c.SentAtUtc < staleThreshold)
                 .ToListAsync();
-
-            foreach (var cmd in commands)
+            foreach (var cmd in stale) cmd.MarkAsExpired();
+            if (stale.Count > 0)
             {
-                if (cmd.Status == AdmsCommandStatus.Sent)
-                {
-                    if (cmd.CanRetryAutomatically())
-                    {
-                        cmd.ResetForRetry();
-                        _logger.LogInformation("Comando ADMS pendiente recuperado tras reinicio/expiración: {SN} {Text}", cmd.SerialNumber, cmd.CommandText);
-                    }
-                    else
-                    {
-                        cmd.MarkAsExpired();
-                        continue;
-                    }
-                }
-
-                if (!_knownCommandIds.TryAdd(cmd.Id, 0)) continue;
-                var queue = _commandQueues.GetOrAdd(cmd.SerialNumber, _ => new ConcurrentQueue<QueuedCommand>());
-                queue.Enqueue(new QueuedCommand(cmd.Id, cmd.CommandText, cmd.DownloadLogId));
+                await dbContext.SaveChangesAsync();
+                _logger.LogInformation("{Count} comandos ADMS entregados sin acuse quedaron expirados.", stale.Count);
             }
-
-            await dbContext.SaveChangesAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Advertencia cargando comandos ADMS pendientes de BD en arranque");
+            _logger.LogWarning(ex, "Advertencia expirando comandos ADMS sin acuse en el arranque");
         }
     }
 
-    public void EnqueueCommand(string serialNumber, string command, Guid? downloadLogId = null)
+    private static string Clean(string serialNumber) => serialNumber.Trim().ToUpperInvariant();
+
+    public async Task<Guid> EnqueueCommandAsync(string serialNumber, string command, Guid? downloadLogId = null, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(serialNumber)) return;
+        if (string.IsNullOrWhiteSpace(serialNumber))
+            throw new ArgumentException("El número de serie es requerido", nameof(serialNumber));
 
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
-        var tempCmdId = "0"; // Se asigna número correlativo único al momento de enviar
+        // El CommandID se asigna al entregarlo al reloj.
+        var admsCommand = AdmsCommand.Create(Clean(serialNumber), "0", command, downloadLogId);
 
-        var admsCommand = AdmsCommand.Create(cleanSn, tempCmdId, command, downloadLogId);
-
-        // Guardar de forma duradera en PostgreSQL
-        _ = Task.Run(async () =>
-        {
-            try
-            {
-                using var scope = _scopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
-                await dbContext.AdmsCommands.AddAsync(admsCommand);
-                await dbContext.SaveChangesAsync();
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error al persistir comando ADMS para SN {SN} en base de datos", cleanSn);
-            }
-        });
-
-        _knownCommandIds.TryAdd(admsCommand.Id, 0);
-        var queue = _commandQueues.GetOrAdd(cleanSn, _ => new ConcurrentQueue<QueuedCommand>());
-        queue.Enqueue(new QueuedCommand(admsCommand.Id, command, downloadLogId));
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+        await dbContext.AdmsCommands.AddAsync(admsCommand, cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return admsCommand.Id;
     }
 
-    public (string? CommandId, string? Command, Guid? DownloadLogId) GetNextCommand(string serialNumber)
+    public async Task<(string? CommandId, string? Command, Guid? DownloadLogId)> GetNextCommandAsync(string serialNumber, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(serialNumber)) return (null, null, null);
+        var cleanSn = Clean(serialNumber);
 
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
 
-        if (_commandQueues.TryGetValue(cleanSn, out var queue))
+        // Un CommandID que no tenga ya otro comando del mismo reloj entregado y sin acuse.
+        var inFlight = await dbContext.AdmsCommands
+            .Where(c => c.SerialNumber == cleanSn && c.Status == AdmsCommandStatus.Sent)
+            .Select(c => c.CommandId)
+            .ToListAsync(cancellationToken);
+        string commandId;
+        do
         {
-            if (queue.TryDequeue(out var cmd))
+            commandId = ((Interlocked.Increment(ref _commandCounter) & int.MaxValue) % 90000 + 10000).ToString();
+        } while (inFlight.Contains(commandId));
+
+        AdmsCommand? claimed;
+        if (dbContext.Database.IsNpgsql())
+        {
+            var id = await ClaimNextAsync(dbContext, cleanSn, commandId, cancellationToken);
+            claimed = id == null ? null : await dbContext.AdmsCommands.AsNoTracking().FirstOrDefaultAsync(c => c.Id == id, cancellationToken);
+        }
+        else
+        {
+            // Sin PostgreSQL (pruebas en memoria) no hay otros procesos.
+            claimed = await dbContext.AdmsCommands
+                .Where(c => c.SerialNumber == cleanSn && c.Status == AdmsCommandStatus.Pending)
+                .OrderBy(c => c.CreatedAtUtc)
+                .FirstOrDefaultAsync(cancellationToken);
+            if (claimed != null)
             {
-                // Generar ID no colisionable entre 10000 y 99999
-                var rawId = (Interlocked.Increment(ref _commandCounter) % 90000) + 10000;
-                var commandId = rawId.ToString();
-
-                if (cmd.CommandText.Equals("INFO", StringComparison.OrdinalIgnoreCase) &&
-                    _deviceInfoWaiters.TryGetValue(cleanSn, out var infoWaiter))
-                {
-                    _deviceInfoExecutions[cleanSn] = (commandId, infoWaiter);
-                }
-
-                if (cmd.DownloadLogId.HasValue)
-                {
-                    RegisterPendingExecution(cleanSn, commandId, cmd.DownloadLogId.Value);
-                }
-
-                // Actualizar comando a estado Sent en base de datos
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        using var scope = _scopeFactory.CreateScope();
-                        var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
-                        var dbCmd = await dbContext.AdmsCommands.FindAsync(cmd.CommandGuid);
-                        if (dbCmd != null)
-                        {
-                            typeof(AdmsCommand).GetProperty(nameof(AdmsCommand.CommandId))?
-                                .SetValue(dbCmd, commandId);
-                            dbCmd.MarkAsSent();
-                            await dbContext.SaveChangesAsync();
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogError(ex, "Error actualizando estado Sent de comando ADMS {Guid}", cmd.CommandGuid);
-                    }
-                });
-
-                return (commandId, cmd.CommandText, cmd.DownloadLogId);
+                claimed.MarkAsSent(commandId);
+                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
 
-        return (null, null, null);
+        if (claimed == null) return (null, null, null);
+
+        if (claimed.DownloadLogId.HasValue)
+        {
+            RegisterPendingExecution(cleanSn, commandId, claimed.DownloadLogId.Value);
+        }
+
+        return (commandId, claimed.CommandText, claimed.DownloadLogId);
     }
 
-    public bool HasPendingCommands(string serialNumber)
+    /// <summary>Marca como entregado el pendiente más antiguo del reloj en una sola sentencia; null si no hay.</summary>
+    private static async Task<Guid?> ClaimNextAsync(AttendanceDbContext dbContext, string serialNumber, string commandId, CancellationToken cancellationToken)
+    {
+        var connection = dbContext.Database.GetDbConnection();
+        if (connection.State != ConnectionState.Open) await dbContext.Database.OpenConnectionAsync(cancellationToken);
+
+        await using var command = connection.CreateCommand();
+        command.CommandText = @"
+UPDATE ""AdmsCommands"" a
+   SET ""Status"" = @sent, ""SentAtUtc"" = now(), ""CommandId"" = @commandId
+  FROM (SELECT ""Id"" FROM ""AdmsCommands""
+         WHERE ""SerialNumber"" = @sn AND ""Status"" = @pending
+         ORDER BY ""CreatedAtUtc"", ""Id""
+         LIMIT 1
+         FOR UPDATE SKIP LOCKED) c
+ WHERE a.""Id"" = c.""Id""
+RETURNING a.""Id""";
+        AddParameter(command, "sent", (int)AdmsCommandStatus.Sent);
+        AddParameter(command, "pending", (int)AdmsCommandStatus.Pending);
+        AddParameter(command, "sn", serialNumber);
+        AddParameter(command, "commandId", commandId);
+
+        return await command.ExecuteScalarAsync(cancellationToken) is Guid id ? id : null;
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
+    public async Task<bool> HasPendingCommandsAsync(string serialNumber, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(serialNumber)) return false;
+        var cleanSn = Clean(serialNumber);
 
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
-        return _commandQueues.TryGetValue(cleanSn, out var queue) && !queue.IsEmpty;
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+        return await dbContext.AdmsCommands.AnyAsync(c => c.SerialNumber == cleanSn && c.Status == AdmsCommandStatus.Pending, cancellationToken);
     }
 
     public void RegisterPendingExecution(string serialNumber, string commandId, Guid downloadLogId)
     {
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
+        var cleanSn = Clean(serialNumber);
         var key = $"{cleanSn}:{commandId}";
         _pendingExecutions[key] = downloadLogId;
         // Compatibilidad para búsqueda solo por ID
@@ -212,7 +218,7 @@ public class AdmsCommandService : IAdmsCommandService
     public Guid? GetActiveDownloadLogId(string serialNumber, string? commandId = null)
     {
         if (string.IsNullOrWhiteSpace(serialNumber)) return null;
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
+        var cleanSn = Clean(serialNumber);
 
         if (!string.IsNullOrEmpty(commandId))
         {
@@ -236,7 +242,7 @@ public class AdmsCommandService : IAdmsCommandService
     public void RecordDownloadProgress(string serialNumber, string? commandId, int totalReceived, int newInserted)
     {
         if (string.IsNullOrWhiteSpace(serialNumber)) return;
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
+        var cleanSn = Clean(serialNumber);
         AdmsDownloadSession? session = null;
 
         if (!string.IsNullOrEmpty(commandId))
@@ -263,7 +269,7 @@ public class AdmsCommandService : IAdmsCommandService
 
     public (int TotalReceived, int NewInserted) GetAndCompleteDownloadSession(string serialNumber, string commandId)
     {
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
+        var cleanSn = Clean(serialNumber);
         var key = $"{cleanSn}:{commandId}";
         AdmsDownloadSession? session = null;
 
@@ -303,7 +309,7 @@ public class AdmsCommandService : IAdmsCommandService
 
     public Guid? GetAndRemovePendingExecution(string serialNumber, string commandId)
     {
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
+        var cleanSn = Clean(serialNumber);
         var key = $"{cleanSn}:{commandId}";
 
         if (_pendingExecutions.TryRemove(key, out var logId))
@@ -336,7 +342,7 @@ public class AdmsCommandService : IAdmsCommandService
         string? errorMessage = null,
         CancellationToken cancellationToken = default)
     {
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
+        var cleanSn = Clean(serialNumber);
         var logId = GetAndRemovePendingExecution(cleanSn, commandId);
 
         try
@@ -360,9 +366,8 @@ public class AdmsCommandService : IAdmsCommandService
                     dbCmd.MarkAsFailed(returnCode, errorMessage);
                     if (dbCmd.CanRetryAutomatically())
                     {
+                        // Vuelve a pendiente: el reloj lo recibe en su siguiente petición, la atienda el proceso que la atienda.
                         dbCmd.ResetForRetry();
-                        var queue = _commandQueues.GetOrAdd(cleanSn, _ => new ConcurrentQueue<QueuedCommand>());
-                        queue.Enqueue(new QueuedCommand(dbCmd.Id, dbCmd.CommandText, dbCmd.DownloadLogId));
                         _logger.LogInformation("Comando ADMS fallido reencolado automáticamente para SN {SN}: {Cmd}", cleanSn, dbCmd.CommandText);
                     }
                 }
@@ -379,49 +384,58 @@ public class AdmsCommandService : IAdmsCommandService
         return logId;
     }
 
-    public async Task<DeviceInfoDto?> WaitForDeviceInfoAsync(string serialNumber, TimeSpan timeout, CancellationToken cancellationToken = default)
+    public async Task<DeviceInfoDto?> WaitForDeviceInfoAsync(Guid infoCommandId, TimeSpan timeout, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(serialNumber)) return null;
-
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
-        var tcs = new TaskCompletionSource<DeviceInfoDto?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        _deviceInfoWaiters.AddOrUpdate(cleanSn, tcs, (_, oldTcs) =>
-        {
-            oldTcs.TrySetResult(null);
-            return tcs;
-        });
-
+        var signal = _deviceInfoSignals.GetOrAdd(infoCommandId, _ => new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously));
         try
         {
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             cts.CancelAfter(timeout);
 
-            using (cts.Token.Register(() => tcs.TrySetResult(null)))
+            while (true)
             {
-                return await tcs.Task;
+                using (var scope = _scopeFactory.CreateScope())
+                {
+                    var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+                    var payload = await dbContext.AdmsCommands.AsNoTracking()
+                        .Where(c => c.Id == infoCommandId)
+                        .Select(c => c.ResultPayload)
+                        .FirstOrDefaultAsync(cts.Token);
+                    if (payload != null) return JsonSerializer.Deserialize<DeviceInfoDto>(payload);
+                }
+
+                await Task.WhenAny(signal.Task, Task.Delay(DeviceInfoPollInterval, cts.Token));
+                cts.Token.ThrowIfCancellationRequested();
             }
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
         }
         finally
         {
-            _deviceInfoWaiters.TryRemove(new KeyValuePair<string, TaskCompletionSource<DeviceInfoDto?>>(cleanSn, tcs));
-            if (_deviceInfoExecutions.TryGetValue(cleanSn, out var execution) && ReferenceEquals(execution.Waiter, tcs))
-            {
-                _deviceInfoExecutions.TryRemove(new KeyValuePair<string, (string, TaskCompletionSource<DeviceInfoDto?>)>(cleanSn, execution));
-            }
+            _deviceInfoSignals.TryRemove(infoCommandId, out _);
         }
     }
 
-    public void NotifyDeviceInfoReceived(string serialNumber, DeviceInfoDto deviceInfo, string? commandId = null)
+    public async Task NotifyDeviceInfoReceivedAsync(string serialNumber, DeviceInfoDto deviceInfo, string? commandId = null, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(serialNumber)) return;
+        // Sin CommandID son opciones que el reloj envía por su cuenta: no contestan ningún INFO.
+        if (string.IsNullOrWhiteSpace(serialNumber) || string.IsNullOrEmpty(commandId)) return;
+        var cleanSn = Clean(serialNumber);
 
-        var cleanSn = serialNumber.Trim().ToUpperInvariant();
-        if (_deviceInfoWaiters.TryGetValue(cleanSn, out var tcs) &&
-            _deviceInfoExecutions.TryGetValue(cleanSn, out var execution) &&
-            execution.CommandId == commandId && ReferenceEquals(execution.Waiter, tcs))
-        {
-            tcs.TrySetResult(deviceInfo);
-        }
+        using var scope = _scopeFactory.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+        var infoCommand = await dbContext.AdmsCommands
+            .Where(c => c.SerialNumber == cleanSn && c.CommandId == commandId && c.CommandText == "INFO" &&
+                        (c.Status == AdmsCommandStatus.Sent || c.Status == AdmsCommandStatus.Confirmed))
+            .OrderByDescending(c => c.SentAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (infoCommand == null || infoCommand.ResultPayload != null) return;
+
+        infoCommand.RecordResult(JsonSerializer.Serialize(deviceInfo));
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        if (_deviceInfoSignals.TryGetValue(infoCommand.Id, out var signal)) signal.TrySetResult();
     }
 }
