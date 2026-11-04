@@ -146,6 +146,7 @@ Source: "appsettings.Service.Production.template.json"; Flags: dontcopy
 
 ; 3. Scripts SQL y Herramientas
 Source: "init_db.sql"; DestDir: "{app}\Database"; Flags: ignoreversion
+Source: "rename_db.sql"; DestDir: "{app}\Database"; Flags: ignoreversion
 Source: "enable_iis.ps1"; DestDir: "{app}\Tools"; Flags: ignoreversion
 Source: "configure_iis.bat"; DestDir: "{app}\Tools"; Flags: ignoreversion
 
@@ -256,6 +257,19 @@ var
   // ApiKey del servicio y cadena de conexión que se escriben en la configuración (generadas o de la instalación existente)
   GrpcApiKey: String;
   AppConnection: String;
+  // Versión instalada y comparación con la de este instalador (-1 más vieja, 0 misma, 1 más nueva)
+  PrevVersion: String;
+  VersionCompare: Integer;
+  // Página de instalación existente (con la opción de base nueva) y página de base ya existente en una primera instalación
+  VersionPage: TInputOptionWizardPage;
+  ExistingDbPage: TInputOptionWizardPage;
+  ExistingDbFound: Boolean;
+  // Crear una base de datos nueva: la actual (si se llama AttendanceSystem) se conserva renombrada
+  CreateNewDb: Boolean;
+  RenamedDbName: String;
+  PreviousDbName: String;
+  // Contraseña de postgres guardada por este instalador cuando instaló PostgreSQL (vacía si no la hay)
+  SavedSuperPassword: String;
   // Resultado de ConfigureDatabase y de VerifyInstallation, para avisar al final
   DbConfigError: String;
   InstallWarnings: String;
@@ -384,10 +398,12 @@ end;
 // --- Retornar Contraseña del superusuario postgres ---
 function GetPostgresPassword(Param: String): String;
 begin
-  if IsPostgresDetected then
+  if not IsPostgresDetected then
+    Result := PgSuperPassword // La generada ahora para el PostgreSQL que instalamos
+  else if UserPostgresPassword <> '' then
     Result := UserPostgresPassword // La que ingresó el usuario
   else
-    Result := PgSuperPassword; // La generada para el PostgreSQL que instalamos nosotros
+    Result := SavedSuperPassword; // La que guardamos al instalar PostgreSQL en una instalación anterior
 end;
 
 // --- Ejecuta psql como postgres (contraseña por PGPASSWORD) y anexa su salida al log ---
@@ -411,6 +427,88 @@ begin
   finally
     SetEnvironmentVariable('PGPASSWORD', '');
   end;
+end;
+
+// ¿Existe ya la base de datos de la aplicación? (como postgres)
+function AppDatabaseExists(Password: String): Boolean;
+var
+  OutFile: String;
+  Content: AnsiString;
+begin
+  Result := False;
+  OutFile := ExpandConstant('{tmp}\db_exists.txt');
+  DeleteFile(OutFile);
+  SetEnvironmentVariable('PGPASSWORD', Password);
+  try
+    if RunPsql('-d postgres -tAc "SELECT 1 FROM pg_database WHERE datname = ''' + AppDbName + '''"', OutFile) = 0 then
+      Result := LoadStringFromFile(OutFile, Content) and (Trim(String(Content)) = '1');
+  finally
+    SetEnvironmentVariable('PGPASSWORD', '');
+  end;
+  Log(Format('Base de datos %s existente: %d', [AppDbName, Ord(Result)]));
+end;
+
+// Contraseña de postgres que guardó este instalador al instalar PostgreSQL (segunda línea del archivo)
+function ReadSavedSuperPassword(AppDir: String): String;
+var
+  Lines: TArrayOfString;
+begin
+  Result := '';
+  if (AppDir <> '') and LoadStringsFromFile(AddBackslash(AppDir) + 'Database\postgres_superuser.txt', Lines) and
+     (GetArrayLength(Lines) >= 2) then
+    Result := Trim(Lines[1]);
+end;
+
+// ============================================================================================
+// Versiones
+// ============================================================================================
+
+// Siguiente componente numérico de una versión ("2.10.0-rc1": 2, 10, 0); 0 cuando se acaban
+function NextVersionPart(var Version: String): Integer;
+var
+  I: Integer;
+begin
+  I := 1;
+  while (I <= Length(Version)) and (Version[I] >= '0') and (Version[I] <= '9') do
+    I := I + 1;
+  Result := StrToIntDef(Copy(Version, 1, I - 1), 0);
+  if (I <= Length(Version)) and (Version[I] = '.') then
+    Version := Copy(Version, I + 1, Length(Version))
+  else
+    Version := ''; // fin o sufijo ("-rc1"): no cuenta para comparar
+end;
+
+// -1 si A es anterior a B, 0 si son la misma, 1 si A es posterior
+function CompareVersions(A, B: String): Integer;
+var
+  I, PartA, PartB: Integer;
+begin
+  Result := 0;
+  for I := 1 to 4 do
+  begin
+    PartA := NextVersionPart(A);
+    PartB := NextVersionPart(B);
+    if PartA < PartB then
+    begin
+      Result := -1;
+      Exit;
+    end;
+    if PartA > PartB then
+    begin
+      Result := 1;
+      Exit;
+    end;
+  end;
+end;
+
+function HasParam(Name: String): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), Name) = 0 then
+      Result := True;
 end;
 
 // ============================================================================================
@@ -572,6 +670,72 @@ begin
   Log(Format('Configuración existente: conexión leída %d, ApiKey leída %d', [Ord(AppConnection <> ''), Ord(GrpcApiKey <> '')]));
 end;
 
+// "Database=X" de una cadena de conexión
+function DbNameFromConnection(Connection: String): String;
+var
+  P: Integer;
+begin
+  Result := '';
+  P := Pos('database=', Lowercase(Connection));
+  if P = 0 then Exit;
+  Result := Copy(Connection, P + Length('database='), Length(Connection));
+  P := Pos(';', Result);
+  if P > 0 then
+    Result := Copy(Result, 1, P - 1);
+end;
+
+// Cambia la cadena de conexión anterior por la nueva en las configuraciones existentes (conserva todo lo demás)
+function ReplaceConnectionInConfigs(OldConnection, NewConnection: String): Boolean;
+var
+  Files: array of String;
+  I: Integer;
+  Content: AnsiString;
+  Text: String;
+begin
+  Result := True;
+  SetArrayLength(Files, 2);
+  Files[0] := WebConfigFile(ExpandConstant('{app}'));
+  Files[1] := DesktopConfigFile(ExpandConstant('{app}'));
+  for I := 0 to GetArrayLength(Files) - 1 do
+  begin
+    if not LoadStringFromFile(Files[I], Content) then Continue;
+    Text := String(Content);
+    if StringChangeEx(Text, OldConnection, NewConnection, True) > 0 then
+    begin
+      Result := SaveStringToFile(Files[I], AnsiString(Text), False) and Result;
+      Log('Cadena de conexión actualizada en ' + Files[I]);
+    end;
+  end;
+end;
+
+// --- Aparta la base actual de la aplicación (si existe) renombrándola, para crear una nueva ---
+// Se llama con PGPASSWORD ya fijada; AppDatabaseExists la limpia, así que se vuelve a fijar.
+function RenameExistingDatabase(LogFile: String): Boolean;
+var
+  Password: String;
+begin
+  Result := True;
+  RenamedDbName := '';
+  Password := GetPostgresPassword('');
+  // Una instalación anterior pudo usar otra base (p. ej. AttendanceSystemTest): ésa no se toca
+  if not AppDatabaseExists(Password) then
+  begin
+    SetEnvironmentVariable('PGPASSWORD', Password);
+    Exit;
+  end;
+
+  RenamedDbName := AppDbName + '_anterior_' + GetDateTimeString('yyyymmdd_hhnnss', #0, #0);
+  WizardForm.StatusLabel.Caption := 'Apartando la base de datos actual como ' + RenamedDbName + '...';
+  SetEnvironmentVariable('PGPASSWORD', Password);
+  RunPsql('-v ON_ERROR_STOP=1 -d postgres -v old_name=' + AppDbName + ' -v new_name=' + RenamedDbName +
+    ' -f "' + ExpandConstant('{app}\Database\rename_db.sql') + '"', LogFile);
+  // Comprobar el resultado real: si la base sigue con su nombre, no se pudo apartar
+  Result := not AppDatabaseExists(Password);
+  SetEnvironmentVariable('PGPASSWORD', Password);
+  if Result then
+    Log('Base de datos ' + AppDbName + ' apartada como ' + RenamedDbName);
+end;
+
 // --- Escribe un archivo de configuración a partir de su plantilla ---
 function WriteConfigFromTemplate(TemplateName, DestFile: String; Standalone: Boolean): Boolean;
 var
@@ -655,18 +819,31 @@ end;
 // BeforeInstall del registro del servicio: corre después de instalar PostgreSQL y antes de arrancar el servicio.
 procedure ConfigureDatabase;
 var
-  LogFile: String;
+  LogFile, OldConnection: String;
   Attempt, ResultCode: Integer;
+  Configured: Boolean;
 begin
   LogFile := ExpandConstant('{app}\Logs\db_setup.log');
   ForceDirectories(ExtractFileDir(LogFile));
 
-  // Ya configurada antes: sólo falta configurar la parte que se agrega (si alguna) con los datos existentes
-  if not NeedsDbSetup then
+  // Instalación ya configurada: su cadena de conexión y su ApiKey se conservan (o se reapuntan a la base nueva)
+  Configured := AppIsConfiguredAt(ExpandConstant('{app}'));
+  OldConnection := '';
+  if Configured then
   begin
     if not LoadExistingSettings then
-      DbConfigError := 'No se pudo leer la cadena de conexión o la ApiKey de la instalación existente.'
-    else if not WriteMissingConfigs then
+    begin
+      DbConfigError := 'No se pudo leer la cadena de conexión o la ApiKey de la instalación existente.';
+      Exit;
+    end;
+    OldConnection := AppConnection;
+    PreviousDbName := DbNameFromConnection(OldConnection);
+  end;
+
+  // Sin base nueva: sólo falta configurar la parte que se agrega (si alguna) con los datos existentes
+  if not NeedsDbSetup then
+  begin
+    if not WriteMissingConfigs then
       DbConfigError := 'No se pudieron escribir los archivos de configuración.';
     Exit;
   end;
@@ -708,6 +885,13 @@ begin
       Exit;
     end;
 
+    if CreateNewDb and not RenameExistingDatabase(LogFile) then
+    begin
+      DbConfigError := 'No se pudo apartar la base de datos ' + AppDbName + ' existente (¿sigue en uso?). No se modificó nada.';
+      RenamedDbName := '';
+      Exit;
+    end;
+
     ResultCode := RunPsql(
       '-v ON_ERROR_STOP=1 -d postgres -v app_password=' + AppDbPassword +
       ' -f "' + ExpandConstant('{app}\Database\init_db.sql') + '"', LogFile);
@@ -722,7 +906,9 @@ begin
 
   // Sólo con la BD lista se escriben las configuraciones: si falta alguna, la siguiente ejecución lo reintenta todo.
   AppConnection := AppConnectionString;
-  if not WriteMissingConfigs then
+  if (OldConnection <> '') and not ReplaceConnectionInConfigs(OldConnection, AppConnection) then
+    DbConfigError := 'No se pudo cambiar la cadena de conexión en los archivos de configuración.'
+  else if not WriteMissingConfigs then
     DbConfigError := 'No se pudieron escribir los archivos de configuración.';
 end;
 
@@ -807,6 +993,34 @@ begin
   if not RegQueryStringValue(HKLM, UninstallKey, 'Inno Setup: App Path', PrevAppPath) then
     PrevAppPath := '';
   PreviousInstallConfigured := AppIsConfiguredAt(PrevAppPath);
+  SavedSuperPassword := ReadSavedSuperPassword(PrevAppPath);
+  // /NEWDATABASE: crear una base nueva también en instalaciones silenciosas (la actual se conserva renombrada)
+  CreateNewDb := HasParam('/NEWDATABASE');
+
+  // Versión instalada frente a la de este instalador
+  if not RegQueryStringValue(HKLM, UninstallKey, 'DisplayVersion', PrevVersion) then
+    PrevVersion := '';
+  VersionCompare := 1;
+  if PrevVersion <> '' then
+  begin
+    VersionCompare := CompareVersions('{#MyAppVersion}', PrevVersion);
+    Log(Format('Versión instalada %s, este instalador %s: %d', [PrevVersion, '{#MyAppVersion}', VersionCompare]));
+  end;
+
+  // Una versión anterior no conoce las migraciones que la instalada ya aplicó a la base de datos
+  if VersionCompare < 0 then
+  begin
+    if HasParam('/ALLOWDOWNGRADE') then
+      Log('Instalación de una versión anterior permitida con /ALLOWDOWNGRADE')
+    else
+    begin
+      SuppressibleMsgBox('Ya está instalada la versión ' + PrevVersion + ' de AttendanceSystem, posterior a la de este instalador ({#MyAppVersion}).' + #13#10#13#10 +
+        'No se puede instalar una versión anterior: la base de datos ya tiene cambios que esa versión no conoce y la aplicación podría no arrancar o dañar datos.' + #13#10#13#10 +
+        'Use el instalador de la versión ' + PrevVersion + ' o una posterior.', mbCriticalError, MB_OK, IDOK);
+      Result := False;
+      Exit;
+    end;
+  end;
 
   if IsPostgresDetected and (PgMajor < MinPgMajor) and not PreviousInstallConfigured then
   begin
@@ -817,7 +1031,45 @@ begin
 end;
 
 procedure InitializeWizard;
+var
+  AfterId: Integer;
+  Subtitle, Info: String;
 begin
+  AfterId := wpWelcome;
+
+  // Instalación existente: qué versión se instala sobre cuál y qué hacer con la base de datos
+  if PrevVersion <> '' then
+  begin
+    if VersionCompare > 0 then
+    begin
+      Subtitle := 'Actualización de la versión ' + PrevVersion + ' a la {#MyAppVersion}';
+      Info := 'Se actualizará AttendanceSystem. Los archivos se reemplazan; la configuración y los datos se conservan.';
+    end
+    else if VersionCompare = 0 then
+    begin
+      Subtitle := 'Reinstalación de la versión {#MyAppVersion}';
+      Info := 'La versión {#MyAppVersion} ya está instalada. Se reinstalará (reparación): los archivos se reemplazan; la configuración y los datos se conservan.';
+    end
+    else
+    begin
+      Subtitle := 'Instalación de una versión ANTERIOR ({#MyAppVersion} sobre ' + PrevVersion + ')';
+      Info := 'ATENCIÓN: se instalará una versión anterior a la instalada (/ALLOWDOWNGRADE). La base de datos puede tener cambios que esta versión no conoce.';
+    end;
+
+    VersionPage := CreateInputOptionPage(AfterId, 'Instalación existente', Subtitle, Info, True, False);
+    // La base nueva necesita un PostgreSQL local y una instalación ya configurada
+    if PreviousInstallConfigured and IsPostgresDetected then
+    begin
+      VersionPage.Add('Conservar la base de datos actual y sus datos (recomendado)');
+      VersionPage.Add('Crear una base de datos nueva y vacía (la actual se conserva, renombrada, y no se borra)');
+      if CreateNewDb then
+        VersionPage.SelectedValueIndex := 1
+      else
+        VersionPage.SelectedValueIndex := 0;
+    end;
+    AfterId := VersionPage.ID;
+  end;
+
   // Instalaciones anteriores a la elección de componentes sólo tenían el sitio web: no agregar el programa por defecto
   if (PrevAppPath <> '') and not RegValueExists(HKLM, UninstallKey, 'Inno Setup: Selected Components') then
   begin
@@ -827,10 +1079,11 @@ begin
       WizardSelectComponents('web,!desktop');
   end;
 
-  // Si Postgres YA existe y hay que configurar la BD, pedimos contraseña (en una actualización no hace falta)
-  if IsPostgresDetected and not PreviousInstallConfigured then
+  // Contraseña de postgres: para crear la base (primera vez, o base nueva sin contraseña guardada).
+  // Se crea siempre que hay un PostgreSQL; ShouldSkipPage decide si se muestra.
+  if IsPostgresDetected then
   begin
-    PostgresPage := CreateInputQueryPage(wpWelcome,
+    PostgresPage := CreateInputQueryPage(AfterId,
       'Configuración de Base de Datos',
       'PostgreSQL detectado en el sistema',
       Format('Se usará PostgreSQL %d instalado en %s (puerto %d).', [PgMajor, PgBaseDir, PgPort]) + #13#10 +
@@ -840,7 +1093,36 @@ begin
 
     // Valores por defecto
     PostgresPage.Values[0] := '';
+
+    // Primera instalación sobre una base AttendanceSystem que ya existe (p. ej. de una instalación desinstalada)
+    if not PreviousInstallConfigured then
+    begin
+      ExistingDbPage := CreateInputOptionPage(PostgresPage.ID, 'Base de datos existente',
+        'Ya existe una base de datos ' + AppDbName + ' en este PostgreSQL',
+        'Puede usarla con sus datos (por ejemplo, si reinstala después de desinstalar) o empezar con una base vacía.', True, False);
+      ExistingDbPage.Add('Usar la base de datos existente y sus datos');
+      ExistingDbPage.Add('Crear una base de datos nueva y vacía (la existente se conserva, renombrada, y no se borra)');
+      if CreateNewDb then
+        ExistingDbPage.SelectedValueIndex := 1
+      else
+        ExistingDbPage.SelectedValueIndex := 0;
+    end;
   end;
+end;
+
+// ¿Hace falta pedir la contraseña de postgres?
+function PostgresPasswordNeeded: Boolean;
+begin
+  Result := IsPostgresDetected and ((not PreviousInstallConfigured) or (CreateNewDb and (SavedSuperPassword = '')));
+end;
+
+function ShouldSkipPage(PageID: Integer): Boolean;
+begin
+  Result := False;
+  if (PostgresPage <> nil) and (PageID = PostgresPage.ID) then
+    Result := not PostgresPasswordNeeded
+  else if (ExistingDbPage <> nil) and (PageID = ExistingDbPage.ID) then
+    Result := not ExistingDbFound;
 end;
 
 // --- Selección de componentes: al menos uno, y sin quitar uno ya instalado ---
@@ -862,6 +1144,18 @@ var
   SelectionError: String;
 begin
   Result := True;
+
+  // Base nueva elegida en una instalación existente: si hay contraseña guardada, comprobar que sigue sirviendo
+  if (VersionPage <> nil) and (CurPageID = VersionPage.ID) and (VersionPage.SelectedValueIndex >= 0) then
+  begin
+    CreateNewDb := VersionPage.SelectedValueIndex = 1;
+    if CreateNewDb and (SavedSuperPassword <> '') and
+       not TestPostgresConnection(SavedSuperPassword, ExpandConstant('{tmp}\pg_check.log')) then
+      SavedSuperPassword := ''; // ya no sirve (se cambió): se pedirá en la página siguiente
+  end;
+
+  if (ExistingDbPage <> nil) and (CurPageID = ExistingDbPage.ID) then
+    CreateNewDb := ExistingDbPage.SelectedValueIndex = 1;
 
   if CurPageID = wpSelectComponents then
   begin
@@ -888,7 +1182,10 @@ begin
       MsgBox(Format('No fue posible conectarse a PostgreSQL %d (puerto %d) como "postgres".', [PgMajor, PgPort]) + #13#10 +
         'Verifique la contraseña y que el servicio de PostgreSQL esté iniciado.', mbError, MB_OK);
       Result := False;
-    end;
+    end
+    else if not PreviousInstallConfigured then
+      // Primera instalación: ¿ya hay una base AttendanceSystem? (decide si se muestra la página siguiente)
+      ExistingDbFound := AppDatabaseExists(UserPostgresPassword);
   end;
 end;
 
@@ -899,12 +1196,19 @@ begin
   Result := ComponentSelectionError(ExpandConstant('{app}'));
   if Result <> '' then Exit;
 
-  NeedsDbSetup := not AppIsConfiguredAt(ExpandConstant('{app}'));
+  // Una base nueva sólo tiene sentido con un PostgreSQL ya instalado (si no, la base es nueva de todos modos)
+  if not IsPostgresDetected then
+    CreateNewDb := False;
+  NeedsDbSetup := (not AppIsConfiguredAt(ExpandConstant('{app}'))) or CreateNewDb;
 
-  if NeedsDbSetup and IsPostgresDetected and (UserPostgresPassword = '') then
+  if NeedsDbSetup and IsPostgresDetected and (GetPostgresPassword('') = '') then
   begin
-    Result := 'Esta carpeta no tiene una instalación configurada y PostgreSQL ya existe en el equipo. ' +
-      'Ejecute de nuevo el instalador y elija la carpeta de la instalación anterior, o ingrese la contraseña de "postgres".';
+    if CreateNewDb then
+      Result := 'Para crear una base de datos nueva se necesita la contraseña del usuario "postgres". ' +
+        'Ejecute el instalador sin /SILENT ni /VERYSILENT para ingresarla.'
+    else
+      Result := 'Esta carpeta no tiene una instalación configurada y PostgreSQL ya existe en el equipo. ' +
+        'Ejecute de nuevo el instalador y elija la carpeta de la instalación anterior, o ingrese la contraseña de "postgres".';
     Exit;
   end;
 
@@ -921,6 +1225,7 @@ begin
   if NeedsDbSetup then
   begin
     AppDbPassword := GenerateSecret(24);
+    // En una instalación ya configurada la ApiKey se conserva (ConfigureDatabase la lee de la configuración)
     GrpcApiKey := GenerateSecret(32);
     if (AppDbPassword = '') or (GrpcApiKey = '') then
       Result := 'No se pudieron generar las credenciales de la aplicación (se requiere PowerShell).';
@@ -945,6 +1250,12 @@ begin
       WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
         'La contraseña del superusuario "postgres" quedó en ' + PgSuperPasswordFile +
         ' (sólo Administradores). Guárdela en un lugar seguro.';
+    if RenamedDbName <> '' then
+      WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
+        'Se creó una base de datos nueva y vacía. La anterior se conserva como "' + RenamedDbName + '".'
+    else if CreateNewDb and (PreviousDbName <> '') and (PreviousDbName <> AppDbName) then
+      WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
+        'Se creó la base de datos nueva "' + AppDbName + '". La anterior ("' + PreviousDbName + '") no se modificó.';
   end;
 end;
 

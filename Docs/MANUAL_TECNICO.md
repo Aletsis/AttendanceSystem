@@ -136,7 +136,9 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 
 ### 3.2 Paso a Paso de la Ejecución del Instalador
 1. **Selección de Idioma:** Ventana emergente inicial para configurar el instalador en idioma Español.
-2. **Pantalla de Bienvenida:** Presentación del asistente de instalación de *Attendance System v2.1.6*.
+2. **Pantalla de Bienvenida:** Presentación del asistente de instalación de *Attendance System*.
+   * **Si ya hay una versión instalada**, una página indica si es una actualización, una reinstalación de la misma versión o, sólo con `/ALLOWDOWNGRADE`, una versión anterior. Sin ese parámetro, el instalador se niega a instalar una versión anterior a la instalada, porque la base de datos ya tiene migraciones que esa versión no conoce.
+   * En esa misma página se elige entre **conservar la base de datos actual** (por defecto) o **crear una base nueva y vacía**. La actual no se borra: se renombra como `AttendanceSystem_anterior_<fecha>_<hora>`. Requiere la contraseña de `postgres` (la guardada por el instalador o la que se ingrese).
 3. **Selección de Carpeta de Destino:** Por defecto se establece `C:\Program Files\AttendanceSystem`.
 4. **Qué instalar:** *Sitio web y programa de escritorio*, *Sólo sitio web (IIS)*, *Sólo programa de escritorio* o personalizada. La base de datos y el servicio ZKTeco se instalan siempre.
    * **Sitio web:** la aplicación Blazor se aloja en el IIS local (puerto 80, o 8081 si el 80 está ocupado, más un enlace en el puerto ADMS 18373).
@@ -145,7 +147,8 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 5. **Detección e Ingreso de Credenciales de BD (sólo primera instalación):**
    * Si el instalador detecta que **ya existe** una instancia de PostgreSQL local, desplegará una pantalla personalizada solicitando ingresar la contraseña del superusuario `postgres` para poder configurar los esquemas y privilegios del sistema. Esa contraseña no se guarda.
    * Si **no existe**, instalará PostgreSQL de forma desatendida con una contraseña de `postgres` **aleatoria**, que deja en `{app}\Database\postgres_superuser.txt` (sólo Administradores y SYSTEM).
-   * En una actualización (ya existe `{app}\Web\appsettings.Production.json`) no se pide nada: la BD y la configuración se conservan.
+   * Si en ese PostgreSQL ya existe una base `AttendanceSystem` (p. ej. de una instalación desinstalada), el instalador pregunta si usarla con sus datos o crear una nueva (la existente se conserva renombrada).
+   * En una actualización (ya existe `{app}\Web\appsettings.Production.json` o `{app}\Desktop\appsettings.json`) no se pide nada, salvo que se elija crear una base nueva: la BD y la configuración se conservan.
 6. **Progreso de Instalación:**
    * Descompresión de archivos de la aplicación y el servicio.
    * Ejecución en segundo plano del instalador de PostgreSQL (`postgresql-installer.exe --mode unattended`).
