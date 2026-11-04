@@ -1,5 +1,6 @@
-; Script generado para Inno Setup
+﻿; Script generado para Inno Setup
 ; Este script crea un instalador "Todo en Uno" para AttendanceSystem + PostgreSQL
+; Sistemas soportados: Windows 10 / 11 y Windows Server 2019 o posterior, x64 (MinVersion 10.0.17763 = 1809 / Server 2019)
 
 #ifndef MyAppName
 #define MyAppName "AttendanceSystem"
@@ -25,6 +26,31 @@
 #define MyServiceExeName "AttendanceSystem.ZKTeco.Service.exe"
 #endif
 
+; --- Verificaciones de compilación: el Hosting Bundle incluido debe ser de la misma versión de .NET que la app ---
+#define ReleaseWebDir AddBackslash(SourcePath) + "..\Release\Web\"
+#define HostingBundleFile AddBackslash(SourcePath) + "dotnet-hosting.exe"
+
+#if !FileExists(ReleaseWebDir + "aspnetcorev2_inprocess.dll") || !FileExists(ReleaseWebDir + "Microsoft.AspNetCore.dll")
+  #error Falta Release\Web (o no es una publicación para IIS). Ejecute Prepare-Release.ps1 antes de compilar.
+#endif
+#if !FileExists(HostingBundleFile)
+  #error Falta Deploy\dotnet-hosting.exe. Ejecute Deploy\Download-Prerequisites.ps1.
+#endif
+
+#define AspNetVersion GetVersionNumbersString(ReleaseWebDir + "Microsoft.AspNetCore.dll")
+#define AspNetMajor Copy(AspNetVersion, 1, Pos(".", AspNetVersion) - 1)
+; Versión del módulo ANCM con el que se publicó la app (aspnetcorev2_inprocess.dll: 20.x = .NET 10)
+#define AncmVersion GetVersionNumbersString(ReleaseWebDir + "aspnetcorev2_inprocess.dll")
+#define AncmMajor Copy(AncmVersion, 1, Pos(".", AncmVersion) - 1)
+#define HostingBundleVersion GetVersionNumbersString(HostingBundleFile)
+#define HostingBundleMajor Copy(HostingBundleVersion, 1, Pos(".", HostingBundleVersion) - 1)
+
+#if HostingBundleMajor != AspNetMajor
+  #define BundleMismatch "dotnet-hosting.exe es .NET " + HostingBundleVersion + " y la app es .NET " + AspNetVersion
+  #pragma message BundleMismatch
+  #error dotnet-hosting.exe no es de la misma versión de .NET que la app. Ejecute Deploy\Download-Prerequisites.ps1.
+#endif
+
 [Setup]
 ; Identificador único de la App
 AppId={{A1B2C3D4-E5F6-7890-1234-56789ABCDEF0}
@@ -39,8 +65,11 @@ DefaultGroupName={#MyAppName}
 ; Permisos de administrador requeridos para instalar servicios, DB y registrar COM
 PrivilegesRequired=admin
 OutputDir=..\Output
-; ARQUITECTURA: Importante para que detecte bien claves de registro de 64 bits y System32
-ArchitecturesInstallIn64BitMode=x64
+; ARQUITECTURA: la web es win-x64, así que sólo se instala en Windows x64 (o ARM64 con emulación x64), en modo 64 bits
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
+; Windows 10 1809 / Windows Server 2019 o posterior
+MinVersion=10.0.17763
 
 OutputBaseFilename=AttendanceSystem_Setup
 Compression=lzma
@@ -67,9 +96,15 @@ Source: "..\Release\Service\*"; DestDir: "{app}\Service"; Excludes: "appsettings
 Source: "appsettings.Web.Production.template.json"; Flags: dontcopy
 Source: "appsettings.Service.Production.template.json"; Flags: dontcopy
 
-; 2.1 Archivos del SDK ZKTeco para System32 y SysWOW64
-Source: "..\src\Infrastructure\AttendanceSystem.ZKTeco\lib\*"; DestDir: "{sys}"; Flags: ignoreversion sharedfile restartreplace
-Source: "..\src\Infrastructure\AttendanceSystem.ZKTeco\lib\*"; DestDir: "{syswow64}"; Check: IsWin64; Flags: ignoreversion sharedfile restartreplace
+; 2.1 SDK ZKTeco (DLLs de 32 bits) en SysWOW64, que es donde los busca el COM de 32 bits del servicio x86.
+; Con la bandera 32bit, {sys} es SysWOW64 (Inno pide esto en vez de {syswow64} para llevar bien el conteo de sharedfile).
+; zkemkeeper.dll se registra con regsvr32 de 32 bits (regserver + 32bit) cuando ya se copiaron sus dependencias;
+; la desinstalación lo des-registra y borra los DLLs cuando ningún otro programa los usa (sharedfile).
+; Sin ignoreversion: no se reemplaza por una versión más vieja un SDK más nuevo instalado por otro programa.
+Source: "..\src\Infrastructure\AttendanceSystem.ZKTeco\lib\*"; DestDir: "{sys}"; Excludes: "zkemkeeper.dll,Interop.zkemkeeper.dll"; \
+    Flags: 32bit sharedfile uninsnosharedfileprompt restartreplace
+Source: "..\src\Infrastructure\AttendanceSystem.ZKTeco\lib\zkemkeeper.dll"; DestDir: "{sys}"; \
+    Flags: 32bit sharedfile uninsnosharedfileprompt restartreplace regserver
 
 ; 3. Scripts SQL y Herramientas
 Source: "init_db.sql"; DestDir: "{app}\Database"; Flags: ignoreversion
@@ -81,7 +116,7 @@ Source: "postgresql-installer.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 Source: "dotnet-hosting.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Run]
-; 1. Instalar PostgreSQL silenciosamente (SOLO SI NO ESTÁ INSTALADO)
+; 1. Instalar PostgreSQL silenciosamente (SOLO SI NO SE DETECTÓ NINGUNO)
 Filename: "{tmp}\postgresql-installer.exe"; Parameters: "--mode unattended --unattendedmodeui none --superpassword ""{code:GetPostgresPassword}"" --serverport 5432 --servicepassword ""{code:GetPostgresPassword}"""; \
     StatusMsg: "Instalando base de datos PostgreSQL... (Esto puede tardar unos minutos)"; \
     Check: PostgresNotInstalled
@@ -96,47 +131,38 @@ Filename: "{sys}\sc.exe"; Parameters: "create AttendanceSystem.ZKTeco.Service bi
     Flags: runhidden; StatusMsg: "Registrando servicio de Windows..."; BeforeInstall: ConfigureDatabase
 Filename: "{sys}\sc.exe"; Parameters: "description AttendanceSystem.ZKTeco.Service ""Servicio de comunicación con dispositivos ZKTeco para AttendanceSystem"""; \
     Flags: runhidden
-; 5. Registrar SDK ZKTeco en System32
-Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{sys}\zkemkeeper.dll"""; \
-    Flags: runhidden; StatusMsg: "Registrando librerías ZKTeco en System32..."; WorkingDir: "{sys}"
 
-; 5.1 Registrar SDK ZKTeco en SysWOW64 (si es 64 bits)
-Filename: "{syswow64}\regsvr32.exe"; Parameters: "/s ""{syswow64}\zkemkeeper.dll"""; \
-    Flags: runhidden; StatusMsg: "Registrando librerías ZKTeco en SysWOW64..."; WorkingDir: "{syswow64}"; Check: IsWin64
-
-; 6. Esperar un momento antes de iniciar (el registro del COM puede tardar)
-Filename: "timeout"; Parameters: "/t 5"; Flags: runhidden; StatusMsg: "Esperando registro del SDK ZKTeco..."
-
-; 7. Iniciar el Servicio ZKTeco
+; 5. Iniciar el Servicio ZKTeco (el SDK ya quedó registrado por [Files])
 Filename: "{sys}\sc.exe"; Parameters: "start AttendanceSystem.ZKTeco.Service"; \
     Flags: runhidden; StatusMsg: "Iniciando servicio..."
 
-; 7. Abrir Puertos en Firewall para Web: 80, o 8081 si IIS no pudo usar el 80 (el servicio gRPC 5001 se mantiene
+; 6. Abrir Puertos en Firewall para Web: 80, o 8081 si IIS no pudo usar el 80 (el servicio gRPC 5001 se mantiene
 ; local/loopback por seguridad H02). Se borra antes la regla para no acumular duplicados en cada actualización.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AttendanceSystem Web"""; \
     Flags: runhidden; StatusMsg: "Configurando Firewall..."
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AttendanceSystem Web"" dir=in action=allow protocol=TCP localport=80,8081"; \
     Flags: runhidden; StatusMsg: "Configurando Firewall..."
 
-; 8. Habilitar IIS y Componentes. La web sólo se hospeda en IIS (no hay modo independiente: no se registra
-; como servicio ni tiene acceso directo), así que este paso y el 10 son obligatorios.
-Filename: "powershell.exe"; \
-    Parameters: "-ExecutionPolicy Bypass -File ""{app}\Tools\enable_iis.ps1"""; \
-    StatusMsg: "Habilitando características de Windows (IIS)..."; Flags: runhidden 64bit
+; 7. Habilitar IIS y Componentes. La web sólo se hospeda en IIS (no hay modo independiente: no se registra
+; como servicio ni tiene acceso directo), así que este paso y el 9 son obligatorios.
+; Debe ir ANTES del Hosting Bundle: el Hosting Bundle registra el módulo ANCM sólo en un IIS ya habilitado.
+Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
+    Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Tools\enable_iis.ps1"" -LogFile ""{app}\Logs\enable_iis.log"""; \
+    StatusMsg: "Habilitando características de Windows (IIS)..."; Flags: runhidden
 
-; 9. Instalar ASP.NET Core Hosting Bundle (SOLO SI FALTA)
-Filename: "{tmp}\dotnet-hosting.exe"; Parameters: "/install /quiet /norestart"; \
-    StatusMsg: "Instalando ASP.NET Core Runtime & Hosting Bundle..."; \
-    Check: DotNetNotInstalled
+; 8. Instalar ASP.NET Core Hosting Bundle (si falta el módulo ANCM {#AncmMajor}.x o no está registrado en IIS)
+Filename: "{tmp}\dotnet-hosting.exe"; Parameters: "{code:GetHostingBundleArgs} /quiet /norestart /log ""{app}\Logs\dotnet_hosting.log"""; \
+    StatusMsg: "Instalando ASP.NET Core {#HostingBundleVersion} Hosting Bundle..."; \
+    Check: HostingBundleNeeded
 
-; 10. Configurar IIS (AppPool y Sitio)
-Filename: "{app}\Tools\configure_iis.bat"; Parameters: """{app}\Web"""; \
-    StatusMsg: "Configurando Sitio Web en IIS..."; Flags: runhidden 64bit
+; 9. Configurar IIS (AppPool y Sitio) y verificar la instalación completa
+Filename: "{app}\Tools\configure_iis.bat"; Parameters: """{app}\Web"" ""{app}\Logs\iis_setup.log"""; \
+    StatusMsg: "Configurando Sitio Web en IIS..."; Flags: runhidden; AfterInstall: VerifyInstallation
 
 [UninstallRun]
 ; Eliminar sitio IIS al desinstalar
-Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete site ""AttendanceSystem"""; Flags: runhidden 64bit; RunOnceId: "DeleteIisSite"
-Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete apppool ""AttendanceSystem"""; Flags: runhidden 64bit; RunOnceId: "DeleteIisAppPool"
+Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete site ""AttendanceSystem"""; Flags: runhidden; RunOnceId: "DeleteIisSite"
+Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete apppool ""AttendanceSystem"""; Flags: runhidden; RunOnceId: "DeleteIisAppPool"
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AttendanceSystem Web"""; Flags: runhidden; RunOnceId: "DeleteFirewallRule"
 ; Detener y eliminar el servicio de Windows
 ; IMPORTANTE: El nombre debe coincidir con el usado en [Run] y en Program.cs
@@ -148,11 +174,21 @@ const
   AppDbName = 'AttendanceSystem';
   AppDbUser = 'attendancesystem_user';
   UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\{A1B2C3D4-E5F6-7890-1234-56789ABCDEF0}_is1';
+  // Versión mínima de PostgreSQL soportada por la app (Npgsql / EF Core)
+  MinPgMajor = 14;
+  // Versión del módulo ANCM con que se publicó la app (se lee de Release\Web al compilar)
+  RequiredAncmMajor = {#AncmMajor};
 
 var
   PostgresPage: TInputQueryWizardPage;
   UserPostgresPassword: String;
   IsPostgresDetected: Boolean;
+  // Instancia de PostgreSQL que usará la app (detectada, o la que instaló este instalador)
+  PgMajor: Integer;
+  PgPort: Integer;
+  PgBaseDir: String;
+  PgDataDir: String;
+  PgServiceId: String;
   // Una instalación previa ya dejó configurada la aplicación (existe su appsettings.Production.json)
   PreviousInstallConfigured: Boolean;
   // Esta ejecución debe crear usuario/BD y escribir los appsettings.Production.json
@@ -161,56 +197,129 @@ var
   PgSuperPassword: String;
   AppDbPassword: String;
   GrpcApiKey: String;
-  // Resultado de ConfigureDatabase, para la pantalla final
+  // Resultado de ConfigureDatabase y de VerifyInstallation, para avisar al final
   DbConfigError: String;
+  InstallWarnings: String;
   PgSuperPasswordFile: String;
 
 function SetEnvironmentVariable(lpName: String; lpValue: String): Boolean;
   external 'SetEnvironmentVariableW@kernel32.dll stdcall';
 
-// --- Detección de Postgres ---
+// ============================================================================================
+// Detección de PostgreSQL
+// ============================================================================================
+
+// Lee "port = N" de un postgresql.conf / postgresql.auto.conf; deja Port intacto si no aparece.
+procedure ReadPortFromConf(FileName: String; var Port: Integer);
+var
+  Lines: TArrayOfString;
+  I, P: Integer;
+  Value: String;
+begin
+  if not LoadStringsFromFile(FileName, Lines) then Exit;
+  for I := 0 to GetArrayLength(Lines) - 1 do
+  begin
+    Value := Trim(Lines[I]);
+    if Pos('port', Lowercase(Value)) <> 1 then Continue;
+    Value := Trim(Copy(Value, 5, Length(Value)));
+    if (Length(Value) > 0) and (Value[1] = '=') then
+      Value := Trim(Copy(Value, 2, Length(Value)));
+    P := Pos('#', Value);
+    if P > 0 then
+      Value := Trim(Copy(Value, 1, P - 1));
+    StringChangeEx(Value, '''', '', True);
+    // "port_xxx = ..." no es un número y se ignora; la última aparición gana, como en PostgreSQL
+    if StrToIntDef(Value, 0) > 0 then
+      Port := StrToInt(Value);
+  end;
+end;
+
+function MajorFromVersion(Version, Fallback: String): Integer;
+var
+  P: Integer;
+begin
+  P := Pos('.', Version);
+  if P > 0 then
+    Version := Copy(Version, 1, P - 1);
+  Result := StrToIntDef(Version, StrToIntDef(Fallback, 0));
+end;
+
+// Se queda con la instalación de mayor versión que tenga servidor (carpeta data) y psql.exe
+procedure ConsiderPostgres(BaseDir, DataDir, ServiceId: String; Major: Integer);
+begin
+  BaseDir := RemoveBackslashUnlessRoot(BaseDir);
+  if (Major > PgMajor) and FileExists(BaseDir + '\bin\psql.exe') and DirExists(DataDir) then
+  begin
+    PgMajor := Major;
+    PgBaseDir := BaseDir;
+    PgDataDir := RemoveBackslashUnlessRoot(DataDir);
+    PgServiceId := ServiceId;
+  end;
+end;
+
+function DetectPostgres: Boolean;
+var
+  Keys: TArrayOfString;
+  I: Integer;
+  Key, BaseDir, DataDir, Version, ServiceId, Root: String;
+  FindRec: TFindRec;
+  RegPort: Cardinal;
+begin
+  PgMajor := 0;
+  PgPort := 0;
+  PgBaseDir := '';
+  PgDataDir := '';
+  PgServiceId := '';
+
+  // 1. Instalaciones de EnterpriseDB registradas (cualquier versión)
+  if RegGetSubkeyNames(HKLM, 'SOFTWARE\PostgreSQL\Installations', Keys) then
+    for I := 0 to GetArrayLength(Keys) - 1 do
+    begin
+      Key := 'SOFTWARE\PostgreSQL\Installations\' + Keys[I];
+      if not RegQueryStringValue(HKLM, Key, 'Base Directory', BaseDir) then Continue;
+      if not RegQueryStringValue(HKLM, Key, 'Data Directory', DataDir) then
+        DataDir := AddBackslash(BaseDir) + 'data';
+      Version := '';
+      RegQueryStringValue(HKLM, Key, 'Version', Version);
+      ServiceId := Keys[I];
+      RegQueryStringValue(HKLM, Key, 'Service ID', ServiceId);
+      ConsiderPostgres(BaseDir, DataDir, ServiceId, MajorFromVersion(Version, ExtractFileName(RemoveBackslashUnlessRoot(BaseDir))));
+    end;
+
+  // 2. Carpetas estándar (instalaciones que no dejaron registro)
+  Root := ExpandConstant('{commonpf64}\PostgreSQL\');
+  if FindFirst(Root + '*', FindRec) then
+  try
+    repeat
+      if ((FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY) <> 0) and (StrToIntDef(FindRec.Name, 0) > 0) then
+        ConsiderPostgres(Root + FindRec.Name, Root + FindRec.Name + '\data', 'postgresql-x64-' + FindRec.Name, StrToInt(FindRec.Name));
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+
+  Result := PgMajor > 0;
+  if not Result then Exit;
+
+  // Puerto: el de la configuración real del servidor (el del registro puede haber quedado viejo)
+  ReadPortFromConf(PgDataDir + '\postgresql.conf', PgPort);
+  ReadPortFromConf(PgDataDir + '\postgresql.auto.conf', PgPort);
+  if (PgPort = 0) and RegQueryDWordValue(HKLM, 'SOFTWARE\PostgreSQL\Services\' + PgServiceId, 'Port', RegPort) then
+    PgPort := RegPort;
+  if PgPort = 0 then
+    PgPort := 5432;
+
+  Log(Format('PostgreSQL detectado: %d en %s (datos %s, puerto %d)', [PgMajor, PgBaseDir, PgDataDir, PgPort]));
+end;
+
 function PostgresNotInstalled: Boolean;
 begin
-  // Verificamos registro de versiones comunes de Postgres (15 o 16)
-  Result := True;
-  
-  if RegKeyExists(HKLM, 'SOFTWARE\PostgreSQL\Installations\postgresql-x64-16') or
-     RegKeyExists(HKLM, 'SOFTWARE\PostgreSQL\Installations\postgresql-x64-15') or
-     RegKeyExists(HKLM, 'SOFTWARE\PostgreSQL\Installations\postgresql-x64-14') then
-  begin
-    Result := False;
-  end;
-  
-  // Como fallback, buscamos si existe el servicio
-  if not Result then begin
-     // Ya detectamos por registro
-  end else begin
-     // Verificamos carpetas por defecto
-     if DirExists(ExpandConstant('{pf}\PostgreSQL\16')) or DirExists(ExpandConstant('{pf}\PostgreSQL\15')) then
-        Result := False;
-  end;
+  Result := not IsPostgresDetected;
 end;
 
-// --- Detección de .NET Hosting Bundle ---
-function DotNetNotInstalled: Boolean;
+function PsqlPath: String;
 begin
-  // Verificamos si existe la clave de ASP.NET Core Shared Framework v9.0
-  // La ruta suele ser SOFTWARE\Microsoft\ASP.NET Core\Shared Framework\v9.0
-  Result := not RegKeyExists(HKLM, 'SOFTWARE\Microsoft\ASP.NET Core\Shared Framework\v9.0');
-end;
-
-// --- Obtener Ruta de PSQL ---
-function GetPostgresCLIPath(Param: String): String;
-begin
-  // Intentar encontrar psql.exe en versiones conocidas
-  if FileExists(ExpandConstant('{pf}\PostgreSQL\16\bin\psql.exe')) then
-    Result := ExpandConstant('{pf}\PostgreSQL\16\bin\psql.exe')
-  else if FileExists(ExpandConstant('{pf}\PostgreSQL\15\bin\psql.exe')) then
-    Result := ExpandConstant('{pf}\PostgreSQL\15\bin\psql.exe')
-  else if FileExists(ExpandConstant('{pf}\PostgreSQL\14\bin\psql.exe')) then
-    Result := ExpandConstant('{pf}\PostgreSQL\14\bin\psql.exe')
-  else
-    Result := 'psql.exe'; // Esperar que esté en el PATH
+  Result := PgBaseDir + '\bin\psql.exe';
 end;
 
 // --- Retornar Contraseña del superusuario postgres ---
@@ -221,6 +330,72 @@ begin
   else
     Result := PgSuperPassword; // La generada para el PostgreSQL que instalamos nosotros
 end;
+
+// --- Ejecuta psql como postgres (contraseña por PGPASSWORD) y anexa su salida al log ---
+function RunPsql(Args, LogFile: String): Integer;
+var
+  ResultCode: Integer;
+begin
+  // -w: nunca pedir contraseña (en una ventana oculta psql se quedaría esperando)
+  if not Exec(ExpandConstant('{cmd}'),
+    '/C ""' + PsqlPath + '" -w -h localhost -p ' + IntToStr(PgPort) + ' -U postgres ' + Args + ' >> "' + LogFile + '" 2>&1"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+    ResultCode := -1;
+  Result := ResultCode;
+end;
+
+function TestPostgresConnection(Password, LogFile: String): Boolean;
+begin
+  SetEnvironmentVariable('PGPASSWORD', Password);
+  try
+    Result := RunPsql('-d postgres -c "SELECT 1"', LogFile) = 0;
+  finally
+    SetEnvironmentVariable('PGPASSWORD', '');
+  end;
+end;
+
+// ============================================================================================
+// ASP.NET Core Hosting Bundle (módulo ANCM de IIS)
+// ============================================================================================
+
+function GetAncmMajor: Integer;
+var
+  MS, LS: Cardinal;
+begin
+  if GetVersionNumbers(ExpandConstant('{commonpf64}\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll'), MS, LS) then
+    Result := MS shr 16
+  else
+    Result := 0;
+end;
+
+function IsAncmRegisteredInIis: Boolean;
+var
+  Config: AnsiString;
+begin
+  Result := LoadStringFromFile(ExpandConstant('{sys}\inetsrv\config\applicationHost.config'), Config) and
+    (Pos('name="AspNetCoreModuleV2"', String(Config)) > 0);
+end;
+
+// Check del paso 8: se evalúa después de habilitar IIS
+function HostingBundleNeeded: Boolean;
+begin
+  Result := (GetAncmMajor < RequiredAncmMajor) or not IsAncmRegisteredInIis;
+  Log(Format('ANCM instalado: %d (requerido %d), registrado en IIS: %d -> instalar Hosting Bundle: %d', [
+    GetAncmMajor, RequiredAncmMajor, Ord(IsAncmRegisteredInIis), Ord(Result)]));
+end;
+
+// Con el módulo ya instalado pero sin registrar (IIS se habilitó después del Hosting Bundle) hay que reparar
+function GetHostingBundleArgs(Param: String): String;
+begin
+  if GetAncmMajor >= RequiredAncmMajor then
+    Result := '/repair'
+  else
+    Result := '/install';
+end;
+
+// ============================================================================================
+// Configuración de la aplicación
+// ============================================================================================
 
 // --- Secreto aleatorio criptográfico, en hexadecimal ---
 function GenerateSecret(ByteCount: Integer): String;
@@ -249,7 +424,13 @@ end;
 
 function AppConnectionString: String;
 begin
-  Result := 'Host=localhost;Port=5432;Database=' + AppDbName + ';Username=' + AppDbUser + ';Password=' + AppDbPassword + ';';
+  Result := 'Host=localhost;Port=' + IntToStr(PgPort) + ';Database=' + AppDbName + ';Username=' + AppDbUser + ';Password=' + AppDbPassword + ';';
+end;
+
+function JsonEscapePath(Path: String): String;
+begin
+  Result := Path;
+  StringChangeEx(Result, '\', '\\', True);
 end;
 
 // --- Escribe un appsettings.Production.json a partir de su plantilla ---
@@ -264,28 +445,17 @@ begin
   Text := String(Content);
   StringChangeEx(Text, '__DB_CONNECTION__', AppConnectionString, True);
   StringChangeEx(Text, '__API_KEY__', GrpcApiKey, True);
+  // pg_dump / pg_restore de la misma instalación que el servidor
+  StringChangeEx(Text, '__PG_BIN__', JsonEscapePath(PgBaseDir + '\bin'), True);
   ForceDirectories(ExtractFileDir(DestFile));
   Result := SaveStringToFile(DestFile, AnsiString(Text), False);
-end;
-
-// --- Ejecuta psql como postgres (contraseña por PGPASSWORD) y anexa su salida al log ---
-function RunPsql(PsqlPath, Args, LogFile: String): Integer;
-var
-  ResultCode: Integer;
-begin
-  // -w: nunca pedir contraseña (en una ventana oculta psql se quedaría esperando)
-  if not Exec(ExpandConstant('{cmd}'),
-    '/C ""' + PsqlPath + '" -w -h localhost -p 5432 -U postgres ' + Args + ' >> "' + LogFile + '" 2>&1"',
-    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-    ResultCode := -1;
-  Result := ResultCode;
 end;
 
 // --- Configuración de BD y appsettings (sólo primera instalación) ---
 // BeforeInstall del registro del servicio: corre después de instalar PostgreSQL y antes de arrancar el servicio.
 procedure ConfigureDatabase;
 var
-  PsqlPath, LogFile: String;
+  LogFile: String;
   Attempt, ResultCode: Integer;
 begin
   if not NeedsAppConfig then Exit;
@@ -294,9 +464,9 @@ begin
   LogFile := ExpandConstant('{app}\Logs\db_setup.log');
   ForceDirectories(ExtractFileDir(LogFile));
 
-  // Guardar la contraseña del superusuario que generamos al instalar PostgreSQL (sólo Administradores y SYSTEM)
   if not IsPostgresDetected then
   begin
+    // Guardar la contraseña del superusuario que generamos al instalar PostgreSQL (sólo Administradores y SYSTEM)
     PgSuperPasswordFile := ExpandConstant('{app}\Database\postgres_superuser.txt');
     SaveStringToFile(PgSuperPasswordFile,
       'Contraseña del superusuario "postgres" generada por el instalador de AttendanceSystem:' + #13#10 +
@@ -304,13 +474,13 @@ begin
     Exec(ExpandConstant('{sys}\icacls.exe'),
       '"' + PgSuperPasswordFile + '" /inheritance:r /grant:r *S-1-5-32-544:F *S-1-5-18:F',
       '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  end;
 
-  PsqlPath := GetPostgresCLIPath('');
-  if not FileExists(PsqlPath) then
-  begin
-    DbConfigError := 'No se encontró psql.exe de PostgreSQL 14, 15 o 16.';
-    Exit;
+    // Ubicar el PostgreSQL recién instalado
+    if not DetectPostgres then
+    begin
+      DbConfigError := 'PostgreSQL no quedó instalado (revise el log del instalador de PostgreSQL en %TEMP%).';
+      Exit;
+    end;
   end;
 
   SetEnvironmentVariable('PGPASSWORD', GetPostgresPassword(''));
@@ -319,17 +489,17 @@ begin
     ResultCode := -1;
     for Attempt := 1 to 30 do
     begin
-      ResultCode := RunPsql(PsqlPath, '-d postgres -c "SELECT 1"', LogFile);
+      ResultCode := RunPsql('-d postgres -c "SELECT 1"', LogFile);
       if ResultCode = 0 then Break;
       Sleep(2000);
     end;
     if ResultCode <> 0 then
     begin
-      DbConfigError := 'No fue posible conectarse a PostgreSQL como "postgres" (¿contraseña incorrecta o servicio detenido?).';
+      DbConfigError := Format('No fue posible conectarse a PostgreSQL %d (puerto %d) como "postgres".', [PgMajor, PgPort]);
       Exit;
     end;
 
-    ResultCode := RunPsql(PsqlPath,
+    ResultCode := RunPsql(
       '-v ON_ERROR_STOP=1 -d postgres -v app_password=' + AppDbPassword +
       ' -f "' + ExpandConstant('{app}\Database\init_db.sql') + '"', LogFile);
     if ResultCode <> 0 then
@@ -347,27 +517,110 @@ begin
     DbConfigError := 'No se pudieron escribir los archivos appsettings.Production.json.';
 end;
 
-// --- Inicialización del ASISTENTE ---
-procedure InitializeWizard;
+// ============================================================================================
+// Verificación final (AfterInstall del último paso de [Run])
+// ============================================================================================
+
+procedure AddWarning(Text: String);
+begin
+  Log('ADVERTENCIA: ' + Text);
+  InstallWarnings := InstallWarnings + '- ' + Text + #13#10;
+end;
+
+// --- Helpers to find system binaries bypassing WOW64 redirection ---
+function GetAppCmdPath: String;
+begin
+  if FileExists(ExpandConstant('{sysnative}\inetsrv\appcmd.exe')) then
+    Result := ExpandConstant('{sysnative}\inetsrv\appcmd.exe')
+  else if FileExists(ExpandConstant('{sys}\inetsrv\appcmd.exe')) then
+    Result := ExpandConstant('{sys}\inetsrv\appcmd.exe')
+  else
+    Result := '';
+end;
+
+function IsServiceRunning(ServiceName: String): Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := Exec(ExpandConstant('{cmd}'),
+    '/C ""' + ExpandConstant('{sys}\sc.exe') + '" query "' + ServiceName + '" | "' + ExpandConstant('{sys}\find.exe') + '" "RUNNING""',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode) and (ResultCode = 0);
+end;
+
+procedure VerifyInstallation;
+var
+  AppCmdPath: String;
+  ResultCode, Attempt: Integer;
+  Running: Boolean;
+begin
+  WizardForm.StatusLabel.Caption := 'Verificando la instalación...';
+
+  if DbConfigError <> '' then
+    AddWarning('La base de datos NO quedó configurada: ' + DbConfigError + ' Detalle en ' + ExpandConstant('{app}\Logs\db_setup.log') + '.');
+
+  AppCmdPath := GetAppCmdPath;
+  if AppCmdPath = '' then
+    AddWarning('IIS no quedó habilitado (puede requerir reiniciar Windows). Detalle en ' + ExpandConstant('{app}\Logs\enable_iis.log') + '.')
+  else
+  begin
+    if (GetAncmMajor < RequiredAncmMajor) or not IsAncmRegisteredInIis then
+      AddWarning(Format('El módulo ASP.NET Core %d.x de IIS no quedó instalado o registrado. Detalle en %s.', [
+        RequiredAncmMajor, ExpandConstant('{app}\Logs\dotnet_hosting.log')]));
+    if not Exec(AppCmdPath, 'list site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+      AddWarning('No se creó el sitio "AttendanceSystem" en IIS. Detalle en ' + ExpandConstant('{app}\Logs\iis_setup.log') + '.');
+  end;
+
+  // El servicio puede tardar unos segundos en pasar de START_PENDING a RUNNING
+  Running := False;
+  for Attempt := 1 to 10 do
+  begin
+    Running := IsServiceRunning('AttendanceSystem.ZKTeco.Service');
+    if Running then Break;
+    Sleep(1000);
+  end;
+  if not Running then
+    AddWarning('El servicio AttendanceSystem.ZKTeco.Service no está en ejecución. Revise ' + ExpandConstant('{app}\Service\logs') + '.');
+
+  if InstallWarnings <> '' then
+    SuppressibleMsgBox('La instalación terminó con problemas:' + #13#10#13#10 + InstallWarnings + #13#10 +
+      'Corrija lo indicado y vuelva a ejecutar el instalador.', mbError, MB_OK, IDOK);
+end;
+
+// ============================================================================================
+// Asistente
+// ============================================================================================
+
+function InitializeSetup: Boolean;
 var
   PrevAppPath: String;
 begin
-  IsPostgresDetected := not PostgresNotInstalled;
+  Result := True;
+  IsPostgresDetected := DetectPostgres;
   PreviousInstallConfigured :=
     RegQueryStringValue(HKLM, UninstallKey, 'Inno Setup: App Path', PrevAppPath) and
     FileExists(AddBackslash(PrevAppPath) + 'Web\appsettings.Production.json');
 
+  if IsPostgresDetected and (PgMajor < MinPgMajor) and not PreviousInstallConfigured then
+  begin
+    SuppressibleMsgBox(Format('Se detectó PostgreSQL %d en %s. AttendanceSystem requiere PostgreSQL %d o posterior.' + #13#10 +
+      'Actualice PostgreSQL y vuelva a ejecutar el instalador.', [PgMajor, PgBaseDir, MinPgMajor]), mbCriticalError, MB_OK, IDOK);
+    Result := False;
+  end;
+end;
+
+procedure InitializeWizard;
+begin
   // Si Postgres YA existe y hay que configurar la BD, pedimos contraseña (en una actualización no hace falta)
   if IsPostgresDetected and not PreviousInstallConfigured then
   begin
     PostgresPage := CreateInputQueryPage(wpWelcome,
       'Configuración de Base de Datos',
       'PostgreSQL detectado en el sistema',
-      'Se ha detectado una instalación existente de PostgreSQL.' + #13#10 +
-      'Por favor, ingrese la contraseña del usuario "postgres" para configurar la base de datos de la aplicación:');
-    
+      Format('Se usará PostgreSQL %d instalado en %s (puerto %d).', [PgMajor, PgBaseDir, PgPort]) + #13#10 +
+      'Ingrese la contraseña del usuario "postgres" para crear la base de datos de la aplicación:');
+
     PostgresPage.Add('Contraseña de superusuario (postgres):', True); // True = password mask
-    
+
     // Valores por defecto
     PostgresPage.Values[0] := '';
   end;
@@ -377,14 +630,20 @@ end;
 function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
-  
-  // Guardar la contraseña si estamos en nuestra página personalizada
+
+  // Guardar y comprobar la contraseña si estamos en nuestra página personalizada
   if (PostgresPage <> nil) and (CurPageID = PostgresPage.ID) then
   begin
     UserPostgresPassword := PostgresPage.Values[0];
     if Length(UserPostgresPassword) = 0 then
     begin
       MsgBox('Por favor ingrese la contraseña de PostgreSQL para continuar.', mbError, MB_OK);
+      Result := False;
+    end
+    else if not TestPostgresConnection(UserPostgresPassword, ExpandConstant('{tmp}\pg_check.log')) then
+    begin
+      MsgBox(Format('No fue posible conectarse a PostgreSQL %d (puerto %d) como "postgres".', [PgMajor, PgPort]) + #13#10 +
+        'Verifique la contraseña y que el servicio de PostgreSQL esté iniciado.', mbError, MB_OK);
       Result := False;
     end;
   end;
@@ -422,30 +681,18 @@ begin
   end;
 end;
 
-// --- Pantalla final: avisar dónde quedó la contraseña de postgres o si falló la BD ---
+// --- Pantalla final: avisar de problemas o de dónde quedó la contraseña de postgres ---
 procedure CurPageChanged(CurPageID: Integer);
 begin
   if CurPageID <> wpFinished then Exit;
 
-  if DbConfigError <> '' then
+  if InstallWarnings <> '' then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
-      'ATENCIÓN: la base de datos NO quedó configurada. ' + DbConfigError + #13#10 +
-      'Revise ' + ExpandConstant('{app}\Logs\db_setup.log') + ' y vuelva a ejecutar el instalador.'
+      'ATENCIÓN, la instalación terminó con problemas:' + #13#10 + InstallWarnings
   else if PgSuperPasswordFile <> '' then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
       'La contraseña del superusuario "postgres" quedó en ' + PgSuperPasswordFile +
       ' (sólo Administradores). Guárdela en un lugar seguro.';
-end;
-
-// --- Helpers to find system binaries bypassing WOW64 redirection ---
-function GetAppCmdPath: String;
-begin
-  if FileExists(ExpandConstant('{sysnative}\inetsrv\appcmd.exe')) then
-    Result := ExpandConstant('{sysnative}\inetsrv\appcmd.exe')
-  else if FileExists(ExpandConstant('{sys}\inetsrv\appcmd.exe')) then
-    Result := ExpandConstant('{sys}\inetsrv\appcmd.exe')
-  else
-    Result := '';
 end;
 
 function GetNetPath: String;
@@ -491,7 +738,7 @@ begin
 
   Limit := 0;
   TempName := FileName + '.tmp_test_lock';
-  
+
   // Attempt to rename the file. If it fails, it is locked.
   while (Limit < 20) do
   begin
@@ -526,13 +773,13 @@ begin
   if CurStep = ssInstall then
   begin
     NetPath := GetNetPath;
-    
+
     // 1. Detener Servicio Windows
     if NetPath <> '' then
       Exec(NetPath, 'stop AttendanceSystem.ZKTeco.Service', '', SW_HIDE, ewWaitUntilTerminated, ResultCode)
     else
       Exec(ExpandConstant('{sys}\sc.exe'), 'stop AttendanceSystem.ZKTeco.Service', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    
+
     // 2. Detener Sitio IIS y AppPool
     AppCmdPath := GetAppCmdPath;
     if AppCmdPath <> '' then
@@ -540,22 +787,13 @@ begin
       Exec(AppCmdPath, 'stop site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
       Exec(AppCmdPath, 'stop apppool "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
     end;
-    
-    // 3. Esperar dinámicamente a que se libere el DLL principal
-    WebDllPath := ExpandConstant('{app}\Web\asnetcorev2_inprocess.dll');
+
+    // 3. Esperar dinámicamente a que IIS libere el DLL del módulo en proceso
+    WebDllPath := ExpandConstant('{app}\Web\aspnetcorev2_inprocess.dll');
     WaitForFileUnlock(WebDllPath);
   end
   else if CurStep = ssPostInstall then
   begin
-    if DbConfigError <> '' then
-    begin
-      Log('Configuración de base de datos fallida: ' + DbConfigError);
-      SuppressibleMsgBox('La base de datos NO quedó configurada: ' + DbConfigError + #13#10 +
-        'Revise ' + ExpandConstant('{app}\Logs\db_setup.log') + ' y vuelva a ejecutar el instalador.',
-        mbCriticalError, MB_OK, IDOK);
-    end;
-
-
     // Iniciar sitio IIS y AppPool automáticamente si ya están configurados
     AppCmdPath := GetAppCmdPath;
     if AppCmdPath <> '' then

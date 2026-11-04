@@ -81,11 +81,11 @@ Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue
 | **Arquitectura de CPU** | Procesador x64 de 2 núcleos a 2.0 GHz | Procesador x64 de 4 núcleos o superior (ej. Intel Core i5 / Xeon) |
 | **Memoria RAM** | 4 GB a 8 GB | 16 GB (especialmente para entornos con múltiples terminales y Hangfire jobs continuos) |
 | **Almacenamiento** | 20 GB de espacio libre (SSD) | 50 GB a 100 GB de espacio libre (SSD NVMe para BD y copias de seguridad) |
-| **Sistema Operativo** | Windows 10/11 Pro o Enterprise (64-bit) | Windows Server 2019 / 2022 / 2025 Standard o Datacenter (64-bit) |
+| **Sistema Operativo** | Windows 10 (1809 o posterior) / 11 (64-bit) | Windows Server 2019 / 2022 / 2025 Standard o Datacenter (64-bit, con escritorio) |
 | **Puertos de Red Abiertos**| **8081** (Web Self-Hosted Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) | **80/443** (IIS Web), **8081** (Web Kestrel), **5001** (gRPC local), **5432** (PostgreSQL) |
 
 > [!NOTE]
-> **Requisito Obligatorio de Windows (x64):** El servidor principal debe ser Windows de 64 bits debido a que el servicio puente de ZKTeco (`AttendanceSystem.ZKTeco.Service`) interactúa con librerías nativas COM/Win32 de 32 bits (`zkemkeeper.dll`) registradas en `SysWOW64`.
+> **Requisito Obligatorio de Windows (x64):** El servidor principal debe ser Windows de 64 bits debido a que el servicio puente de ZKTeco (`AttendanceSystem.ZKTeco.Service`) interactúa con librerías nativas COM/Win32 de 32 bits (`zkemkeeper.dll`) registradas en `SysWOW64`. El instalador se niega a ejecutarse en Windows de 32 bits o anterior a Windows 10 1809 / Server 2019 (`MinVersion=10.0.17763`).
 
 ### 2.2 Requisitos de Conectividad (Red)
 
@@ -114,13 +114,12 @@ Para garantizar el correcto funcionamiento del sistema, el entorno de despliegue
 * **Herramientas cliente de PostgreSQL (respaldos y restauraciones):**
   * `pg_dump`, `pg_restore` y `psql` deben existir en el servidor de la aplicación, **de la misma instalación** y de versión **igual o mayor** que el servidor de PostgreSQL. El instalador de PostgreSQL para Windows las incluye en `C:\Program Files\PostgreSQL\<versión>\bin`.
   * Si la base de datos está en otro equipo, instale en el servidor de la aplicación sólo los *Command Line Tools* de PostgreSQL.
-  * Se localizan en este orden: `Backup:PostgresBinPath` (configuración), `C:\Program Files\PostgreSQL\{17..12}\bin` y el `PATH`. `psql` se toma de la misma carpeta que `pg_restore`: los scripts de versiones recientes usan metacomandos (`\restrict`) que un `psql` más antiguo no reconoce.
+  * Se localizan en este orden: `Backup:PostgresBinPath` (configuración; el instalador la fija a la carpeta `bin` del PostgreSQL que usa la app), `C:\Program Files\PostgreSQL\{18..12}\bin` y el `PATH`. `psql` se toma de la misma carpeta que `pg_restore`: los scripts de versiones recientes usan metacomandos (`\restrict`) que un `psql` más antiguo no reconoce.
 * **Espacio para restaurar:** además del respaldo, una restauración necesita espacio para el snapshot de seguridad (del tamaño de un respaldo de la base actual, en la carpeta de respaldos) y, si el respaldo es `.zip`, para extraerlo en la carpeta temporal del usuario del servicio.
 * **.NET Runtimes:**
-  * **Modo Autocontenido (Self-Hosted Kestrel - Recomendado):** El instalador Todo-en-Uno ya incluye los binarios autocontenidos de **.NET 10.0**, por lo que **no es necesario** instalar el .NET SDK ni Runtime por separado.
-  * **Modo IIS:** Requiere el **ASP.NET Core Hosting Bundle 10.0.x** (proporciona el módulo nativo `AspNetCoreModuleV2` en IIS).
-* **Librerías de Soporte de C++ (x86):**
-  * **Visual C++ Redistributable 2015-2022 (x86 / 32-bit):** Requerido para la ejecución adecuada de las DLLs COM nativas de ZKTeco (`zkemkeeper.dll`, `commpro.dll`).
+  * La web y el servicio se publican **autocontenidos (.NET 10.0)**: no es necesario instalar el .NET SDK ni el Runtime por separado.
+  * IIS requiere el módulo nativo `AspNetCoreModuleV2` versión **20.x o posterior**, que aporta el **ASP.NET Core Hosting Bundle 10.0.x**. El instalador lo incluye y lo instala (o lo repara) si falta.
+* **Librerías de Soporte de C++:** no se requieren. Las DLLs del SDK de ZKTeco sólo importan DLLs del propio Windows (MFC va enlazado estáticamente).
 
 ---
 
@@ -131,8 +130,8 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 ### 3.1 Pre-instalación
 1. Descargue el instalador y ejecútelo con **permisos de Administrador** (clic derecho $\rightarrow$ *Ejecutar como administrador*).
 2. El instalador detectará si los siguientes prerrequisitos ya se encuentran en el sistema:
-   * **PostgreSQL:** Comprueba los registros en `SOFTWARE\PostgreSQL\Installations`.
-   * **ASP.NET Core Hosting Bundle:** Comprueba los registros en `SOFTWARE\Microsoft\ASP.NET Core\Shared Framework\v10.0` (o `v9.0`).
+   * **PostgreSQL (cualquier versión 14 o posterior):** revisa `SOFTWARE\PostgreSQL\Installations` y las carpetas `C:\Program Files\PostgreSQL\<versión>` con servidor (`data`) y `psql.exe`. Si hay varias, usa la de versión más alta. El puerto se lee del `postgresql.conf` / `postgresql.auto.conf` de esa instalación (el del registro puede estar desactualizado). Si la versión es anterior a 14, el instalador se detiene.
+   * **ASP.NET Core Hosting Bundle:** comprueba, ya con IIS habilitado, que `%ProgramFiles%\IIS\Asp.Net Core Module\V2\aspnetcorev2.dll` sea de la versión con que se publicó la app (20.x para .NET 10) y que `AspNetCoreModuleV2` esté registrado en `applicationHost.config`. Si el módulo existe pero IIS se habilitó después, ejecuta el Hosting Bundle con `/repair`.
    * Si falta alguno de los dos, el instalador procederá a ejecutarlos de forma desatendida desde sus instaladores temporales.
 
 ### 3.2 Paso a Paso de la Ejecución del Instalador
@@ -147,8 +146,9 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 6. **Progreso de Instalación:**
    * Descompresión de archivos de la aplicación y el servicio.
    * Ejecución en segundo plano del instalador de PostgreSQL (`postgresql-installer.exe --mode unattended`).
-   * Ejecución del Hosting Bundle de .NET 10 (`dotnet-hosting.exe /install /quiet /norestart`).
-   * Registro del SDK ZKTeco en Windows (`regsvr32.exe /s zkemkeeper.dll` tanto en `System32` como en `SysWOW64` para entornos de 64 bits).
+   * Ejecución del Hosting Bundle de .NET 10 (`dotnet-hosting.exe /install /quiet /norestart`, log en `{app}\Logs\dotnet_hosting.log`).
+   * Copia del SDK ZKTeco (32 bits) a `SysWOW64` y registro de `zkemkeeper.dll` con el `regsvr32` de 32 bits. Ya no se copia a `System32`. No reemplaza una versión más nueva del SDK instalada por otro programa, y la desinstalación sólo lo borra si ningún otro programa lo usa.
+   * Al final, una verificación comprueba IIS, el módulo ASP.NET Core, el sitio y el servicio ZKTeco, y avisa de cualquier problema con la ruta del log correspondiente.
    * Creación del Servicio de Windows mediante `sc.exe create AttendanceSystem.ZKTeco.Service`.
    * Configuración de la base de datos ejecutando `init_db.sql` con `psql` (sólo primera instalación) y escritura de los `appsettings.Production.json` de la web y del servicio.
    * Apertura de los puertos 80 y 8081 en el Firewall de Windows Defender (el 5001 de gRPC queda sólo en loopback).
@@ -187,7 +187,7 @@ Para validar que la instalación fue exitosa:
    ```
 2. Verifique que los servicios de Windows estén en ejecución:
    ```powershell
-   Get-Service "postgresql-x64-16"
+   Get-Service "postgresql-x64-*"
    Get-Service "AttendanceSystem.ZKTeco.Service"
    ```
 3. Abra el navegador web e ingrese a `http://localhost` (o `http://localhost:8081` si el puerto 80 estaba ocupado).
@@ -349,7 +349,7 @@ Se inicia en **Respaldo y Restauración** (rol Administrador). Sólo acepta arch
 7. Si la validación o la alineación fallan, **rollback automático** restaurando el snapshot con el mismo mecanismo atómico.
 8. Al terminar se libera el bloqueo, se reanuda Hangfire y se pide reiniciar la aplicación.
 
-**Requisitos de permisos:** el usuario de la cadena de conexión debe ser **dueño de la base de datos y de los esquemas `public` y `hangfire`** (así lo deja `configure_db.bat`/`init_db.sql`). No se requiere superusuario.
+**Requisitos de permisos:** el usuario de la cadena de conexión debe ser **dueño de la base de datos y de los esquemas `public` y `hangfire`** (así lo deja `init_db.sql`). No se requiere superusuario.
 
 #### Restauración con fallo crítico (estado `Failed`)
 Sólo ocurre si el respaldo se confirmó, no superó la validación posterior y además falló el rollback. Entonces:
