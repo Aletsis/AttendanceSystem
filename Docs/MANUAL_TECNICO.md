@@ -238,7 +238,7 @@ erDiagram
 * **SystemAlerts:** Alertas internas generadas por el sistema cuando ocurren desconexiones de hardware o errores en segundo plano.
 
 ### 4.2 Migraciones y Actualizaciones de Esquema
-La aplicación Blazor aplica las migraciones de Entity Framework Core al arrancar, antes de atender peticiones. Implementación: `StartupMigrationService` (`src/Infrastructure/AttendanceSystem.Infrastructure/Services/StartupMigrationService.cs`), invocado desde `Program.cs`. Los clientes WPF y el servicio ZKTeco nunca migran.
+La aplicación Blazor aplica las migraciones de Entity Framework Core al arrancar, antes de atender peticiones. Implementación: `StartupMigrationService` (`src/Infrastructure/AttendanceSystem.Infrastructure/Services/StartupMigrationService.cs`), invocado desde `ServerStartup` (`Program.cs`). El cliente WPF migra igual sólo cuando se instala sin sitio web (`Hosting:Standalone`); junto al sitio, y el servicio ZKTeco, nunca migran.
 
 **Secuencia de arranque:**
 1. **Conexión:** si PostgreSQL todavía no responde (p. ej. el servidor se reinició y PostgreSQL arranca después que IIS), se reintenta con espera creciente (`Database:StartupConnectAttempts`). Si la base no existe se crea vacía (desarrollo; el instalador ya la crea). Si tras los reintentos no hay conexión, la aplicación **se detiene** y el siguiente arranque lo vuelve a intentar.
@@ -459,7 +459,17 @@ La seguridad de la interfaz de usuario web está construida sobre **ASP.NET Core
 ### 6.3 Cliente de escritorio (WPF)
 El cliente WPF (`src/Presentation/AttendanceSystem.WPF`) usa el mismo backend que el sitio web: los mismos comandos de
 MediatR y la misma base de datos, con su propio `appsettings.json` junto al ejecutable (ver
-`appsettings.example.json` y el `README.md` del proyecto). No ejecuta tareas programadas ni migraciones.
+`appsettings.example.json` y el `README.md` del proyecto). Se usa en el mismo equipo que la base y no depende de que el
+sitio web esté encendido: mientras está abierto ejecuta las tareas programadas (mismo almacenamiento de Hangfire que el
+sitio: cada tarea la toma un solo proceso), la consolidación y el outbox. Lo que corre en segundo plano actúa como
+Sistema; sólo lo que pide la interfaz requiere sesión.
+
+* **Junto al sitio web** (`Hosting:Standalone = false`): el sitio aplica las migraciones; si el esquema está atrasado el
+  cliente lo avisa y deja sus tareas en pausa. Los relojes ADMS los recibe el sitio; los comandos que encola el cliente
+  le llegan por la tabla `AdmsCommands`.
+* **Sin sitio web** (`Hosting:Standalone = true`): al arrancar aplica las migraciones y los datos iniciales igual que el
+  sitio (`ServerStartup`) y recibe a los relojes ADMS en el puerto ADMS de la configuración del sistema mientras está
+  abierto.
 
 * **Inicio de sesión:** cuentas, política de contraseñas y bloqueo por intentos fallidos iguales a los de la web.
 * **Permisos:** menú, pantallas, botones y campos siguen la matriz de roles (Usuario, RH, Administrador); el backend
@@ -468,8 +478,8 @@ MediatR y la misma base de datos, con su propio `appsettings.json` junto al ejec
   respaldo desde el cliente se cierra la sesión.
 * **Mantenimiento:** consulta cada `Maintenance:PollIntervalSeconds` el estado compartido en PostgreSQL y muestra un
   aviso mientras hay una restauración en curso o tras una fallida.
-* **Configuración:** al guardarla pide al sitio web (`BackendUrl`, `ApiKey`) recargar las tareas programadas; si el sitio
-  no responde se avisa que el horario nuevo se aplicará al reiniciarlo.
+* **Configuración:** al guardarla se reprograman las tareas automáticas en el almacenamiento compartido de Hangfire; el
+  horario nuevo aplica también en el sitio web sin avisarle.
 * **Dispositivos:** "Eliminar" borra un reloj sin historial y desactiva uno con checadas o descargas (las checadas
   nunca se borran). "Vaciar memoria del reloj" descarga todo y sólo borra del reloj el rango guardado, si la lectura
   fue completa (no disponible para relojes ADMS).
