@@ -14,6 +14,13 @@ namespace AttendanceSystem.Infrastructure.Services;
 
 public class ReportExportService : IReportExportService
 {
+    // QuestPDF exige declarar la licencia antes de generar; sólo el servidor web lo hacía al arrancar, así que
+    // el escritorio y el servicio fallaban con "license" al exportar PDF. Se declara aquí para todos los hosts.
+    static ReportExportService()
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+    }
+
     public byte[] GenerateExcel(IEnumerable<AttendanceReportViewDto> attendanceData, DateTime startDate, DateTime endDate, string companyName, byte[]? companyLogo, bool detailed = false)
     {
         if (startDate.Date == endDate.Date)
