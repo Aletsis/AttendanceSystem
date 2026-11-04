@@ -1,0 +1,177 @@
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.Features.Devices.Commands.SendBranchEmployeesToDevice
+@using MediatR
+@using MudBlazor
+@implements IDisposable
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="mb-4">
+            <MudText Typo="Typo.subtitle1"><strong>Reloj:</strong> @DeviceName</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Se enviarán todos los empleados activos de la sucursal (los dados de baja no). Cada uno conserva su privilegio.</MudText>
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+        }
+        else if (_result != null)
+        {
+            <MudAlert Severity="@(_result.Failed.Count == 0 && !_result.Cancelled ? Severity.Success : Severity.Warning)">
+                Se enviaron @_result.Sent de @_result.Total empleados.
+                @if (_result.Cancelled)
+                {
+                    <span> Envío detenido: los @(_result.Total - _result.Sent - _result.Failed.Count) restantes no se enviaron.</span>
+                }
+            </MudAlert>
+            @if (IsAdms)
+            {
+                <MudAlert Severity="Severity.Info" Dense="true" Class="mt-3">
+                    Este reloj usa ADMS: los empleados que no se pudieron escribir directo quedan en cola y el reloj los aplica la próxima vez que se comunique con el servidor.
+                </MudAlert>
+            }
+            @if (_result.Failed.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-3">No se pudieron enviar:</MudText>
+                <MudList T="string" Dense="true">
+                    @foreach (var failed in _result.Failed)
+                    {
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.ErrorOutline">@failed</MudListItem>
+                    }
+                </MudList>
+            }
+        }
+        else
+        {
+            <MudSelect T="Guid?" @bind-Value="_selectedBranchId" Label="Sucursal" Required="true" Disabled="_sending" AnchorOrigin="Origin.BottomCenter">
+                @foreach (var branch in _branches)
+                {
+                    <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Code - @branch.Name</MudSelectItem>
+                }
+            </MudSelect>
+            @if (_sending)
+            {
+                @if (_progress is { Total: > 0 } progress)
+                {
+                    <div class="d-flex justify-space-between mt-4 mb-1">
+                        <MudText Typo="Typo.caption">@progress.Message</MudText>
+                        <MudText Typo="Typo.caption">@progress.Done / @progress.Total</MudText>
+                    </div>
+                    <MudProgressLinear Color="Color.Primary" Value="@(100.0 * progress.Done / progress.Total)" />
+                }
+                else
+                {
+                    <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4" />
+                }
+                @if (_cts?.IsCancellationRequested == true)
+                {
+                    <MudText Typo="Typo.caption" Color="Color.Warning">Deteniendo al terminar el empleado actual...</MudText>
+                }
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_result != null)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Close">Cerrar</MudButton>
+        }
+        else if (_sending)
+        {
+            <MudButton Color="Color.Warning" StartIcon="@Icons.Material.Filled.Stop" OnClick="Stop" Disabled="@(_cts?.IsCancellationRequested == true)">Detener</MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Cancel">Cancelar</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.GroupAdd" OnClick="Send" Disabled="@(_selectedBranchId == null || _loading)">
+                Enviar Sucursal
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string DeviceId { get; set; } = string.Empty;
+    [Parameter] public string DeviceName { get; set; } = string.Empty;
+    [Parameter] public bool IsAdms { get; set; }
+
+    private List<BranchDto> _branches = new();
+    private Guid? _selectedBranchId;
+    private bool _loading = true;
+    private bool _sending;
+    private SendBranchEmployeesProgress? _progress;
+    private SendBranchEmployeesToDeviceResult? _result;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Sender.Send(new GetBranchesQuery());
+        if (result.IsSuccess)
+        {
+            _branches = result.Value.OrderBy(b => b.Name).ToList();
+            if (_branches.Count == 1) _selectedBranchId = _branches[0].Id;
+        }
+        else
+        {
+            Snackbar.Add("Error al cargar sucursales: " + result.Error, Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+
+    private void Stop() => _cts?.Cancel();
+
+    private async Task Send()
+    {
+        if (_selectedBranchId is not { } branchId) return;
+
+        _sending = true;
+        _progress = null;
+        _cts = new CancellationTokenSource();
+        var progress = new Progress<SendBranchEmployeesProgress>(p =>
+        {
+            _progress = p;
+            _ = InvokeAsync(StateHasChanged);
+        });
+        try
+        {
+            var result = await Sender.Send(new SendBranchEmployeesToDeviceCommand(DeviceId, branchId, progress), _cts.Token);
+            if (!result.IsSuccess)
+            {
+                Snackbar.Add($"Error al enviar empleados: {result.Error}", Severity.Error);
+            }
+            else if (result.Value.Total == 0)
+            {
+                Snackbar.Add("La sucursal no tiene empleados activos para enviar.", Severity.Info);
+            }
+            else
+            {
+                _result = result.Value;
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Se detuvo antes de empezar a enviar (esperando al reloj o conectando).
+            Snackbar.Add("Envío detenido: no se envió ningún empleado.", Severity.Info);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error inesperado: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+            _cts.Dispose();
+            _cts = null;
+        }
+    }
+
+    // Cerrar la pestaña a medio envío lo detiene en el siguiente empleado en vez de dejarlo corriendo sin nadie que lo vea.
+    public void Dispose() => _cts?.Cancel();
+}
