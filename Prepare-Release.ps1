@@ -10,16 +10,24 @@ Write-Host "1. Limpiando directorios de salida..." -ForegroundColor Cyan
 if (Test-Path $OutputDir) { Remove-Item $OutputDir -Recurse -Force }
 New-Item -ItemType Directory -Path "$OutputDir\Web" | Out-Null
 New-Item -ItemType Directory -Path "$OutputDir\Service" | Out-Null
+New-Item -ItemType Directory -Path "$OutputDir\Desktop" | Out-Null
 New-Item -ItemType Directory -Path "$OutputDir\Database" | Out-Null
 
 Write-Host "2. Publicando Aplicación Web (Blazor Server)..." -ForegroundColor Cyan
 dotnet publish "src/Presentation/AttendanceSystem.Blazor.Server" -c $Configuration -r win-x64 --self-contained true -o "$OutputDir\Web"
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: falló la publicación de la Web." -ForegroundColor Red; exit 1 }
+
+Write-Host "2.1 Publicando Programa de Escritorio (WPF)..." -ForegroundColor Cyan
+# Autocontenido como la web. Su appsettings.json lo genera el instalador (setup_script.iss no lo copia).
+dotnet publish "src/Presentation/AttendanceSystem.WPF" -c $Configuration -r win-x64 --self-contained true -o "$OutputDir\Desktop"
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: falló la publicación del programa de escritorio." -ForegroundColor Red; exit 1 }
 
 Write-Host "3. Publicando Servicio Windows (ZKTeco)..." -ForegroundColor Cyan
 # IMPORTANTE: El servicio ZKTeco DEBE ser x86 porque el SDK de ZK suele ser de 32 bits.
 # Usamos PublishSingleFile=false para evitar que los DLLs nativos queden atrapados en un bundle 
 # que se extrae a temp, lo cual dificulta que el registro COM los encuentre.
 dotnet publish "src/Presentation/AttendanceSystem.ZKTeco.Service" -c $Configuration -r win-x86 --self-contained true -o "$OutputDir\Service" /p:PublishSingleFile=false
+if ($LASTEXITCODE -ne 0) { Write-Host "ERROR: falló la publicación del Servicio." -ForegroundColor Red; exit 1 }
 
 Write-Host "4. Copiando SDK ZKTeco a la raíz del servicio..." -ForegroundColor Cyan
 # Copiar todos los DLLs del SDK a la carpeta raíz del servicio para asegurar visibilidad
@@ -38,11 +46,15 @@ Copy-Item ".\Deploy\enable_iis.ps1" -Destination "$OutputDir\Database\" -ErrorAc
 Copy-Item ".\Deploy\configure_iis.bat" -Destination "$OutputDir\Web\" -ErrorAction SilentlyContinue
 
 Write-Host "7. Verificando archivos críticos..." -ForegroundColor Cyan
-$CriticalFiles = @("zkemkeeper.dll", "Interop.zkemkeeper.dll", "commpro.dll", "AttendanceSystem.ZKTeco.Service.exe")
+$CriticalFiles = @(
+    "Service\zkemkeeper.dll", "Service\Interop.zkemkeeper.dll", "Service\commpro.dll", "Service\AttendanceSystem.ZKTeco.Service.exe",
+    "Web\AttendanceSystem.Blazor.Server.dll", "Web\aspnetcorev2_inprocess.dll", "Web\web.config",
+    "Desktop\AttendanceSystem.WPF.exe"
+)
 $Missing = @()
 
 foreach ($file in $CriticalFiles) {
-    if (-not (Test-Path "$OutputDir\Service\$file")) {
+    if (-not (Test-Path "$OutputDir\$file")) {
         $Missing += $file
     }
 }

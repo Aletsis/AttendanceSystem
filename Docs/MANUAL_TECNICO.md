@@ -138,7 +138,10 @@ El despliegue en producción se realiza mediante un instalador único compilado 
 1. **Selección de Idioma:** Ventana emergente inicial para configurar el instalador en idioma Español.
 2. **Pantalla de Bienvenida:** Presentación del asistente de instalación de *Attendance System v2.1.6*.
 3. **Selección de Carpeta de Destino:** Por defecto se establece `C:\Program Files\AttendanceSystem`.
-4. **Hospedaje web:** la aplicación Blazor se aloja siempre en el IIS local (puerto 80, o 8081 si el 80 está ocupado). No hay modo independiente (Kestrel).
+4. **Qué instalar:** *Sitio web y programa de escritorio*, *Sólo sitio web (IIS)*, *Sólo programa de escritorio* o personalizada. La base de datos y el servicio ZKTeco se instalan siempre.
+   * **Sitio web:** la aplicación Blazor se aloja en el IIS local (puerto 80, o 8081 si el 80 está ocupado, más un enlace en el puerto ADMS 18373).
+   * **Programa de escritorio (WPF):** queda en el menú Inicio, con acceso directo opcional en el escritorio y opción de abrirlo al iniciar sesión. Sin el sitio web funciona por su cuenta (`Hosting:Standalone = true`): aplica las migraciones, ejecuta las tareas programadas y recibe los relojes ADMS mientras está abierto. Junto al sitio, eso lo hace el sitio.
+   * Para agregar una parte, vuelva a ejecutar el instalador y márquela; para quitarla, desinstale y vuelva a instalar sólo lo necesario.
 5. **Detección e Ingreso de Credenciales de BD (sólo primera instalación):**
    * Si el instalador detecta que **ya existe** una instancia de PostgreSQL local, desplegará una pantalla personalizada solicitando ingresar la contraseña del superusuario `postgres` para poder configurar los esquemas y privilegios del sistema. Esa contraseña no se guarda.
    * Si **no existe**, instalará PostgreSQL de forma desatendida con una contraseña de `postgres` **aleatoria**, que deja en `{app}\Database\postgres_superuser.txt` (sólo Administradores y SYSTEM).
@@ -160,6 +163,7 @@ El instalador realiza las siguientes tareas críticas en el sistema operativo:
 
 * **Estructura de Directorios:**
   * `{app}\Web`: Archivos de publicación de la aplicación Blazor Server.
+  * `{app}\Desktop`: Programa de escritorio WPF (autocontenido, x64), si se eligió. Su `appsettings.json` lo genera el instalador; *Usuarios* tienen permiso de modificación sobre sus carpetas `logs` y `Backups`.
   * `{app}\Service`: Archivos del Windows Service de ZKTeco (compilado en x86 autocontenido).
   * `{app}\Database`: Scripts de creación de base de datos e inicialización.
   * `{app}\Logs` y `{app}\Backups`: Carpetas dedicadas a logs históricos y respaldos.
@@ -190,7 +194,7 @@ Para validar que la instalación fue exitosa:
    Get-Service "postgresql-x64-*"
    Get-Service "AttendanceSystem.ZKTeco.Service"
    ```
-3. Abra el navegador web e ingrese a `http://localhost` (o `http://localhost:8081` si el puerto 80 estaba ocupado).
+3. Con el sitio web: abra el navegador e ingrese a `http://localhost` (o `http://localhost:8081` si el puerto 80 estaba ocupado). Con el programa de escritorio: ábralo desde el menú Inicio (**AttendanceSystem**).
 4. Inicie sesión con las credenciales maestras por defecto:
    * **Usuario:** `admin`
    * **Contraseña:** `Admin123!`

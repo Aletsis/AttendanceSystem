@@ -26,12 +26,23 @@
 #define MyServiceExeName "AttendanceSystem.ZKTeco.Service.exe"
 #endif
 
+#ifndef MyDesktopExeName
+#define MyDesktopExeName "AttendanceSystem.WPF.exe"
+#endif
+
+; Puerto ADMS por defecto (SystemConfiguration.AdmsPort / WpfBackendHost.DefaultAdmsPort). Si se cambia en la
+; configuración del sistema, hay que ajustar a mano el enlace de IIS y la regla de firewall "AttendanceSystem ADMS".
+#define DefaultAdmsPort "18373"
+
 ; --- Verificaciones de compilación: el Hosting Bundle incluido debe ser de la misma versión de .NET que la app ---
 #define ReleaseWebDir AddBackslash(SourcePath) + "..\Release\Web\"
 #define HostingBundleFile AddBackslash(SourcePath) + "dotnet-hosting.exe"
 
 #if !FileExists(ReleaseWebDir + "aspnetcorev2_inprocess.dll") || !FileExists(ReleaseWebDir + "Microsoft.AspNetCore.dll")
   #error Falta Release\Web (o no es una publicación para IIS). Ejecute Prepare-Release.ps1 antes de compilar.
+#endif
+#if !FileExists(AddBackslash(SourcePath) + "..\Release\Desktop\AttendanceSystem.WPF.exe")
+  #error Falta Release\Desktop (programa de escritorio). Ejecute Prepare-Release.ps1 antes de compilar.
 #endif
 #if !FileExists(HostingBundleFile)
   #error Falta Deploy\dotnet-hosting.exe. Ejecute Deploy\Download-Prerequisites.ps1.
@@ -79,21 +90,51 @@ WizardStyle=modern
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
 
+; --- Qué se instala ---
+; El sitio web (IIS) y el programa de escritorio (WPF) funcionan cada uno por su cuenta o juntos sobre la misma base.
+; Siempre se instalan PostgreSQL (si no hay uno), la base de datos y el servicio ZKTeco, que usan los dos.
+; Sólo el programa: Hosting:Standalone = true (el programa aplica migraciones, corre las tareas y recibe los relojes ADMS).
+; Con el sitio: Hosting:Standalone = false (eso lo hace el sitio). El instalador fija el valor según lo instalado.
+[Types]
+Name: "full"; Description: "Sitio web y programa de escritorio"
+Name: "web"; Description: "Sólo sitio web (IIS)"
+Name: "desktop"; Description: "Sólo programa de escritorio"
+Name: "custom"; Description: "Personalizada"; Flags: iscustom
+
+[Components]
+Name: "core"; Description: "Base de datos y servicio de relojes ZKTeco (obligatorio)"; Types: full web desktop custom; Flags: fixed
+Name: "web"; Description: "Sitio web (Blazor, hospedado en IIS)"; Types: full web
+Name: "desktop"; Description: "Programa de escritorio (WPF)"; Types: full desktop
+
+[Tasks]
+Name: "desktopicon"; Description: "Crear un acceso directo en el escritorio"; GroupDescription: "Programa de escritorio:"; Components: desktop
+Name: "startup"; Description: "Abrir el programa al iniciar sesión en Windows (recomendado sin sitio web: las tareas automáticas sólo corren con el programa abierto)"; GroupDescription: "Programa de escritorio:"; Components: desktop; Flags: unchecked
+
 [Dirs]
 Name: "{app}\Logs"
-Name: "{app}\Backups"
+Name: "{app}\Backups"; Permissions: users-modify; Components: desktop
+Name: "{app}\Backups"; Components: not desktop
+; El programa de escritorio corre con la cuenta de quien lo abre (sin permisos de administrador): necesita escribir
+; sus logs y respaldos junto al ejecutable, y en la carpeta de respaldos del sitio cuando conviven.
+Name: "{app}\Desktop\logs"; Permissions: users-modify; Components: desktop
+Name: "{app}\Desktop\Backups"; Permissions: users-modify; Components: desktop
+Name: "{app}\Web\Backups"; Permissions: users-modify; Components: web and desktop
 
 [Files]
 ; 1. Archivos de la Aplicación Web
-; appsettings.Production.json NO se copia: lo genera el instalador en la primera instalación (cadena de conexión y
+; appsettings.Production.json NO se copia: lo genera el instalador la primera vez (cadena de conexión y
 ; ApiKey propias del equipo) y una actualización lo conserva, junto con lo que el cliente haya cambiado en él.
-Source: "..\Release\Web\*"; DestDir: "{app}\Web"; Excludes: "appsettings.Production.json"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\Release\Web\*"; DestDir: "{app}\Web"; Excludes: "appsettings.Production.json"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: web
+
+; 1.1 Programa de escritorio. Igual que en la web, su appsettings.json lo genera el instalador y se conserva.
+Source: "..\Release\Desktop\*"; DestDir: "{app}\Desktop"; Excludes: "appsettings.json,appsettings.*.json"; Flags: ignoreversion recursesubdirs createallsubdirs; Components: desktop
 
 ; 2. Archivos del Servicio Windows (incluyendo SDK ZKTeco)
 Source: "..\Release\Service\*"; DestDir: "{app}\Service"; Excludes: "appsettings.Production.json"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; Plantillas de appsettings.Production.json (se extraen a {tmp} sólo en la primera instalación)
+; Plantillas de configuración (se extraen a {tmp} sólo cuando falta el archivo de configuración)
 Source: "appsettings.Web.Production.template.json"; Flags: dontcopy
+Source: "appsettings.Desktop.template.json"; Flags: dontcopy
 Source: "appsettings.Service.Production.template.json"; Flags: dontcopy
 
 ; 2.1 SDK ZKTeco (DLLs de 32 bits) en SysWOW64, que es donde los busca el COM de 32 bits del servicio x86.
@@ -136,34 +177,52 @@ Filename: "{sys}\sc.exe"; Parameters: "description AttendanceSystem.ZKTeco.Servi
 Filename: "{sys}\sc.exe"; Parameters: "start AttendanceSystem.ZKTeco.Service"; \
     Flags: runhidden; StatusMsg: "Iniciando servicio..."
 
-; 6. Abrir Puertos en Firewall para Web: 80, o 8081 si IIS no pudo usar el 80 (el servicio gRPC 5001 se mantiene
+; 6. Sitio web en IIS (sólo con el componente web)
+; 6.1 Abrir Puertos en Firewall para Web: 80, o 8081 si IIS no pudo usar el 80 (el servicio gRPC 5001 se mantiene
 ; local/loopback por seguridad H02). Se borra antes la regla para no acumular duplicados en cada actualización.
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AttendanceSystem Web"""; \
-    Flags: runhidden; StatusMsg: "Configurando Firewall..."
+    Flags: runhidden; StatusMsg: "Configurando Firewall..."; Components: web
 Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AttendanceSystem Web"" dir=in action=allow protocol=TCP localport=80,8081"; \
-    Flags: runhidden; StatusMsg: "Configurando Firewall..."
+    Flags: runhidden; StatusMsg: "Configurando Firewall..."; Components: web
 
-; 7. Habilitar IIS y Componentes. La web sólo se hospeda en IIS (no hay modo independiente: no se registra
-; como servicio ni tiene acceso directo), así que este paso y el 9 son obligatorios.
+; 6.2 Habilitar IIS y Componentes. La web sólo se hospeda en IIS (no se registra como servicio).
 ; Debe ir ANTES del Hosting Bundle: el Hosting Bundle registra el módulo ANCM sólo en un IIS ya habilitado.
 Filename: "{sys}\WindowsPowerShell\v1.0\powershell.exe"; \
     Parameters: "-NoProfile -ExecutionPolicy Bypass -File ""{app}\Tools\enable_iis.ps1"" -LogFile ""{app}\Logs\enable_iis.log"""; \
-    StatusMsg: "Habilitando características de Windows (IIS)..."; Flags: runhidden
+    StatusMsg: "Habilitando características de Windows (IIS)..."; Flags: runhidden; Components: web
 
-; 8. Instalar ASP.NET Core Hosting Bundle (si falta el módulo ANCM {#AncmMajor}.x o no está registrado en IIS)
+; 6.3 Instalar ASP.NET Core Hosting Bundle (si falta el módulo ANCM {#AncmMajor}.x o no está registrado en IIS)
 Filename: "{tmp}\dotnet-hosting.exe"; Parameters: "{code:GetHostingBundleArgs} /quiet /norestart /log ""{app}\Logs\dotnet_hosting.log"""; \
     StatusMsg: "Instalando ASP.NET Core {#HostingBundleVersion} Hosting Bundle..."; \
-    Check: HostingBundleNeeded
+    Check: HostingBundleNeeded; Components: web
 
-; 9. Configurar IIS (AppPool y Sitio) y verificar la instalación completa
-Filename: "{app}\Tools\configure_iis.bat"; Parameters: """{app}\Web"" ""{app}\Logs\iis_setup.log"""; \
-    StatusMsg: "Configurando Sitio Web en IIS..."; Flags: runhidden; AfterInstall: VerifyInstallation
+; 6.4 Configurar IIS (AppPool y Sitio, con el puerto ADMS como segundo enlace)
+Filename: "{app}\Tools\configure_iis.bat"; Parameters: """{app}\Web"" ""{app}\Logs\iis_setup.log"" {#DefaultAdmsPort}"; \
+    StatusMsg: "Configurando Sitio Web en IIS..."; Flags: runhidden; Components: web
+
+; 7. Puerto ADMS (relojes que envían sus marcajes por HTTP). Lo atiende el sitio (enlace de IIS) o, sin sitio, el
+; programa de escritorio; la regla de firewall evita que Windows pida permiso a un usuario sin derechos de administrador.
+; Es el último paso que siempre se ejecuta: al terminar verifica la instalación completa.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AttendanceSystem ADMS"""; \
+    Flags: runhidden; StatusMsg: "Configurando Firewall..."
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""AttendanceSystem ADMS"" dir=in action=allow protocol=TCP localport={#DefaultAdmsPort}"; \
+    Flags: runhidden; StatusMsg: "Configurando Firewall..."; AfterInstall: VerifyInstallation
+
+; 8. Abrir el programa de escritorio al terminar (como el usuario que instala, no como administrador)
+Filename: "{app}\Desktop\{#MyDesktopExeName}"; Description: "Abrir AttendanceSystem (programa de escritorio)"; \
+    Flags: postinstall nowait skipifsilent runasoriginaluser; Components: desktop
+
+[Icons]
+Name: "{group}\{#MyAppName}"; Filename: "{app}\Desktop\{#MyDesktopExeName}"; WorkingDir: "{app}\Desktop"; Components: desktop
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\Desktop\{#MyDesktopExeName}"; WorkingDir: "{app}\Desktop"; Tasks: desktopicon
+Name: "{commonstartup}\{#MyAppName}"; Filename: "{app}\Desktop\{#MyDesktopExeName}"; WorkingDir: "{app}\Desktop"; Tasks: startup
 
 [UninstallRun]
 ; Eliminar sitio IIS al desinstalar
-Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete site ""AttendanceSystem"""; Flags: runhidden; RunOnceId: "DeleteIisSite"
-Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete apppool ""AttendanceSystem"""; Flags: runhidden; RunOnceId: "DeleteIisAppPool"
-Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AttendanceSystem Web"""; Flags: runhidden; RunOnceId: "DeleteFirewallRule"
+Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete site ""AttendanceSystem"""; Flags: runhidden; RunOnceId: "DeleteIisSite"; Components: web
+Filename: "{sys}\inetsrv\appcmd.exe"; Parameters: "delete apppool ""AttendanceSystem"""; Flags: runhidden; RunOnceId: "DeleteIisAppPool"; Components: web
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AttendanceSystem Web"""; Flags: runhidden; RunOnceId: "DeleteFirewallRule"; Components: web
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""AttendanceSystem ADMS"""; Flags: runhidden; RunOnceId: "DeleteAdmsFirewallRule"
 ; Detener y eliminar el servicio de Windows
 ; IMPORTANTE: El nombre debe coincidir con el usado en [Run] y en Program.cs
 Filename: "{sys}\sc.exe"; Parameters: "stop AttendanceSystem.ZKTeco.Service"; Flags: runhidden; RunOnceId: "StopService"
@@ -189,14 +248,17 @@ var
   PgBaseDir: String;
   PgDataDir: String;
   PgServiceId: String;
-  // Una instalación previa ya dejó configurada la aplicación (existe su appsettings.Production.json)
+  // Carpeta de una instalación anterior (vacía si no la hay) y si ya dejó configurada la aplicación
+  PrevAppPath: String;
   PreviousInstallConfigured: Boolean;
-  // Esta ejecución debe crear usuario/BD y escribir los appsettings.Production.json
-  NeedsAppConfig: Boolean;
+  // Esta ejecución debe crear usuario/BD (primera vez en esta carpeta)
+  NeedsDbSetup: Boolean;
   // Secretos generados en esta instalación (hexadecimales: seguros en JSON, cadenas de conexión y línea de comandos)
   PgSuperPassword: String;
   AppDbPassword: String;
+  // ApiKey del servicio y cadena de conexión que se escriben en la configuración (generadas o de la instalación existente)
   GrpcApiKey: String;
+  AppConnection: String;
   // Resultado de ConfigureDatabase y de VerifyInstallation, para avisar al final
   DbConfigError: String;
   InstallWarnings: String;
@@ -433,8 +495,88 @@ begin
   StringChangeEx(Result, '\', '\\', True);
 end;
 
-// --- Escribe un appsettings.Production.json a partir de su plantilla ---
-function WriteConfigFromTemplate(TemplateName, DestFile: String): Boolean;
+// Problemas que se muestran al final de la instalación
+procedure AddWarning(Text: String);
+begin
+  Log('ADVERTENCIA: ' + Text);
+  InstallWarnings := InstallWarnings + '- ' + Text + #13#10;
+end;
+
+// --- Archivos de configuración de cada parte (en una carpeta de instalación dada) ---
+function WebConfigFile(AppDir: String): String;
+begin
+  Result := AddBackslash(AppDir) + 'Web\appsettings.Production.json';
+end;
+
+function DesktopConfigFile(AppDir: String): String;
+begin
+  Result := AddBackslash(AppDir) + 'Desktop\appsettings.json';
+end;
+
+function ServiceConfigFile(AppDir: String): String;
+begin
+  Result := AddBackslash(AppDir) + 'Service\appsettings.Production.json';
+end;
+
+// La aplicación ya quedó configurada antes (la base de datos y su usuario existen) si el sitio o el programa
+// tienen su archivo de configuración.
+function AppIsConfiguredAt(AppDir: String): Boolean;
+begin
+  Result := (AppDir <> '') and (FileExists(WebConfigFile(AppDir)) or FileExists(DesktopConfigFile(AppDir)));
+end;
+
+function IsWebInstalledAt(AppDir: String): Boolean;
+begin
+  Result := (AppDir <> '') and FileExists(AddBackslash(AppDir) + 'Web\AttendanceSystem.Blazor.Server.dll');
+end;
+
+function IsDesktopInstalledAt(AppDir: String): Boolean;
+begin
+  Result := (AppDir <> '') and FileExists(AddBackslash(AppDir) + 'Desktop\{#MyDesktopExeName}');
+end;
+
+// Lee el primer valor de texto de "Key": "valor" en un JSON (los valores que escribe el instalador no llevan comillas)
+function ReadJsonString(FileName, Key: String; var Value: String): Boolean;
+var
+  Content: AnsiString;
+  Text: String;
+  P: Integer;
+begin
+  Result := False;
+  if not LoadStringFromFile(FileName, Content) then Exit;
+  Text := String(Content);
+  P := Pos('"' + Key + '"', Text);
+  if P = 0 then Exit;
+  Text := Copy(Text, P + Length(Key) + 2, Length(Text));
+  P := Pos(':', Text);
+  if P = 0 then Exit;
+  Text := TrimLeft(Copy(Text, P + 1, Length(Text)));
+  if (Length(Text) = 0) or (Text[1] <> '"') then Exit;
+  Text := Copy(Text, 2, Length(Text));
+  P := Pos('"', Text);
+  if P = 0 then Exit;
+  Value := Copy(Text, 1, P - 1);
+  Result := Value <> '';
+end;
+
+// Cadena de conexión y ApiKey de una instalación ya configurada, para configurar la parte que se agrega ahora
+function LoadExistingSettings: Boolean;
+var
+  AppDir: String;
+begin
+  AppDir := ExpandConstant('{app}');
+  AppConnection := '';
+  if not ReadJsonString(WebConfigFile(AppDir), 'AttendanceDb', AppConnection) then
+    ReadJsonString(DesktopConfigFile(AppDir), 'AttendanceDb', AppConnection);
+  // La ApiKey que valida el servicio (en instalaciones anteriores, la de su appsettings.json)
+  if not ReadJsonString(ServiceConfigFile(AppDir), 'ApiKey', GrpcApiKey) then
+    ReadJsonString(AppDir + '\Service\appsettings.json', 'ApiKey', GrpcApiKey);
+  Result := (AppConnection <> '') and (GrpcApiKey <> '');
+  Log(Format('Configuración existente: conexión leída %d, ApiKey leída %d', [Ord(AppConnection <> ''), Ord(GrpcApiKey <> '')]));
+end;
+
+// --- Escribe un archivo de configuración a partir de su plantilla ---
+function WriteConfigFromTemplate(TemplateName, DestFile: String; Standalone: Boolean): Boolean;
 var
   Content: AnsiString;
   Text: String;
@@ -443,26 +585,96 @@ begin
   ExtractTemporaryFile(TemplateName);
   if not LoadStringFromFile(ExpandConstant('{tmp}\' + TemplateName), Content) then Exit;
   Text := String(Content);
-  StringChangeEx(Text, '__DB_CONNECTION__', AppConnectionString, True);
+  StringChangeEx(Text, '__DB_CONNECTION__', AppConnection, True);
   StringChangeEx(Text, '__API_KEY__', GrpcApiKey, True);
   // pg_dump / pg_restore de la misma instalación que el servidor
-  StringChangeEx(Text, '__PG_BIN__', JsonEscapePath(PgBaseDir + '\bin'), True);
+  if PgBaseDir <> '' then
+    StringChangeEx(Text, '__PG_BIN__', JsonEscapePath(PgBaseDir + '\bin'), True)
+  else
+    StringChangeEx(Text, '__PG_BIN__', '', True);
+  if Standalone then
+    StringChangeEx(Text, '__STANDALONE__', 'true', True)
+  else
+    StringChangeEx(Text, '__STANDALONE__', 'false', True);
   ForceDirectories(ExtractFileDir(DestFile));
   Result := SaveStringToFile(DestFile, AnsiString(Text), False);
+  Log('Configuración escrita: ' + DestFile);
 end;
 
-// --- Configuración de BD y appsettings (sólo primera instalación) ---
+// --- Hosting:Standalone del programa de escritorio según si el sitio web está instalado ---
+// Se ajusta en cada instalación: al agregar el sitio a un equipo que sólo tenía el programa, éste deja de aplicar
+// migraciones y de recibir relojes ADMS (lo hace el sitio).
+procedure SetDesktopStandalone(FileName: String; Standalone: Boolean);
+var
+  Content: AnsiString;
+  Text, Wanted, Other: String;
+begin
+  if not LoadStringFromFile(FileName, Content) then Exit;
+  Text := String(Content);
+  if Standalone then
+  begin
+    Wanted := '"Standalone": true';
+    Other := '"Standalone": false';
+  end
+  else
+  begin
+    Wanted := '"Standalone": false';
+    Other := '"Standalone": true';
+  end;
+  if Pos(Wanted, Text) > 0 then Exit;
+  if StringChangeEx(Text, Other, Wanted, True) > 0 then
+  begin
+    SaveStringToFile(FileName, AnsiString(Text), False);
+    Log('Programa de escritorio: ' + Wanted);
+  end
+  else
+    AddWarning('No se pudo fijar ' + Wanted + ' (Hosting) en ' + FileName + '. Ajústelo a mano.');
+end;
+
+// --- Escribe la configuración que falte de cada parte instalada ---
+function WriteMissingConfigs: Boolean;
+var
+  AppDir: String;
+  WebInstalled: Boolean;
+begin
+  Result := True;
+  AppDir := ExpandConstant('{app}');
+  WebInstalled := IsWebInstalledAt(AppDir);
+
+  if not FileExists(ServiceConfigFile(AppDir)) then
+    Result := WriteConfigFromTemplate('appsettings.Service.Production.template.json', ServiceConfigFile(AppDir), False) and Result;
+  if WebInstalled and not FileExists(WebConfigFile(AppDir)) then
+    Result := WriteConfigFromTemplate('appsettings.Web.Production.template.json', WebConfigFile(AppDir), False) and Result;
+  if IsDesktopInstalledAt(AppDir) then
+  begin
+    if not FileExists(DesktopConfigFile(AppDir)) then
+      Result := WriteConfigFromTemplate('appsettings.Desktop.template.json', DesktopConfigFile(AppDir), not WebInstalled) and Result
+    else
+      SetDesktopStandalone(DesktopConfigFile(AppDir), not WebInstalled);
+  end;
+end;
+
+// --- Configuración de BD (primera vez) y de cada parte instalada ---
 // BeforeInstall del registro del servicio: corre después de instalar PostgreSQL y antes de arrancar el servicio.
 procedure ConfigureDatabase;
 var
   LogFile: String;
   Attempt, ResultCode: Integer;
 begin
-  if not NeedsAppConfig then Exit;
-
-  WizardForm.StatusLabel.Caption := 'Configurando base de datos (usuario, base de datos y permisos)...';
   LogFile := ExpandConstant('{app}\Logs\db_setup.log');
   ForceDirectories(ExtractFileDir(LogFile));
+
+  // Ya configurada antes: sólo falta configurar la parte que se agrega (si alguna) con los datos existentes
+  if not NeedsDbSetup then
+  begin
+    if not LoadExistingSettings then
+      DbConfigError := 'No se pudo leer la cadena de conexión o la ApiKey de la instalación existente.'
+    else if not WriteMissingConfigs then
+      DbConfigError := 'No se pudieron escribir los archivos de configuración.';
+    Exit;
+  end;
+
+  WizardForm.StatusLabel.Caption := 'Configurando base de datos (usuario, base de datos y permisos)...';
 
   if not IsPostgresDetected then
   begin
@@ -511,21 +723,15 @@ begin
     SetEnvironmentVariable('PGPASSWORD', '');
   end;
 
-  // Sólo con la BD lista se escriben los appsettings: si falta alguno, la siguiente ejecución lo reintenta todo.
-  if not WriteConfigFromTemplate('appsettings.Service.Production.template.json', ExpandConstant('{app}\Service\appsettings.Production.json')) or
-     not WriteConfigFromTemplate('appsettings.Web.Production.template.json', ExpandConstant('{app}\Web\appsettings.Production.json')) then
-    DbConfigError := 'No se pudieron escribir los archivos appsettings.Production.json.';
+  // Sólo con la BD lista se escriben las configuraciones: si falta alguna, la siguiente ejecución lo reintenta todo.
+  AppConnection := AppConnectionString;
+  if not WriteMissingConfigs then
+    DbConfigError := 'No se pudieron escribir los archivos de configuración.';
 end;
 
 // ============================================================================================
 // Verificación final (AfterInstall del último paso de [Run])
 // ============================================================================================
-
-procedure AddWarning(Text: String);
-begin
-  Log('ADVERTENCIA: ' + Text);
-  InstallWarnings := InstallWarnings + '- ' + Text + #13#10;
-end;
 
 // --- Helpers to find system binaries bypassing WOW64 redirection ---
 function GetAppCmdPath: String;
@@ -558,16 +764,23 @@ begin
   if DbConfigError <> '' then
     AddWarning('La base de datos NO quedó configurada: ' + DbConfigError + ' Detalle en ' + ExpandConstant('{app}\Logs\db_setup.log') + '.');
 
-  AppCmdPath := GetAppCmdPath;
-  if AppCmdPath = '' then
-    AddWarning('IIS no quedó habilitado (puede requerir reiniciar Windows). Detalle en ' + ExpandConstant('{app}\Logs\enable_iis.log') + '.')
-  else
+  if IsDesktopInstalledAt(ExpandConstant('{app}')) and not FileExists(DesktopConfigFile(ExpandConstant('{app}'))) then
+    AddWarning('El programa de escritorio no tiene su archivo de configuración (' + DesktopConfigFile(ExpandConstant('{app}')) + ').');
+
+  // Sin sitio web no hay nada de IIS que verificar
+  if WizardIsComponentSelected('web') then
   begin
-    if (GetAncmMajor < RequiredAncmMajor) or not IsAncmRegisteredInIis then
-      AddWarning(Format('El módulo ASP.NET Core %d.x de IIS no quedó instalado o registrado. Detalle en %s.', [
-        RequiredAncmMajor, ExpandConstant('{app}\Logs\dotnet_hosting.log')]));
-    if not Exec(AppCmdPath, 'list site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
-      AddWarning('No se creó el sitio "AttendanceSystem" en IIS. Detalle en ' + ExpandConstant('{app}\Logs\iis_setup.log') + '.');
+    AppCmdPath := GetAppCmdPath;
+    if AppCmdPath = '' then
+      AddWarning('IIS no quedó habilitado (puede requerir reiniciar Windows). Detalle en ' + ExpandConstant('{app}\Logs\enable_iis.log') + '.')
+    else
+    begin
+      if (GetAncmMajor < RequiredAncmMajor) or not IsAncmRegisteredInIis then
+        AddWarning(Format('El módulo ASP.NET Core %d.x de IIS no quedó instalado o registrado. Detalle en %s.', [
+          RequiredAncmMajor, ExpandConstant('{app}\Logs\dotnet_hosting.log')]));
+      if not Exec(AppCmdPath, 'list site "AttendanceSystem"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) or (ResultCode <> 0) then
+        AddWarning('No se creó el sitio "AttendanceSystem" en IIS. Detalle en ' + ExpandConstant('{app}\Logs\iis_setup.log') + '.');
+    end;
   end;
 
   // El servicio puede tardar unos segundos en pasar de START_PENDING a RUNNING
@@ -591,14 +804,12 @@ end;
 // ============================================================================================
 
 function InitializeSetup: Boolean;
-var
-  PrevAppPath: String;
 begin
   Result := True;
   IsPostgresDetected := DetectPostgres;
-  PreviousInstallConfigured :=
-    RegQueryStringValue(HKLM, UninstallKey, 'Inno Setup: App Path', PrevAppPath) and
-    FileExists(AddBackslash(PrevAppPath) + 'Web\appsettings.Production.json');
+  if not RegQueryStringValue(HKLM, UninstallKey, 'Inno Setup: App Path', PrevAppPath) then
+    PrevAppPath := '';
+  PreviousInstallConfigured := AppIsConfiguredAt(PrevAppPath);
 
   if IsPostgresDetected and (PgMajor < MinPgMajor) and not PreviousInstallConfigured then
   begin
@@ -610,6 +821,15 @@ end;
 
 procedure InitializeWizard;
 begin
+  // Instalaciones anteriores a la elección de componentes sólo tenían el sitio web: no agregar el programa por defecto
+  if (PrevAppPath <> '') and not RegValueExists(HKLM, UninstallKey, 'Inno Setup: Selected Components') then
+  begin
+    if IsDesktopInstalledAt(PrevAppPath) then
+      WizardSelectComponents('web,desktop')
+    else
+      WizardSelectComponents('web,!desktop');
+  end;
+
   // Si Postgres YA existe y hay que configurar la BD, pedimos contraseña (en una actualización no hace falta)
   if IsPostgresDetected and not PreviousInstallConfigured then
   begin
@@ -626,10 +846,36 @@ begin
   end;
 end;
 
+// --- Selección de componentes: al menos uno, y sin quitar uno ya instalado ---
+// Inno no borra los archivos de un componente que se desmarca; para quitar una parte hay que desinstalar.
+function ComponentSelectionError(AppDir: String): String;
+begin
+  Result := '';
+  if not WizardIsComponentSelected('web') and not WizardIsComponentSelected('desktop') then
+    Result := 'Seleccione el sitio web, el programa de escritorio o ambos.'
+  else if IsWebInstalledAt(AppDir) and not WizardIsComponentSelected('web') then
+    Result := 'El sitio web ya está instalado en este equipo. Para quitarlo, desinstale AttendanceSystem y vuelva a instalar sólo lo que necesite.'
+  else if IsDesktopInstalledAt(AppDir) and not WizardIsComponentSelected('desktop') then
+    Result := 'El programa de escritorio ya está instalado en este equipo. Para quitarlo, desinstale AttendanceSystem y vuelva a instalar sólo lo que necesite.';
+end;
+
 // --- Validación de Página Siguiente ---
 function NextButtonClick(CurPageID: Integer): Boolean;
+var
+  SelectionError: String;
 begin
   Result := True;
+
+  if CurPageID = wpSelectComponents then
+  begin
+    SelectionError := ComponentSelectionError(WizardDirValue);
+    if SelectionError <> '' then
+    begin
+      MsgBox(SelectionError, mbError, MB_OK);
+      Result := False;
+      Exit;
+    end;
+  end;
 
   // Guardar y comprobar la contraseña si estamos en nuestra página personalizada
   if (PostgresPage <> nil) and (CurPageID = PostgresPage.ID) then
@@ -652,10 +898,13 @@ end;
 // --- Antes de instalar: decidir si es primera instalación y generar secretos ---
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 begin
-  Result := '';
-  NeedsAppConfig := not FileExists(ExpandConstant('{app}\Web\appsettings.Production.json'));
+  // También en instalaciones silenciosas, que no pasan por la página de componentes
+  Result := ComponentSelectionError(ExpandConstant('{app}'));
+  if Result <> '' then Exit;
 
-  if NeedsAppConfig and IsPostgresDetected and (UserPostgresPassword = '') then
+  NeedsDbSetup := not AppIsConfiguredAt(ExpandConstant('{app}'));
+
+  if NeedsDbSetup and IsPostgresDetected and (UserPostgresPassword = '') then
   begin
     Result := 'Esta carpeta no tiene una instalación configurada y PostgreSQL ya existe en el equipo. ' +
       'Ejecute de nuevo el instalador y elija la carpeta de la instalación anterior, o ingrese la contraseña de "postgres".';
@@ -672,7 +921,7 @@ begin
     end;
   end;
 
-  if NeedsAppConfig then
+  if NeedsDbSetup then
   begin
     AppDbPassword := GenerateSecret(24);
     GrpcApiKey := GenerateSecret(32);
@@ -689,10 +938,17 @@ begin
   if InstallWarnings <> '' then
     WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
       'ATENCIÓN, la instalación terminó con problemas:' + #13#10 + InstallWarnings
-  else if PgSuperPasswordFile <> '' then
-    WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
-      'La contraseña del superusuario "postgres" quedó en ' + PgSuperPasswordFile +
-      ' (sólo Administradores). Guárdela en un lugar seguro.';
+  else
+  begin
+    if WizardIsComponentSelected('desktop') and not WizardIsComponentSelected('web') then
+      WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
+        'Sin sitio web, las tareas automáticas (descargas, respaldos, reportes) y la recepción de relojes ADMS ' +
+        'sólo funcionan mientras el programa de escritorio está abierto.';
+    if PgSuperPasswordFile <> '' then
+      WizardForm.FinishedLabel.Caption := WizardForm.FinishedLabel.Caption + #13#10#13#10 +
+        'La contraseña del superusuario "postgres" quedó en ' + PgSuperPasswordFile +
+        ' (sólo Administradores). Guárdela en un lugar seguro.';
+  end;
 end;
 
 function GetNetPath: String;

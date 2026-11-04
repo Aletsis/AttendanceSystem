@@ -74,6 +74,14 @@ if !ERRORLEVEL! NEQ 0 (
 echo 3. Asignando AppPool... >> "%LOGFILE%"
 "!APPCMD!" set app "AttendanceSystem/" /applicationPool:AttendanceSystem >> "%LOGFILE%" 2>&1
 
+REM Tercer argumento opcional: puerto ADMS. Los relojes ADMS envían a http://IP:puerto/iclock; bajo IIS ese puerto
+REM debe ser un enlace más del sitio (la app no abre puertos propios dentro de IIS).
+set "ADMS_PORT=%~3"
+if not "!ADMS_PORT!"=="" (
+    echo    - Agregando enlace ADMS en puerto !ADMS_PORT!... >> "%LOGFILE%"
+    "!APPCMD!" set site /site.name:AttendanceSystem /+bindings.[protocol='http',bindingInformation='*:!ADMS_PORT!:'] >> "%LOGFILE%" 2>&1
+)
+
 echo 4. Configurando permisos de Escritura/Modificación... >> "%LOGFILE%"
 REM Otorgamos permiso de Modificar (M) para que la App pueda escribir Logs y Backups
 REM Se usa el SID de IIS_IUSRS (S-1-5-32-568) para no depender del idioma de Windows
