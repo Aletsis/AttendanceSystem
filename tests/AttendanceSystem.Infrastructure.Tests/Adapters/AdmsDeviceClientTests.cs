@@ -119,7 +119,7 @@ public class AdmsDeviceClientTests
             It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), sdkAvailable ? Times.Exactly(3) : Times.Never());
         grpc.Verify(c => c.DisconnectDeviceAsync(It.IsAny<DisconnectDeviceRequest>(), It.IsAny<Metadata>(),
             It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()), sdkAvailable ? Times.Once() : Times.Never());
-        commands.Verify(s => s.EnqueueCommand(Serial, It.Is<string>(c => c.StartsWith("DATA UPDATE user")), null),
+        commands.Verify(s => s.EnqueueCommandAsync(Serial, It.Is<string>(c => c.StartsWith("DATA UPDATE user")), null, It.IsAny<CancellationToken>()),
             sdkAvailable ? Times.Never() : Times.Exactly(3));
     }
 
