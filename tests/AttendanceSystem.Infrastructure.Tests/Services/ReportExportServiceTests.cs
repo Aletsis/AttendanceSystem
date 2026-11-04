@@ -7,7 +7,6 @@ using AttendanceSystem.Infrastructure.Services;
 using ClosedXML.Excel;
 using FluentAssertions;
 using QuestPDF.Helpers;
-using QuestPDF.Infrastructure;
 using Xunit;
 
 namespace AttendanceSystem.Infrastructure.Tests.Services;
@@ -94,7 +93,6 @@ public class ReportExportServiceTests
     [InlineData(31, 2)]  // hoja completa: una tarjeta por hoja
     public void CardsPdf_CrowdedCards_KeepTheirSpace(int days, int expectedPages)
     {
-        QuestPDF.Settings.License = LicenseType.Community;
         var data = new Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>>
         {
             [("100", "Empleado Uno")] = CrowdedSplitDays("100", days),

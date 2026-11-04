@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
+using System.Data;
 using System.Diagnostics;
 using System.IO;
 using System.Windows.Input;
 using Prism.Commands;
+using Prism.Mvvm;
 using AttendanceSystem.WPF.Services;
 using MediatR;
 using AttendanceSystem.Application.Abstractions;
@@ -12,6 +14,7 @@ using AttendanceSystem.Application.Features.Branches.Queries.GetBranches;
 using AttendanceSystem.Application.Features.Configuration.Queries.GetSystemConfiguration;
 using AttendanceSystem.Application.Features.Departments.Queries.GetDepartments;
 using AttendanceSystem.Application.Features.Employees.Queries;
+using AttendanceSystem.Application.Features.Reports;
 using AttendanceSystem.Application.Features.Reports.Queries.GetAdvancedAttendanceReport;
 using AttendanceSystem.Application.Features.Reports.Queries.GetAttendanceReport;
 using AttendanceSystem.Domain.Services;
@@ -25,6 +28,9 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
     /// </summary>
     public class ReportsViewModel : ViewModelBase
     {
+        // Una vista previa enorme congela la tabla; el archivo sí lleva todo.
+        private const int MaxPreviewRows = 3000;
+
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
         private readonly IReportExportService _exportService;
@@ -39,6 +45,8 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
         private string _selectedFormat = string.Empty;
         private bool _detailed;
         private bool _includeOvertime = true;
+        private DataView? _preview;
+        private string _previewSummary = string.Empty;
 
         public ReportsViewModel(
             IMessageService messageService,
@@ -71,7 +79,21 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
             _selectedReport = Reports[0];
             UpdateFormats();
 
+            // Mismas casillas que la versión web.
+            foreach (var (kind, label) in new[]
+            {
+                (CardObservationKinds.Absence, "Falta"),
+                (CardObservationKinds.MissingCheckIn, "Sin entrada"),
+                (CardObservationKinds.MissingCheckOut, "Sin salida"),
+                (CardObservationKinds.EarlyDeparture, "Salida anticipada"),
+                (CardObservationKinds.TemporaryExit, "Salida temporal"),
+            })
+            {
+                ObservationOptions.Add(new ObservationOption(kind, label, ClearPreview));
+            }
+
             GenerateReportCommand = new DelegateCommand(async () => await ExecuteGenerateReportAsync());
+            PreviewCommand = new DelegateCommand(async () => await ExecutePreviewAsync());
             _ = LoadFiltersAsync();
         }
 
@@ -80,6 +102,8 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
         public ObservableCollection<FilterOption> Branches { get; } = new() { FilterOption.All };
         public ObservableCollection<FilterOption> Departments { get; } = new() { FilterOption.All };
         public ObservableCollection<FilterOption> Employees { get; } = new() { FilterOption.All };
+        /// <summary>Qué observaciones se imprimen en las tarjetas.</summary>
+        public ObservableCollection<ObservationOption> ObservationOptions { get; } = new();
 
         public ReportOption SelectedReport
         {
@@ -89,27 +113,44 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
                 if (value == null || !SetProperty(ref _selectedReport, value)) return;
                 UpdateFormats();
                 RaisePropertyChanged(nameof(ShowDetailed));
-                RaisePropertyChanged(nameof(ShowIncludeOvertime));
+                RaisePropertyChanged(nameof(ShowCardOptions));
                 RaisePropertyChanged(nameof(ShowDepartment));
+                ClearPreview();
             }
         }
 
-        public DateTime StartDate { get => _startDate; set { if (SetProperty(ref _startDate, value)) RaisePropertyChanged(nameof(ShowDetailed)); } }
-        public DateTime EndDate { get => _endDate; set { if (SetProperty(ref _endDate, value)) RaisePropertyChanged(nameof(ShowDetailed)); } }
-        public FilterOption SelectedBranch { get => _selectedBranch; set => SetProperty(ref _selectedBranch, value ?? FilterOption.All); }
-        public FilterOption SelectedDepartment { get => _selectedDepartment; set => SetProperty(ref _selectedDepartment, value ?? FilterOption.All); }
-        public FilterOption SelectedEmployee { get => _selectedEmployee; set => SetProperty(ref _selectedEmployee, value ?? FilterOption.All); }
-        public string SelectedFormat { get => _selectedFormat; set => SetProperty(ref _selectedFormat, value); }
-        public bool Detailed { get => _detailed; set => SetProperty(ref _detailed, value); }
-        public bool IncludeOvertime { get => _includeOvertime; set => SetProperty(ref _includeOvertime, value); }
+        // Cualquier cambio de filtro invalida la vista previa: lo que muestra debe ser lo que se va a guardar.
+        public DateTime StartDate { get => _startDate; set { if (SetProperty(ref _startDate, value)) { RaisePropertyChanged(nameof(ShowDetailed)); ClearPreview(); } } }
+        public DateTime EndDate { get => _endDate; set { if (SetProperty(ref _endDate, value)) { RaisePropertyChanged(nameof(ShowDetailed)); ClearPreview(); } } }
+        public FilterOption SelectedBranch { get => _selectedBranch; set { if (SetProperty(ref _selectedBranch, value ?? FilterOption.All)) ClearPreview(); } }
+        public FilterOption SelectedDepartment { get => _selectedDepartment; set { if (SetProperty(ref _selectedDepartment, value ?? FilterOption.All)) ClearPreview(); } }
+        public FilterOption SelectedEmployee { get => _selectedEmployee; set { if (SetProperty(ref _selectedEmployee, value ?? FilterOption.All)) ClearPreview(); } }
+        public string SelectedFormat { get => _selectedFormat; set { if (SetProperty(ref _selectedFormat, value)) ClearPreview(); } }
+        public bool Detailed { get => _detailed; set { if (SetProperty(ref _detailed, value)) ClearPreview(); } }
+        public bool IncludeOvertime { get => _includeOvertime; set { if (SetProperty(ref _includeOvertime, value)) ClearPreview(); } }
 
         /// <summary>Los reportes por tipo se pueden pedir día por día, salvo cuando el periodo es un solo día.</summary>
         public bool ShowDetailed => SelectedReport.Kind is ReportKind.Absences or ReportKind.Lates or ReportKind.Overtime
             or ReportKind.OvertimeByDepartment or ReportKind.WorkedRestDay && StartDate.Date != EndDate.Date;
-        public bool ShowIncludeOvertime => SelectedReport.Kind == ReportKind.Cards;
+        public bool ShowCardOptions => SelectedReport.Kind == ReportKind.Cards;
         public bool ShowDepartment => SelectedReport.Kind != ReportKind.Cards;
 
+        /// <summary>Filas de la vista previa; null mientras no se haya pedido o tras cambiar un filtro.</summary>
+        public DataView? Preview { get => _preview; private set { if (SetProperty(ref _preview, value)) RaisePropertyChanged(nameof(HasPreview)); } }
+        public bool HasPreview => Preview != null;
+        public string PreviewSummary { get => _previewSummary; private set => SetProperty(ref _previewSummary, value); }
+
+        private CardObservationKinds ObservationKinds =>
+            ObservationOptions.Where(o => o.IsSelected).Aggregate(CardObservationKinds.None, (acc, o) => acc | o.Kind);
+
         public ICommand GenerateReportCommand { get; }
+        public ICommand PreviewCommand { get; }
+
+        private void ClearPreview()
+        {
+            Preview = null;
+            PreviewSummary = string.Empty;
+        }
 
         private void UpdateFormats()
         {
@@ -153,15 +194,47 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
             }
         }
 
+        private async Task<bool> ValidateRangeAsync()
+        {
+            var rangeError = DateRangePolicy.Validate(StartDate, EndDate, DateRangePolicy.MaxQueryDays);
+            if (rangeError == null) return true;
+            await _messageService.ShowErrorAsync(rangeError);
+            return false;
+        }
+
+        private async Task ExecutePreviewAsync()
+        {
+            if (IsBusy || !await ValidateRangeAsync()) return;
+
+            SetBusy(true, $"Preparando vista previa de \"{SelectedReport.Title}\"...");
+            try
+            {
+                var request = CaptureRequest();
+                var data = await Task.Run(() => LoadDataAsync(request));
+                if (data == null)
+                {
+                    ClearPreview();
+                    await _messageService.ShowWarningAsync("No hay datos para el periodo y los filtros seleccionados. Revise que la asistencia esté calculada.");
+                    return;
+                }
+
+                var (table, summary) = await Task.Run(() => BuildPreview(data));
+                Preview = table.DefaultView;
+                PreviewSummary = summary;
+            }
+            catch (Exception ex)
+            {
+                await _messageService.ShowErrorAsync($"Error al preparar la vista previa: {ex.Message}");
+            }
+            finally
+            {
+                SetBusy(false);
+            }
+        }
+
         private async Task ExecuteGenerateReportAsync()
         {
-            if (IsBusy) return;
-            var rangeError = DateRangePolicy.Validate(StartDate, EndDate, DateRangePolicy.MaxQueryDays);
-            if (rangeError != null)
-            {
-                await _messageService.ShowErrorAsync(rangeError);
-                return;
-            }
+            if (IsBusy || !await ValidateRangeAsync()) return;
 
             var (extension, filter) = SelectedFormat switch
             {
@@ -182,7 +255,8 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
             try
             {
                 // Fuera del hilo de la interfaz: un PDF o Excel grande congelaba la ventana (y el indicador de carga).
-                var bytes = await Task.Run(BuildReportAsync);
+                var request = CaptureRequest();
+                var bytes = await Task.Run(() => BuildReportAsync(request));
                 if (bytes == null)
                 {
                     await _messageService.ShowWarningAsync("No hay datos para el periodo y los filtros seleccionados. Revise que la asistencia esté calculada.");
@@ -206,72 +280,252 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
             }
         }
 
-        /// <returns>El archivo, o null si no hay datos.</returns>
-        private async Task<byte[]?> BuildReportAsync()
+        /// <summary>Las opciones actuales, leídas en el hilo de la interfaz antes de consultar.</summary>
+        private ReportRequest CaptureRequest()
         {
             var start = StartDate.Date;
             var end = EndDate.Date;
-            var branchId = SelectedBranch.Id is { } branch ? BranchId.From(branch) : null;
-            var employeeId = SelectedEmployee.Id;
-            var departmentName = SelectedDepartment.Id == null ? null : SelectedDepartment.Name;
-            var showBranch = Branches.Count > 2;
-
-            switch (SelectedReport.Kind)
+            var specificDate = start == end;
+            return new ReportRequest
             {
-                case ReportKind.General:
-                case ReportKind.Cards:
-                case ReportKind.Contpaqi:
-                case ReportKind.AspelNoi:
+                Kind = SelectedReport.Kind,
+                Start = start,
+                End = end,
+                BranchId = SelectedBranch.Id,
+                EmployeeId = SelectedEmployee.Id,
+                DepartmentId = SelectedDepartment.Id,
+                DepartmentName = SelectedDepartment.Id == null ? null : SelectedDepartment.Name,
+                Format = SelectedFormat,
+                Detailed = Detailed && !specificDate,
+                SpecificDate = specificDate,
+                ShowBranch = Branches.Count > 2,
+                IncludeOvertime = IncludeOvertime,
+                ObservationKinds = ObservationKinds,
+            };
+        }
+
+        /// <returns>El archivo, o null si no hay datos.</returns>
+        private async Task<byte[]?> BuildReportAsync(ReportRequest request)
+        {
+            var data = await LoadDataAsync(request);
+            if (data == null) return null;
+
+            var start = request.Start;
+            var end = request.End;
+            if (data.Attendance is { } attendance)
+            {
+                if (request.Kind == ReportKind.Contpaqi) return _exportService.GenerateContpaqiNominaExport(attendance);
+                if (request.Kind == ReportKind.AspelNoi) return _exportService.GenerateAspelNoiExport(attendance);
+
+                var (companyName, logo) = await CompanyAsync();
+                if (request.Kind == ReportKind.Cards)
                 {
-                    var data = (await _mediator.Send(new GetAttendanceReportQuery(start, end, branchId, employeeId)))
-                        .Where(r => departmentName == null || SelectedReport.Kind == ReportKind.Cards || r.DepartmentName == departmentName)
-                        .OrderBy(r => long.TryParse(r.EmployeeId, out var id) ? id : long.MaxValue)
-                        .ThenBy(r => r.EmployeeId)
-                        .ThenBy(r => r.Date)
-                        .ToList();
-                    if (data.Count == 0) return null;
-
-                    if (SelectedReport.Kind == ReportKind.Contpaqi) return _exportService.GenerateContpaqiNominaExport(data);
-                    if (SelectedReport.Kind == ReportKind.AspelNoi) return _exportService.GenerateAspelNoiExport(data);
-
-                    var (companyName, logo) = await CompanyAsync();
-                    if (SelectedReport.Kind == ReportKind.Cards)
-                    {
-                        var grouped = data.GroupBy(r => (r.EmployeeId, r.EmployeeName)).ToDictionary(g => g.Key, g => g.ToList());
-                        return _exportService.GenerateAttendanceCardsPdf(grouped, start, end, companyName, logo, IncludeOvertime);
-                    }
-                    return SelectedFormat == "PDF"
-                        ? _exportService.GeneratePdf(data, start, end, companyName, logo)
-                        : _exportService.GenerateExcel(data, start, end, companyName, logo, detailed: SelectedFormat == "Excel (detallado)");
+                    return _exportService.GenerateAttendanceCardsPdf(GroupByEmployee(attendance), start, end, companyName, logo,
+                        request.IncludeOvertime, request.ObservationKinds);
                 }
-                default:
-                {
-                    var reportType = SelectedReport.Kind switch
-                    {
-                        ReportKind.Absences => "Faltas",
-                        ReportKind.Lates => "Retardos",
-                        ReportKind.WorkedRestDay => "DescansoTrabajado",
-                        ReportKind.OvertimeByDepartment => "HorasExtraPorDepartamento",
-                        _ => "HorasExtra",
-                    };
-                    var data = (await _mediator.Send(new GetAdvancedAttendanceReportQuery(start, end, reportType, branchId,
-                        employeeId == null ? null : EmployeeId.From(employeeId),
-                        SelectedDepartment.Id is { } dept ? DepartmentId.From(Guid.Parse(dept)) : null))).ToList();
-                    if (data.Count == 0) return null;
+                return request.Format == "PDF"
+                    ? _exportService.GeneratePdf(attendance, start, end, companyName, logo)
+                    : _exportService.GenerateExcel(attendance, start, end, companyName, logo, detailed: request.Format == "Excel (detallado)");
+            }
 
-                    var specificDate = start == end;
-                    var detailed = Detailed && !specificDate;
-                    return SelectedReport.Kind switch
+            var advanced = data.Advanced!;
+            return request.Kind switch
+            {
+                ReportKind.Absences => _exportService.GenerateAdvancedAbsenceExcel(advanced, start, end, request.Detailed, request.SpecificDate, request.ShowBranch),
+                ReportKind.Lates => _exportService.GenerateLateArrivalExcel(advanced, start, end, request.Detailed, request.SpecificDate, request.ShowBranch),
+                ReportKind.WorkedRestDay => _exportService.GenerateWorkedRestDayExcel(advanced, start, end, request.Detailed, request.ShowBranch),
+                _ => _exportService.GenerateOvertimeExcel(advanced, start, end, request.Detailed, request.SpecificDate, request.ShowBranch,
+                    groupByDepartment: request.Kind == ReportKind.OvertimeByDepartment),
+            };
+        }
+
+        /// <summary>Consulta los datos del reporte; la vista previa y el archivo usan exactamente los mismos.</summary>
+        /// <returns>Los datos, o null si no hay.</returns>
+        private async Task<ReportData?> LoadDataAsync(ReportRequest request)
+        {
+            var kind = request.Kind;
+            var branchId = request.BranchId is { } branch ? BranchId.From(branch) : null;
+
+            if (kind is ReportKind.General or ReportKind.Cards or ReportKind.Contpaqi or ReportKind.AspelNoi)
+            {
+                var rows = (await _mediator.Send(new GetAttendanceReportQuery(request.Start, request.End, branchId, request.EmployeeId)))
+                    .Where(r => request.DepartmentName == null || kind == ReportKind.Cards || r.DepartmentName == request.DepartmentName)
+                    .OrderBy(r => long.TryParse(r.EmployeeId, out var id) ? id : long.MaxValue)
+                    .ThenBy(r => r.EmployeeId)
+                    .ThenBy(r => r.Date)
+                    .ToList();
+                return rows.Count == 0 ? null : new ReportData(request, rows, null);
+            }
+
+            var reportType = kind switch
+            {
+                ReportKind.Absences => "Faltas",
+                ReportKind.Lates => "Retardos",
+                ReportKind.WorkedRestDay => "DescansoTrabajado",
+                ReportKind.OvertimeByDepartment => "HorasExtraPorDepartamento",
+                _ => "HorasExtra",
+            };
+            var advanced = (await _mediator.Send(new GetAdvancedAttendanceReportQuery(request.Start, request.End, reportType, branchId,
+                request.EmployeeId == null ? null : EmployeeId.From(request.EmployeeId),
+                request.DepartmentId is { } dept ? DepartmentId.From(Guid.Parse(dept)) : null))).ToList();
+            return advanced.Count == 0 ? null : new ReportData(request, null, advanced);
+        }
+
+        private static Dictionary<(string EmployeeId, string EmployeeName), List<AttendanceReportViewDto>> GroupByEmployee(
+            IEnumerable<AttendanceReportViewDto> rows) =>
+            rows.GroupBy(r => (r.EmployeeId, r.EmployeeName)).ToDictionary(g => g.Key, g => g.ToList());
+
+        /// <summary>Tabla con lo que llevará el archivo, en el mismo orden y con los mismos filtros.</summary>
+        private static (DataTable Table, string Summary) BuildPreview(ReportData data)
+        {
+            var request = data.Request;
+            var table = new DataTable();
+            int employees;
+            if (data.Attendance is { } attendance)
+            {
+                employees = attendance.Select(r => r.EmployeeId).Distinct().Count();
+                if (request.Kind == ReportKind.Cards) FillCardsPreview(table, attendance, request);
+                else FillDailyPreview(table, attendance, request.Kind);
+            }
+            else
+            {
+                var advanced = data.Advanced!;
+                employees = advanced.Select(r => r.EmployeeId).Distinct().Count();
+                FillAdvancedPreview(table, advanced, request);
+            }
+
+            var total = table.Rows.Count;
+            var truncated = total > MaxPreviewRows;
+            if (truncated)
+            {
+                for (var i = total - 1; i >= MaxPreviewRows; i--) table.Rows.RemoveAt(i);
+            }
+
+            var summary = $"{employees} empleado(s) · {total} fila(s)";
+            if (truncated) summary += $" · se muestran las primeras {MaxPreviewRows}; el archivo incluye todas";
+            if (request.Kind == ReportKind.General && request.Format == "Excel (resumen)" && !request.SpecificDate)
+                summary += " · detalle por día (el Excel resumido totaliza por empleado)";
+            return (table, summary);
+        }
+
+        private static void FillDailyPreview(DataTable table, List<AttendanceReportViewDto> rows, ReportKind kind)
+        {
+            foreach (var name in new[] { "No", "Empleado", "Fecha", "Sucursal", "Departamento", "Horario", "Entrada", "Salida",
+                         "Trabajado", "Minutos de retardo", "Extra", "Incidencia" })
+                table.Columns.Add(name);
+
+            foreach (var r in rows)
+            {
+                var schedule = r.ScheduledCheckIn == null && r.ScheduledCheckOut == null
+                    ? (r.IsRestDay ? "Descanso" : "--")
+                    : $"{FormatTime(r.ScheduledCheckIn)}–{FormatTime(r.ScheduledCheckOut)}";
+                table.Rows.Add(r.EmployeeId, r.EmployeeName, r.Date.ToString("ddd dd/MM/yy", AttendanceCardObservations.Culture),
+                    r.BranchName, r.DepartmentName, schedule,
+                    r.ActualCheckIn?.ToString("HH:mm") ?? "--", r.ActualCheckOut?.ToString("HH:mm") ?? "--",
+                    FormatMinutes(r.TotalWorkedMinutes), r.LateMinutes > 0 ? r.LateMinutes.ToString() : "",
+                    r.RoundedOvertimeMinutes > 0 ? FormatMinutes(r.RoundedOvertimeMinutes) : "", Incidence(r));
+            }
+
+            // Los layouts de nómina no llevan horario.
+            if (kind is ReportKind.Contpaqi or ReportKind.AspelNoi) table.Columns.Remove("Horario");
+        }
+
+        private static void FillCardsPreview(DataTable table, List<AttendanceReportViewDto> rows, ReportRequest request)
+        {
+            table.Columns.Add("No");
+            table.Columns.Add("Empleado");
+            table.Columns.Add("Días");
+            table.Columns.Add("Faltas");
+            table.Columns.Add("Retardos");
+            table.Columns.Add("Trabajado");
+            if (request.IncludeOvertime) table.Columns.Add("Extra");
+            table.Columns.Add("Observaciones");
+
+            foreach (var (key, days) in GroupByEmployee(rows))
+            {
+                var values = new List<object>
+                {
+                    key.EmployeeId, key.EmployeeName, days.Count, days.Count(d => d.IsAbsent), days.Count(d => d.LateMinutes > 0),
+                    FormatMinutes(days.Sum(d => d.TotalWorkedMinutes)),
+                };
+                if (request.IncludeOvertime) values.Add(FormatMinutes(days.Sum(d => d.RoundedOvertimeMinutes)));
+                // Las mismas líneas que se imprimen en el recuadro de observaciones de la tarjeta.
+                var lines = AttendanceCardObservations.Lines(days, request.ObservationKinds);
+                values.Add(string.Join("\n", lines));
+                table.Rows.Add(values.ToArray());
+            }
+        }
+
+        private static void FillAdvancedPreview(DataTable table, List<AdvancedReportSummaryDto> rows, ReportRequest request)
+        {
+            var metric = request.Kind switch
+            {
+                ReportKind.Absences => "Faltas",
+                ReportKind.Lates => "Retardos",
+                ReportKind.WorkedRestDay => "Descansos trabajados",
+                _ => "Días con extra",
+            };
+
+            table.Columns.Add("No");
+            table.Columns.Add("Empleado");
+            table.Columns.Add("Departamento");
+            if (request.ShowBranch) table.Columns.Add("Sucursal");
+
+            if (!request.Detailed)
+            {
+                table.Columns.Add("Puesto");
+                table.Columns.Add(metric);
+                table.Columns.Add("Total");
+                foreach (var r in rows)
+                {
+                    var values = new List<object> { r.EmployeeId, r.EmployeeName, r.DepartmentName };
+                    if (request.ShowBranch) values.Add(r.BranchName);
+                    values.AddRange(new object[] { r.PositionName, r.Count, r.FormattedTotal });
+                    table.Rows.Add(values.ToArray());
+                }
+                return;
+            }
+
+            var isLates = request.Kind == ReportKind.Lates;
+            table.Columns.Add("Fecha");
+            table.Columns.Add("Turno");
+            table.Columns.Add("Entrada");
+            table.Columns.Add("Salida");
+            table.Columns.Add("Trabajado");
+            if (request.Kind != ReportKind.Absences) table.Columns.Add(isLates ? "Minutos de retardo" : "Extra");
+            foreach (var r in rows)
+            {
+                foreach (var d in r.Details.OrderBy(d => d.Date))
+                {
+                    var values = new List<object> { r.EmployeeId, r.EmployeeName, r.DepartmentName };
+                    if (request.ShowBranch) values.Add(r.BranchName);
+                    values.AddRange(new object[]
                     {
-                        ReportKind.Absences => _exportService.GenerateAdvancedAbsenceExcel(data, start, end, detailed, specificDate, showBranch),
-                        ReportKind.Lates => _exportService.GenerateLateArrivalExcel(data, start, end, detailed, specificDate, showBranch),
-                        ReportKind.WorkedRestDay => _exportService.GenerateWorkedRestDayExcel(data, start, end, detailed, showBranch),
-                        _ => _exportService.GenerateOvertimeExcel(data, start, end, detailed, specificDate, showBranch,
-                            groupByDepartment: SelectedReport.Kind == ReportKind.OvertimeByDepartment),
-                    };
+                        d.Date.ToString("ddd dd/MM/yy", AttendanceCardObservations.Culture), d.ShiftName, d.CheckIn, d.CheckOut, d.WorkedHours,
+                    });
+                    if (request.Kind != ReportKind.Absences)
+                        values.Add(isLates ? d.LateMinutes.ToString("0") : FormatMinutes((int)d.OvertimeMinutes));
+                    table.Rows.Add(values.ToArray());
                 }
             }
         }
+
+        private static string Incidence(AttendanceReportViewDto r)
+        {
+            if (r.IsAbsent) return "Falta";
+            if (r.WorkedOnRestDay) return "Descanso trabajado";
+            if (r.IsRestDay) return "Descanso";
+            var items = new List<string>();
+            if (r.MissingCheckIn) items.Add("Sin entrada");
+            if (r.MissingCheckOut) items.Add("Sin salida");
+            if (r.LateMinutes > 0) items.Add("Retardo");
+            return string.Join(", ", items);
+        }
+
+        private static string FormatTime(TimeSpan? time) => time?.ToString(@"hh\:mm") ?? "--";
+
+        private static string FormatMinutes(int minutes) =>
+            minutes <= 0 ? "00:00" : $"{minutes / 60:00}:{minutes % 60:00}";
 
         private async Task<(string Name, byte[]? Logo)> CompanyAsync()
         {
@@ -285,6 +539,45 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
     public enum ReportKind { General, Cards, Absences, Lates, Overtime, OvertimeByDepartment, WorkedRestDay, Contpaqi, AspelNoi }
 
     public sealed record ReportOption(ReportKind Kind, string Title, string Description);
+
+    /// <summary>Las opciones con que se pidió el reporte; fijas mientras se consulta fuera del hilo de la interfaz.</summary>
+    internal sealed record ReportRequest
+    {
+        public ReportKind Kind { get; init; }
+        public DateTime Start { get; init; }
+        public DateTime End { get; init; }
+        public string? BranchId { get; init; }
+        public string? EmployeeId { get; init; }
+        public string? DepartmentId { get; init; }
+        public string? DepartmentName { get; init; }
+        public string Format { get; init; } = string.Empty;
+        public bool Detailed { get; init; }
+        public bool SpecificDate { get; init; }
+        public bool ShowBranch { get; init; }
+        public bool IncludeOvertime { get; init; }
+        public CardObservationKinds ObservationKinds { get; init; }
+    }
+
+    /// <summary>Datos consultados: asistencia diaria (general, tarjetas, nómina) o resumen por tipo.</summary>
+    internal sealed record ReportData(ReportRequest Request, List<AttendanceReportViewDto>? Attendance, List<AdvancedReportSummaryDto>? Advanced);
+
+    /// <summary>Una casilla de observación de las tarjetas.</summary>
+    public sealed class ObservationOption : BindableBase
+    {
+        private readonly Action _changed;
+        private bool _isSelected = true;
+
+        public ObservationOption(CardObservationKinds kind, string label, Action changed)
+        {
+            Kind = kind;
+            Label = label;
+            _changed = changed;
+        }
+
+        public CardObservationKinds Kind { get; }
+        public string Label { get; }
+        public bool IsSelected { get => _isSelected; set { if (SetProperty(ref _isSelected, value)) _changed(); } }
+    }
 
     /// <summary>Opción de un filtro; Id nulo = todos.</summary>
     public sealed record FilterOption(string? Id, string Name)
