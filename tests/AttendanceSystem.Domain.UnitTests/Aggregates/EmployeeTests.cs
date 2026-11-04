@@ -202,4 +202,26 @@ public class EmployeeTests
         employee.IsRestDay(DayOfWeek.Saturday).Should().BeTrue();
         employee.IsRestDay(DayOfWeek.Sunday).Should().BeFalse();
     }
+
+    private DateTime? UpdateOvertime(Employee employee, bool authorized, OvertimeCalculationMethod method, DateTime? effectiveFrom) =>
+        employee.Update(
+            firstName: "Carlos", lastName: "Gomez", email: null, phoneNumber: null,
+            hireDate: new DateTime(2024, 1, 1), gender: Gender.Male, status: EmployeeStatus.Alta,
+            branchId: _branchId, departmentId: _departmentId, positionId: _positionId,
+            shiftType: ShiftType.Matutino, restDay: WeekDay.Domingo,
+            overtimeAuthorized: authorized, overtimeCalculationMethod: method, effectiveFrom: effectiveFrom);
+
+    [Fact]
+    public void Update_ChangingOvertimeRounding_RecalculatesFromTheEffectiveDate()
+    {
+        var employee = Employee.Create(_id, "Carlos", "Gomez", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            _branchId, _departmentId, _positionId, ShiftType.Matutino, restDay: WeekDay.Domingo, overtimeAuthorized: true);
+        var from = DateTime.Today.AddDays(-10);
+
+        UpdateOvertime(employee, true, OvertimeCalculationMethod.RoundByHour, from).Should().Be(from);
+        employee.OvertimeCalculationMethod.Should().Be(OvertimeCalculationMethod.RoundByHour);
+
+        // Sin cambios en las extras no hay nada que recalcular.
+        UpdateOvertime(employee, true, OvertimeCalculationMethod.RoundByHour, null).Should().BeNull();
+    }
 }

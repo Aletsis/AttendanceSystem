@@ -243,6 +243,18 @@ public sealed class Employee : AggregateRoot<EmployeeId>
             recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
         }
 
+        // Las extras guardadas en cada jornada llevan el redondeo y los topes con que se calcularon y los reportes las
+        // leen tal cual: un cambio en la configuración de extras recalcula desde su vigencia para que se refleje.
+        var newMethod = overtimeAuthorized ? overtimeCalculationMethod : OvertimeCalculationMethod.NoRounding;
+        var newCapType = overtimeAuthorized ? overtimeCapType : OvertimeCapType.None;
+        var newCapMinutes = overtimeAuthorized && newCapType != OvertimeCapType.None ? overtimeCapMinutes : null;
+        var newBeforeEntry = overtimeAuthorized && AllowsOvertimeBeforeEntry(shiftType) && calculateOvertimeBeforeEntry;
+        if (OvertimeAuthorized != overtimeAuthorized || OvertimeCalculationMethod != newMethod || OvertimeCapType != newCapType ||
+            (newCapType != OvertimeCapType.None && OvertimeCapMinutes != newCapMinutes) || CalculateOvertimeBeforeEntry != newBeforeEntry)
+        {
+            recalculateFrom = recalculateFrom is { } r && r < from ? r : from;
+        }
+
         RestDays = newRestDays;
         RestDay = newRestDays.Count > 0 ? newRestDays[0] : null;
 
@@ -260,10 +272,10 @@ public sealed class Employee : AggregateRoot<EmployeeId>
         ScheduleId = scheduleId;
         OvertimeAuthorized = overtimeAuthorized;
         // Caso 12: sin extras autorizadas no hay redondeo, topes ni extras antes de la entrada; RH decide por día.
-        OvertimeCalculationMethod = overtimeAuthorized ? overtimeCalculationMethod : OvertimeCalculationMethod.NoRounding;
-        OvertimeCapType = overtimeAuthorized ? overtimeCapType : OvertimeCapType.None;
+        OvertimeCalculationMethod = newMethod;
+        OvertimeCapType = newCapType;
         OvertimeCapMinutes = overtimeAuthorized ? overtimeCapMinutes : null;
-        CalculateOvertimeBeforeEntry = overtimeAuthorized && AllowsOvertimeBeforeEntry(shiftType) && calculateOvertimeBeforeEntry;
+        CalculateOvertimeBeforeEntry = newBeforeEntry;
         CardNumber = cardNumber;
         DevicePassword = devicePassword;
         Photo = photo ?? Photo;

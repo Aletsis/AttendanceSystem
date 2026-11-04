@@ -333,12 +333,18 @@
     private Guid? _originalScheduleId;
     private StatusEnum _originalStatus;
     private HashSet<WeekDayEnum> _originalRestDays = new();
+    // Configuración de extras al abrir: cambiarla recalcula las jornadas desde la vigencia (redondeo y topes guardados).
+    private string _originalOvertime = "";
 
     private bool _originalsCaptured;
 
     private bool HasDatedChange => _isEditing && _originalsCaptured &&
         (BranchId != _originalBranchId || _selectedShiftType != _originalShiftType ||
-         ScheduleId != _originalScheduleId || Status != _originalStatus || !_originalRestDays.SetEquals(_selectedRestDays));
+         ScheduleId != _originalScheduleId || Status != _originalStatus || !_originalRestDays.SetEquals(_selectedRestDays) ||
+         OvertimeSettings() != _originalOvertime);
+
+    private string OvertimeSettings() => string.Join("|", OvertimeAuthorized, OvertimeCalculationMethod, OvertimeCapType,
+        OvertimeCapType != OvertimeCapEnum.None ? OvertimeCapMinutes : null, CalculateOvertimeBeforeEntry);
 
     // Caso 16: vacaciones, incapacidad y baja temporal son períodos con fechas; sólo RH y Administrador los registran.
     private static bool IsLeave(StatusEnum status) => AttendanceSystem.Domain.Aggregates.EmployeeAggregate.Employee.IsLeaveStatus(status);
@@ -357,7 +363,7 @@
         ? (StartsLeave ? $"Período de {StatusName(Status).ToLowerInvariant()}"
             : ReturnsFromLeave ? "Regreso a trabajar"
             : Status == StatusEnum.Baja ? "Fecha de la baja" : "Fecha del reingreso")
-        : "Vigencia del cambio de horario, turno, sucursal o días de descanso";
+        : "Vigencia del cambio de horario, turno, sucursal, días de descanso o tiempo extra";
 
     private string EffectiveFromLabel => Status != _originalStatus
         ? (StartsLeave ? "Desde" : ReturnsFromLeave ? "Regresa a trabajar el" : Status == StatusEnum.Baja ? "Último día laborado" : "Vigente desde")
@@ -466,6 +472,7 @@
         _originalScheduleId = ScheduleId;
         _originalStatus = Status;
         _originalRestDays = _selectedRestDays.ToHashSet();
+        _originalOvertime = OvertimeSettings();
         _originalsCaptured = true;
     }
 

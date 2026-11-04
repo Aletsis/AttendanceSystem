@@ -53,6 +53,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private ShiftType? _originalShiftType;
         private string? _originalShiftId;
         private HashSet<int> _originalRestDays = new();
+        // Configuración de extras al abrir: cambiarla recalcula las jornadas desde la vigencia (redondeo y topes guardados).
+        private string? _originalOvertime;
         private EmployeeStatus _loadedStatus = EmployeeStatus.Alta;
         private DevicePrivilege _loadedDevicePrivilege = DevicePrivilege.User;
 
@@ -205,13 +207,19 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         /// <summary>Caso 16 (como la web): todo cambio de sucursal, turno, horario, descansos o estatus lleva fecha de vigencia.</summary>
         public bool HasDatedChange => IsEditMode &&
             (SelectedBranchId != _originalBranchId || SelectedShiftType != _originalShiftType ||
-             (!IsRotating && SelectedShiftId != _originalShiftId) || StatusChanged || !_originalRestDays.SetEquals(SelectedRestDayValues));
+             (!IsRotating && SelectedShiftId != _originalShiftId) || StatusChanged || !_originalRestDays.SetEquals(SelectedRestDayValues) ||
+             OvertimeChanged);
+
+        private string OvertimeSettings() => string.Join("|", OvertimeAuthorized, SelectedOvertimeCalculationMethod, SelectedOvertimeCapType,
+            HasOvertimeCap ? OvertimeCapMinutes : null, CalculateOvertimeBeforeEntry);
+
+        private bool OvertimeChanged => _originalOvertime != null && OvertimeSettings() != _originalOvertime;
 
         public string EffectiveFromTitle => StatusChanged
             ? (StartsLeave ? $"Período de {Converters.EnumDisplay.Text(Status).ToLowerInvariant()}"
                 : ReturnsFromLeave ? "Regreso a trabajar"
                 : Status == EmployeeStatus.Baja ? "Fecha de la baja" : "Fecha del reingreso")
-            : "Vigencia del cambio de sucursal, turno, horario o descansos";
+            : "Vigencia del cambio de sucursal, turno, horario, descansos o tiempo extra";
         public string EffectiveFromLabel => StatusChanged
             ? (StartsLeave ? "Desde" : ReturnsFromLeave ? "Regresa a trabajar el" : Status == EmployeeStatus.Baja ? "Último día laborado" : "Vigente desde")
             : "Vigente desde";
@@ -302,6 +310,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             {
                 if (!SetProperty(ref _overtimeAuthorized, value)) return;
                 RaisePropertyChanged(nameof(OvertimeOptionsEnabled));
+                RaiseDatedChange();
                 if (value) return;
                 // Caso 12: sin extras autorizadas no se configuran redondeo, topes ni extras antes de la entrada.
                 CalculateOvertimeBeforeEntry = false;
@@ -310,7 +319,11 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 OvertimeCapMinutes = null;
             }
         }
-        public OvertimeCalculationMethod SelectedOvertimeCalculationMethod { get => _overtimeCalculationMethod; set => SetProperty(ref _overtimeCalculationMethod, value); }
+        public OvertimeCalculationMethod SelectedOvertimeCalculationMethod
+        {
+            get => _overtimeCalculationMethod;
+            set { if (SetProperty(ref _overtimeCalculationMethod, value)) RaiseDatedChange(); }
+        }
         public OvertimeCapType SelectedOvertimeCapType
         {
             get => _overtimeCapType;
@@ -318,12 +331,21 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             {
                 if (!SetProperty(ref _overtimeCapType, value)) return;
                 RaisePropertyChanged(nameof(HasOvertimeCap));
+                RaiseDatedChange();
                 if (value == OvertimeCapType.None) OvertimeCapMinutes = null;
             }
         }
         public bool HasOvertimeCap => SelectedOvertimeCapType != OvertimeCapType.None;
-        public double? OvertimeCapMinutes { get => _overtimeCapMinutes; set => SetProperty(ref _overtimeCapMinutes, value); }
-        public bool CalculateOvertimeBeforeEntry { get => _calculateOvertimeBeforeEntry; set => SetProperty(ref _calculateOvertimeBeforeEntry, value); }
+        public double? OvertimeCapMinutes
+        {
+            get => _overtimeCapMinutes;
+            set { if (SetProperty(ref _overtimeCapMinutes, value)) RaiseDatedChange(); }
+        }
+        public bool CalculateOvertimeBeforeEntry
+        {
+            get => _calculateOvertimeBeforeEntry;
+            set { if (SetProperty(ref _calculateOvertimeBeforeEntry, value)) RaiseDatedChange(); }
+        }
         public string? CardNumber { get => _cardNumber; set => SetProperty(ref _cardNumber, value); }
         public string? DevicePassword { get => _devicePassword; set => SetProperty(ref _devicePassword, value); }
         public string? Photo { get => _photo; set => SetProperty(ref _photo, value); }
@@ -512,6 +534,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                     _originalShiftType = emp.ShiftType;
                     _originalShiftId = SelectedShiftId;
                     _originalRestDays = SelectedRestDayValues.ToHashSet();
+                    _originalOvertime = OvertimeSettings();
                     EffectiveFrom = DateTime.Today;
                     LeaveTo = null;
                     RaiseDatedChange();
@@ -766,6 +789,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
             _originalShiftType = null;
             _originalShiftId = null;
             _originalRestDays = new HashSet<int>();
+            _originalOvertime = null;
             _loadedDevicePrivilege = DevicePrivilege.User;
             ExistingRoster = null;
             EditRotation = false;

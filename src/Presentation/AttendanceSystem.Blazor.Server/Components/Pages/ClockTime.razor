@@ -17,7 +17,7 @@
     Alertas de relojes desfasados, marcajes con hora imposible en cuarentena y corrección de la hora de los marcajes de un reloj.
 </MudText>
 
-<MudTabs Elevation="1" Rounded="true" PanelClass="pa-4" @bind-ActivePanelIndex="_tab">
+<MudTabs Elevation="1" Rounded="true" TabPanelsClass="pa-4" @bind-ActivePanelIndex="_tab">
     <MudTabPanel Text="@($"Alertas ({_alerts.Count})")" Icon="@Icons.Material.Filled.NotificationsActive">
         @if (_alerts.Count == 0)
         {
@@ -70,7 +70,7 @@
         {
             <MudPaper Outlined="true" Class="pa-3 mb-3 d-flex flex-wrap align-center gap-3">
                 <MudText Typo="Typo.body2"><b>@group.Key.DeviceName</b>: @group.Count() pendiente(s)@(group.Any(p => p.SuggestedOffsetMinutes.HasValue) ? $", {group.Count(p => p.SuggestedOffsetMinutes.HasValue)} con corrección sugerida" : "")</MudText>
-                <MudTextField @bind-Value="_bulkNote" Label="Motivo" Dense="true" Style="max-width: 280px" />
+                <MudTextField @bind-Value="_bulkNote" Label="Motivo" Margin="Margin.Dense" Style="max-width: 280px" />
                 @if (group.Any(p => p.SuggestedOffsetMinutes.HasValue))
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_bulkNote))"
@@ -91,7 +91,7 @@
             <MudSelectItem T="QuarantineStatus?" Value="@((QuarantineStatus?)null)">Todos</MudSelectItem>
         </MudSelect>
 
-        <MudTable Items="_quarantine" Dense="true" Hover="true" T="QuarantinedPunchDto" OnRowClick="@(e => SelectPunch(e.Item))"
+        <MudTable Items="_quarantine" Dense="true" Hover="true" T="QuarantinedPunchDto" OnRowClick="@(e => { if (e.Item is not null) SelectPunch(e.Item); })"
                   RowClassFunc="@((p, _) => p.Id == _selected?.Id ? "mud-selected-item" : string.Empty)">
             <HeaderContent>
                 <MudTh>Empleado</MudTh>
