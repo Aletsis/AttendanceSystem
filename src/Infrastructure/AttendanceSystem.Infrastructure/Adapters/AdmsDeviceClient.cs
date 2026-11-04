@@ -93,16 +93,16 @@ public class AdmsDeviceClient : IDeviceClient
         return Task.FromResult(DeviceLogsResult.Empty());
     }
 
-    public Task<bool> ClearLogsAsync(
+    public async Task<bool> ClearLogsAsync(
         string deviceId,
         DateTime? fromDate = null,
         DateTime? toDate = null,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
+        if (string.IsNullOrEmpty(_serialNumber)) return false;
         _logger.LogWarning("Comando de limpieza remota ADMS CLEAR ATTLOG encolado para SN {SN}. Atención: ADMS ejecuta borrado total del buffer del reloj.", _serialNumber);
-        _admsCommandService.EnqueueCommand(_serialNumber, "CLEAR ATTLOG");
-        return Task.FromResult(true);
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, "CLEAR ATTLOG", cancellationToken: cancellationToken);
+        return true;
     }
 
     public async Task<DeviceInfoDto?> GetDeviceInfoAsync(CancellationToken cancellationToken = default)
@@ -152,14 +152,13 @@ public class AdmsDeviceClient : IDeviceClient
                 _logger.LogInformation("Intentando obtener info del dispositivo vía comando ADMS (fallback) para {SN}", _serialNumber);
 
                 cancellationToken.ThrowIfCancellationRequested();
-                // Registrar la espera antes de publicar: una respuesta rápida no debe perderse.
+                // La respuesta llega a la fila del comando: no se pierde aunque la atienda otro proceso o llegue antes de esperar.
                 // INFO consulta información técnica; no dispara consultas de usuarios, biometría o marcajes.
                 using var waitCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                var response = _admsCommandService.WaitForDeviceInfoAsync(_serialNumber, TimeSpan.FromSeconds(30), waitCancellation.Token);
                 try
                 {
-                    _admsCommandService.EnqueueCommand(_serialNumber, "INFO");
-                    var admsInfo = await response;
+                    var infoCommand = await _admsCommandService.EnqueueCommandAsync(_serialNumber, "INFO", cancellationToken: cancellationToken);
+                    var admsInfo = await _admsCommandService.WaitForDeviceInfoAsync(infoCommand, TimeSpan.FromSeconds(30), waitCancellation.Token);
                     cancellationToken.ThrowIfCancellationRequested();
                     if (admsInfo != null)
                     {
@@ -224,10 +223,10 @@ public class AdmsDeviceClient : IDeviceClient
         }
 
         // Encolar consulta de usuarios, fotos y biometría usando sintaxis estándar Push 3.x
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=user,fields=*");
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=userpic,fields=*");
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=biophoto,fields=*");
-        _admsCommandService.EnqueueCommand(_serialNumber, "DATA QUERY tablename=biodata,fields=*");
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, "DATA QUERY tablename=user,fields=*", cancellationToken: cancellationToken);
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, "DATA QUERY tablename=userpic,fields=*", cancellationToken: cancellationToken);
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, "DATA QUERY tablename=biophoto,fields=*", cancellationToken: cancellationToken);
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, "DATA QUERY tablename=biodata,fields=*", cancellationToken: cancellationToken);
 
         _logger.LogInformation("Comandos de consulta de datos encolados para dispositivo ADMS {SN}", _serialNumber);
 
@@ -235,47 +234,47 @@ public class AdmsDeviceClient : IDeviceClient
         return new List<DeviceUserDto>();
     }
 
-    public Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
-        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA DELETE user\tPIN={userId}");
-        return Task.FromResult(true);
+        if (string.IsNullOrEmpty(_serialNumber)) return false;
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA DELETE user\tPIN={userId}", cancellationToken: cancellationToken);
+        return true;
     }
 
-    public Task<bool> DeleteUserFingerprintsAsync(string userId, CancellationToken cancellationToken = default)
+    public async Task<bool> DeleteUserFingerprintsAsync(string userId, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
-        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA DELETE biodata\tPIN={userId}\tType=0");
-        return Task.FromResult(true);
+        if (string.IsNullOrEmpty(_serialNumber)) return false;
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA DELETE biodata\tPIN={userId}\tType=0", cancellationToken: cancellationToken);
+        return true;
     }
 
     public Task<bool> ResetToFactorySettingsAsync(CancellationToken cancellationToken = default) => Task.FromResult(false);
 
-    public Task<bool> SetDeviceTimeAsync(DateTime dateTime, CancellationToken cancellationToken = default)
+    public async Task<bool> SetDeviceTimeAsync(DateTime dateTime, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
+        if (string.IsNullOrEmpty(_serialNumber)) return false;
 
         // Sin desfase conocido sólo se fija la hora: nunca se impone la zona del servidor.
-        _admsCommandService.EnqueueCommand(_serialNumber, $"SET OPTIONS DateTime={dateTime:yyyy-MM-dd HH:mm:ss}");
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"SET OPTIONS DateTime={dateTime:yyyy-MM-dd HH:mm:ss}", cancellationToken: cancellationToken);
         _logger.LogInformation("ADMS: Encolada hora {DateTime:yyyy-MM-dd HH:mm:ss} para SN: {SN}", dateTime, _serialNumber);
-        return Task.FromResult(true);
+        return true;
     }
 
-    public Task<bool> SetDeviceClockAsync(DateTime civilTime, TimeSpan utcOffset, CancellationToken cancellationToken = default)
+    public async Task<bool> SetDeviceClockAsync(DateTime civilTime, TimeSpan utcOffset, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(_serialNumber)) return Task.FromResult(false);
+        if (string.IsNullOrEmpty(_serialNumber)) return false;
 
         // Zona del propio reloj (no la del servidor) y sin horario de verano: el reloj calcula su hora con el
         // encabezado Date (UTC) más este desfase, así que debe coincidir con la hora civil enviada.
         foreach (var clockCommand in AttendanceSystem.Application.Common.AdmsTimeZone.ClockCommands(civilTime, utcOffset))
         {
-            _admsCommandService.EnqueueCommand(_serialNumber, clockCommand);
+            await _admsCommandService.EnqueueCommandAsync(_serialNumber, clockCommand, cancellationToken: cancellationToken);
         }
 
         _logger.LogInformation("ADMS: Encolados comandos de zona horaria (UTC{Offset}) y hora ({DateTime:yyyy-MM-dd HH:mm:ss}) para SN: {SN}",
             utcOffset.ToString(@"\+hh\:mm;\-hh\:mm"), civilTime, _serialNumber);
 
-        return Task.FromResult(true);
+        return true;
     }
 
     public async Task<DeviceUserDto?> GetUserAsync(string userId, CancellationToken cancellationToken = default)
@@ -358,14 +357,14 @@ public class AdmsDeviceClient : IDeviceClient
         if (!string.IsNullOrEmpty(user.Password)) userCmd += $"\tPasswd={user.Password}";
         if (!string.IsNullOrEmpty(user.CardNumber)) userCmd += $"\tCard={user.CardNumber}";
 
-        _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE user\t{userCmd}");
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE user\t{userCmd}", cancellationToken: cancellationToken);
 
         // 2. Huellas Digitales
         if (user.Fingerprints != null && user.Fingerprints.Any())
         {
             foreach (var fp in user.Fingerprints)
             {
-                _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE biodata\tPIN={user.UserId}\tType=0\tIndex={fp.Index}\tVersion=10.0\tContent={fp.Template}");
+                await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE biodata\tPIN={user.UserId}\tType=0\tIndex={fp.Index}\tVersion=10.0\tContent={fp.Template}", cancellationToken: cancellationToken);
             }
         }
 
@@ -373,13 +372,13 @@ public class AdmsDeviceClient : IDeviceClient
         if (!string.IsNullOrEmpty(user.FaceTemplate))
         {
             // Type 9 = Face
-            _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE biodata\tPIN={user.UserId}\tType=9\tVersion=58.0\tContent={user.FaceTemplate}");
+            await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE biodata\tPIN={user.UserId}\tType=9\tVersion=58.0\tContent={user.FaceTemplate}", cancellationToken: cancellationToken);
         }
 
         // 4. Fotografía de Perfil
         if (!string.IsNullOrEmpty(user.Photo))
         {
-            _admsCommandService.EnqueueCommand(_serialNumber, $"DATA UPDATE userpic\tPIN={user.UserId}\tContent={user.Photo}");
+            await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE userpic\tPIN={user.UserId}\tContent={user.Photo}", cancellationToken: cancellationToken);
         }
 
         return true;

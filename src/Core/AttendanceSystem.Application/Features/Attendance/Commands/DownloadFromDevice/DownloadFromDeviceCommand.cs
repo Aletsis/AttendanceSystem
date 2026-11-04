@@ -206,7 +206,7 @@ public sealed class DownloadFromDeviceCommandHandler
                 }
 
                 // El resultado registrado debe corresponder a la consulta de marcajes.
-                _admsCommandService.EnqueueCommand(sn!, query, downloadLogId.Value);
+                await _admsCommandService.EnqueueCommandAsync(sn!, query, downloadLogId.Value, cancellationToken);
                 _logger.LogInformation("ADMS: Consulta de marcajes encolada para SN:{SerialNumber}: {Query}", sn, query);
 
                 _logger.LogInformation("✅ ADMS: Comandos de sincronización encolados para dispositivo SN: {SerialNumber}, DownloadLogId: {LogId}",

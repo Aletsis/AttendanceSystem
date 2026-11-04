@@ -1,7 +1,9 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Identity;
 using AttendanceSystem.Domain.Entities;
 
-namespace AttendanceSystem.Blazor.Server.Data;
+namespace AttendanceSystem.Infrastructure.Persistence;
 
 /// <summary>
 /// Inicializa datos de Identity en la base de datos

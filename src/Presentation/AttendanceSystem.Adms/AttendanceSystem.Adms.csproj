@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Receptor ADMS (protocolo push de los relojes ZKTeco): lo hospedan el sitio web y, en una instalación sin sitio web,
+       el cliente WPF. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Core\AttendanceSystem.Application\AttendanceSystem.Application.csproj" />
+    <ProjectReference Include="..\..\Infrastructure\AttendanceSystem.Infrastructure\AttendanceSystem.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

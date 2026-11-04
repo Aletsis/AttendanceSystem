@@ -2,7 +2,7 @@ using AttendanceSystem.Application.Abstractions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
 
-namespace AttendanceSystem.Blazor.Server.Middleware;
+namespace AttendanceSystem.Adms;
 
 /// <summary>
 /// Middleware que intercepta solicitudes entrantes de hardware biométrico (ADMS) y APIs de base de datos

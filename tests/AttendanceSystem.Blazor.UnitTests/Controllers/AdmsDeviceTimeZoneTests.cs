@@ -2,7 +2,7 @@ using System.Text;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
-using AttendanceSystem.Blazor.Server.Controllers;
+using AttendanceSystem.Adms;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
@@ -93,8 +93,8 @@ public class AdmsDeviceTimeZoneTests
 
         await _controller.ReceiveData(Serial, "ATTLOG");
 
-        _commands.Verify(c => c.EnqueueCommand(Serial, It.Is<string>(cmd => cmd.StartsWith("SET OPTIONS TimeZone=-5,")), It.IsAny<Guid?>()), Times.Once);
-        _commands.Verify(c => c.EnqueueCommand(Serial, It.Is<string>(cmd => cmd.StartsWith("SET OPTIONS DateTime=")), It.IsAny<Guid?>()), Times.Once);
+        _commands.Verify(c => c.EnqueueCommandAsync(Serial, It.Is<string>(cmd => cmd.StartsWith("SET OPTIONS TimeZone=-5,")), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Once);
+        _commands.Verify(c => c.EnqueueCommandAsync(Serial, It.Is<string>(cmd => cmd.StartsWith("SET OPTIONS DateTime=")), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
@@ -105,6 +105,6 @@ public class AdmsDeviceTimeZoneTests
 
         await _controller.ReceiveData(Serial, "ATTLOG");
 
-        _commands.Verify(c => c.EnqueueCommand(It.IsAny<string>(), It.Is<string>(cmd => cmd.StartsWith("SET OPTIONS")), It.IsAny<Guid?>()), Times.Never);
+        _commands.Verify(c => c.EnqueueCommandAsync(It.IsAny<string>(), It.Is<string>(cmd => cmd.StartsWith("SET OPTIONS")), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 }

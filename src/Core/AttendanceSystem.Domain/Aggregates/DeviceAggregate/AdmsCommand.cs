@@ -16,6 +16,8 @@ public sealed class AdmsCommand : AggregateRoot<Guid>
     public int? ReturnCode { get; private set; }
     public int RetryCount { get; private set; }
     public string? ErrorMessage { get; private set; }
+    /// <summary>Respuesta del reloj que espera quien encoló el comando (p. ej. la información de INFO, en JSON).</summary>
+    public string? ResultPayload { get; private set; }
 
     private AdmsCommand() { }
 
@@ -53,6 +55,17 @@ public sealed class AdmsCommand : AggregateRoot<Guid>
         Status = AdmsCommandStatus.Sent;
         SentAtUtc = DateTime.UtcNow;
     }
+
+    /// <summary>Entregado al reloj con el CommandID con el que éste contestará.</summary>
+    public void MarkAsSent(string commandId)
+    {
+        if (string.IsNullOrWhiteSpace(commandId))
+            throw new ArgumentException("El CommandId es requerido", nameof(commandId));
+        CommandId = commandId.Trim();
+        MarkAsSent();
+    }
+
+    public void RecordResult(string payload) => ResultPayload = payload;
 
     public void MarkAsConfirmed(int returnCode)
     {

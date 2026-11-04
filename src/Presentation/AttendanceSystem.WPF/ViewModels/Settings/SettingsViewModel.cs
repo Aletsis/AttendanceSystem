@@ -22,7 +22,6 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
         private readonly IFrameNavigationService _navigationService;
         private readonly IMessageService _messageService;
         private readonly IMediator _mediator;
-        private readonly IConfiguration _configuration;
         private readonly Prism.Dialogs.IDialogService? _dialogService;
 
         private SystemConfigurationDto? _currentConfig;
@@ -170,14 +169,12 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
             IFrameNavigationService navigationService,
             IMessageService messageService,
             IMediator mediator,
-            IConfiguration configuration,
             Prism.Dialogs.IDialogService? dialogService = null)
         {
             _dialogService = dialogService;
             _navigationService = navigationService;
             _messageService = messageService;
             _mediator = mediator;
-            _configuration = configuration;
 
             SaveSettingsCommand = new DelegateCommand(async () => await ExecuteSaveSettingsAsync());
             UploadLogoCommand = new DelegateCommand(async () => await ExecuteUploadLogoAsync());
@@ -342,38 +339,8 @@ namespace AttendanceSystem.WPF.ViewModels.Settings
 
                 if (result.IsSuccess)
                 {
-                    // Notificar al backend Blazor Server para recargar las tareas Hangfire en segundo plano
-                    string? reloadProblem = null;
-                    try
-                    {
-                        var backendUrl = _configuration["BackendUrl"] ?? "http://localhost:18372";
-                        using var httpClient = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-                        var apiKey = _configuration["ApiKey"] ?? _configuration["ZKTecoService:ApiKey"];
-                        if (!string.IsNullOrWhiteSpace(apiKey))
-                        {
-                            httpClient.DefaultRequestHeaders.Add("x-api-key", apiKey);
-                        }
-                        var reloadResponse = await httpClient.PostAsync($"{backendUrl}/api/configuration/reload-jobs", null);
-                        if (!reloadResponse.IsSuccessStatusCode)
-                        {
-                            reloadProblem = $"respondió {(int)reloadResponse.StatusCode}";
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        reloadProblem = ex.Message;
-                    }
-
-                    if (reloadProblem != null)
-                    {
-                        // Antes sólo se escribía en la depuración: el usuario creía aplicados los horarios automáticos.
-                        Serilog.Log.Warning("El servidor web no recargó las tareas programadas: {Problem}", reloadProblem);
-                        await _messageService.ShowWarningAsync("La configuración se guardó, pero el servidor web no confirmó la recarga de las tareas programadas " +
-                            $"({reloadProblem}). Las descargas, respaldos y reportes automáticos usarán el horario nuevo cuando se reinicie el sitio web.");
-                        await LoadSettingsAsync();
-                        return;
-                    }
-
+                    // El comando ya reprogramó las tareas automáticas: el almacenamiento de Hangfire es el mismo que usa el
+                    // sitio web, así que el horario nuevo aplica en los dos sin avisarle.
                     await _messageService.ShowSuccessAsync("Configuración guardada correctamente");
                     await LoadSettingsAsync();
                 }

@@ -30,104 +30,108 @@ public class AdmsCommandServiceTests
         _serviceProvider = services.BuildServiceProvider();
     }
 
+    private AdmsCommandService NewService() =>
+        new(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), Mock.Of<ILogger<AdmsCommandService>>());
+
+    private static AttendanceSystem.Application.DTOs.DeviceInfoDto Info(string sn) =>
+        new(sn, "MiniAC Plus", "1.0", "ZK", 1, 0, 0, 2, 100, 0, 0, 100);
+
     [Fact]
     public async Task DeviceInfo_OnlyCompletesForMatchingSerialAndDeliveredCommand()
     {
-        var service = new AdmsCommandService(_serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-            Mock.Of<ILogger<AdmsCommandService>>());
-        var info = new AttendanceSystem.Application.DTOs.DeviceInfoDto(
-            "SN_INFO", "MiniAC Plus", "1.0", "ZK", 1, 0, 0, 2, 100, 0, 0, 100);
-        using var cancellation = new CancellationTokenSource();
-        var pending = service.WaitForDeviceInfoAsync("SN_INFO", TimeSpan.FromSeconds(5), cancellation.Token);
-        try
-        {
-            service.NotifyDeviceInfoReceived("SN_INFO", info);
-            pending.IsCompleted.Should().BeFalse("unsolicited options do not answer an INFO request");
+        var service = NewService();
+        var info = Info("SN_INFO");
 
-            service.EnqueueCommand("SN_INFO", "INFO");
-            var (id, _, _) = service.GetNextCommand("SN_INFO");
-            service.NotifyDeviceInfoReceived("OTHER", info, id);
-            service.NotifyDeviceInfoReceived("SN_INFO", info, "wrong-id");
-            pending.IsCompleted.Should().BeFalse();
+        var infoCommand = await service.EnqueueCommandAsync("SN_INFO", "INFO");
+        var pending = service.WaitForDeviceInfoAsync(infoCommand, TimeSpan.FromSeconds(5));
 
-            service.NotifyDeviceInfoReceived("sn_info", info, id);
-            (await pending).Should().BeSameAs(info);
-        }
-        finally
-        {
-            await cancellation.CancelAsync();
-        }
+        await service.NotifyDeviceInfoReceivedAsync("SN_INFO", info);
+        var (id, _, _) = await service.GetNextCommandAsync("SN_INFO");
+        await service.NotifyDeviceInfoReceivedAsync("OTHER", info, id);
+        await service.NotifyDeviceInfoReceivedAsync("SN_INFO", info, "wrong-id");
+        await Task.Delay(700);
+        pending.IsCompleted.Should().BeFalse("ni opciones sin solicitar, ni otro reloj, ni otro CommandID contestan este INFO");
+
+        await service.NotifyDeviceInfoReceivedAsync("sn_info", info, id);
+        (await pending).Should().Be(info);
     }
 
     [Fact]
     public async Task DeviceInfo_LateReplyDoesNotCompleteNewRequest()
     {
-        var service = new AdmsCommandService(_serviceProvider.GetRequiredService<IServiceScopeFactory>(),
-            Mock.Of<ILogger<AdmsCommandService>>());
-        var info = new AttendanceSystem.Application.DTOs.DeviceInfoDto(
-            "SN_LATE", "MiniAC Plus", "1.0", "ZK", 1, 0, 0, 2, 100, 0, 0, 100);
-        using var oldCancellation = new CancellationTokenSource();
-        var oldRequest = service.WaitForDeviceInfoAsync("SN_LATE", TimeSpan.FromSeconds(5), oldCancellation.Token);
-        service.EnqueueCommand("SN_LATE", "INFO");
-        var (oldId, _, _) = service.GetNextCommand("SN_LATE");
-        await oldCancellation.CancelAsync();
-        (await oldRequest).Should().BeNull();
+        var service = NewService();
+        var info = Info("SN_LATE");
 
-        using var cancellation = new CancellationTokenSource();
-        var pending = service.WaitForDeviceInfoAsync("SN_LATE", TimeSpan.FromSeconds(5), cancellation.Token);
-        try
-        {
-            service.NotifyDeviceInfoReceived("SN_LATE", info, oldId);
-            pending.IsCompleted.Should().BeFalse();
-        }
-        finally
-        {
-            await cancellation.CancelAsync();
-        }
-        (await pending).Should().BeNull();
+        var oldCommand = await service.EnqueueCommandAsync("SN_LATE", "INFO");
+        var (oldId, _, _) = await service.GetNextCommandAsync("SN_LATE");
+        (await service.WaitForDeviceInfoAsync(oldCommand, TimeSpan.FromMilliseconds(100))).Should().BeNull();
+
+        var newCommand = await service.EnqueueCommandAsync("SN_LATE", "INFO");
+        var pending = service.WaitForDeviceInfoAsync(newCommand, TimeSpan.FromSeconds(2));
+        await service.NotifyDeviceInfoReceivedAsync("SN_LATE", info, oldId);
+
+        (await pending).Should().BeNull("la respuesta tardía es del INFO anterior");
     }
 
     [Fact]
-    public void GetNextCommand_GeneratesUniqueNonCollidingIdsInRange10000To99999_H20()
+    public async Task DeviceInfo_ReplyThatArrivesBeforeTheWait_IsNotLost()
     {
-        // Arrange
-        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var loggerMock = new Mock<ILogger<AdmsCommandService>>();
-        var service = new AdmsCommandService(scopeFactory, loggerMock.Object);
+        var service = NewService();
+        var infoCommand = await service.EnqueueCommandAsync("SN_FAST", "INFO");
+        var (id, _, _) = await service.GetNextCommandAsync("SN_FAST");
+        await service.NotifyDeviceInfoReceivedAsync("SN_FAST", Info("SN_FAST"), id);
 
+        (await service.WaitForDeviceInfoAsync(infoCommand, TimeSpan.FromSeconds(2))).Should().Be(Info("SN_FAST"));
+    }
+
+    [Fact]
+    public async Task GetNextCommand_GeneratesUniqueNonCollidingIdsInRange10000To99999_H20()
+    {
+        var service = NewService();
         var sn = "SNTEST100";
         for (int i = 0; i < 20; i++)
         {
-            service.EnqueueCommand(sn, $"DATA QUERY ATTLOG {i}");
+            await service.EnqueueCommandAsync(sn, $"DATA QUERY ATTLOG {i}");
         }
 
         var commandIds = new HashSet<string>();
-
-        // Act
         for (int i = 0; i < 20; i++)
         {
-            var (cmdId, cmdText, _) = service.GetNextCommand(sn);
-            cmdId.Should().NotBeNullOrEmpty();
+            var (cmdId, cmdText, _) = await service.GetNextCommandAsync(sn);
+            cmdText.Should().Be($"DATA QUERY ATTLOG {i}", "se entregan en el orden en que se encolaron");
             int.TryParse(cmdId, out var numId).Should().BeTrue();
             numId.Should().BeInRange(10000, 99999);
             commandIds.Add(cmdId!);
         }
 
-        // Assert: Todos los IDs generados son únicos (sin colisiones)
         commandIds.Should().HaveCount(20);
+        (await service.GetNextCommandAsync(sn)).Command.Should().BeNull();
+    }
+
+    [Fact]
+    public async Task ACommandEnqueuedByOneProcess_IsDeliveredByAnother_Once()
+    {
+        // Cada instancia hace de un proceso (WPF y la web): sólo comparten la base.
+        var wpf = NewService();
+        var web = NewService();
+
+        await wpf.EnqueueCommandAsync("SN_SHARED", "DATA QUERY tablename=user,fields=*");
+
+        (await web.HasPendingCommandsAsync("SN_SHARED")).Should().BeTrue();
+        (await web.GetNextCommandAsync("SN_SHARED")).Command.Should().Be("DATA QUERY tablename=user,fields=*");
+        (await wpf.GetNextCommandAsync("SN_SHARED")).Command.Should().BeNull("ya se entregó");
+        (await web.HasPendingCommandsAsync("SN_SHARED")).Should().BeFalse();
     }
 
     [Fact]
     public void AdmsCommand_DestructiveCommand_CannotRetryAutomatically_H20()
     {
-        // Arrange
         var destructiveCmd = AdmsCommand.Create("SN123", "10001", "CLEAR LOG");
         var nonDestructiveCmd = AdmsCommand.Create("SN123", "10002", "DATA QUERY ATTLOG");
 
         destructiveCmd.MarkAsFailed(-1, "Error de hardware");
         nonDestructiveCmd.MarkAsFailed(-1, "Timeout transitorio");
 
-        // Act & Assert
         destructiveCmd.IsDestructive.Should().BeTrue("CLEAR LOG es una operación destructiva");
         destructiveCmd.CanRetryAutomatically().Should().BeFalse("operaciones destructivas nunca deben reintentarse automáticamente");
 
@@ -138,66 +142,68 @@ public class AdmsCommandServiceTests
     [Fact]
     public async Task AcknowledgeCommandExecutionAsync_WhenDestructiveCommandFails_DoesNotRequeue()
     {
-        // Arrange
-        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var loggerMock = new Mock<ILogger<AdmsCommandService>>();
-        var service = new AdmsCommandService(scopeFactory, loggerMock.Object);
-
+        var service = NewService();
         var sn = "SN_CLEAR_TEST";
-        service.EnqueueCommand(sn, "CLEAR LOG");
+        await service.EnqueueCommandAsync(sn, "CLEAR LOG");
 
-        var (cmdId, _, _) = service.GetNextCommand(sn);
+        var (cmdId, _, _) = await service.GetNextCommandAsync(sn);
         cmdId.Should().NotBeNull();
 
-        // Act: El dispositivo reporta fallo (-1)
         await service.AcknowledgeCommandExecutionAsync(sn, cmdId!, -1, "Error reloj");
 
-        // Assert: La cola debe estar vacía (no se reencola automáticamente comando destructivo)
-        service.HasPendingCommands(sn).Should().BeFalse();
+        (await service.HasPendingCommandsAsync(sn)).Should().BeFalse();
     }
 
     [Fact]
-    public async Task ALateStartupLoad_DoesNotQueueAgainACommandEnqueuedMeanwhile()
+    public async Task AcknowledgeCommandExecutionAsync_WhenQueryFails_RequeuesIt()
     {
-        // La carga de comandos pendientes corre en segundo plano al crear el servicio. Si termina después de que se
-        // encoló (y guardó) un comando nuevo, antes lo volvía a encolar: el reloj lo ejecutaba dos veces.
-        var service = new AdmsCommandService(_serviceProvider.GetRequiredService<IServiceScopeFactory>(), Mock.Of<ILogger<AdmsCommandService>>());
-        service.EnqueueCommand("SN_RACE", "CLEAR LOG");
+        var service = NewService();
+        await service.EnqueueCommandAsync("SN_RETRY", "DATA QUERY tablename=user,fields=*");
+        var (cmdId, _, _) = await service.GetNextCommandAsync("SN_RETRY");
+
+        await service.AcknowledgeCommandExecutionAsync("SN_RETRY", cmdId!, -1, "Timeout");
+
+        (await service.GetNextCommandAsync("SN_RETRY")).Command.Should().Be("DATA QUERY tablename=user,fields=*");
+    }
+
+    [Fact]
+    public async Task OnStartup_ACommandSentLongAgoWithoutAck_Expires_AndIsNotSentAgain()
+    {
+        var service = NewService();
+        await service.EnqueueCommandAsync("SN_STALE", "CLEAR LOG");
+        await service.GetNextCommandAsync("SN_STALE");
         await using (var context = new AttendanceDbContext(_dbOptions, _publisherMock.Object))
         {
-            for (int i = 0; i < 100 && !await context.AdmsCommands.AnyAsync(c => c.SerialNumber == "SN_RACE"); i++) await Task.Delay(20);
+            var sent = await context.AdmsCommands.SingleAsync(c => c.SerialNumber == "SN_STALE");
+            context.Entry(sent).Property(c => c.SentAtUtc).CurrentValue = DateTime.UtcNow - AdmsCommandService.SentCommandTtl - TimeSpan.FromMinutes(1);
+            await context.SaveChangesAsync();
         }
 
-        var load = typeof(AdmsCommandService).GetMethod("LoadPendingCommandsFromDatabaseAsync",
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
-        await (Task)load.Invoke(service, null)!;
+        await service.ExpireStaleSentCommandsAsync();
 
-        service.GetNextCommand("SN_RACE").Command.Should().Be("CLEAR LOG");
-        service.HasPendingCommands("SN_RACE").Should().BeFalse("el comando se encola una sola vez");
+        await using (var context = new AttendanceDbContext(_dbOptions, _publisherMock.Object))
+        {
+            (await context.AdmsCommands.SingleAsync(c => c.SerialNumber == "SN_STALE")).Status.Should().Be(AdmsCommandStatus.Expired);
+        }
+        (await service.HasPendingCommandsAsync("SN_STALE")).Should().BeFalse();
     }
 
     [Fact]
-    public void DownloadSession_AccumulatesRecordsAndNotifiesOnCompletion()
+    public async Task DownloadSession_AccumulatesRecordsAndNotifiesOnCompletion()
     {
-        // Arrange
-        var scopeFactory = _serviceProvider.GetRequiredService<IServiceScopeFactory>();
-        var service = new AdmsCommandService(scopeFactory, Mock.Of<ILogger<AdmsCommandService>>());
+        var service = NewService();
         var sn = "SN_DOWNLOAD_SESSION";
         var logId = Guid.NewGuid();
 
-        service.EnqueueCommand(sn, "DATA QUERY tablename=ATTLOG", logId);
-        var (cmdId, _, returnedLogId) = service.GetNextCommand(sn);
+        await service.EnqueueCommandAsync(sn, "DATA QUERY tablename=ATTLOG", logId);
+        var (cmdId, _, returnedLogId) = await service.GetNextCommandAsync(sn);
         returnedLogId.Should().Be(logId);
 
-        // Act & Assert active session lookup
-        var activeLogId = service.GetActiveDownloadLogId(sn, cmdId);
-        activeLogId.Should().Be(logId);
+        service.GetActiveDownloadLogId(sn, cmdId).Should().Be(logId);
 
-        // Simular dos paquetes de querydata
         service.RecordDownloadProgress(sn, cmdId, totalReceived: 10, newInserted: 8);
         service.RecordDownloadProgress(sn, cmdId, totalReceived: 15, newInserted: 12);
 
-        // Event listener
         string? notifiedSn = null;
         Guid? notifiedLogId = null;
         bool? notifiedSuccess = null;
@@ -224,7 +230,6 @@ public class AdmsCommandServiceTests
         notifiedTotal.Should().Be(25);
         notifiedNew.Should().Be(20);
 
-        // Tras completar, ya no hay sesión activa
         service.GetActiveDownloadLogId(sn, cmdId).Should().BeNull();
     }
 }

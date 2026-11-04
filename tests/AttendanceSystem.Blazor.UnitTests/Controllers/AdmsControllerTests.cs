@@ -2,7 +2,7 @@ using System.Text;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
-using AttendanceSystem.Blazor.Server.Controllers;
+using AttendanceSystem.Adms;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
@@ -116,8 +116,8 @@ public class AdmsControllerTests
 
         await _controller.DeviceCmd("CL5Z202660239");
 
-        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceived(
-            It.IsAny<string>(), It.IsAny<AttendanceSystem.Application.DTOs.DeviceInfoDto>(), It.IsAny<string?>()), Times.Never);
+        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceivedAsync(
+            It.IsAny<string>(), It.IsAny<AttendanceSystem.Application.DTOs.DeviceInfoDto>(), It.IsAny<string?>(), It.IsAny<CancellationToken>()), Times.Never);
         _deviceRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<Device>(), default), Times.Never);
     }
 
@@ -132,15 +132,15 @@ public class AdmsControllerTests
 
         await _controller.DeviceCmd("CL5Z202660239");
 
-        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceived("CL5Z202660239",
+        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceivedAsync("CL5Z202660239",
             It.Is<AttendanceSystem.Application.DTOs.DeviceInfoDto>(i =>
                 i.FirmwareVersion == "1.2.3" && i.UserCount == 42 &&
-                i.FingerprintCount == 3 && i.AttendanceRecordCount == 123), "10"), Times.Once);
+                i.FingerprintCount == 3 && i.AttendanceRecordCount == 123), "10", It.IsAny<CancellationToken>()), Times.Once);
         _admsCommandServiceMock.Verify(s => s.AcknowledgeCommandExecutionAsync(
             "CL5Z202660239", "10", 0, null, default), Times.Once);
         _mediatorMock.VerifyNoOtherCalls();
         _employeeRepositoryMock.VerifyNoOtherCalls();
-        _admsCommandServiceMock.Verify(s => s.EnqueueCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()), Times.Never);
+        _admsCommandServiceMock.Verify(s => s.EnqueueCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -161,7 +161,7 @@ public class AdmsControllerTests
 
         await _controller.DeviceCmd("CL5Z202660239");
 
-        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceived("CL5Z202660239",
+        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceivedAsync("CL5Z202660239",
             It.Is<AttendanceSystem.Application.DTOs.DeviceInfoDto>(i =>
                 i.FirmwareVersion == "ZAM170-NF-Ver1.1.20" &&
                 i.UserCount == 354 &&
@@ -171,7 +171,7 @@ public class AdmsControllerTests
                 i.FaceCount == 280 &&
                 i.FaceCapacity == 3000 &&
                 i.AttendanceRecordCount == 1500 &&
-                i.AttendanceRecordCapacity == 150000), "20"), Times.Once);
+                i.AttendanceRecordCapacity == 150000), "20", It.IsAny<CancellationToken>()), Times.Once);
     }
 
     [Fact]
