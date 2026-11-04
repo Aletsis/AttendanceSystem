@@ -123,52 +123,26 @@ public class SendEmployeeToDeviceCommandHandler : IRequestHandler<SendEmployeeTo
                     }
 
                     var employeeBranch = await _branchRepository.GetByIdAsync(internalEmployee.BranchId, cancellationToken);
-                    string deviceUserId = internalEmployee.Id.Value;
+                    userDto = DeviceUserMapper.FromEmployee(internalEmployee, employeeBranch);
 
-                    if (employeeBranch != null && employeeBranch.IsExternal)
+                    if (employeeBranch is { IsExternal: true })
                     {
-                        deviceUserId = $"{employeeBranch.Code}{internalEmployee.Id.Value}";
                         _logger.LogInformation("Empleado {Id} pertenece a sucursal externa {Code}. Usando ID concatenado: {DeviceUserId}",
-                            internalEmployee.Id.Value, employeeBranch.Code, deviceUserId);
+                            internalEmployee.Id.Value, employeeBranch.Code, userDto.UserId);
                     }
-
-                    userDto = new DeviceUserDto(
-                        deviceUserId,
-                        internalEmployee.FirstName,
-                        internalEmployee.DevicePassword ?? "",
-                        (int)internalEmployee.DevicePrivilege,
-                        internalEmployee.Status != EmployeeStatus.Baja, // caso 16: de vacaciones o incapacidad sigue habilitado
-                        internalEmployee.CardNumber,
-                        internalEmployee.Fingerprints?.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.Template)).ToList(),
-                        internalEmployee.FaceTemplate,
-                        internalEmployee.Photo
-                    );
                 }
                 else
                 {
                     // Empleado externo
                     var employeeBranch = await _branchRepository.GetByIdAsync(externalEmployee!.BranchId, cancellationToken);
-                    string branchCode = employeeBranch?.Code ?? "";
-                    string deviceUserId = $"{branchCode}{externalEmployee.EmployeeNumber}";
-
-                    _logger.LogInformation("Enviando empleado externo {EmpNo} de sucursal {Code} a dispositivo {Device}. ID en reloj: {DeviceUserId}",
-                        externalEmployee.EmployeeNumber, branchCode, device.Name, deviceUserId);
-
                     var privilege = request.DevicePrivilege.HasValue
                         ? (int)DevicePrivilegeMapper.NormalizeForDevice(device.Brand, request.DevicePrivilege.Value)
                         : (int)DevicePrivilege.User;
 
-                    userDto = new DeviceUserDto(
-                        deviceUserId,
-                        $"{externalEmployee.FirstName} {externalEmployee.LastName}".Trim(),
-                        "", // Sin contraseña PIN en sucursal remota
-                        privilege,
-                        externalEmployee.Status != EmployeeStatus.Baja,
-                        externalEmployee.CardNumber,
-                        null,
-                        null,
-                        null
-                    );
+                    userDto = DeviceUserMapper.FromExternal(externalEmployee, employeeBranch, privilege);
+
+                    _logger.LogInformation("Enviando empleado externo {EmpNo} de sucursal {Code} a dispositivo {Device}. ID en reloj: {DeviceUserId}",
+                        externalEmployee.EmployeeNumber, employeeBranch?.Code ?? "", device.Name, userDto.UserId);
                 }
 
                 var success = await deviceClient.SetUserAsync(userDto, cancellationToken);

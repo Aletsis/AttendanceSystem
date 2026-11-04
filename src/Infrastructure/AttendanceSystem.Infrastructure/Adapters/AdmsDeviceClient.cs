@@ -22,6 +22,11 @@ public class AdmsDeviceClient : IDeviceClient
     private string? _username;
     private string? _password;
 
+    // Sesión SDK que comparten los envíos de usuarios hasta DisconnectAsync: al mandar muchos usuarios no se reconecta
+    // por cada uno, y si el SDK no responde no se espera su timeout (30 s) una vez por usuario antes de ir por ADMS.
+    private GrpcZKTecoDeviceClient? _sdkSession;
+    private bool _sdkUnavailable;
+
     public AdmsDeviceClient(IAdmsCommandService admsCommandService, IServiceProvider serviceProvider, ILogger<AdmsDeviceClient> logger)
     {
         _admsCommandService = admsCommandService;
@@ -47,7 +52,40 @@ public class AdmsDeviceClient : IDeviceClient
         return Task.FromResult(true);
     }
 
-    public Task DisconnectAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+    public async Task DisconnectAsync(CancellationToken cancellationToken = default)
+    {
+        await CloseSdkSessionAsync();
+        _sdkUnavailable = false;
+    }
+
+    /// <summary>La sesión SDK abierta, abriéndola la primera vez; null si el reloj no responde por SDK.</summary>
+    private async Task<GrpcZKTecoDeviceClient?> GetSdkSessionAsync(CancellationToken cancellationToken)
+    {
+        if (_sdkSession != null) return _sdkSession;
+        if (_sdkUnavailable || string.IsNullOrEmpty(_ipAddress) || _port <= 0) return null;
+
+        var sdkClient = _serviceProvider.GetRequiredService<GrpcZKTecoDeviceClient>();
+        if (await sdkClient.ConnectAsync(_ipAddress, _port, _username, _password, cancellationToken))
+            return _sdkSession = sdkClient;
+
+        _logger.LogWarning("El dispositivo ADMS {SN} no responde por SDK; los usuarios se enviarán por ADMS", _serialNumber);
+        _sdkUnavailable = true;
+        return null;
+    }
+
+    private async Task CloseSdkSessionAsync()
+    {
+        if (_sdkSession == null) return;
+        try
+        {
+            await _sdkSession.DisconnectAsync(CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "No se pudo cerrar la sesión SDK del dispositivo ADMS {SN}", _serialNumber);
+        }
+        _sdkSession = null;
+    }
 
     public Task<DeviceLogsResult> GetAttendanceLogsAsync(string deviceId, DateTime? fromDate, DateTime? toDate = null, CancellationToken cancellationToken = default)
     {
@@ -282,36 +320,31 @@ public class AdmsDeviceClient : IDeviceClient
     {
         if (string.IsNullOrEmpty(_serialNumber)) return false;
 
-        // Intento 1: SDK
-        if (!string.IsNullOrEmpty(_ipAddress) && _port > 0)
+        // Intento 1: SDK, sobre la sesión que comparten los envíos
+        try
         {
-            try
+            var sdkClient = await GetSdkSessionAsync(cancellationToken);
+            if (sdkClient != null)
             {
                 _logger.LogInformation("Intentando enviar usuario {UserId} vía SDK como primera opción para ADMS {SN}", user.UserId, _serialNumber);
-                var sdkClient = _serviceProvider.GetRequiredService<GrpcZKTecoDeviceClient>();
-                var connected = await sdkClient.ConnectAsync(_ipAddress, _port, _username, _password, cancellationToken);
-                if (connected)
+                if (await sdkClient.SetUserAsync(user, cancellationToken))
                 {
-                    try
-                    {
-                        var result = await sdkClient.SetUserAsync(user, cancellationToken);
-                        if (result)
-                        {
-                            _logger.LogInformation("Usuario {UserId} enviado exitosamente vía SDK al dispositivo ADMS {SN}", user.UserId, _serialNumber);
-                            return true;
-                        }
-                    }
-                    finally
-                    {
-                        await sdkClient.DisconnectAsync(cancellationToken);
-                    }
+                    _logger.LogInformation("Usuario {UserId} enviado exitosamente vía SDK al dispositivo ADMS {SN}", user.UserId, _serialNumber);
+                    return true;
                 }
                 _logger.LogWarning("No se pudo enviar usuario {UserId} vía SDK, se procederá por ADMS", user.UserId);
             }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Excepción al intentar usar SDK para enviar usuario. Fallback a ADMS.");
-            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // La sesión pudo quedar rota: los siguientes usuarios van directo por ADMS.
+            _logger.LogWarning(ex, "Excepción al intentar usar SDK para enviar usuario. Fallback a ADMS.");
+            await CloseSdkSessionAsync();
+            _sdkUnavailable = true;
         }
 
         // Intento 2: ADMS (Push protocol)
