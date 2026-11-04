@@ -385,7 +385,7 @@ public class RobustQuarantineTests
             Arrival: PunchArrival.Realtime, DeviceSerial: null), CancellationToken.None);
 
         scheduler.Verify(s => s.EnqueueDeviceCatchUp(rig.Device.Id.Value), Times.Once, "la descarga verifica la hora del reloj y la ajusta antes de leer");
-        adms.Verify(a => a.EnqueueCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()), Times.Never, "un reloj SDK nunca recoge comandos ADMS");
+        adms.Verify(a => a.EnqueueCommandAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>(), It.IsAny<CancellationToken>()), Times.Never, "un reloj SDK nunca recoge comandos ADMS");
         alerts.Should().ContainSingle(a => a.Type == AlertType.DeviceClockDrift)
             .Which.Message.Should().Contain("se encoló una descarga que ajusta su hora").And.NotContain("reenvió");
         rig.Incidents.Items.Should().HaveCount(lagQuarantined ? 1 : 0);
