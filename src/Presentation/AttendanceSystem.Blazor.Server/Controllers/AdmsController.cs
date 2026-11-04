@@ -624,9 +624,7 @@ public class AdmsController : ControllerBase
         var incidents = new List<AdmsIngestionIncident>();
 
         // F06-P03 / H22: Precargar sucursales externas una sola vez para todo el lote
-        var externalBranches = (await _branchRepository.GetAllAsync())
-            .Where(b => b.IsExternal)
-            .ToDictionary(b => b.Code, StringComparer.OrdinalIgnoreCase);
+        var externalBranches = await AttendanceSystem.Application.Features.Attendance.Services.ExternalBranchCodes.LoadAsync(_branchRepository);
 
         var pendingExternalLogs = new List<ExternalAttendanceLog>();
 
@@ -746,34 +744,25 @@ public class AdmsController : ControllerBase
 
                 if (isValid && !string.IsNullOrEmpty(pin))
                 {
-                    bool isExternal = false;
-                    if (pin.Length > 3)
+                    if (externalBranches.TrySplit(pin, out var branchCode, out var actualEmployeeId))
                     {
-                        var branchCode = pin.Substring(0, 3);
-                        if (externalBranches.TryGetValue(branchCode, out var externalBranch))
-                        {
-                            isExternal = true;
-                            var actualEmployeeId = pin.Substring(3);
+                        _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Almacenando localmente (transferencia diferida) para empleado {Id}",
+                            branchCode, actualEmployeeId);
 
-                            _logger.LogInformation("ADMS: Log detectado para sucursal externa {Code}. Almacenando localmente (transferencia diferida) para empleado {Id}",
-                                branchCode, actualEmployeeId);
+                        var utcCheckTime = _timeNormalizer.ToUtc(checkTime, deviceTimeZone);
 
-                            var utcCheckTime = _timeNormalizer.ToUtc(checkTime, deviceTimeZone);
+                        var localExtLog = ExternalAttendanceLog.Create(
+                            branchCode,
+                            actualEmployeeId,
+                            utcCheckTime,
+                            verifyMethod,
+                            checkType,
+                            SN);
 
-                            var localExtLog = ExternalAttendanceLog.Create(
-                                branchCode,
-                                actualEmployeeId,
-                                utcCheckTime,
-                                verifyMethod,
-                                checkType,
-                                SN);
-
-                            pendingExternalLogs.Add(localExtLog);
-                            processed++;
-                        }
+                        pendingExternalLogs.Add(localExtLog);
+                        processed++;
                     }
-
-                    if (!isExternal)
+                    else
                     {
                         var utcCheckTime = _timeNormalizer.ToUtc(checkTime, deviceTimeZone);
                         var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, deviceTimeZone);

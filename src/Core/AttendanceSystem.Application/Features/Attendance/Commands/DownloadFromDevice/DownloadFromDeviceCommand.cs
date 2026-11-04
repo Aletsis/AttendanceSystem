@@ -356,42 +356,27 @@ public sealed class DownloadFromDeviceCommandHandler
             // Nota: Usamos deviceId (ValueObject) que creamos al principio
             var domainRecords = new List<AttendanceRecord>();
 
-            // Obtener todas las sucursales externas para filtrar rápido
-            var allBranches = await _branchRepository.GetAllAsync(cancellationToken);
-            var externalBranches = allBranches.Where(b => b.IsExternal).ToList();
+            var externalBranches = await ExternalBranchCodes.LoadAsync(_branchRepository, cancellationToken);
             var externalLogs = new List<ExternalAttendanceLog>();
 
             foreach (var raw in rawRecords)
             {
-                // Si el ID tiene al menos 4 caracteres (3 de código + al menos 1 de ID)
-                // y los primeros 3 coinciden con una sucursal externa
-                bool isExternal = false;
-                if (raw.UserId.Length > 3)
+                if (externalBranches.TrySplit(raw.UserId, out var branchCode, out var actualEmployeeId))
                 {
-                    var branchCode = raw.UserId.Substring(0, 3);
-                    // Sin distinguir mayúsculas, igual que ADMS.
-                    var externalBranch = externalBranches.FirstOrDefault(b => string.Equals(b.Code, branchCode, StringComparison.OrdinalIgnoreCase));
-                    if (externalBranch != null)
-                    {
-                        isExternal = true;
-                        var actualEmployeeId = raw.UserId.Substring(3);
-
-                        var deviceSerial = deviceSerialNumber ?? command.DeviceId;
-                        // Instante UTC con la zona del reloj (igual que ADMS): el destino no conoce la zona del reloj.
-                        var externalUtc = _timeNormalizer.ToUtc(raw.CheckTime, authoritativeTimeZone);
-                        // Como en ADMS, la subida a la nube es diferida (trabajo de sincronización): si la nube
-                        // no responde, la descarga del reloj no espera un tiempo de conexión por cada checada.
-                        externalLogs.Add(ExternalAttendanceLog.Create(
-                            branchCode,
-                            actualEmployeeId,
-                            externalUtc,
-                            raw.VerifyMethod,
-                            raw.InOutMode,
-                            deviceSerial));
-                    }
+                    var deviceSerial = deviceSerialNumber ?? command.DeviceId;
+                    // Instante UTC con la zona del reloj (igual que ADMS): el destino no conoce la zona del reloj.
+                    var externalUtc = _timeNormalizer.ToUtc(raw.CheckTime, authoritativeTimeZone);
+                    // Como en ADMS, la subida a la nube es diferida (trabajo de sincronización): si la nube
+                    // no responde, la descarga del reloj no espera un tiempo de conexión por cada checada.
+                    externalLogs.Add(ExternalAttendanceLog.Create(
+                        branchCode,
+                        actualEmployeeId,
+                        externalUtc,
+                        raw.VerifyMethod,
+                        raw.InOutMode,
+                        deviceSerial));
                 }
-
-                if (!isExternal)
+                else
                 {
                     var utcCheckTime = _timeNormalizer.ToUtc(raw.CheckTime, authoritativeTimeZone);
                     var workDate = _timeNormalizer.ToWorkDate(utcCheckTime, authoritativeTimeZone);

@@ -1,4 +1,5 @@
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
+using AttendanceSystem.Application.Features.Attendance.Services;
 using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
 
 namespace AttendanceSystem.Application.Features.Attendance.Commands.RecordRealtimePunches;
@@ -65,10 +66,7 @@ public sealed class RecordRealtimePunchesCommandHandler : IRequestHandler<Record
 
         var timeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
         var source = device.Brand.ToString();
-        var externalBranches = (await _branchRepository.GetAllAsync(cancellationToken))
-            .Where(b => b.IsExternal)
-            .GroupBy(b => b.Code, StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+        var externalBranches = await ExternalBranchCodes.LoadAsync(_branchRepository, cancellationToken);
 
         var localLogs = new List<AttendanceLogDto>();
         var externalLogs = new List<ExternalAttendanceLog>();
@@ -76,11 +74,10 @@ public sealed class RecordRealtimePunchesCommandHandler : IRequestHandler<Record
         {
             var utc = _timeNormalizer.ToUtc(punch.CheckTime, timeZone);
 
-            // Igual que la descarga: un ID con el código de 3 letras de una sucursal externa es un empleado de esa sucursal.
-            if (punch.UserId.Length > 3 && externalBranches.ContainsKey(punch.UserId[..3]))
+            if (externalBranches.TrySplit(punch.UserId, out var branchCode, out var externalEmployeeId))
             {
                 externalLogs.Add(ExternalAttendanceLog.Create(
-                    punch.UserId[..3], punch.UserId[3..], utc, punch.VerifyMethod, punch.InOutMode,
+                    branchCode, externalEmployeeId, utc, punch.VerifyMethod, punch.InOutMode,
                     device.HardwareInfo?.SerialNumber ?? command.DeviceId));
                 continue;
             }
