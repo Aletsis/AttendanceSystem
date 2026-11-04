@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Application.Features.Attendance.Commands.DownloadFromDevice;
+using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
 using AttendanceSystem.Application.Features.Devices.Clock;
 using AttendanceSystem.Application.Features.Devices.Quarantine;
 using AttendanceSystem.Application.UnitTests.Features.Attendance.Phase02;
@@ -354,5 +355,39 @@ public class RobustQuarantineTests
         rig.Quarantine.Items.Should().OnlyContain(p => p.ReleasedTime == p.ReportedTime.AddMinutes(p.SuggestedOffsetMinutes!.Value),
             "cada marcaje se corrige con el atraso que se le sugirió");
         rig.H.Store.Records.Select(r => r.GetCivilTime()).Should().BeEquivalentTo(rig.Quarantine.Items.Select(p => p.ReleasedTime!.Value));
+    }
+
+    // ---------- Reloj SDK atrasado en tiempo real ----------
+
+    [Theory]
+    [InlineData(15, false)]
+    [InlineData(12 * 60, true)]
+    public async Task ASdkClockBehindInRealtime_QueuesTheDownloadThatFixesItsTime_InsteadOfAdmsCommands(int minutesBehind, bool lagQuarantined)
+    {
+        var rig = new Rig();
+        rig.Heartbeat.ConnectedSince = Now.AddDays(-1);
+        var devices = new Mock<IDeviceRepository>();
+        devices.Setup(r => r.GetByIdAsync(It.IsAny<DeviceId>(), It.IsAny<CancellationToken>())).ReturnsAsync(rig.Device);
+        var adms = new Mock<IAdmsCommandService>();
+        var scheduler = new Mock<IAttendanceJobScheduler>();
+        var alerts = new List<SystemAlert>();
+        var alertRepository = new Mock<ISystemAlertRepository>();
+        alertRepository.Setup(r => r.AddAsync(It.IsAny<SystemAlert>(), It.IsAny<CancellationToken>()))
+            .Callback<SystemAlert, CancellationToken>((a, _) => alerts.Add(a)).Returns(Task.CompletedTask);
+        var handler = new RecordAttendanceBatchCommandHandler(rig.H.AttendanceRepository, rig.H.UnitOfWork, DefaultTimeNormalizer.Instance, null,
+            NullLogger<RecordAttendanceBatchCommandHandler>.Instance, quarantine: rig.Service, admsCommands: adms.Object, devices: devices.Object,
+            alerts: alertRepository.Object, jobScheduler: scheduler.Object);
+        var civil = Civil(Now.AddMinutes(-minutesBehind));
+
+        // Así lo envía el tiempo real por SDK: sin número de serie.
+        await handler.Handle(new RecordAttendanceBatchCommand(rig.Device.Id.Value,
+            [new AttendanceLogDto("200", civil, 1, 0, OriginalCheckTime: civil, TimeZoneId: Zone, Source: "ZKTeco")], Zone, "ZKTeco",
+            Arrival: PunchArrival.Realtime, DeviceSerial: null), CancellationToken.None);
+
+        scheduler.Verify(s => s.EnqueueDeviceCatchUp(rig.Device.Id.Value), Times.Once, "la descarga verifica la hora del reloj y la ajusta antes de leer");
+        adms.Verify(a => a.EnqueueCommand(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<Guid?>()), Times.Never, "un reloj SDK nunca recoge comandos ADMS");
+        alerts.Should().ContainSingle(a => a.Type == AlertType.DeviceClockDrift)
+            .Which.Message.Should().Contain("se encoló una descarga que ajusta su hora").And.NotContain("reenvió");
+        rig.Incidents.Items.Should().HaveCount(lagQuarantined ? 1 : 0);
     }
 }

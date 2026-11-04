@@ -46,6 +46,7 @@ public sealed class RecordAttendanceBatchCommandHandler
     private readonly IAdmsCommandService? _admsCommands;
     private readonly IDeviceRepository? _devices;
     private readonly AttendanceSystem.Domain.Repositories.ISystemAlertRepository? _alerts;
+    private readonly IAttendanceJobScheduler? _jobScheduler;
 
     public RecordAttendanceBatchCommandHandler(
         IAttendanceRepository attendanceRepository,
@@ -66,8 +67,10 @@ public sealed class RecordAttendanceBatchCommandHandler
         AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService? quarantine = null,
         IAdmsCommandService? admsCommands = null,
         IDeviceRepository? devices = null,
-        AttendanceSystem.Domain.Repositories.ISystemAlertRepository? alerts = null)
+        AttendanceSystem.Domain.Repositories.ISystemAlertRepository? alerts = null,
+        IAttendanceJobScheduler? jobScheduler = null)
     {
+        _jobScheduler = jobScheduler;
         _admsCommands = admsCommands;
         _devices = devices;
         _alerts = alerts;
@@ -201,10 +204,14 @@ public sealed class RecordAttendanceBatchCommandHandler
         log.OriginalCheckTime ?? (log.CheckTime.Kind == DateTimeKind.Utc ? _timeNormalizer.ToCivilTime(log.CheckTime, timeZoneId) : log.CheckTime);
 
     /// <summary>
-    /// Caso 18: un reloj ADMS envió en tiempo real marcajes con hora atrasada (más que la tolerancia de sincronización).
-    /// Se le reenvía la hora correcta y, pasado el umbral de alerta, queda la alerta; si el atraso mandó marcajes a
-    /// cuarentena (R4), se registra el periodo atrasado y se le piden de nuevo sus marcajes de ese periodo (algunos
-    /// firmwares dejan de enviarlos), que pasarán por la cuarentena.
+    /// Caso 18: un reloj envió en tiempo real marcajes con hora atrasada (más que la tolerancia de sincronización).
+    /// Se le corrige la hora y, pasado el umbral de alerta, queda la alerta; si el atraso mandó marcajes a cuarentena
+    /// (R4), se registra el periodo atrasado y se le piden de nuevo sus marcajes de ese periodo (algunos firmwares dejan
+    /// de enviarlos), que pasarán por la cuarentena.
+    /// <para>
+    /// ADMS (llega con número de serie): se le encolan los comandos de hora y la consulta de marcajes. SDK: se encola su
+    /// descarga de respaldo, que antes de leer verifica la hora del reloj y la ajusta.
+    /// </para>
     /// </summary>
     private async Task HandleClockBehindAsync(
         DeviceId deviceId,
@@ -217,28 +224,40 @@ public sealed class RecordAttendanceBatchCommandHandler
     {
         var expectedNow = _quarantine!.ClockNow(timeZoneId);
         var serial = command.DeviceSerial;
+        var device = _devices != null ? await _devices.GetByIdAsync(deviceId, cancellationToken) : null;
+        var name = device?.Name ?? command.DeviceId;
+
+        string correction;
         if (_admsCommands != null && serial != null)
         {
             var offset = _timeNormalizer.ResolveTimeZone(timeZoneId).GetUtcOffset(DateTime.UtcNow);
             foreach (var clockCommand in AdmsTimeZone.ClockCommands(expectedNow, offset)) _admsCommands.EnqueueCommand(serial, clockCommand);
+            correction = "se le reenvió la hora";
+        }
+        else if (_jobScheduler != null && device?.DownloadMethod == DeviceDownloadMethod.Sdk)
+        {
+            _jobScheduler.EnqueueDeviceCatchUp(deviceId.Value);
+            correction = "se encoló una descarga que ajusta su hora";
+        }
+        else
+        {
+            correction = "ajuste su hora desde sus detalles";
         }
 
-        var device = _devices != null ? await _devices.GetByIdAsync(deviceId, cancellationToken) : null;
-        var name = device?.Name ?? command.DeviceId;
         var policy = await _quarantine.PolicyAsync(cancellationToken);
         if (behind <= policy.ClockDriftAlert)
         {
-            _logger.LogInformation("Reloj ADMS {Device} atrasado {Behind}; se encoló su resincronización sin alerta.", name, behind);
+            _logger.LogInformation("Reloj {Device} atrasado {Behind}; {Correction}, sin alerta.", name, behind, correction);
             return;
         }
         if (_alerts != null)
         {
             await _alerts.AddAsync(AttendanceSystem.Domain.Aggregates.SystemAlertAggregate.SystemAlert.Create(AlertType.DeviceClockDrift, deviceId.Value,
-                $"El reloj {name} envió en tiempo real marcajes con hora atrasada {AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(behind)}; se le reenvió la hora." +
+                $"El reloj {name} envió en tiempo real marcajes con hora atrasada {AttendanceSystem.Application.Features.Devices.Quarantine.PunchQuarantineService.Describe(behind)}; {correction}." +
                 (outcome.LagQuarantined ? " Sus marcajes de ese periodo quedaron en cuarentena." : "")), cancellationToken);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
-        _logger.LogWarning("ALERTA: el reloj ADMS {Device} está atrasado {Behind}; se encoló su resincronización.", name, behind);
+        _logger.LogWarning("ALERTA: el reloj {Device} está atrasado {Behind}; {Correction}.", name, behind, correction);
 
         if (!outcome.LagQuarantined) return;
         var earliest = punches.Min(p => DateTime.SpecifyKind(p.CivilTime, DateTimeKind.Unspecified));
