@@ -344,7 +344,7 @@ Se inicia en **Respaldo y Restauración** (rol Administrador). Sólo acepta arch
 4. **Snapshot de seguridad** con `pg_dump`, verificado.
 5. **Restauración atómica:** se terminan las demás conexiones a la base (salvo la del bloqueo) y se ejecuta, en **una sola transacción**:
    ```text
-   pg_restore -f - --clean --if-exists -L <TOC sin system_maintenance> <archivo>  |  psql -X -q -v ON_ERROR_STOP=1
+   pg_restore -f - --clean --if-exists --no-owner --no-privileges -L <TOC sin system_maintenance> <archivo>  |  psql -X -q -v ON_ERROR_STOP=1
    ```
    precedido de `BEGIN; DROP SCHEMA public CASCADE; DROP SCHEMA hangfire CASCADE; CREATE SCHEMA public; ...` (con `lock_timeout` de 30 s). La aplicación envía el `COMMIT` sólo si `pg_restore` generó el script completo y sin errores. **Cualquier fallo antes del `COMMIT` (archivo truncado, error SQL, bloqueo, proceso cancelado o colgado) deja la base exactamente como estaba**, sin necesidad de rollback.
 6. **Validación posterior** (tablas esenciales) y **alineación de versión** comparando `__EFMigrationsHistory` con las migraciones de la aplicación:
