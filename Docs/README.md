@@ -14,9 +14,11 @@ código que la respalda, y se puede comprobar con las consultas y scripts que in
 | [tecnico/01-arquitectura.md](tecnico/01-arquitectura.md) | Proyectos, procesos, formas de instalación, puertos, recorrido de una checada, tareas en segundo plano, arranque y mantenimiento |
 | [tecnico/02-base-de-datos.md](tecnico/02-base-de-datos.md) | Esquemas, convenciones, relaciones e integridad, tablas por área, enumeraciones, migraciones, bloqueos, problemas y consultas de verificación |
 | [tecnico/02b-esquema-columnas.md](tecnico/02b-esquema-columnas.md) | Detalle columna por columna, generado desde el modelo de EF Core |
+| [tecnico/03-motor-de-calculo.md](tecnico/03-motor-de-calculo.md) | Cómo se calcula cada jornada: horario del día, marcajes, fórmulas de retardo, trabajado, comida, salidas y horas extra, y 68 ejemplos numéricos por tipo de turno que son pruebas automáticas |
 
 Herramientas: `python Docs/tools/generar_esquema.py [--check]` regenera (o comprueba) el detalle de columnas;
-`python Docs/tools/verificar_referencias.py` comprueba que las citas al código existan.
+`python Docs/tools/verificar_referencias.py` comprueba que las citas al código existan;
+`dotnet test tests/AttendanceSystem.Application.UnitTests --filter "FullyQualifiedName~MotorCalculoEjemplosTests"` ejecuta los ejemplos del motor de cálculo.
 
 > ⚠️ Los documentos del índice siguiente son anteriores a esta revisión y **pueden no coincidir con el código**
 > (por ejemplo, la versión y la contraseña inicial del checklist de abajo ya no son correctas: el usuario `admin` se
