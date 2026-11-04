@@ -1,0 +1,126 @@
+@using AttendanceSystem.Application.DTOs
+@using AttendanceSystem.Application.Features.Branches.Queries.GetBranches
+@using AttendanceSystem.Application.Features.Devices.Commands.SendBranchEmployeesToDevice
+@using MediatR
+@using MudBlazor
+@inject ISender Sender
+@inject ISnackbar Snackbar
+
+<MudDialog>
+    <DialogContent>
+        <div class="mb-4">
+            <MudText Typo="Typo.subtitle1"><strong>Reloj:</strong> @DeviceName</MudText>
+            <MudText Typo="Typo.caption" Color="Color.Secondary">Se enviarán todos los empleados activos de la sucursal (los dados de baja no). Cada uno conserva su privilegio.</MudText>
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="my-4" />
+        }
+        else if (_result != null)
+        {
+            <MudAlert Severity="@(_result.Failed.Count == 0 ? Severity.Success : Severity.Warning)">
+                Se enviaron @_result.Sent de @_result.Total empleados.
+            </MudAlert>
+            @if (_result.Failed.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-3">No se pudieron enviar:</MudText>
+                <MudList T="string" Dense="true">
+                    @foreach (var failed in _result.Failed)
+                    {
+                        <MudListItem T="string" Icon="@Icons.Material.Filled.ErrorOutline">@failed</MudListItem>
+                    }
+                </MudList>
+            }
+        }
+        else
+        {
+            <MudSelect T="Guid?" @bind-Value="_selectedBranchId" Label="Sucursal" Required="true" Disabled="_sending" AnchorOrigin="Origin.BottomCenter">
+                @foreach (var branch in _branches)
+                {
+                    <MudSelectItem T="Guid?" Value="@branch.Id">@branch.Code - @branch.Name</MudSelectItem>
+                }
+            </MudSelect>
+            @if (_sending)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4" />
+                <MudText Typo="Typo.caption" Color="Color.Secondary">Enviando empleados, esto puede tomar unos minutos...</MudText>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (_result != null)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Close">Cerrar</MudButton>
+        }
+        else
+        {
+            <MudButton OnClick="Cancel" Disabled="_sending">Cancelar</MudButton>
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" StartIcon="@Icons.Material.Filled.GroupAdd" OnClick="Send" Disabled="@(_selectedBranchId == null || _sending || _loading)">
+                @(_sending ? "Enviando..." : "Enviar Sucursal")
+            </MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public string DeviceId { get; set; } = string.Empty;
+    [Parameter] public string DeviceName { get; set; } = string.Empty;
+
+    private List<BranchDto> _branches = new();
+    private Guid? _selectedBranchId;
+    private bool _loading = true;
+    private bool _sending;
+    private SendBranchEmployeesToDeviceResult? _result;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var result = await Sender.Send(new GetBranchesQuery());
+        if (result.IsSuccess)
+        {
+            _branches = result.Value.OrderBy(b => b.Name).ToList();
+            if (_branches.Count == 1) _selectedBranchId = _branches[0].Id;
+        }
+        else
+        {
+            Snackbar.Add("Error al cargar sucursales: " + result.Error, Severity.Error);
+        }
+        _loading = false;
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(true));
+
+    private async Task Send()
+    {
+        if (_selectedBranchId is not { } branchId) return;
+
+        _sending = true;
+        try
+        {
+            var result = await Sender.Send(new SendBranchEmployeesToDeviceCommand(DeviceId, branchId));
+            if (!result.IsSuccess)
+            {
+                Snackbar.Add($"Error al enviar empleados: {result.Error}", Severity.Error);
+            }
+            else if (result.Value.Total == 0)
+            {
+                Snackbar.Add("La sucursal no tiene empleados activos para enviar.", Severity.Info);
+            }
+            else
+            {
+                _result = result.Value;
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error inesperado: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _sending = false;
+        }
+    }
+}

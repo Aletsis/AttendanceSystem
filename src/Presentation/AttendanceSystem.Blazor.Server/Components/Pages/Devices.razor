@@ -123,6 +123,12 @@ else
                         <MudTooltip Text="Sincronizar Empleados">
                             <MudIconButton Icon="@Icons.Material.Filled.PersonAdd" Color="Color.Secondary" OnClick="@(() => SyncEmployees(device))" Size="Size.Small" />
                         </MudTooltip>
+                        @if (_canSendToDevice)
+                        {
+                            <MudTooltip Text="Enviar Empleados de una Sucursal">
+                                <MudIconButton Icon="@Icons.Material.Filled.GroupAdd" Color="Color.Success" OnClick="@(() => OpenSendBranchDialog(device))" Size="Size.Small" />
+                            </MudTooltip>
+                        }
                         <MudTooltip Text="Ver Detalles">
                             <MudIconButton Icon="@Icons.Material.Filled.Info" Color="Color.Primary" OnClick="@(() => OpenDetailsDialog(device))" Size="Size.Small" />
                         </MudTooltip>
@@ -144,9 +150,11 @@ else
     private bool _loading = true;
     private string _searchString = "";
     private CancellationTokenSource? _cts;
+    private bool _canSendToDevice;
 
     protected override async Task OnInitializedAsync()
     {
+        _canSendToDevice = await UiPermissions.HasAsync(Permissions.EmployeesSendToDevice);
         await LoadDevices(isInitial: true);
         _cts = new CancellationTokenSource();
         _ = StartPeriodicRefreshAsync(_cts.Token);
@@ -256,6 +264,22 @@ else
             {
                 Snackbar.Add($"Excepción al sincronizar: {ex.Message}", Severity.Error);
             }
+        }
+    }
+
+    private async Task OpenSendBranchDialog(DeviceDto device)
+    {
+        var parameters = new DialogParameters<SendBranchEmployeesToDeviceDialog>
+        {
+            { x => x.DeviceId, device.DeviceId },
+            { x => x.DeviceName, device.Name }
+        };
+        var options = new DialogOptions { CloseButton = false, BackdropClick = false, MaxWidth = MaxWidth.Small, FullWidth = true };
+
+        var dialog = await DialogService.ShowAsync<SendBranchEmployeesToDeviceDialog>("Enviar Empleados a Reloj", parameters, options);
+        if (await dialog.Result is { Canceled: false })
+        {
+            await RefreshDevice(device);
         }
     }
 
