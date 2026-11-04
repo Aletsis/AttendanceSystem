@@ -53,7 +53,7 @@ public class AdmsDeviceClientTests
             .AddSingleton(new GrpcZKTecoDeviceClient(grpc.Object, NullLogger<GrpcZKTecoDeviceClient>.Instance))
             .BuildServiceProvider();
         var client = new AdmsDeviceClient(commands.Object, provider, NullLogger<AdmsDeviceClient>.Instance);
-        client.SetDevice(Serial);
+        client.SetDevice(Serial, "acc");
         await client.ConnectAsync("192.0.2.1", 4370);
 
         var result = await client.GetDeviceInfoAsync();
@@ -77,7 +77,7 @@ public class AdmsDeviceClientTests
         using var provider = new ServiceCollection().BuildServiceProvider();
         var commands = new Mock<IAdmsCommandService>(MockBehavior.Strict);
         var client = new AdmsDeviceClient(commands.Object, provider, NullLogger<AdmsDeviceClient>.Instance);
-        client.SetDevice(Serial);
+        client.SetDevice(Serial, "acc");
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
@@ -106,7 +106,7 @@ public class AdmsDeviceClientTests
             .AddTransient(_ => new GrpcZKTecoDeviceClient(grpc.Object, NullLogger<GrpcZKTecoDeviceClient>.Instance))
             .BuildServiceProvider();
         var client = new AdmsDeviceClient(commands.Object, provider, NullLogger<AdmsDeviceClient>.Instance);
-        client.SetDevice(Serial);
+        client.SetDevice(Serial, "acc");
         await client.ConnectAsync("192.0.2.1", 4370);
 
         foreach (var id in new[] { "1", "2", "3" })
@@ -128,12 +128,38 @@ public class AdmsDeviceClientTests
     {
         var commands = new Mock<IAdmsCommandService>();
         var client = new AdmsDeviceClient(commands.Object, new ServiceCollection().BuildServiceProvider(), NullLogger<AdmsDeviceClient>.Instance);
-        client.SetDevice(Serial);
+        client.SetDevice(Serial, "acc");
 
         var sent = await client.SetUserAsync(new DeviceUserDto("B01123", "Carlos Eduardo Santana Gómez", "", 0, true));
 
         sent.Should().BeTrue();
         commands.Verify(s => s.EnqueueCommandAsync(Serial,
             It.Is<string>(c => c.StartsWith("DATA UPDATE user\tPIN=B01123\tName=Carlos Eduardo Santana G\tPri=")), null, It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Theory]
+    [InlineData("att")]
+    [InlineData(null)]
+    public async Task SetUser_ByAdms_OnAttendanceDevice_UsesAttendancePushTables(string? deviceType)
+    {
+        // SenseFace M2F (pushver 2.4.1, DeviceType=att) rechaza "DATA UPDATE user" con -1004.
+        const string attSerial = "UFS2252602469";
+        var sentCommands = new List<string>();
+        var commands = new Mock<IAdmsCommandService>();
+        commands.Setup(s => s.EnqueueCommandAsync(attSerial, It.IsAny<string>(), null, It.IsAny<CancellationToken>()))
+            .Callback<string, string, Guid?, CancellationToken>((_, c, _, _) => sentCommands.Add(c))
+            .ReturnsAsync(Guid.NewGuid());
+        var client = new AdmsDeviceClient(commands.Object, new ServiceCollection().BuildServiceProvider(), NullLogger<AdmsDeviceClient>.Instance);
+        client.SetDevice(attSerial, deviceType);
+
+        var sent = await client.SetUserAsync(new DeviceUserDto("978", "Ana", "", 0, true,
+            Fingerprints: new List<DeviceFingerprintDto> { new(6, "TS9TUzIx") }));
+        await client.DeleteUserAsync("978");
+
+        sent.Should().BeTrue();
+        sentCommands.Should().Equal(
+            "DATA UPDATE USERINFO PIN=978\tName=Ana\tPri=0",
+            "DATA UPDATE FINGERTMP PIN=978\tFID=6\tSize=8\tValid=1\tTMP=TS9TUzIx",
+            "DATA DELETE USERINFO PIN=978");
     }
 }

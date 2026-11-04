@@ -34,9 +34,15 @@ public class AdmsDeviceClient : IDeviceClient
         _logger = logger;
     }
 
-    public void SetDevice(string serialNumber)
+    // Relojes de control de acceso (DeviceType=acc) usan las tablas en minúscula del PUSH de acceso (user, biodata);
+    // los de asistencia (att, el valor por omisión) las del PUSH de asistencia (USERINFO, FINGERTMP) y rechazan
+    // las otras con -1004.
+    private bool _isAccessProtocol;
+
+    public void SetDevice(string serialNumber, string? deviceType = null)
     {
         _serialNumber = serialNumber;
+        _isAccessProtocol = string.Equals(deviceType?.Trim(), "acc", StringComparison.OrdinalIgnoreCase);
     }
 
     public Task<bool> ConnectAsync(string ipAddress, int port, string? username = null, string? password = null, CancellationToken cancellationToken = default)
@@ -237,14 +243,16 @@ public class AdmsDeviceClient : IDeviceClient
     public async Task<bool> DeleteUserAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_serialNumber)) return false;
-        await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA DELETE user\tPIN={userId}", cancellationToken: cancellationToken);
+        var command = _isAccessProtocol ? $"DATA DELETE user\tPIN={userId}" : $"DATA DELETE USERINFO PIN={userId}";
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, command, cancellationToken: cancellationToken);
         return true;
     }
 
     public async Task<bool> DeleteUserFingerprintsAsync(string userId, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrEmpty(_serialNumber)) return false;
-        await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA DELETE biodata\tPIN={userId}\tType=0", cancellationToken: cancellationToken);
+        var command = _isAccessProtocol ? $"DATA DELETE biodata\tPIN={userId}\tType=0" : $"DATA DELETE FINGERTMP PIN={userId}";
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber, command, cancellationToken: cancellationToken);
         return true;
     }
 
@@ -357,28 +365,41 @@ public class AdmsDeviceClient : IDeviceClient
         if (!string.IsNullOrEmpty(user.Password)) userCmd += $"\tPasswd={user.Password}";
         if (!string.IsNullOrEmpty(user.CardNumber)) userCmd += $"\tCard={user.CardNumber}";
 
-        await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE user\t{userCmd}", cancellationToken: cancellationToken);
+        await _admsCommandService.EnqueueCommandAsync(_serialNumber,
+            _isAccessProtocol ? $"DATA UPDATE user\t{userCmd}" : $"DATA UPDATE USERINFO {userCmd}", cancellationToken: cancellationToken);
 
         // 2. Huellas Digitales
         if (user.Fingerprints != null && user.Fingerprints.Any())
         {
             foreach (var fp in user.Fingerprints)
             {
-                await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE biodata\tPIN={user.UserId}\tType=0\tIndex={fp.Index}\tVersion=10.0\tContent={fp.Template}", cancellationToken: cancellationToken);
+                await _admsCommandService.EnqueueCommandAsync(_serialNumber,
+                    _isAccessProtocol
+                        ? $"DATA UPDATE biodata\tPIN={user.UserId}\tType=0\tIndex={fp.Index}\tVersion=10.0\tContent={fp.Template}"
+                        : $"DATA UPDATE FINGERTMP PIN={user.UserId}\tFID={fp.Index}\tSize={fp.Template.Length}\tValid=1\tTMP={fp.Template}",
+                    cancellationToken: cancellationToken);
             }
         }
 
         // 3. Rostro (Face)
         if (!string.IsNullOrEmpty(user.FaceTemplate))
         {
-            // Type 9 = Face
-            await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE biodata\tPIN={user.UserId}\tType=9\tVersion=58.0\tContent={user.FaceTemplate}", cancellationToken: cancellationToken);
+            // Type 9 = Face (luz visible)
+            await _admsCommandService.EnqueueCommandAsync(_serialNumber,
+                _isAccessProtocol
+                    ? $"DATA UPDATE biodata\tPIN={user.UserId}\tType=9\tVersion=58.0\tContent={user.FaceTemplate}"
+                    : $"DATA UPDATE BIODATA Pin={user.UserId}\tNo=0\tIndex=0\tValid=1\tDuress=0\tType=9\tMajorVer=58\tMinorVer=0\tFormat=0\tTmp={user.FaceTemplate}",
+                cancellationToken: cancellationToken);
         }
 
         // 4. Fotografía de Perfil
         if (!string.IsNullOrEmpty(user.Photo))
         {
-            await _admsCommandService.EnqueueCommandAsync(_serialNumber, $"DATA UPDATE userpic\tPIN={user.UserId}\tContent={user.Photo}", cancellationToken: cancellationToken);
+            await _admsCommandService.EnqueueCommandAsync(_serialNumber,
+                _isAccessProtocol
+                    ? $"DATA UPDATE userpic\tPIN={user.UserId}\tContent={user.Photo}"
+                    : $"DATA UPDATE USERPIC PIN={user.UserId}\tSize={user.Photo.Length}\tContent={user.Photo}",
+                cancellationToken: cancellationToken);
         }
 
         return true;

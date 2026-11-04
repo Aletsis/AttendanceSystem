@@ -19,7 +19,7 @@ public class DeviceClientFactory : IDeviceClientFactory
         if (device.DownloadMethod == DeviceDownloadMethod.Adms)
         {
             var admsClient = _serviceProvider.GetRequiredService<AdmsDeviceClient>();
-            admsClient.SetDevice(device.HardwareInfo.SerialNumber ?? "");
+            admsClient.SetDevice(device.HardwareInfo.SerialNumber ?? "", device.DeviceType);
             return admsClient;
         }
 
@@ -31,7 +31,7 @@ public class DeviceClientFactory : IDeviceClientFactory
         if (device.DownloadMethod == DeviceDownloadMethod.Adms)
         {
             var admsClient = _serviceProvider.GetRequiredService<AdmsDeviceClient>();
-            admsClient.SetDevice(device.SerialNumber ?? "");
+            admsClient.SetDevice(device.SerialNumber ?? "", device.DeviceType);
             return admsClient;
         }
 
