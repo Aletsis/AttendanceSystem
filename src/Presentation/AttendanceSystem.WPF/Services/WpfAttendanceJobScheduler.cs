@@ -63,5 +63,10 @@ namespace AttendanceSystem.WPF.Services
         {
             // No-op for WPF Client - Handled by server
         }
+
+        public void EnqueueDeviceCatchUp(string deviceId)
+        {
+            // No-op for WPF Client - Handled by server
+        }
     }
 }

@@ -170,6 +170,12 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
         _backgroundJobClient.Enqueue<AttendanceJobs>(
             jobs => jobs.SyncDeviceBiometrics(deviceId, ids, CancellationToken.None));
     }
+
+    public void EnqueueDeviceCatchUp(string deviceId)
+    {
+        _backgroundJobClient.Enqueue<AttendanceJobs>(
+            jobs => jobs.CatchUpDeviceDownload(deviceId, CancellationToken.None));
+    }
 }
 
 /// <summary>
@@ -512,6 +518,21 @@ public class AttendanceJobs
     [JobDisplayName("Automated Daily Report")]
     [AutomaticRetry(Attempts = DailyRetries, DelaysInSeconds = new[] { 600, 1800 })]
     public Task SendAutoReport() => SendAutoReport(null, CancellationToken.None);
+
+    /// <summary>
+    /// Descarga de respaldo de un reloj escuchado en tiempo real. Sin reintentos: si el reloj no responde, su escucha lo
+    /// reintentará al reconectarse y, si no, lo cubre la descarga automática.
+    /// </summary>
+    [JobDisplayName("Catch-up Download from Device {0}")]
+    [AutomaticRetry(Attempts = 0, OnAttemptsExceeded = AttemptsExceededAction.Delete)]
+    public async Task CatchUpDeviceDownload(string deviceId, CancellationToken cancellationToken)
+    {
+        var failed = await DownloadAsync(new[] { deviceId }, cancellationToken);
+        if (failed.Count > 0)
+        {
+            _logger.LogWarning("Descarga de respaldo del reloj {DeviceId} fallida: {Errors}", deviceId, Describe(failed));
+        }
+    }
 
     [JobDisplayName("Sync Biometrics for Employee {1} from Device {0}")]
     public Task SyncEmployeeBiometrics(string deviceId, string employeeId) =>
