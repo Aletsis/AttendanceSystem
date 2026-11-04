@@ -21,7 +21,9 @@ public sealed record UpdateDeviceCommand(
     string? TimeZoneId = null,
     // Caso 18 (R1): fecha mínima aceptada de sus marcajes; null = alta del reloj menos los días configurados.
     DateTime? AcceptPunchesFrom = null,
-    bool UpdateAcceptPunchesFrom = false) : IRequest<Result>;
+    bool UpdateAcceptPunchesFrom = false,
+    // Tiempo real por SDK; null = sin cambio (pantallas que no muestran la opción).
+    bool? RealtimeEnabled = null) : IRequest<Result>;
 
 public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCommand, Result>
 {
@@ -77,6 +79,7 @@ public sealed class UpdateDeviceCommandHandler : IRequestHandler<UpdateDeviceCom
             timeZoneId);
 
         if (request.UpdateAcceptPunchesFrom) device.SetAcceptPunchesFrom(request.AcceptPunchesFrom);
+        if (request.RealtimeEnabled is { } realtime) device.SetRealtimeEnabled(realtime && device.SupportsRealtime);
 
         _logger.LogInformation("Dispositivo actualizado en memoria. SN actual en entidad: '{SerialNumber}'",
             device.HardwareInfo.SerialNumber);

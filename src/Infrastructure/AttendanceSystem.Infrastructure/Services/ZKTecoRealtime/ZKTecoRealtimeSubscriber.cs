@@ -1,4 +1,3 @@
-using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.ZKTeco.Grpc;
 using Grpc.Core;
@@ -11,8 +10,9 @@ using Microsoft.Extensions.Logging;
 namespace AttendanceSystem.Infrastructure.Services.ZKTecoRealtime;
 
 /// <summary>
-/// Se suscribe a los marcajes en tiempo real del servicio ZKTeco y le indica qué relojes escuchar: los activos por SDK
-/// de marca ZKTeco. Se activa con <c>ZKTecoService:Realtime:Enabled</c>. Si el servicio o el stream se caen, reintenta
+/// Se suscribe a los marcajes en tiempo real del servicio ZKTeco y le indica qué relojes escuchar: los activos que tienen
+/// activado el tiempo real (ZKTeco por SDK). Todo se apaga con <c>ZKTecoService:Realtime:Enabled</c> (falso por omisión),
+/// por ejemplo en una instalación sin el servicio ZKTeco. Si el servicio o el stream se caen, reintenta
 /// con espera creciente; lo marcado mientras tanto lo recupera la descarga de respaldo al volver.
 /// Debe correr en un solo proceso (el servidor web): el servicio ZKTeco admite un único suscriptor.
 /// </summary>
@@ -135,7 +135,7 @@ public sealed class ZKTecoRealtimeSubscriber : BackgroundService
         {
             var repository = scope.ServiceProvider.GetRequiredService<IDeviceRepository>();
             devices = (await repository.GetActiveDevicesAsync(cancellationToken))
-                .Where(d => d.DownloadMethod == DeviceDownloadMethod.Sdk && d.Brand == DeviceBrand.ZKTeco && !string.IsNullOrWhiteSpace(d.IpAddress))
+                .Where(d => d.RealtimeEnabled && d.SupportsRealtime && !string.IsNullOrWhiteSpace(d.IpAddress))
                 .Select(d => new RealtimeDevice { DeviceId = d.Id.Value, IpAddress = d.IpAddress.Trim(), Port = d.Port })
                 .OrderBy(d => d.DeviceId, StringComparer.Ordinal)
                 .ToList();

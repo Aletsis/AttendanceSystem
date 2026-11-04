@@ -49,6 +49,8 @@ namespace AttendanceSystem.WPF.ViewModels.Devices
         public string? Platform => _device?.Platform;
         public string? MacAddress => _device?.MacAddress;
         public string ShouldClearAfterDownloadText => (_device?.ShouldClearAfterDownload ?? false) ? "Sí, tras cada descarga completa" : "No";
+        public string RealtimeText => (_device?.RealtimeEnabled ?? false) ? "Activado" : "Desactivado";
+        public bool SupportsRealtime => _device?.Brand == DeviceBrand.ZKTeco && _device.DownloadMethod == DeviceDownloadMethod.Sdk;
         public string TimeZoneText => string.IsNullOrWhiteSpace(_device?.TimeZoneId) ? "La del sistema" : TimeZoneCatalog.Describe(_device!.TimeZoneId!);
         public string LastDownloadText => _device?.LastDownloadAt is { } last ? last.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Nunca";
         public string LastActivityText => _device?.LastActivityAt is { } activity ? activity.ToLocalTime().ToString("dd/MM/yyyy HH:mm") : "Sin registro";

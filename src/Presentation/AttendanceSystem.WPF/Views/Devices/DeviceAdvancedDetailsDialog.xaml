@@ -159,6 +159,8 @@
                                             <TextBlock Text="{Binding LastActivityText}" Style="{StaticResource InfoValueStyle}" Visibility="{Binding IsAdms, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                             <TextBlock Text="Borrar el reloj tras descargar" Style="{StaticResource InfoLabelStyle}"/>
                                             <TextBlock Text="{Binding ShouldClearAfterDownloadText}" Style="{StaticResource InfoValueStyle}"/>
+                                            <TextBlock Text="Marcajes en tiempo real" Style="{StaticResource InfoLabelStyle}" Visibility="{Binding SupportsRealtime, Converter={StaticResource BooleanToVisibilityConverter}}"/>
+                                            <TextBlock Text="{Binding RealtimeText}" Style="{StaticResource InfoValueStyle}" Visibility="{Binding SupportsRealtime, Converter={StaticResource BooleanToVisibilityConverter}}"/>
                                         </StackPanel>
                                     </Border>
                                     <Border Grid.Column="2" Style="{StaticResource CardStyle}" Padding="18,16,18,4">

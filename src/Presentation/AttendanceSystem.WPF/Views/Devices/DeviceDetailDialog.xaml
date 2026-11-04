@@ -115,6 +115,12 @@
                                       IsOn="{Binding ShouldClearAfterDownload}"
                                       Margin="0,0,0,15"/>
 
+                    <StackPanel Margin="0,0,0,15" Visibility="{Binding SupportsRealtime, Converter={StaticResource BooleanToVisibilityConverter}}">
+                        <mah:ToggleSwitch Header="Recibir marcajes en tiempo real" IsOn="{Binding RealtimeEnabled}"/>
+                        <TextBlock Text="Además de las descargas, el servicio ZKTeco mantiene la conexión con el reloj y registra cada marcaje al momento."
+                                   TextWrapping="Wrap" Foreground="{StaticResource Brush.TextSecondary}" FontSize="11" Margin="0,4,0,0"/>
+                    </StackPanel>
+
                     <Border BorderThickness="0,1,0,0" BorderBrush="{StaticResource Brush.Border}" Margin="0,5,0,15"/>
                     <TextBlock Text="Credenciales (Opcional)" FontWeight="Bold" Foreground="{StaticResource Brush.Text}" Margin="0,0,0,10"/>
 

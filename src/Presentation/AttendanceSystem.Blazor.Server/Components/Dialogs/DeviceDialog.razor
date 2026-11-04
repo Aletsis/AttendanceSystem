@@ -55,6 +55,14 @@
                 <MudSwitch @bind-Value="ShouldClearAfterDownload" Label="Borrar registros después de descargar" Color="Color.Secondary" Class="mt-2" />
             }
 
+            @if (Brand == DeviceBrand.ZKTeco && DownloadMethod == DeviceDownloadMethod.Sdk)
+            {
+                <MudSwitch @bind-Value="RealtimeEnabled" Label="Recibir marcajes en tiempo real" Color="Color.Primary" Class="mt-2" />
+                <MudText Typo="Typo.caption" Class="ml-12 mud-text-secondary">
+                    Además de las descargas, el servicio ZKTeco mantiene la conexión con el reloj y registra cada marcaje al momento.
+                </MudText>
+            }
+
             @if (Brand == DeviceBrand.Hikvision)
             {
                 <MudDivider Class="my-4" />
@@ -80,6 +88,7 @@
     [Parameter] public string? Location { get; set; }
     [Parameter] public DeviceBrand Brand { get; set; } = DeviceBrand.ZKTeco;
     [Parameter] public bool ShouldClearAfterDownload { get; set; }
+    [Parameter] public bool RealtimeEnabled { get; set; }
     [Parameter] public DeviceDownloadMethod DownloadMethod { get; set; } = DeviceDownloadMethod.Sdk;
     [Parameter] public string? SerialNumber { get; set; }
     [Parameter] public string? Username { get; set; }
@@ -154,17 +163,18 @@
             var finalSerialNumber = (Brand == DeviceBrand.ZKTeco && DownloadMethod == DeviceDownloadMethod.Adms)
                 ? SerialNumber
                 : (string.IsNullOrEmpty(DeviceId) ? SerialNumber : null);
+            var finalRealtime = RealtimeEnabled && Brand == DeviceBrand.ZKTeco && DownloadMethod == DeviceDownloadMethod.Sdk;
             var finalUsername = Brand == DeviceBrand.Hikvision ? Username : null;
             var finalPassword = Brand == DeviceBrand.Hikvision ? Password : null;
 
             if (string.IsNullOrEmpty(DeviceId))
             {
-                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword, TimeZoneId)));
+                MudDialog.Close(DialogResult.Ok(new CreateDeviceCommand(Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword, TimeZoneId, finalRealtime)));
             }
             else
             {
                 MudDialog.Close(DialogResult.Ok(new UpdateDeviceCommand(Guid.Parse(DeviceId), Name, IpAddress, Port, Location, Brand, ShouldClearAfterDownload, DownloadMethod, finalSerialNumber, finalUsername, finalPassword, TimeZoneId,
-                    AcceptPunchesFrom: AcceptPunchesFrom, UpdateAcceptPunchesFrom: true)));
+                    AcceptPunchesFrom: AcceptPunchesFrom, UpdateAcceptPunchesFrom: true, RealtimeEnabled: finalRealtime)));
             }
         }
     }

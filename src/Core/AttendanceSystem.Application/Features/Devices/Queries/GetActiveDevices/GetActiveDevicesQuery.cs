@@ -52,7 +52,8 @@ public sealed class GetActiveDevicesQueryHandler : IRequestHandler<GetActiveDevi
             d.HardwareInfo.MacAddress,
             d.TimeZoneId,
             AcceptPunchesFrom: d.AcceptPunchesFrom,
-            CreatedAt: d.CreatedAt
+            CreatedAt: d.CreatedAt,
+            RealtimeEnabled: d.RealtimeEnabled
         ));
 
         return Result<IEnumerable<DeviceDto>>.Success(dtos);

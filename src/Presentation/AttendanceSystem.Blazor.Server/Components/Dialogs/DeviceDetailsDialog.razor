@@ -201,6 +201,17 @@
                                             </MudChip>
                                         </td>
                                     </tr>
+                                    @if (Device.Brand == DeviceBrand.ZKTeco && Device.DownloadMethod == DeviceDownloadMethod.Sdk)
+                                    {
+                                        <tr>
+                                            <td class="font-weight-medium">Tiempo Real:</td>
+                                            <td>
+                                                <MudChip T="string" Size="Size.Small" Color="@(Device.RealtimeEnabled ? Color.Primary : Color.Default)" Variant="Variant.Outlined">
+                                                    @(Device.RealtimeEnabled ? "Activado" : "Desactivado")
+                                                </MudChip>
+                                            </td>
+                                        </tr>
+                                    }
                                 </tbody>
                             </MudSimpleTable>
                         </MudPaper>

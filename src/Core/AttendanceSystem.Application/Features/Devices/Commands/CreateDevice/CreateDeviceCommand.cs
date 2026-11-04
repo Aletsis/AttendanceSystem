@@ -21,7 +21,8 @@ public sealed record CreateDeviceCommand(
     string? SerialNumber = null,
     string? Username = null,
     string? Password = null,
-    string? TimeZoneId = null) : IRequest<Result<Guid>>;
+    string? TimeZoneId = null,
+    bool RealtimeEnabled = false) : IRequest<Result<Guid>>;
 
 public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCommand, Result<Guid>>
 {
@@ -64,6 +65,7 @@ public sealed class CreateDeviceCommandHandler : IRequestHandler<CreateDeviceCom
             request.Username,
             request.Password,
             timeZoneId);
+        if (request.RealtimeEnabled) device.SetRealtimeEnabled(true);
 
         // Intentar conectar y obtener información del dispositivo solo si es SDK
         if (request.DownloadMethod == DeviceDownloadMethod.Sdk)

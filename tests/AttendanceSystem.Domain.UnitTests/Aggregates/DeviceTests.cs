@@ -157,4 +157,33 @@ public class DeviceTests
         device.Status.Should().Be(DeviceStatus.Error);
         device.DomainEvents.Should().ContainSingle(e => e is DeviceDownloadFailedEvent);
     }
+
+    [Fact]
+    public void Realtime_CanOnlyBeEnabledOnZKTecoSdkClocks()
+    {
+        var sdk = Device.Create("D1", "SDK", "10.0.0.1", 4370);
+        var adms = Device.Create("D2", "ADMS", "10.0.0.2", 4370, downloadMethod: DeviceDownloadMethod.Adms, serialNumber: "SN");
+        var hikvision = Device.Create("D3", "Hik", "10.0.0.3", 80, DeviceBrand.Hikvision);
+
+        sdk.SetRealtimeEnabled(true);
+
+        sdk.RealtimeEnabled.Should().BeTrue();
+        FluentActions.Invoking(() => adms.SetRealtimeEnabled(true)).Should().Throw<DomainException>();
+        FluentActions.Invoking(() => hikvision.SetRealtimeEnabled(true)).Should().Throw<DomainException>();
+        adms.SetRealtimeEnabled(false);
+        adms.RealtimeEnabled.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Realtime_TurnsOffWhenTheClockStopsBeingZKTecoSdk()
+    {
+        var device = Device.Create("D1", "SDK", "10.0.0.1", 4370);
+        device.SetRealtimeEnabled(true);
+
+        device.UpdateConfiguration("SDK", "10.0.0.1", 4370, DeviceBrand.ZKTeco, null, false, DeviceDownloadMethod.Sdk);
+        device.RealtimeEnabled.Should().BeTrue("seguir siendo SDK no la cambia");
+
+        device.UpdateConfiguration("ADMS", "10.0.0.1", 4370, DeviceBrand.ZKTeco, null, false, DeviceDownloadMethod.Adms, serialNumber: "SN");
+        device.RealtimeEnabled.Should().BeFalse();
+    }
 }

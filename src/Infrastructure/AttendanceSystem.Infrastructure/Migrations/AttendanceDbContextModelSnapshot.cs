@@ -1090,6 +1090,11 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<int>("Port")
                         .HasColumnType("integer");
 
+                    b.Property<bool>("RealtimeEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("ShouldClearAfterDownload")
                         .HasColumnType("boolean");
 
