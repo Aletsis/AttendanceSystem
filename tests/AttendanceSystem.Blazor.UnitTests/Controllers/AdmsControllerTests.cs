@@ -175,6 +175,24 @@ public class AdmsControllerTests
     }
 
     [Fact]
+    public async Task DeviceCmd_InfoKeepsFingerprintsWhenDeviceDeclaresFingerFunOn()
+    {
+        // SenseFace M2F-LR: el firmware contiene "-NF" (NF28HA) pero el reloj declara lector de huella.
+        SetRequestBody("ID=21&Return=0&CMD=INFO\n" +
+            "FWVersion=ZAM70-NF28HA-Ver3.1.12\n" +
+            "FingerFunOn=1\n" +
+            "FPCount=4\n" +
+            "~MaxFingerCount=30\n" +
+            "MultiBioDataSupport=0:1:0:0:0:0:0:0:0:1\n");
+
+        await _controller.DeviceCmd("CL5Z202660239");
+
+        _admsCommandServiceMock.Verify(s => s.NotifyDeviceInfoReceivedAsync("CL5Z202660239",
+            It.Is<AttendanceSystem.Application.DTOs.DeviceInfoDto>(i =>
+                i.FingerprintCount == 4 && i.FingerprintCapacity == 3000), "21", It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
     public async Task QueryData_WhenTransactionTableQueried_ShouldReturnOkContentAndNotIncludeCount()
     {
         // Arrange: Línea de Transaction del log real

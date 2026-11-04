@@ -108,6 +108,10 @@ public class AdmsController : ControllerBase
         return device;
     }
 
+    /// <summary>Firmware de modelo sin lector de huella: "-NF-" o terminado en "-NF" (no "-NF28HA").</summary>
+    private static bool IsNoFingerprintFirmware(string? value) =>
+        value != null && Regex.IsMatch(value, @"-NF(-|$)", RegexOptions.IgnoreCase);
+
     private static string SanitizeCommand(string command)
     {
         if (string.IsNullOrEmpty(command)) return command;
@@ -124,7 +128,8 @@ public class AdmsController : ControllerBase
         [FromQuery] string SN,
         [FromQuery] string? options = null,
         [FromQuery] string? PushOptionsFlag = null,
-        [FromQuery] string? pushver = null)
+        [FromQuery] string? pushver = null,
+        [FromQuery] string? DeviceType = null)
     {
         var device = await ValidateAuthorizedDeviceAsync(SN);
         if (device == null)
@@ -140,6 +145,13 @@ public class AdmsController : ControllerBase
         if (!string.IsNullOrEmpty(pushver) && device.HardwareInfo?.PushVersion != pushver)
         {
             device.UpdateDeviceInfo((device.HardwareInfo ?? DeviceHardwareInfo.Empty) with { PushVersion = pushver });
+            changed = true;
+        }
+        // El tipo (att/acc) define la sintaxis de los comandos que se le envían; los relojes que no pasan
+        // por /registry sólo lo anuncian aquí.
+        if (!string.IsNullOrWhiteSpace(DeviceType) && !string.Equals(device.DeviceType, DeviceType.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            device.SetDeviceType(DeviceType.Trim().ToLowerInvariant());
             changed = true;
         }
         if (device.Status != DeviceStatus.Online)
@@ -1214,15 +1226,17 @@ public class AdmsController : ControllerBase
             var userCount = GetInt("UserCount", "~UserCount");
             var faceCount = GetInt("FaceCount", "~FaceCount");
 
-            // Detección de soporte de huellas digitales en hardware:
-            // 1. Firmwares ZKTeco con "NF" (Non-Fingerprint), p. ej. "ZAM170-NF-Ver1.1.20".
-            // 2. Parámetro FingerFunOn / ~FingerFunOn == 0.
-            // 3. ZKFPVersion == "0" o ausente en modelos NF.
+            // Detección de soporte de huellas digitales en hardware. Lo que el reloj declara manda:
+            // 1. FingerFunOn / ~FingerFunOn (1 = tiene lector, 0 = no).
+            // 2. MultiBioDataSupport: la posición 1 es huella ("0:1:0:..." = soportada).
+            // 3. Sólo si no declara nada: firmware "-NF-" (Non-Fingerprint), p. ej. "ZAM170-NF-Ver1.1.20".
+            //    No basta con contener "-NF": "ZAM70-NF28HA-Ver3.1.12" (SenseFace M2F) sí tiene huella.
+            var fingerFunOn = GetVal("FingerFunOn", "~FingerFunOn");
+            var multiBioSupport = GetVal("MultiBioDataSupport", "~MultiBioDataSupport")?.Split(':');
             var isNoFingerprintDevice =
-                (fw?.Contains("-NF", StringComparison.OrdinalIgnoreCase) == true) ||
-                (platform?.Contains("-NF", StringComparison.OrdinalIgnoreCase) == true) ||
-                (GetVal("FingerFunOn", "~FingerFunOn") == "0") ||
-                (GetVal("ZKFPVersion", "~ZKFPVersion") == "0" && fw?.Contains("-NF", StringComparison.OrdinalIgnoreCase) == true);
+                fingerFunOn != null ? fingerFunOn == "0" :
+                multiBioSupport is { Length: > 1 } ? multiBioSupport[1] == "0" :
+                IsNoFingerprintFirmware(fw) || IsNoFingerprintFirmware(platform);
 
             int? fpCount = null;
             int? fpCap = null;
