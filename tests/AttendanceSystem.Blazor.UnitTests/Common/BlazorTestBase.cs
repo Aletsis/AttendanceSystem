@@ -35,7 +35,9 @@ public abstract class BlazorTestBase : TestContext
         Services.AddScoped<AttendanceSystem.Blazor.Server.Services.UiPermissions>();
 
         MediatorMock = new Mock<IMediator>();
-        SenderMock = new Mock<ISender>();
+        // Los componentes piden todo a CircuitMediator, que reenvía al IMediator del ámbito: un solo simulacro
+        // (ISender es la misma instancia) para que las preparaciones hechas en cualquiera de los dos apliquen.
+        SenderMock = MediatorMock.As<ISender>();
         ImportServiceMock = new Mock<IImportService>();
         ExportServiceMock = new Mock<IReportExportService>();
         EmailServiceMock = new Mock<IEmailService>();
@@ -47,6 +49,7 @@ public abstract class BlazorTestBase : TestContext
 
         Services.AddSingleton(MediatorMock.Object);
         Services.AddSingleton(SenderMock.Object);
+        Services.AddScoped<AttendanceSystem.Blazor.Server.Services.CircuitMediator>();
         Services.AddSingleton(ImportServiceMock.Object);
         Services.AddSingleton(ExportServiceMock.Object);
         Services.AddSingleton(EmailServiceMock.Object);

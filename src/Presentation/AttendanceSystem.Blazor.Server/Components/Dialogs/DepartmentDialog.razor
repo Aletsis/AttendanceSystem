@@ -23,7 +23,7 @@
 
 @code {
     [CascadingParameter] IMudDialogInstance MudDialog { get; set; } = default!;
-    [Inject] ISender Sender { get; set; } = default!;
+    [Inject] CircuitMediator Sender { get; set; } = default!;
 
     [Parameter] public Guid? DepartmentId { get; set; }
     [Parameter] public string Name { get; set; } = string.Empty;
