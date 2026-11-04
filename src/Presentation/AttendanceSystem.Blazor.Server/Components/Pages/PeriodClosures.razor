@@ -1,7 +1,7 @@
 @page "/attendance/periods"
 @attribute [Authorize(Policy = Permissions.AttendanceClosePeriod)]
 @using AttendanceSystem.Application.Features.Attendance.PeriodClosure
-@inject ISender Sender
+@inject CircuitMediator Sender
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
 

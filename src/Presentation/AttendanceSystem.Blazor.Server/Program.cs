@@ -88,6 +88,8 @@ try
     builder.Services.AddInfrastructureServices(builder.Configuration);
     builder.Services.AddScoped<ICurrentUserService, BlazorCurrentUserService>();
     builder.Services.AddScoped<AttendanceSystem.Blazor.Server.Services.UiPermissions>();
+    // Cada petición de un componente en su propio ámbito (y DbContext): el ámbito del circuito lo comparten todos.
+    builder.Services.AddScoped<AttendanceSystem.Blazor.Server.Services.CircuitMediator>();
 
     // ===== IDENTITY & AUTHENTICATION =====
     builder.Services.AddIdentity<ApplicationUser, IdentityRole>(options =>
