@@ -18,6 +18,8 @@ public sealed record ExternalEmployeeDto
     public string? Department { get; init; }
     public EmployeeStatus Status { get; init; }
     public string? CardNumber { get; init; }
+    /// <summary>Huellas copiadas del reloj local; se reenvían al mandar al empleado a un reloj.</summary>
+    public int FingerprintCount { get; init; }
     public DateTime CreatedAt { get; init; }
     public DateTime? UpdatedAt { get; init; }
 }

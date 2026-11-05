@@ -399,6 +399,7 @@
                         <DataGridTextColumn Header="Departamento" Binding="{Binding Department}" Width="140"/>
                         <DataGridTextColumn Header="Puesto" Binding="{Binding Position}" Width="140"/>
                         <DataGridTextColumn Header="No. Tarjeta" Binding="{Binding CardNumber}" Width="110"/>
+                        <DataGridTextColumn Header="Huellas" Binding="{Binding FingerprintCount}" Width="80"/>
                         <DataGridTemplateColumn Header="Estado" Width="120">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>

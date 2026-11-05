@@ -264,6 +264,54 @@ public class DownloadFromDeviceSafetyTests
         _externalLogRepositoryMock.Verify(r => r.UpdateAsync(It.IsAny<ExternalAttendanceLog>(), It.IsAny<CancellationToken>()), Times.Never(),
             "la subida a la nube la hace el trabajo de sincronización, no la descarga");
     }
+
+    [Fact]
+    public async Task Handle_NewExternalPunches_EnqueueOneFingerprintSyncForThoseExternals()
+    {
+        var checkTime = new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Utc);
+        _branchRepositoryMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch>
+            {
+                AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch.Create("B01", "Remota", null, isExternal: true)
+            });
+        _deviceClientMock.Setup(c => c.GetAttendanceLogsAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeviceLogsResult.Success(new List<RawAttendanceRecord>
+            {
+                new("B01123", checkTime, 1, 0, 0),
+                new("B01123", checkTime.AddHours(9), 1, 1, 0),
+                new("B01456", checkTime, 1, 0, 0)
+            }));
+        _externalLogRepositoryMock
+            .Setup(r => r.ExcludeAlreadyStoredAsync(It.IsAny<IReadOnlyList<ExternalAttendanceLog>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((IReadOnlyList<ExternalAttendanceLog> logs, CancellationToken _) => logs);
+
+        var result = await _handler.Handle(new DownloadFromDeviceCommand("1"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _jobSchedulerMock.Verify(s => s.EnqueueExternalBiometricSync("1",
+            It.Is<IReadOnlyCollection<string>>(ids => ids.OrderBy(i => i).SequenceEqual(new[] { "B01123", "B01456" }))), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ExternalPunchesAlreadyStored_DoNotEnqueueAFingerprintSync()
+    {
+        _branchRepositoryMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch>
+            {
+                AttendanceSystem.Domain.Aggregates.BranchAggregate.Branch.Create("B01", "Remota", null, isExternal: true)
+            });
+        _deviceClientMock.Setup(c => c.GetAttendanceLogsAsync(It.IsAny<string>(), It.IsAny<DateTime?>(), It.IsAny<DateTime?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(DeviceLogsResult.Success(new List<RawAttendanceRecord> { new("B01123", new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Utc), 1, 0, 0) }));
+        _externalLogRepositoryMock
+            .Setup(r => r.ExcludeAlreadyStoredAsync(It.IsAny<IReadOnlyList<ExternalAttendanceLog>>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<ExternalAttendanceLog>());
+
+        var result = await _handler.Handle(new DownloadFromDeviceCommand("1"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        _jobSchedulerMock.Verify(s => s.EnqueueExternalBiometricSync(It.IsAny<string>(), It.IsAny<IReadOnlyCollection<string>>()), Times.Never);
+    }
+
     [Theory]
     [InlineData("att", "ATTLOG", false, false)]
     [InlineData("acc", "Transaction", false, false)]

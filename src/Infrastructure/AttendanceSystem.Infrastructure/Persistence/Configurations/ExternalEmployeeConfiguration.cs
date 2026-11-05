@@ -56,6 +56,16 @@ public class ExternalEmployeeConfiguration : IEntityTypeConfiguration<ExternalEm
             .IsRequired(false)
             .HasMaxLength(50);
 
+        // Huellas copiadas del reloj local; se borran con el empleado.
+        builder.OwnsMany(e => e.Fingerprints, fb =>
+        {
+            fb.ToTable("ExternalEmployeeFingerprints");
+            fb.WithOwner().HasForeignKey("ExternalEmployeeId");
+            fb.HasKey("Id");
+            fb.Property(p => p.FingerIndex).IsRequired();
+            fb.Property(p => p.Template).IsRequired().HasMaxLength(16000);
+        });
+
         builder.Property(e => e.CreatedAt)
             .IsRequired();
 

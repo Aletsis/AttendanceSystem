@@ -299,6 +299,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                             Department = emp.Department ?? "N/A",
                             Position = emp.Position ?? "N/A",
                             CardNumber = emp.CardNumber ?? "N/A",
+                            FingerprintCount = emp.FingerprintCount,
                             Status = Converters.EnumDisplay.Text(emp.Status),
                             StatusValue = emp.Status,
                             CreatedAt = emp.CreatedAt
@@ -462,7 +463,8 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 { "Position", empData.Position! },
                 { "Department", empData.Department! },
                 { "Status", empData.Status },
-                { "CardNumber", empData.CardNumber! }
+                { "CardNumber", empData.CardNumber! },
+                { "FingerprintCount", empData.FingerprintCount }
             };
 
             _dialogService.ShowDialog("ExternalEmployeeDetailDialog", parameters, async result =>
@@ -774,6 +776,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         public string Department { get; set; } = string.Empty;
         public string Position { get; set; } = string.Empty;
         public string CardNumber { get; set; } = string.Empty;
+        public int FingerprintCount { get; set; }
         public string Status { get; set; } = string.Empty;
         public EmployeeStatus StatusValue { get; set; }
         public DateTime CreatedAt { get; set; }

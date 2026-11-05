@@ -27,6 +27,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         private string? _position;
         private string? _department;
         private string? _cardNumber;
+        private int _fingerprintCount;
         private EmployeeStatus _status = EmployeeStatus.Alta;
 
         public string Title
@@ -116,6 +117,13 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
         {
             get => _cardNumber;
             set => SetProperty(ref _cardNumber, value);
+        }
+
+        /// <summary>Huellas copiadas del reloj local (solo lectura: se enrolan en el reloj).</summary>
+        public int FingerprintCount
+        {
+            get => _fingerprintCount;
+            set => SetProperty(ref _fingerprintCount, value);
         }
 
         public EmployeeStatus Status
@@ -229,6 +237,7 @@ namespace AttendanceSystem.WPF.ViewModels.Employees
                 Department = parameters.GetValue<string?>("Department");
                 Status = parameters.GetValue<EmployeeStatus>("Status");
                 CardNumber = parameters.GetValue<string?>("CardNumber");
+                FingerprintCount = parameters.ContainsKey("FingerprintCount") ? parameters.GetValue<int>("FingerprintCount") : 0;
                 Title = "Editar Empleado Externo";
             }
             else

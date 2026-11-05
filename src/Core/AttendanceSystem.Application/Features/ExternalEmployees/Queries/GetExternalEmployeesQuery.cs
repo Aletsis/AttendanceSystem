@@ -63,6 +63,7 @@ public sealed class GetExternalEmployeesQueryHandler : IRequestHandler<GetExtern
                 Department = e.Department,
                 Status = e.Status,
                 CardNumber = e.CardNumber,
+                FingerprintCount = e.Fingerprints.Count,
                 CreatedAt = e.CreatedAt,
                 UpdatedAt = e.UpdatedAt
             };

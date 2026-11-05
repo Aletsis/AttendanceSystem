@@ -224,6 +224,20 @@ else
                             @(string.IsNullOrEmpty(context.Item.CardNumber) ? "-" : context.Item.CardNumber)
                         </CellTemplate>
                     </PropertyColumn>
+                    <PropertyColumn Property="x => x.FingerprintCount" Title="Huellas">
+                        <CellTemplate>
+                            @if (context.Item.FingerprintCount > 0)
+                            {
+                                <MudChip T="string" Icon="@Icons.Material.Filled.Fingerprint" Color="Color.Info" Variant="Variant.Outlined" Size="Size.Small">
+                                    @context.Item.FingerprintCount
+                                </MudChip>
+                            }
+                            else
+                            {
+                                <MudText Typo="Typo.body2" Color="Color.Secondary">-</MudText>
+                            }
+                        </CellTemplate>
+                    </PropertyColumn>
                     <PropertyColumn Property="x => x.Status" Title="Estado">
                         <CellTemplate>
                             <MudChip T="string" Color="@(context.Item.Status == EmployeeStatus.Alta ? Color.Success : context.Item.Status == EmployeeStatus.Baja ? Color.Error : Color.Warning)" Size="Size.Small">

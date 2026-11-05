@@ -16,6 +16,8 @@ public sealed class ExternalEmployee : AggregateRoot<Guid>
     public string? Department { get; private set; }
     public EmployeeStatus Status { get; private set; }
     public string? CardNumber { get; private set; }
+    private readonly List<ExternalEmployeeFingerprint> _fingerprints = new();
+    public IReadOnlyCollection<ExternalEmployeeFingerprint> Fingerprints => _fingerprints.AsReadOnly();
     public DateTime CreatedAt { get; private set; }
     public DateTime? UpdatedAt { get; private set; }
 
@@ -95,6 +97,41 @@ public sealed class ExternalEmployee : AggregateRoot<Guid>
         Status = status;
         CardNumber = string.IsNullOrWhiteSpace(cardNumber) ? null : cardNumber.Trim();
         UpdatedAt = DateTime.UtcNow;
+    }
+
+    /// <summary>
+    /// Copia lo que el reloj local tiene del empleado: cada huella reemplaza a la del mismo dedo, y la tarjeta solo se
+    /// toma si aquí no hay una (la capturada en el sistema manda). Devuelve si algo cambió.
+    /// </summary>
+    public bool UpdateFromDevice(IEnumerable<ExternalEmployeeFingerprint>? fingerprints, string? cardNumber = null)
+    {
+        var changed = false;
+
+        if (fingerprints != null)
+        {
+            foreach (var fp in fingerprints)
+            {
+                if (string.IsNullOrWhiteSpace(fp.Template)) continue;
+
+                var existing = _fingerprints.FirstOrDefault(f => f.FingerIndex == fp.FingerIndex);
+                if (existing != null)
+                {
+                    if (existing.Template == fp.Template) continue;
+                    _fingerprints.Remove(existing);
+                }
+                _fingerprints.Add(fp);
+                changed = true;
+            }
+        }
+
+        if (string.IsNullOrEmpty(CardNumber) && !string.IsNullOrWhiteSpace(cardNumber))
+        {
+            CardNumber = cardNumber.Trim();
+            changed = true;
+        }
+
+        if (changed) UpdatedAt = DateTime.UtcNow;
+        return changed;
     }
 
     public void Deactivate()
