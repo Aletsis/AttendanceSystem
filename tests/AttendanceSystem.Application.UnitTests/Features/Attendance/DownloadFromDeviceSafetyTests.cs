@@ -313,13 +313,14 @@ public class DownloadFromDeviceSafetyTests
     }
 
     [Theory]
-    [InlineData("att", "ATTLOG", false, false)]
-    [InlineData("acc", "Transaction", false, false)]
-    [InlineData("att", "ATTLOG", true, false)]
-    [InlineData("acc", "Transaction", true, false)]
-    [InlineData("att", "ATTLOG", false, true)]
+    // Relojes de asistencia (att) rechazan "tablename=ATTLOG,starttime=…" con -1004: usan "DATA QUERY ATTLOG StartTime=…".
+    [InlineData("att", false, false, "DATA QUERY ATTLOG StartTime=2026-01-01 00:00:00\tEndTime=2026-01-02 23:59:59")]
+    [InlineData("acc", false, false, "DATA QUERY tablename=Transaction,starttime=2026-01-01 00:00:00,endtime=2026-01-02 23:59:59")]
+    [InlineData("att", true, false, "DATA QUERY ATTLOG StartTime=2000-01-01 00:00:00\tEndTime=2099-12-31 23:59:59")]
+    [InlineData("acc", true, false, "DATA QUERY tablename=Transaction,fields=*")]
+    [InlineData("att", false, true, "DATA QUERY ATTLOG StartTime=2026-01-01 00:00:00\tEndTime=2026-01-02 23:59:59")]
     public async Task Adms_QueriesOnlyAttendance_WithoutResettingPushCursors(
-        string mode, string table, bool fullSync, bool withoutEnd)
+        string mode, bool fullSync, bool withoutEnd, string expected)
     {
         var device = Device.Create("1", "ADMS", "192.168.1.200", 4370,
             DeviceBrand.ZKTeco, downloadMethod: DeviceDownloadMethod.Adms, serialNumber: "SN123");
@@ -335,9 +336,6 @@ public class DownloadFromDeviceSafetyTests
             withoutEnd ? null : to, ForceFullSync: fullSync), CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        var expected = fullSync
-            ? $"DATA QUERY tablename={table},fields=*"
-            : $"DATA QUERY tablename={table},starttime=2026-01-01 00:00:00,endtime=2026-01-02 23:59:59";
         _admsCommandServiceMock.Verify(s => s.EnqueueCommandAsync("SN123", expected,
             It.Is<Guid?>(id => id.HasValue), It.IsAny<CancellationToken>()), Times.Once);
         _admsCommandServiceMock.VerifyNoOtherCalls();
