@@ -65,4 +65,21 @@ public class SendEmployeeToDeviceCommandHandlerTests
         result.IsSuccess.Should().BeTrue();
         _client.Verify(c => c.SetUserAsync(It.Is<DeviceUserDto>(u => u.UserId == "B01123"), It.IsAny<CancellationToken>()), Times.Once);
     }
+
+    [Fact]
+    public async Task Handle_ExternalWithFingerprints_SendsThemToTheDevice()
+    {
+        var ana = ExternalEmployee.Create(_b01.Id, "123", "Ana", "López");
+        ana.UpdateFromDevice(new[] { new ExternalEmployeeFingerprint(3, "TPL-3"), new ExternalEmployeeFingerprint(6, "TPL-6") });
+        Externals(ana);
+        DeviceUserDto? sent = null;
+        _client.Setup(c => c.SetUserAsync(It.IsAny<DeviceUserDto>(), It.IsAny<CancellationToken>()))
+            .Callback<DeviceUserDto, CancellationToken>((u, _) => sent = u)
+            .ReturnsAsync(true);
+
+        var result = await _handler.Handle(new SendEmployeeToDeviceCommand("123", "1"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        sent!.Fingerprints.Should().BeEquivalentTo(new[] { new DeviceFingerprintDto(3, "TPL-3"), new DeviceFingerprintDto(6, "TPL-6") });
+    }
 }

@@ -171,6 +171,13 @@ public class HangfireAttendanceJobScheduler : IAttendanceJobScheduler
             jobs => jobs.SyncDeviceBiometrics(deviceId, ids, CancellationToken.None));
     }
 
+    public void EnqueueExternalBiometricSync(string deviceId, IReadOnlyCollection<string> deviceUserIds)
+    {
+        var ids = deviceUserIds.ToArray();
+        _backgroundJobClient.Enqueue<AttendanceJobs>(
+            jobs => jobs.SyncExternalDeviceBiometrics(deviceId, ids, CancellationToken.None));
+    }
+
     public void EnqueueDeviceCatchUp(string deviceId)
     {
         _backgroundJobClient.Enqueue<AttendanceJobs>(
@@ -489,6 +496,17 @@ public class AttendanceJobs
         {
             throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
                 $"Sync Missing Biometrics from Device {deviceId}", result.Error);
+        }
+    }
+
+    [JobDisplayName("Sync Missing External Employee Fingerprints from Device {0}")]
+    public async Task SyncExternalDeviceBiometrics(string deviceId, string[] deviceUserIds, CancellationToken cancellationToken)
+    {
+        var result = await _mediator.Send(new AttendanceSystem.Application.Features.ExternalEmployees.Commands.SyncExternalEmployeeBiometrics.SyncExternalEmployeeBiometricsCommand(deviceId, deviceUserIds), cancellationToken);
+        if (!result.IsSuccess)
+        {
+            throw new AttendanceSystem.Infrastructure.Exceptions.JobExecutionFailedException(
+                $"Sync Missing External Employee Fingerprints from Device {deviceId}", result.Error);
         }
     }
 

@@ -103,6 +103,7 @@ public sealed class UpdateExternalEmployeeCommandHandler : IRequestHandler<Updat
                 Department = externalEmployee.Department,
                 Status = externalEmployee.Status,
                 CardNumber = externalEmployee.CardNumber,
+                FingerprintCount = externalEmployee.Fingerprints.Count,
                 CreatedAt = externalEmployee.CreatedAt,
                 UpdatedAt = externalEmployee.UpdatedAt
             };

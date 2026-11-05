@@ -2437,6 +2437,40 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Navigation("StatusPeriods");
                 });
 
+            modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployee", b =>
+                {
+                    b.OwnsMany("AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate.ExternalEmployeeFingerprint", "Fingerprints", b1 =>
+                        {
+                            b1.Property<int>("Id")
+                                .ValueGeneratedOnAdd()
+                                .HasColumnType("integer");
+
+                            NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b1.Property<int>("Id"));
+
+                            b1.Property<Guid>("ExternalEmployeeId")
+                                .HasColumnType("uuid");
+
+                            b1.Property<int>("FingerIndex")
+                                .HasColumnType("integer");
+
+                            b1.Property<string>("Template")
+                                .IsRequired()
+                                .HasMaxLength(16000)
+                                .HasColumnType("character varying(16000)");
+
+                            b1.HasKey("Id");
+
+                            b1.HasIndex("ExternalEmployeeId");
+
+                            b1.ToTable("ExternalEmployeeFingerprints", (string)null);
+
+                            b1.WithOwner()
+                                .HasForeignKey("ExternalEmployeeId");
+                        });
+
+                    b.Navigation("Fingerprints");
+                });
+
             modelBuilder.Entity("AttendanceSystem.Domain.Aggregates.ShiftAggregate.Shift", b =>
                 {
                     b.OwnsMany("AttendanceSystem.Domain.Aggregates.ShiftAggregate.ShiftDay", "Days", b1 =>

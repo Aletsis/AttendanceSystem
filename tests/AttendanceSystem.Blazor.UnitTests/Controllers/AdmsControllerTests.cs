@@ -4,7 +4,9 @@ using AttendanceSystem.Application.Common;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
 using AttendanceSystem.Adms;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
+using AttendanceSystem.Domain.Aggregates.BranchAggregate;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
+using AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate;
 using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
 using AttendanceSystem.Domain.Enumerations;
 using AttendanceSystem.Domain.Repositories;
@@ -33,6 +35,7 @@ public class AdmsControllerTests
     private readonly Mock<IAttendanceJobScheduler> _jobSchedulerMock = new();
     private readonly Mock<IExternalAttendanceLogRepository> _externalLogRepositoryMock = new();
     private readonly Mock<ITimeNormalizer> _timeNormalizerMock = new();
+    private readonly Mock<IExternalEmployeeRepository> _externalEmployeeRepositoryMock = new();
 
     private readonly AdmsController _controller;
     private readonly Employee _employee;
@@ -60,7 +63,8 @@ public class AdmsControllerTests
             _logTransferServiceMock.Object,
             _jobSchedulerMock.Object,
             _externalLogRepositoryMock.Object,
-            _timeNormalizerMock.Object
+            _timeNormalizerMock.Object,
+            externalEmployeeRepository: _externalEmployeeRepositoryMock.Object
         );
 
         _employee = Employee.Create(
@@ -465,5 +469,57 @@ public class AdmsControllerTests
             "CL5Z202660239", logId, true, 15, 12, null), Times.Once);
         _downloadLogRepositoryMock.Verify(r => r.UpdateAsync(downloadLog, default), Times.Once);
         _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    private ExternalEmployee ExternalOnBranchB01()
+    {
+        var branch = Branch.Create("B01", "Norte", null, isExternal: true);
+        var external = ExternalEmployee.Create(branch.Id, "123", "Ana", "López");
+        _branchRepositoryMock.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new[] { branch });
+        _externalEmployeeRepositoryMock
+            .Setup(r => r.GetByBranchAndEmployeeNumberAsync(branch.Id, "123", It.IsAny<CancellationToken>()))
+            .ReturnsAsync(external);
+        return external;
+    }
+
+    [Fact]
+    public async Task QueryData_Templatev10ForAnExternalPin_SavesTheFingerprintOnTheExternalEmployee()
+    {
+        var external = ExternalOnBranchB01();
+        SetRequestBody("templatev10 size=1224\tuid=9\tpin=B01123\tfingerid=6\tvalid=1\ttemplate=EXTTPL6");
+
+        var result = await _controller.QueryData("CL5Z202660239", tablename: "templatev10", type: "tabledata");
+
+        result.Should().BeOfType<ContentResult>().Which.Content.Should().Be("OK");
+        external.Fingerprints.Should().ContainSingle(f => f.FingerIndex == 6 && f.Template == "EXTTPL6");
+        _externalEmployeeRepositoryMock.Verify(r => r.Update(external), Times.Once);
+        _employeeRepositoryMock.Verify(r => r.Update(It.IsAny<Employee>()), Times.Never);
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(default), Times.Once);
+    }
+
+    [Fact]
+    public async Task QueryData_BiodataFingerprintForAnExternalPin_SavesIt_ButAFaceIsIgnored()
+    {
+        var external = ExternalOnBranchB01();
+        SetRequestBody(
+            "biodata pin=B01123\tno=0\tindex=2\tvalid=1\tduress=0\ttype=0\tmajorver=10\tminorver=0\tformat=0\ttmp=EXTTPL2\n" +
+            "biodata pin=B01123\tno=0\tindex=0\tvalid=1\tduress=0\ttype=9\tmajorver=58\tminorver=10\tformat=0\ttmp=FACE");
+
+        await _controller.QueryData("CL5Z202660239", tablename: "biodata", type: "tabledata");
+
+        external.Fingerprints.Should().ContainSingle(f => f.FingerIndex == 2 && f.Template == "EXTTPL2");
+        _externalEmployeeRepositoryMock.Verify(r => r.Update(external), Times.Once);
+    }
+
+    [Fact]
+    public async Task QueryData_PinOfNoInternalNorExternalEmployee_IsSkipped()
+    {
+        ExternalOnBranchB01();
+        SetRequestBody("templatev10 size=1224\tuid=9\tpin=B01999\tfingerid=6\tvalid=1\ttemplate=X");
+
+        await _controller.QueryData("CL5Z202660239", tablename: "templatev10", type: "tabledata");
+
+        _externalEmployeeRepositoryMock.Verify(r => r.Update(It.IsAny<ExternalEmployee>()), Times.Never);
+        _employeeRepositoryMock.Verify(r => r.Update(It.IsAny<Employee>()), Times.Never);
     }
 }

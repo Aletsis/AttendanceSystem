@@ -28,7 +28,7 @@ internal static class DeviceUserMapper
         privilege,
         employee.Status != EmployeeStatus.Baja,
         employee.CardNumber,
-        null,
+        employee.Fingerprints.Select(f => new DeviceFingerprintDto(f.FingerIndex, f.Template)).ToList(),
         null,
         null);
 }

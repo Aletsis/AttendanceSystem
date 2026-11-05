@@ -24,6 +24,8 @@ public interface IAttendanceJobScheduler
     void ScheduleDailyCalculation(string timeZoneId);
     /// <summary>Una sola sincronización de biometría por reloj para todos los empleados que no la tienen.</summary>
     void EnqueueBiometricSync(string deviceId, IReadOnlyCollection<string> employeeIds);
+    /// <summary>Lo mismo para empleados externos sin huellas, por su ID en el reloj (código de sucursal + número).</summary>
+    void EnqueueExternalBiometricSync(string deviceId, IReadOnlyCollection<string> deviceUserIds);
     /// <summary>
     /// Descarga de respaldo de un reloj escuchado en tiempo real (al reconectarse su escucha o si no se pudo guardar un
     /// marcaje): recupera lo marcado mientras la escucha no lo recibió.

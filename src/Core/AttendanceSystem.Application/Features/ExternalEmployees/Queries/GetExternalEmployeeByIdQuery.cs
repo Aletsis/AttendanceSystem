@@ -45,6 +45,7 @@ public sealed class GetExternalEmployeeByIdQueryHandler : IRequestHandler<GetExt
             Department = employee.Department,
             Status = employee.Status,
             CardNumber = employee.CardNumber,
+            FingerprintCount = employee.Fingerprints.Count,
             CreatedAt = employee.CreatedAt,
             UpdatedAt = employee.UpdatedAt
         };

@@ -1,6 +1,8 @@
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
+using AttendanceSystem.Application.Features.ExternalEmployees.Services;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
+using AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
 using MediatR;
@@ -16,6 +18,8 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
     private readonly IDeviceClientFactory _deviceClientFactory;
     private readonly IDeviceRepository _deviceRepository;
     private readonly IEmployeeRepository _employeeRepository;
+    private readonly IExternalEmployeeRepository _externalEmployeeRepository;
+    private readonly IBranchRepository _branchRepository;
     private readonly IUnitOfWork _unitOfWork;
     private readonly ILogger<ImportUsersFromDeviceCommandHandler> _logger;
 
@@ -23,12 +27,16 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
         IDeviceClientFactory deviceClientFactory,
         IDeviceRepository deviceRepository,
         IEmployeeRepository employeeRepository,
+        IExternalEmployeeRepository externalEmployeeRepository,
+        IBranchRepository branchRepository,
         IUnitOfWork unitOfWork,
         ILogger<ImportUsersFromDeviceCommandHandler> logger)
     {
         _deviceClientFactory = deviceClientFactory;
         _deviceRepository = deviceRepository;
         _employeeRepository = employeeRepository;
+        _externalEmployeeRepository = externalEmployeeRepository;
+        _branchRepository = branchRepository;
         _unitOfWork = unitOfWork;
         _logger = logger;
     }
@@ -60,8 +68,10 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
                 // EF Core carga las entidades propiedad (Fingerprints) automáticamente.
                 var allEmployees = await _employeeRepository.GetAllAsync(cancellationToken);
                 var employeeDict = allEmployees.ToDictionary(e => e.Id.Value);
+                var externalIds = await ExternalEmployeeDeviceIds.LoadAsync(_branchRepository, cancellationToken);
 
                 int processedCount = 0;
+                int externalCount = 0;
                 int skippedCount = 0;
 
                 // Procesar usuarios únicos del dispositivo
@@ -89,6 +99,18 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
                         _employeeRepository.Update(employee);
                         processedCount++;
                     }
+                    else if (await externalIds.FindAsync(_externalEmployeeRepository, dUser.UserId, cancellationToken) is { } external)
+                    {
+                        // CASO: Empleado externo (código de sucursal + número) -> solo sus huellas y, si falta, la tarjeta.
+                        var fingerprints = dUser.Fingerprints?
+                            .Select(fp => new ExternalEmployeeFingerprint(fp.Index, fp.Template));
+                        if (external.UpdateFromDevice(fingerprints, dUser.CardNumber))
+                        {
+                            _externalEmployeeRepository.Update(external);
+                        }
+                        processedCount++;
+                        externalCount++;
+                    }
                     else
                     {
                         // CASO: Usuario NO existe en BD -> Omitimos creación.
@@ -101,7 +123,7 @@ public class ImportUsersFromDeviceCommandHandler : IRequestHandler<ImportUsersFr
 
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-                _logger.LogInformation("Sincronización completada. Actualizados: {Updated}, Omitidos (No en BD): {Skipped}", processedCount, skippedCount);
+                _logger.LogInformation("Sincronización completada. Actualizados: {Updated} ({External} externos), Omitidos (No en BD): {Skipped}", processedCount, externalCount, skippedCount);
 
                 return Result<int>.Success(processedCount);
             }

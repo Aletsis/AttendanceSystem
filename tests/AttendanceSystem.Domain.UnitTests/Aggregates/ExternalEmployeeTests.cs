@@ -141,4 +141,43 @@ public class ExternalEmployeeTests
         act.Should().Throw<DomainException>()
             .WithMessage("*formato del email no es válido*");
     }
+
+    [Fact]
+    public void UpdateFromDevice_ReplacesEachFingerByIndex_WithoutDuplicates()
+    {
+        var emp = ExternalEmployee.Create(_branchId, "101", "Carlos", "Santana");
+        emp.UpdateFromDevice(new[] { new ExternalEmployeeFingerprint(0, "A"), new ExternalEmployeeFingerprint(1, "B") })
+            .Should().BeTrue();
+
+        emp.UpdateFromDevice(new[] { new ExternalEmployeeFingerprint(1, "B2") }).Should().BeTrue();
+
+        emp.Fingerprints.Should().HaveCount(2);
+        emp.Fingerprints.Should().ContainSingle(f => f.FingerIndex == 1 && f.Template == "B2");
+        emp.UpdatedAt.Should().NotBeNull();
+    }
+
+    [Fact]
+    public void UpdateFromDevice_SameTemplatesOrEmptyOnes_ChangeNothing()
+    {
+        var emp = ExternalEmployee.Create(_branchId, "101", "Carlos", "Santana");
+        emp.UpdateFromDevice(new[] { new ExternalEmployeeFingerprint(0, "A") });
+
+        emp.UpdateFromDevice(new[] { new ExternalEmployeeFingerprint(0, "A"), new ExternalEmployeeFingerprint(2, " ") })
+            .Should().BeFalse();
+
+        emp.Fingerprints.Should().ContainSingle();
+    }
+
+    [Fact]
+    public void UpdateFromDevice_TakesTheCardOnlyWhenTheEmployeeHasNone()
+    {
+        var withCard = ExternalEmployee.Create(_branchId, "101", "Carlos", "Santana", cardNumber: "RFID-1");
+        var withoutCard = ExternalEmployee.Create(_branchId, "102", "Ana", "López");
+
+        withCard.UpdateFromDevice(null, "RFID-2").Should().BeFalse();
+        withoutCard.UpdateFromDevice(null, " RFID-3 ").Should().BeTrue();
+
+        withCard.CardNumber.Should().Be("RFID-1");
+        withoutCard.CardNumber.Should().Be("RFID-3");
+    }
 }

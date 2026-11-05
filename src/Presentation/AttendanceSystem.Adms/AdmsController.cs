@@ -14,6 +14,8 @@ using Microsoft.Extensions.Logging;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Domain.Aggregates.ExternalLogAggregate;
+using AttendanceSystem.Domain.Aggregates.ExternalEmployeeAggregate;
+using AttendanceSystem.Application.Features.ExternalEmployees.Services;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Authorization;
@@ -43,6 +45,7 @@ public class AdmsController : ControllerBase
     private readonly ISystemAlertRepository? _alerts;
     private readonly IDeviceHeartbeatTracker? _heartbeatTracker;
     private readonly ISystemConfigurationRepository? _configuration;
+    private readonly IExternalEmployeeRepository? _externalEmployeeRepository;
 
     public AdmsController(
         ILogger<AdmsController> logger,
@@ -61,9 +64,11 @@ public class AdmsController : ControllerBase
         IAuthoritativeTimeZoneResolver? timeZoneResolver = null,
         ISystemAlertRepository? alerts = null,
         IDeviceHeartbeatTracker? heartbeatTracker = null,
-        ISystemConfigurationRepository? configuration = null)
+        ISystemConfigurationRepository? configuration = null,
+        IExternalEmployeeRepository? externalEmployeeRepository = null)
     {
         _configuration = configuration;
+        _externalEmployeeRepository = externalEmployeeRepository;
         _alerts = alerts;
         _logger = logger;
         _mediator = mediator;
@@ -941,6 +946,7 @@ public class AdmsController : ControllerBase
 
     private async Task ProcessDeviceData(string[] lines, string SN, string table)
     {
+        ExternalEmployeeDeviceIds? externalIds = null;
         foreach (var line in lines)
         {
             try
@@ -969,6 +975,18 @@ public class AdmsController : ControllerBase
                 var employee = await _employeeRepository.GetByIdAsync(employeeId);
                 if (employee == null)
                 {
+                    // Un PIN con el código de una sucursal externa es de un empleado externo: se guardan sus huellas.
+                    if (_externalEmployeeRepository != null)
+                    {
+                        externalIds ??= await ExternalEmployeeDeviceIds.LoadAsync(_branchRepository);
+                        var external = await externalIds.FindAsync(_externalEmployeeRepository, pin);
+                        if (external != null)
+                        {
+                            ApplyToExternal(external, table, data, pin, SN);
+                            continue;
+                        }
+                    }
+
                     _logger.LogWarning("ADMS: Recibidos datos para PIN {Pin} pero el empleado no existe en BD. SN:{SN} Table:{Table}", pin, SN, table);
                     continue;
                 }
@@ -998,19 +1016,12 @@ public class AdmsController : ControllerBase
                     }
 
                     // En ZK Push, la plantilla biométrica puede venir en tmp=, Content= o template=
-                    string? templateContent = null;
-                    if (data.TryGetValue("tmp", out var tmp) && !string.IsNullOrWhiteSpace(tmp))
-                        templateContent = tmp;
-                    else if (data.TryGetValue("Content", out var c) && !string.IsNullOrWhiteSpace(c))
-                        templateContent = c;
-                    else if (data.TryGetValue("template", out var tmpl) && !string.IsNullOrWhiteSpace(tmpl))
-                        templateContent = tmpl;
+                    var templateContent = FirstValue(data, "tmp", "Content", "template");
 
                     if (!string.IsNullOrWhiteSpace(templateContent))
                     {
-                        if (type == 0) // Fingerprint
+                        if (TryReadFingerprint(table, data, out var index, out _)) // Type=0: huella
                         {
-                            int index = data.TryGetValue("Index", out var idxStr) && int.TryParse(idxStr, out var idx) ? idx : 0;
                             var fingerprints = new List<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeFingerprint>
                             {
                                 new(index, templateContent)
@@ -1025,29 +1036,10 @@ public class AdmsController : ControllerBase
                         }
                     }
                 }
-                else if (table.Equals("TEMPLATEV10", StringComparison.OrdinalIgnoreCase) ||
-                         table.Equals("FINGERPRINT", StringComparison.OrdinalIgnoreCase) ||
-                         table.Equals("FINGERTMP", StringComparison.OrdinalIgnoreCase) ||
-                         table.Equals("TEMPLATE", StringComparison.OrdinalIgnoreCase))
+                else if (IsFingerprintTable(table))
                 {
                     // templatev10 size=892	uid=1	pin=4	fingerid=6	valid=1	template=...
-                    int index = 0;
-                    if (data.TryGetValue("fingerid", out var fIdStr) && int.TryParse(fIdStr, out var fId))
-                        index = fId;
-                    else if (data.TryGetValue("finger_id", out var fIdStr2) && int.TryParse(fIdStr2, out var fId2))
-                        index = fId2;
-                    else if (data.TryGetValue("Index", out var idxStr) && int.TryParse(idxStr, out var idx))
-                        index = idx;
-
-                    string? templateContent = null;
-                    if (data.TryGetValue("template", out var tmpl) && !string.IsNullOrWhiteSpace(tmpl))
-                        templateContent = tmpl;
-                    else if (data.TryGetValue("tmp", out var tmp) && !string.IsNullOrWhiteSpace(tmp))
-                        templateContent = tmp;
-                    else if (data.TryGetValue("Content", out var c) && !string.IsNullOrWhiteSpace(c))
-                        templateContent = c;
-
-                    if (!string.IsNullOrWhiteSpace(templateContent))
+                    if (TryReadFingerprint(table, data, out var index, out var templateContent))
                     {
                         var fingerprints = new List<AttendanceSystem.Domain.Aggregates.EmployeeAggregate.EmployeeFingerprint>
                         {
@@ -1092,6 +1084,77 @@ public class AdmsController : ControllerBase
             }
         }
         await _unitOfWork.SaveChangesAsync();
+    }
+
+    private static bool IsFingerprintTable(string table) =>
+        table.Equals("TEMPLATEV10", StringComparison.OrdinalIgnoreCase) ||
+        table.Equals("FINGERPRINT", StringComparison.OrdinalIgnoreCase) ||
+        table.Equals("FINGERTMP", StringComparison.OrdinalIgnoreCase) ||
+        table.Equals("TEMPLATE", StringComparison.OrdinalIgnoreCase);
+
+    private static string? FirstValue(Dictionary<string, string> data, params string[] keys)
+    {
+        foreach (var key in keys)
+        {
+            if (data.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value)) return value;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Huella de una línea ADMS: BIODATA con Type=0 (plantilla en tmp=, Content= o template=; dedo en Index=) o una tabla
+    /// de huellas tipo templatev10 (plantilla en template=, tmp= o Content=; dedo en fingerid=, finger_id= o Index=).
+    /// </summary>
+    private static bool TryReadFingerprint(string table, Dictionary<string, string> data, out int index, out string template)
+    {
+        index = 0;
+        template = string.Empty;
+        string? value;
+
+        if (table.Equals("BIODATA", StringComparison.OrdinalIgnoreCase))
+        {
+            var type = data.TryGetValue("Type", out var typeStr) && int.TryParse(typeStr, out var parsedType) ? parsedType : 0;
+            if (type != 0) return false;
+            value = FirstValue(data, "tmp", "Content", "template");
+            index = data.TryGetValue("Index", out var idxStr) && int.TryParse(idxStr, out var idx) ? idx : 0;
+        }
+        else if (IsFingerprintTable(table))
+        {
+            value = FirstValue(data, "template", "tmp", "Content");
+            foreach (var key in new[] { "fingerid", "finger_id", "Index" })
+            {
+                if (data.TryGetValue(key, out var raw) && int.TryParse(raw, out var parsed))
+                {
+                    index = parsed;
+                    break;
+                }
+            }
+        }
+        else
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        template = value;
+        return true;
+    }
+
+    /// <summary>De un empleado externo solo se guardan sus huellas y, si no tiene, la tarjeta; lo demás es del reloj.</summary>
+    private void ApplyToExternal(ExternalEmployee external, string table, Dictionary<string, string> data, string pin, string sn)
+    {
+        var changed = false;
+        if (TryReadFingerprint(table, data, out var index, out var template))
+        {
+            changed = external.UpdateFromDevice(new[] { new ExternalEmployeeFingerprint(index, template) });
+            _logger.LogInformation("ADMS: Recibida huella {Index} para empleado externo {Pin} ({SN})", index, pin, sn);
+        }
+        else if (table.Equals("USER", StringComparison.OrdinalIgnoreCase) || table.Equals("USERINFO", StringComparison.OrdinalIgnoreCase))
+        {
+            changed = external.UpdateFromDevice(null, FirstValue(data, "cardno", "card"));
+        }
+
+        if (changed) _externalEmployeeRepository!.Update(external);
     }
 
     /// <summary>

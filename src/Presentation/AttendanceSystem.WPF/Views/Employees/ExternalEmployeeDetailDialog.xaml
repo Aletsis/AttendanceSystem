@@ -158,6 +158,19 @@
                                  Padding="10,8"/>
                     </StackPanel>
                 </Grid>
+
+                <!-- Huellas copiadas del reloj (solo al editar) -->
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,15"
+                            Visibility="{Binding IsEditMode, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <iconPacks:PackIconMaterial Kind="Fingerprint" Width="16" Height="16" VerticalAlignment="Center"
+                                                Foreground="{StaticResource Brush.Primary}" Margin="0,0,8,0"/>
+                    <TextBlock VerticalAlignment="Center" Foreground="{StaticResource Brush.Text}">
+                        <Run Text="Huellas registradas:" FontWeight="SemiBold"/>
+                        <Run Text="{Binding FingerprintCount, Mode=OneWay}"/>
+                    </TextBlock>
+                    <TextBlock Text="  (se enrolan en el reloj y se copian al importar o descargar)" VerticalAlignment="Center"
+                               Foreground="{StaticResource Brush.TextSecondary}" FontSize="11"/>
+                </StackPanel>
             </StackPanel>
 
             <!-- Actions -->

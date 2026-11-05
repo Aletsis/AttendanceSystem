@@ -358,6 +358,8 @@ public sealed class DownloadFromDeviceCommandHandler
 
             var externalBranches = await ExternalBranchCodes.LoadAsync(_branchRepository, cancellationToken);
             var externalLogs = new List<ExternalAttendanceLog>();
+            // Externos con checadas nuevas: la sincronización de huellas descarta a los que ya las tienen.
+            var externalDeviceUserIds = new List<string>();
 
             foreach (var raw in rawRecords)
             {
@@ -404,6 +406,10 @@ public sealed class DownloadFromDeviceCommandHandler
                     await _externalLogRepository.AddAsync(externalLog, cancellationToken);
                 }
                 await _unitOfWork.SaveChangesAsync(cancellationToken);
+                externalDeviceUserIds = newExternalLogs
+                    .Select(l => l.BranchCode + l.EmployeeId)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
                 _logger.LogInformation("Se almacenaron {New} de {Total} checadas de sucursales externas, pendientes de subir a la nube",
                     newExternalLogs.Count, externalLogs.Count);
@@ -551,6 +557,11 @@ public sealed class DownloadFromDeviceCommandHandler
                     _logger.LogInformation("Biometría faltante para {Count} empleados en {DeviceId}. Encolando sincronización.", missingBiometrics.Count, deviceIdValue);
                     _jobScheduler.EnqueueBiometricSync(deviceIdValue, missingBiometrics);
                 }
+            }
+
+            if (externalDeviceUserIds.Count > 0)
+            {
+                _jobScheduler.EnqueueExternalBiometricSync(deviceIdValue, externalDeviceUserIds);
             }
 
             return Result<DownloadResultDto>.Success(new DownloadResultDto(

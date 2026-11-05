@@ -169,6 +169,7 @@ public class WpfCompositionTests
         public void ScheduleScheduleIntegrityCheck() { }
         public void ScheduleDailyCalculation(string timeZoneId) { }
         public void EnqueueBiometricSync(string deviceId, IReadOnlyCollection<string> employeeIds) { }
+        public void EnqueueExternalBiometricSync(string deviceId, IReadOnlyCollection<string> deviceUserIds) { }
         public void EnqueueDeviceCatchUp(string deviceId) { }
         public void EnqueueAttendanceProcessing(DateTime startDate, DateTime endDate, string? employeeId = null) { }
     }
