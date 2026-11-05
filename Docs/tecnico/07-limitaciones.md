@@ -58,6 +58,7 @@ ficha. Lo que ya se corrigió en otra rama lo dice su ficha.
 | [D21](#d21-la-alerta-de-cuarentena-muestra-el-identificador-del-reloj) | La alerta de cuarentena muestra el identificador del reloj | Baja | Relojes |
 | [D22](#d22-puertos-por-omisión-inconsistentes) | Puertos por omisión inconsistentes | Baja | Configuración |
 | [D23](#d23-paquetes-sin-uso-y-comentario-desactualizado) | Paquetes sin uso y comentario desactualizado | Baja | Código |
+| [D24](#d24-la-pantalla-de-inicio-de-sesión-muestra-la-versión-20) | La pantalla de inicio de sesión muestra la versión 2.0 | Baja | Sitio web |
 | [L01](#l01--secretos-legibles-en-la-base-y-en-los-archivos-de-configuración) 🔒 | Secretos legibles en la base y en los archivos de configuración | Alta | Seguridad |
 | [L02](#l02--el-sitio-sólo-se-sirve-por-http) 🔒 | El sitio sólo se sirve por HTTP | Alta | Seguridad |
 | [L03](#l03--adms-confía-en-el-número-de-serie) 🔒 | ADMS confía en el número de serie | Alta | Seguridad |
@@ -331,6 +332,15 @@ ficha. Lo que ya se corrigió en otra rama lo dice su ficha.
 - **Gravedad:** Baja. **Afecta a:** desarrollo.
 - **Cómo comprobarlo:** [arquitectura, 11](01-arquitectura.md#11-observaciones-verificadas).
 - **Corrección recomendada:** quitar las referencias y corregir el comentario.
+
+### D24 La pantalla de inicio de sesión muestra la versión 2.0
+
+- **Gravedad:** Baja. **Afecta a:** quien reporte un problema citando la versión.
+- **Qué pasa:** el texto está fijo en [Login.razor:82](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Pages/Login.razor#L82);
+  la versión real es la de [Directory.Build.props:3](../../Directory.Build.props#L3) (2.3.0). Encontrado al preparar
+  el [manual de RH](../manual-rh/manual-rh.md).
+- **Solución temporal:** tomar la versión de *Agregar o quitar programas* o del instalador.
+- **Corrección recomendada:** leer la versión del ensamblado.
 
 ---
 

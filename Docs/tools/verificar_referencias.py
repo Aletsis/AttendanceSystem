@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 """Comprueba los enlaces de la documentación hacia el código.
 
-Para cada enlace Markdown relativo de los archivos de Docs/tecnico/ verifica que el archivo exista y, si el enlace
+Para cada enlace Markdown relativo de los archivos de Docs/tecnico/ y Docs/manual-rh/ verifica que el archivo exista y, si el enlace
 lleva #Lnn o #Lnn-Lmm, que esas líneas existan. No comprueba que la línea diga lo que el documento afirma: eso se
 revisa a mano en el PR (el script sólo evita citas rotas).
+Las capturas (.png) que aún no existen se listan como pendientes, sin contar como error.
 
 Uso (desde la raíz del repositorio):
     python Docs/tools/verificar_referencias.py
@@ -16,14 +17,15 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-DOCS = ROOT / "Docs" / "tecnico"
+DOCS = [ROOT / "Docs" / "tecnico", ROOT / "Docs" / "manual-rh"]
 LINK = re.compile(r"\]\(([^)\s]+)\)")
 
 
 def main() -> int:
     errors = []
+    pending = []
     checked = 0
-    for doc in sorted(DOCS.glob("*.md")):
+    for doc in sorted(d for folder in DOCS for d in folder.glob("*.md")):
         for lineno, line in enumerate(doc.read_text(encoding="utf-8").splitlines(), 1):
             for target in LINK.findall(line):
                 if re.match(r"^[a-z]+://", target) or target.startswith("#"):
@@ -32,6 +34,9 @@ def main() -> int:
                 path = (doc.parent / path_part).resolve()
                 checked += 1
                 where = f"{doc.relative_to(ROOT).as_posix()}:{lineno}"
+                if not path.exists() and path_part.endswith(".png"):
+                    pending.append(f"{where}: captura pendiente {path_part}")
+                    continue
                 if not path.exists():
                     errors.append(f"{where}: no existe {path_part}")
                     continue
@@ -43,7 +48,9 @@ def main() -> int:
                         errors.append(f"{where}: {path_part}#{fragment} fuera de rango (el archivo tiene {total} líneas)")
     for e in errors:
         print(e)
-    print(f"{checked} enlaces revisados, {len(errors)} con error.")
+    for p in pending:
+        print(p)
+    print(f"{checked} enlaces revisados, {len(errors)} con error, {len(pending)} capturas pendientes.")
     return 1 if errors else 0
 
 
