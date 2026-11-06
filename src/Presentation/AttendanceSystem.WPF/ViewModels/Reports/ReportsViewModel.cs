@@ -439,7 +439,9 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
             table.Columns.Add("Retardos");
             table.Columns.Add("Trabajado");
             if (request.IncludeOvertime) table.Columns.Add("Extra");
-            table.Columns.Add("Observaciones");
+            // Sin tipos seleccionados la tarjeta no lleva recuadro de observaciones.
+            var withObservations = request.ObservationKinds != CardObservationKinds.None;
+            if (withObservations) table.Columns.Add("Observaciones");
 
             foreach (var (key, days) in GroupByEmployee(rows))
             {
@@ -450,8 +452,8 @@ namespace AttendanceSystem.WPF.ViewModels.Reports
                 };
                 if (request.IncludeOvertime) values.Add(FormatMinutes(days.Sum(d => d.RoundedOvertimeMinutes)));
                 // Las mismas líneas que se imprimen en el recuadro de observaciones de la tarjeta.
-                var lines = AttendanceCardObservations.Lines(days, request.ObservationKinds);
-                values.Add(string.Join("\n", lines));
+                if (withObservations)
+                    values.Add(string.Join("\n", AttendanceCardObservations.Lines(days, request.ObservationKinds)));
                 table.Rows.Add(values.ToArray());
             }
         }

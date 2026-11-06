@@ -841,18 +841,22 @@ public class ReportExportService : IReportExportService
            });
 
             // Observaciones: altura fija para no mover la firma; si no cabe, el texto se reduce.
-            var observations = AttendanceCardObservations.Lines(records, observationKinds);
-            col.Item().PaddingTop(6).Height(observationsHeightCm, Unit.Centimetre).Border(1).Padding(3).Column(box =>
+            // Sin ningún tipo seleccionado el recuadro siempre quedaría vacío, así que no se imprime.
+            if (observationKinds != CardObservationKinds.None)
             {
-                box.Item().Text("Observaciones").Bold().FontSize(8);
-                box.Item().ScaleToFit().Column(lines =>
+                var observations = AttendanceCardObservations.Lines(records, observationKinds);
+                col.Item().PaddingTop(6).Height(observationsHeightCm, Unit.Centimetre).Border(1).Padding(3).Column(box =>
                 {
-                    foreach (var line in observations)
+                    box.Item().Text("Observaciones").Bold().FontSize(8);
+                    box.Item().ScaleToFit().Column(lines =>
                     {
-                        lines.Item().Text(line).FontSize(7);
-                    }
+                        foreach (var line in observations)
+                        {
+                            lines.Item().Text(line).FontSize(7);
+                        }
+                    });
                 });
-            });
+            }
 
             // Signature Section 
             col.Item().PaddingTop(8).Row(row =>
