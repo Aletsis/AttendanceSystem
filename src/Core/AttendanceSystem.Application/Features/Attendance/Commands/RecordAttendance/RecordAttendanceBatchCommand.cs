@@ -268,8 +268,7 @@ public sealed class RecordAttendanceBatchCommandHandler
 
         if (_admsCommands != null && serial != null)
         {
-            var table = device?.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true ? "Transaction" : "ATTLOG";
-            await _admsCommands.EnqueueCommandAsync(serial, FormattableString.Invariant($"DATA QUERY tablename={table},starttime={from:yyyy-MM-dd HH:mm:ss},endtime={to:yyyy-MM-dd HH:mm:ss}"));
+            await _admsCommands.EnqueueCommandAsync(serial, AttendanceSystem.Application.Common.AdmsLogQuery.Range(device?.DeviceType, from, to));
         }
     }
 }

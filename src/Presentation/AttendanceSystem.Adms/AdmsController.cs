@@ -608,6 +608,7 @@ public class AdmsController : ControllerBase
                                 -629 => "Tabla o parámetros de consulta no soportados por el firmware del reloj (código -629).",
                                 -1001 => "Memoria de almacenamiento llena en el dispositivo (código -1001).",
                                 -1002 => "Sintaxis de comando no válida o comando no reconocido por esta versión de firmware (código -1002).",
+                                -1004 => "El reloj no reconoce la tabla o la sintaxis de la consulta (código -1004).",
                                 _ => $"El dispositivo reportó error con código de retorno: {ret}"
                             };
 

@@ -174,16 +174,14 @@ public sealed class DownloadFromDeviceCommandHandler
                     return Result<DownloadResultDto>.Failure("El dispositivo ADMS no tiene número de serie registrado.");
                 }
 
-                var isAccess = device.DeviceType?.Equals("acc", StringComparison.OrdinalIgnoreCase) == true;
                 var admsTimeZone = await _timeZoneResolver.ResolveForDeviceAsync(deviceId, cancellationToken);
 
                 // Consultar sólo marcajes. CHECK/LOG y los cambios de stamp disparaban
                 // reenvíos generales, fuera de la ventana histórica solicitada.
-                var table = isAccess ? "Transaction" : "ATTLOG";
                 string query;
                 if (command.ForceFullSync || (!filterDate.HasValue && !command.ToDate.HasValue))
                 {
-                    query = $"DATA QUERY tablename={table},fields=*";
+                    query = AttendanceSystem.Application.Common.AdmsLogQuery.All(device.DeviceType);
                 }
                 else
                 {
@@ -202,7 +200,7 @@ public sealed class DownloadFromDeviceCommandHandler
                         return Result<DownloadResultDto>.Failure(error);
                     }
 
-                    query = FormattableString.Invariant($"DATA QUERY tablename={table},starttime={fromCivil:yyyy-MM-dd HH:mm:ss},endtime={toCivil:yyyy-MM-dd HH:mm:ss}");
+                    query = AttendanceSystem.Application.Common.AdmsLogQuery.Range(device.DeviceType, fromCivil, toCivil);
                 }
 
                 // El resultado registrado debe corresponder a la consulta de marcajes.
