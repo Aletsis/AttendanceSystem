@@ -5,6 +5,7 @@
                  xmlns:iconPacks="http://metro.mahapps.com/winfx/xaml/iconpacks"
                  xmlns:prism="http://prismlibrary.com/"
                  Title="Sistema de Asistencia" Height="800" Width="1200"
+                 Icon="/app.ico"
                  MinWidth="1024" MinHeight="640"
                  WindowState="Maximized"
                  WindowStartupLocation="CenterScreen"
