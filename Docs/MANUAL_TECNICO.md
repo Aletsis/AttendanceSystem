@@ -175,7 +175,7 @@ El instalador realiza las siguientes tareas críticas en el sistema operativo:
   * Se crea un rol/usuario de base de datos exclusivo llamado `attendancesystem_user` con una contraseña aleatoria generada en la instalación.
   * Se crea la base de datos `"AttendanceSystem"`, propiedad de ese usuario.
   * El usuario queda como dueño de los esquemas `public` y `hangfire` (requisito de la restauración de respaldos). No es superusuario.
-  * La cadena de conexión (con esa contraseña) y una ApiKey de gRPC aleatoria se escriben en `{app}\Web\appsettings.Production.json` y `{app}\Service\appsettings.Production.json`. Las actualizaciones no sobrescriben estos archivos.
+  * La cadena de conexión (con esa contraseña) y una ApiKey de gRPC aleatoria se escriben en `{app}\Web\appsettings.Production.json` y `{app}\Service\appsettings.Production.json`. Las actualizaciones no sobrescriben estos archivos, salvo la sección `ZKTecoService` del sitio: si su `ApiKey` falta o no coincide con la del servicio se pone la del servicio, y si falta `Realtime:Enabled` se agrega en `true` (tiempo real por SDK; un `false` puesto a mano se respeta).
 * **Instalación del Windows Service:**
   * Registra el servicio `AttendanceSystem.ZKTeco.Service` con el comando:
     ```cmd
