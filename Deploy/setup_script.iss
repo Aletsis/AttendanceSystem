@@ -865,6 +865,147 @@ begin
     Log('Serilog:WriteTo (sin appsettings.json base) quitado de ' + FileName);
 end;
 
+// --- Edición mínima de JSON (sólo lo que necesita EnsureWebZKTecoSettings) ---
+
+// Posición de la llave que cierra el objeto que abre Text[OpenPos]; 0 si no cierra
+function MatchingBrace(Text: String; OpenPos: Integer): Integer;
+var
+  P, Depth: Integer;
+  InString: Boolean;
+begin
+  Result := 0;
+  Depth := 0;
+  InString := False;
+  P := OpenPos;
+  while (P <= Length(Text)) and (Result = 0) do
+  begin
+    if InString then
+    begin
+      if Text[P] = '\' then P := P + 1
+      else if Text[P] = '"' then InString := False;
+    end
+    else if Text[P] = '"' then InString := True
+    else if Text[P] = '{' then Depth := Depth + 1
+    else if Text[P] = '}' then
+    begin
+      Depth := Depth - 1;
+      if Depth = 0 then Result := P;
+    end;
+    P := P + 1;
+  end;
+end;
+
+// Primera aparición de "Key": entre FromPos y ToPos; ValuePos queda en el primer carácter de su valor
+function FindJsonMember(Text, Key: String; FromPos, ToPos: Integer; var ValuePos: Integer): Boolean;
+var
+  P, Q: Integer;
+begin
+  Result := False;
+  P := Pos('"' + Key + '"', Copy(Text, FromPos, ToPos - FromPos + 1));
+  if P = 0 then Exit;
+  Q := FromPos + P - 1 + Length(Key) + 2;
+  while (Q <= ToPos) and IsJsonSpace(Text[Q]) do Q := Q + 1;
+  if (Q > ToPos) or (Text[Q] <> ':') then Exit;
+  Q := Q + 1;
+  while (Q <= ToPos) and IsJsonSpace(Text[Q]) do Q := Q + 1;
+  if Q > ToPos then Exit;
+  ValuePos := Q;
+  Result := True;
+end;
+
+// Agrega Member como primer miembro del objeto que abre Text[OpenPos]
+procedure InsertJsonMember(var Text: String; OpenPos: Integer; Member, Indent: String);
+var
+  P: Integer;
+  Separator: String;
+begin
+  P := OpenPos + 1;
+  while (P <= Length(Text)) and IsJsonSpace(Text[P]) do P := P + 1;
+  if (P <= Length(Text)) and (Text[P] = '}') then
+    Separator := ''
+  else
+    Separator := ',';
+  Insert(#13#10 + Indent + Member + Separator, Text, OpenPos + 1);
+end;
+
+// --- ZKTecoService del sitio: la misma ApiKey que valida el servicio, y el tiempo real por SDK ---
+// Una actualización conserva el appsettings.Production.json del sitio, pero uno escrito a mano o por una versión
+// anterior puede no traer ZKTecoService:ApiKey. El sitio tomaba entonces la de un appsettings.json viejo (la clave de
+// ejemplo) y el servicio rechazaba cada llamada ("x-api-key inválida"). La ApiKey del servicio manda: se agrega si
+// falta y se corrige si no coincide. Realtime:Enabled sólo se agrega si falta; un "false" puesto a mano se respeta.
+procedure EnsureWebZKTecoSettings(FileName: String);
+var
+  Content: AnsiString;
+  Text, Original, Current: String;
+  TopPos, OpenPos, ClosePos, ValuePos, EndQuote: Integer;
+begin
+  if GrpcApiKey = '' then Exit;
+  if not LoadStringFromFile(FileName, Content) then Exit;
+  Text := String(Content);
+  Original := Text;
+  OpenPos := 0;
+
+  if not FindJsonMember(Text, 'ZKTecoService', 1, Length(Text), OpenPos) or (Text[OpenPos] <> '{') then
+  begin
+    TopPos := Pos('{', Text);
+    if TopPos = 0 then
+    begin
+      AddWarning('No se pudo agregar la sección ZKTecoService a ' + FileName + '. Agréguela a mano con la ApiKey del servicio.');
+      Exit;
+    end;
+    InsertJsonMember(Text, TopPos,
+      '"ZKTecoService": {' + #13#10 +
+      '    "Url": "http://localhost:5001",' + #13#10 +
+      '    "ApiKey": "' + GrpcApiKey + '",' + #13#10 +
+      '    "Realtime": { "Enabled": true }' + #13#10 +
+      '  }', '  ');
+    Log('Sección ZKTecoService agregada a ' + FileName);
+  end
+  else
+  begin
+    ClosePos := MatchingBrace(Text, OpenPos);
+    if ClosePos = 0 then
+    begin
+      AddWarning('No se pudo leer la sección ZKTecoService de ' + FileName + '. Revise que su ApiKey sea la del servicio.');
+      Exit;
+    end;
+
+    if FindJsonMember(Text, 'ApiKey', OpenPos, ClosePos, ValuePos) then
+    begin
+      Current := Copy(Text, ValuePos + 1, ClosePos - ValuePos);
+      EndQuote := Pos('"', Current);
+      if (Text[ValuePos] <> '"') or (EndQuote = 0) then
+      begin
+        AddWarning('ZKTecoService:ApiKey de ' + FileName + ' no es un texto. Cámbiela a mano por la del servicio.');
+        Exit;
+      end;
+      if Copy(Current, 1, EndQuote - 1) <> GrpcApiKey then
+      begin
+        Delete(Text, ValuePos + 1, EndQuote - 1);
+        Insert(GrpcApiKey, Text, ValuePos + 1);
+        Log('ZKTecoService:ApiKey de ' + FileName + ' no coincidía con la del servicio; se cambió por la del servicio.');
+      end;
+    end
+    else
+    begin
+      InsertJsonMember(Text, OpenPos, '"ApiKey": "' + GrpcApiKey + '"', '    ');
+      Log('ZKTecoService:ApiKey agregada a ' + FileName);
+    end;
+
+    // Las ediciones de arriba quedan después de OpenPos: sólo se mueve el cierre
+    ClosePos := MatchingBrace(Text, OpenPos);
+    if (ClosePos > 0) and not FindJsonMember(Text, 'Realtime', OpenPos, ClosePos, ValuePos) then
+    begin
+      InsertJsonMember(Text, OpenPos, '"Realtime": { "Enabled": true }', '    ');
+      Log('ZKTecoService:Realtime:Enabled agregado a ' + FileName);
+    end;
+  end;
+
+  if Text = Original then Exit;
+  if not SaveStringToFile(FileName, AnsiString(Text), False) then
+    AddWarning('No se pudo escribir la sección ZKTecoService en ' + FileName + '. Ponga a mano la ApiKey del servicio.');
+end;
+
 // --- Escribe la configuración que falte de cada parte instalada ---
 function WriteMissingConfigs: Boolean;
 var
@@ -887,6 +1028,8 @@ begin
       AddWarning('No se pudo quitar "WriteTo" de la sección Serilog de ' + WebConfigFile(AppDir) +
         '; el sitio web no arrancará hasta quitarlo a mano.');
   end;
+  if WebInstalled and FileExists(WebConfigFile(AppDir)) then
+    EnsureWebZKTecoSettings(WebConfigFile(AppDir));
   if IsDesktopInstalledAt(AppDir) then
   begin
     if not FileExists(DesktopConfigFile(AppDir)) then
