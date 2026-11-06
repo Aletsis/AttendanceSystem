@@ -4,6 +4,28 @@ Bienvenido al centro de documentación técnica y operativa de **Attendance Syst
 
 ---
 
+## ✅ Documentación verificada (en construcción)
+
+La documentación se está reescribiendo por fases. Cada afirmación de estos documentos cita el archivo y la línea del
+código que la respalda, y se puede comprobar con las consultas y scripts que incluyen.
+
+| Documento | Contenido |
+|---|---|
+| [tecnico/01-arquitectura.md](tecnico/01-arquitectura.md) | Proyectos, procesos, formas de instalación, puertos, recorrido de una checada, tareas en segundo plano, arranque y mantenimiento |
+| [tecnico/02-base-de-datos.md](tecnico/02-base-de-datos.md) | Esquemas, convenciones, relaciones e integridad, tablas por área, enumeraciones, migraciones, bloqueos, problemas y consultas de verificación |
+| [tecnico/02b-esquema-columnas.md](tecnico/02b-esquema-columnas.md) | Detalle columna por columna, generado desde el modelo de EF Core |
+
+Herramientas: `python Docs/tools/generar_esquema.py [--check]` regenera (o comprueba) el detalle de columnas;
+`python Docs/tools/verificar_referencias.py` comprueba que las citas al código existan.
+
+> ⚠️ Los documentos del índice siguiente son anteriores a esta revisión y **pueden no coincidir con el código**
+> (por ejemplo, la versión y la contraseña inicial del checklist de abajo ya no son correctas: el usuario `admin` se
+> crea con `InitialAdmin:Password` o una contraseña generada, ver
+> [arquitectura, sección 9](tecnico/01-arquitectura.md#9-arranque-y-modo-mantenimiento)). Se reemplazarán en las
+> siguientes fases.
+
+---
+
 ## 📑 Índice General de Documentos
 
 ### 🏛️ Arquitectura e Infraestructura
