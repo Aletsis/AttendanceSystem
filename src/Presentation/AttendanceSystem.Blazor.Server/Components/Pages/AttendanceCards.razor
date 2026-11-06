@@ -342,13 +342,16 @@
                     }
                 </table>
 
-                <div class="observations-box">
-                    <div class="observations-title">Observaciones</div>
-                    @foreach (var line in AttendanceCardObservations.Lines(group.Value, ObservationKinds))
-                    {
-                        <div>@line</div>
-                    }
-                </div>
+                @if (ObservationKinds != CardObservationKinds.None)
+                {
+                    <div class="observations-box">
+                        <div class="observations-title">Observaciones</div>
+                        @foreach (var line in AttendanceCardObservations.Lines(group.Value, ObservationKinds))
+                        {
+                            <div>@line</div>
+                        }
+                    </div>
+                }
 
                 <div class="signature-section">
                     <div class="legal-text">
