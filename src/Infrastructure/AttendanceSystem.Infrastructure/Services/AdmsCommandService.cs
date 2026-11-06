@@ -5,6 +5,7 @@ using System.Text.Json;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.DTOs;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
+using AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
 using AttendanceSystem.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -56,7 +57,50 @@ public class AdmsCommandService : IAdmsCommandService
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
-        _ = Task.Run(ExpireStaleSentCommandsAsync);
+        _ = Task.Run(async () =>
+        {
+            await ExpireStaleSentCommandsAsync();
+            await CloseAbandonedDownloadLogsAsync();
+        });
+    }
+
+    /// <summary>
+    /// Al arrancar: cierra como fallidas las descargas sin terminar de hace más de <see cref="DownloadLog.AbandonAfter"/>
+    /// que ya no esperan ningún comando ADMS (ni pendiente ni entregado). Una descarga cuyo proceso se cayó, o cuyo comando
+    /// expiró, no la cierra nadie más y dejaba al reloj como "descargando" para siempre.
+    /// </summary>
+    internal async Task CloseAbandonedDownloadLogsAsync()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<AttendanceDbContext>();
+
+            var threshold = DateTime.UtcNow - DownloadLog.AbandonAfter;
+            var open = await dbContext.DownloadLogs
+                .Where(l => l.CompletedAt == null && l.StartedAt < threshold)
+                .ToListAsync();
+            if (open.Count == 0) return;
+
+            var awaited = (await dbContext.AdmsCommands
+                    .Where(c => c.DownloadLogId != null &&
+                                (c.Status == AdmsCommandStatus.Pending || c.Status == AdmsCommandStatus.Sent))
+                    .Select(c => c.DownloadLogId!.Value)
+                    .ToListAsync())
+                .ToHashSet();
+
+            var abandoned = open.Where(l => !awaited.Contains(l.Id.Value)).ToList();
+            foreach (var log in abandoned) log.MarkAsFailed(DownloadLog.AbandonedMessage);
+            if (abandoned.Count > 0)
+            {
+                await dbContext.SaveChangesAsync();
+                _logger.LogInformation("{Count} descargas sin terminar quedaron cerradas como fallidas.", abandoned.Count);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Advertencia cerrando descargas sin terminar en el arranque");
+        }
     }
 
     /// <summary>

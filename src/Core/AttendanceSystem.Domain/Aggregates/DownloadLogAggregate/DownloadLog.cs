@@ -5,6 +5,14 @@ namespace AttendanceSystem.Domain.Aggregates.DownloadLogAggregate;
 
 public sealed class DownloadLog : AggregateRoot<DownloadLogId>
 {
+    /// <summary>
+    /// Una descarga sin terminar después de este tiempo ya no se considera en curso: el proceso que la hacía se cayó o
+    /// el reloj nunca respondió. Sin este límite quedaba "En curso" para siempre y bloqueaba el botón de ese reloj.
+    /// </summary>
+    public static readonly TimeSpan AbandonAfter = TimeSpan.FromMinutes(30);
+
+    public const string AbandonedMessage = "La descarga no terminó (el reloj no respondió o el servidor se reinició) y se cerró automáticamente.";
+
     public DeviceId DeviceId { get; private set; }
     public DateTime StartedAt { get; private set; }
     public DateTime? CompletedAt { get; private set; }
@@ -75,6 +83,9 @@ public sealed class DownloadLog : AggregateRoot<DownloadLogId>
         ErrorMessage = errorMessage;
         DurationMs = (int)(CompletedAt.Value - StartedAt).TotalMilliseconds;
     }
+
+    /// <summary>Sigue en curso: sin terminar y empezada hace menos de <see cref="AbandonAfter"/>.</summary>
+    public bool IsInProgressAt(DateTime utcNow) => !CompletedAt.HasValue && utcNow - StartedAt < AbandonAfter;
 
     // Constructor privado para EF Core
     private DownloadLog()

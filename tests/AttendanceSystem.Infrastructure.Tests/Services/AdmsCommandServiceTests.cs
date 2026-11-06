@@ -189,6 +189,53 @@ public class AdmsCommandServiceTests
     }
 
     [Fact]
+    public async Task OnStartup_OldUnfinishedDownloads_AreClosed_UnlessTheyStillAwaitACommand()
+    {
+        var device = AttendanceSystem.Domain.ValueObjects.DeviceId.From("dev-1");
+        var old = DateTime.UtcNow - AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog.AbandonAfter - TimeSpan.FromMinutes(1);
+        var abandoned = AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog.Create(device, AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadType.Automatic);
+        var awaiting = AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog.Create(device, AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadType.Manual);
+        var recent = AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog.Create(device, AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadType.Manual);
+        await using (var context = new AttendanceDbContext(_dbOptions, _publisherMock.Object))
+        {
+            context.DownloadLogs.AddRange(abandoned, awaiting, recent);
+            context.Entry(abandoned).Property(l => l.StartedAt).CurrentValue = old;
+            context.Entry(awaiting).Property(l => l.StartedAt).CurrentValue = old;
+            // Reloj apagado: su consulta sigue pendiente, la descarga todavía puede terminar.
+            context.AdmsCommands.Add(AdmsCommand.Create("SN_OFFLINE", "0",
+                "DATA QUERY ATTLOG StartTime=2026-11-01 00:00:00\tEndTime=2026-11-05 00:00:00", awaiting.Id.Value));
+            await context.SaveChangesAsync();
+        }
+
+        // El arranque del servicio ya hace esta limpieza; se llama de nuevo para esperar su resultado.
+        var service = NewService();
+        await service.CloseAbandonedDownloadLogsAsync();
+
+        await using (var context = new AttendanceDbContext(_dbOptions, _publisherMock.Object))
+        {
+            var closed = await context.DownloadLogs.SingleAsync(l => l.Id == abandoned.Id);
+            closed.CompletedAt.Should().NotBeNull();
+            closed.IsSuccessful.Should().BeFalse();
+            closed.ErrorMessage.Should().Be(AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog.AbandonedMessage);
+            (await context.DownloadLogs.SingleAsync(l => l.Id == awaiting.Id)).CompletedAt.Should().BeNull();
+            (await context.DownloadLogs.SingleAsync(l => l.Id == recent.Id)).CompletedAt.Should().BeNull();
+        }
+    }
+
+    [Fact]
+    public void ADownloadStopsBeingInProgress_OnceItIsTooOld()
+    {
+        var log = AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog.Create(
+            AttendanceSystem.Domain.ValueObjects.DeviceId.From("dev-1"),
+            AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadType.Manual);
+
+        log.IsInProgressAt(log.StartedAt.AddMinutes(5)).Should().BeTrue();
+        log.IsInProgressAt(log.StartedAt + AttendanceSystem.Domain.Aggregates.DownloadLogAggregate.DownloadLog.AbandonAfter).Should().BeFalse();
+        log.MarkAsSuccessful(1, 1);
+        log.IsInProgressAt(log.StartedAt.AddMinutes(1)).Should().BeFalse();
+    }
+
+    [Fact]
     public async Task DownloadSession_AccumulatesRecordsAndNotifiesOnCompletion()
     {
         var service = NewService();

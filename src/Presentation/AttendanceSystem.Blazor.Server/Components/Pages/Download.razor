@@ -164,9 +164,13 @@
                                     }
                                 </MudTd>
                                 <MudTd DataLabel="Estado">
-                                     @if (!context.CompletedAt.HasValue)
+                                     @if (context.IsInProgressAt(DateTime.UtcNow))
                                     {
                                         <MudChip T="string" Color="Color.Warning" Size="Size.Small" Icon="@Icons.Material.Filled.Loop">En curso</MudChip>
+                                    }
+                                    else if (!context.CompletedAt.HasValue)
+                                    {
+                                        <MudChip T="string" Color="Color.Error" Size="Size.Small" Icon="@Icons.Material.Filled.HourglassDisabled">Sin respuesta</MudChip>
                                     }
                                     else if (context.IsSuccessful)
                                     {
@@ -223,12 +227,15 @@
     private bool IsDeviceDownloading(string deviceId)
     {
         if (_downloadingDeviceId == deviceId) return true;
-        return _logs.Any(l => l.DeviceId.Value == deviceId && !l.CompletedAt.HasValue);
+        // Una descarga abandonada (sin terminar y fuera de tiempo) no bloquea el botón de su reloj.
+        var now = DateTime.UtcNow;
+        return _logs.Any(l => l.DeviceId.Value == deviceId && l.IsInProgressAt(now));
     }
 
     private bool HasActiveDownloads()
     {
-        return !string.IsNullOrEmpty(_downloadingDeviceId) || _logs.Any(l => !l.CompletedAt.HasValue);
+        var now = DateTime.UtcNow;
+        return !string.IsNullOrEmpty(_downloadingDeviceId) || _logs.Any(l => l.IsInProgressAt(now));
     }
 
     protected override async Task OnInitializedAsync()
