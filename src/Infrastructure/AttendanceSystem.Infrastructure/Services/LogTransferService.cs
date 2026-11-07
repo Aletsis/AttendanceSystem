@@ -258,8 +258,25 @@ public class LogTransferService : ILogTransferService
 
             ALTER TABLE external_attendance_logs ADD COLUMN IF NOT EXISTS download_attempts INT NOT NULL DEFAULT 0;
 
-            CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_logs_branch_emp_time 
-                ON external_attendance_logs(branch_code, employee_id, check_time);
+            -- Tablas creadas antes del índice único pueden tener la misma checada repetida, y entonces el
+            -- índice no se puede crear y ningún log sube. Se deja una por checada: la ya descargada si la hay
+            -- (para que la sucursal no la reciba de nuevo), si no la más antigua.
+            DO $$
+            BEGIN
+                IF to_regclass('uq_ext_logs_branch_emp_time') IS NULL THEN
+                    DELETE FROM external_attendance_logs d
+                    USING (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY branch_code, employee_id, check_time
+                            ORDER BY is_downloaded DESC, created_at, id) AS rn
+                        FROM external_attendance_logs
+                    ) r
+                    WHERE d.id = r.id AND r.rn > 1;
+
+                    CREATE UNIQUE INDEX IF NOT EXISTS uq_ext_logs_branch_emp_time
+                        ON external_attendance_logs(branch_code, employee_id, check_time);
+                END IF;
+            END $$;
 
             CREATE INDEX IF NOT EXISTS idx_ext_logs_branch_downloaded 
                 ON external_attendance_logs(branch_code, is_downloaded);";

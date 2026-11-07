@@ -23,8 +23,9 @@ public class AdmsCommandConfiguration : IEntityTypeConfiguration<AdmsCommand>
             .HasMaxLength(50)
             .IsRequired();
 
+        // Sin límite: un rostro o una foto en base64 pasan con facilidad de miles de caracteres.
         builder.Property(x => x.CommandText)
-            .HasMaxLength(2000)
+            .HasColumnType("text")
             .IsRequired();
 
         builder.Property(x => x.Status)
