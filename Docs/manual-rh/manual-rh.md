@@ -6,7 +6,8 @@ dónde está en cada uno, qué pide la pantalla y qué hace el sistema al guarda
 Al final de cada tarea, **Fuente** enlaza el código de la pantalla, para que soporte o desarrollo puedan comprobar lo
 que dice este manual. Las reglas de cálculo detalladas están en el [motor de cálculo](../tecnico/03-motor-de-calculo.md).
 
-> Las capturas se tomaron con un usuario **Administrador**. Las opciones que sólo ve ese rol se marcan con 🔑. La lista
+> Las capturas se tomaron en la versión 2.3.0 con un usuario **Administrador**, y los nombres e IDs de empleados
+> están pixelados. Las opciones que sólo ve ese rol se marcan con 🔑. La lista
 > completa de capturas está en [capturas.md](capturas.md).
 
 ## Contenido
@@ -122,6 +123,8 @@ El diálogo del sitio tiene cuatro pestañas:
 | **Horario** | Turno, Horario, Día(s) de Descanso, y las opciones de horas extra ([2.3](#23-configurar-las-horas-extra)) | Turno y horario |
 | **Acceso** | Número de Tarjeta, Contraseña PIN (máximo 8 dígitos) | Ninguno |
 
+- **Sexo** aparece con un `0` al abrir el alta: elija *Masculino* o *Femenino* (defecto D25 en
+  [limitaciones](../tecnico/07-limitaciones.md#d25-el-alta-de-empleado-muestra-0-en-sexo)).
 - El **ID de Empleado** es el número con el que el empleado checa en el reloj. No se puede cambiar después.
 - El **Horario** sólo muestra los del turno elegido.
 - En el escritorio, el alta siempre empieza con estatus *Alta*; el estatus se cambia al editar.
@@ -141,11 +144,11 @@ El diálogo del sitio tiene cuatro pestañas:
 
 Sitio: el lápiz (**Editar**) de la fila. Escritorio: **Editar** en *Acciones*.
 
-Al cambiar **sucursal, turno, horario, días de descanso o estatus**, el diálogo pide una fecha:
+Al cambiar **sucursal, turno, horario, días de descanso, estatus o las opciones de tiempo extra**, el diálogo pide una fecha:
 
 | Cambio | Lo que pide |
 |---|---|
-| Horario, turno, sucursal o descansos | **Vigente desde** |
+| Horario, turno, sucursal, descansos o tiempo extra | **Vigente desde** |
 | A vacaciones, incapacidad o baja temporal | **Desde** y **Hasta (opcional)** |
 | De vuelta a *Alta* tras un periodo así | **Regresa a trabajar el** |
 | A *Baja* | **Último día laborado** |
@@ -163,6 +166,8 @@ esos campos aparecen deshabilitados.
 [líneas 356-367](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Dialogs/EmployeeDialog.razor#L356-L367),
 [EmployeeDetailView.xaml:148](../../src/Presentation/AttendanceSystem.WPF/Views/Employees/EmployeeDetailView.xaml#L148),
 [línea 171](../../src/Presentation/AttendanceSystem.WPF/Views/Employees/EmployeeDetailView.xaml#L171).
+La fecha al cambiar el tiempo extra llegó a `main` en #34, después de la base de esta rama:
+[EmployeeDialog.razor:341-347 en 3f25d97](https://github.com/Aletsis/AttendanceSystem/blob/3f25d97/src/Presentation/AttendanceSystem.Blazor.Server/Components/Dialogs/EmployeeDialog.razor#L341-L347).
 
 ### 2.3 Configurar las horas extra
 
@@ -260,7 +265,8 @@ recalcula nada.
 su proyección y el estado de hoy.
 
 - **Asignar Esquema Rotativo:** asigna un esquema y genera su proyección de turnos.
-- La proyección se consulta por fechas; un día se puede cambiar de turno o marcar como descanso.
+- **Ver Proyección** muestra los turnos por fecha; ahí un día se puede cambiar de turno o marcar como descanso.
+- **Modificar Esquema** cambia el esquema del empleado.
 
 En el escritorio, el esquema se asigna en la ficha del empleado (*Esquema rotativo activo*, **Modificar esquema**) y
 la proyección se genera al guardar con *Generar o actualizar la proyección de turnos al guardar*.
@@ -268,6 +274,7 @@ la proyección se genera al guardar con *Generar o actualizar la proyección de 
 ![Roster de Turnos](img/09-roster.png)
 
 **Fuente:** [Roster.razor:20-30](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Pages/Roster.razor#L20-L30),
+[líneas 174-182](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Pages/Roster.razor#L174-L182),
 [RosterProjectionDialog.razor:36-127](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Dialogs/RosterProjectionDialog.razor#L36-L127),
 [RosterDayDialog.razor:5-16](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Dialogs/RosterDayDialog.razor#L5-L16),
 [EmployeeDetailView.xaml:223-352](../../src/Presentation/AttendanceSystem.WPF/Views/Employees/EmployeeDetailView.xaml#L223-L352).
@@ -280,8 +287,10 @@ la proyección se genera al guardar con *Generar o actualizar la proyección de 
 
 Los relojes con envío automático (ADMS) mandan las checadas solos. Los demás se descargan:
 
-- **Sitio:** Dispositivos y descargas › Descargas e Historial. En **Nueva Descarga**, opcionalmente *Desde* y
-  *Hasta*, y el botón del reloj en *Descargar por Dispositivo*. *Re-descargar Todo* 🔑 pide al reloj toda su memoria.
+- **Sitio:** Dispositivos y descargas › Descargas e Historial. En **Nueva Descarga**, opcionalmente *Desde* (vacío: desde la
+  última descarga) y *Hasta* (vacío: hasta hoy), y el botón del reloj en *Descargar por Dispositivo*; los marcados
+  *(ADMS)* envían solos. **Descargar de Todos** 🔑 descarga todos los relojes y *Re-descargar Todo* 🔑 pide al reloj
+  toda su memoria.
 - **Escritorio:** Dispositivos › Relojes y descargas › **Descargar Logs** en la fila del reloj.
 
 Al terminar aparece *"Descarga de … completada: N registros (M nuevos)"*. Si el reloj tenía la hora mal, puede avisar
@@ -446,7 +455,8 @@ de corregir horarios o cuando un reporte no refleje un cambio.
   (semana, quincena o mes según la configuración), *Sucursal (Opcional)*, *Empleado (Opcional)*, **Calcular**.
 - **Escritorio:** Asistencia › **Calcular asistencia** recalcula el rango de fechas seleccionado.
 
-Los días de un periodo cerrado no se recalculan.
+Los días de un periodo cerrado no se recalculan. El Reporte de Asistencia lo avisa con *"Periodo cerrado: … Esos días
+no cambian."*
 
 ![Cálculo de asistencia](img/17-calculo.png)
 
@@ -469,6 +479,7 @@ periodo reabierto hay que cerrarlo de nuevo a mano. Las checadas que lleguen des
 
 **Fuente:** [PeriodClosures.razor:10-15](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Pages/PeriodClosures.razor#L10-L15),
 [líneas 65-70](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Pages/PeriodClosures.razor#L65-L70),
+[AttendanceReport.razor:88-94](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Pages/AttendanceReport.razor#L88-L94),
 [línea 106](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Pages/PeriodClosures.razor#L106),
 [PeriodClosureService.cs:34](../../src/Core/AttendanceSystem.Application/Features/Attendance/PeriodClosure/PeriodClosureService.cs#L34).
 
@@ -490,7 +501,8 @@ En el escritorio, **Generar y guardar** pregunta dónde guardar el archivo. Si n
 asistencia esté calculada.
 
 La **Impresión de Checadores** filtra por rango de fechas o periodo, sucursal y empleados (*Todos*, *Rango de
-Empleado* o *Empleado Específico*), con *Incluir Horas Extra* y observaciones.
+Empleado* o *Empleado Específico*), con *Incluir Horas Extra* y qué observaciones imprimir (Falta, Sin entrada, Sin salida, Salida anticipada, Salida
+temporal). Cada tarjeta lleva espacio para firma y huella.
 
 ![Impresión de Checadores](img/19-checadores.png)
 

@@ -59,6 +59,7 @@ ficha. Lo que ya se corrigió en otra rama lo dice su ficha.
 | [D22](#d22-puertos-por-omisión-inconsistentes) | Puertos por omisión inconsistentes | Baja | Configuración |
 | [D23](#d23-paquetes-sin-uso-y-comentario-desactualizado) | Paquetes sin uso y comentario desactualizado | Baja | Código |
 | [D24](#d24-la-pantalla-de-inicio-de-sesión-muestra-la-versión-20) | La pantalla de inicio de sesión muestra la versión 2.0 | Baja | Sitio web |
+| [D25](#d25-el-alta-de-empleado-muestra-0-en-sexo) | El alta de empleado muestra `0` en Sexo | Baja | Sitio web |
 | [L01](#l01--secretos-legibles-en-la-base-y-en-los-archivos-de-configuración) 🔒 | Secretos legibles en la base y en los archivos de configuración | Alta | Seguridad |
 | [L02](#l02--el-sitio-sólo-se-sirve-por-http) 🔒 | El sitio sólo se sirve por HTTP | Alta | Seguridad |
 | [L03](#l03--adms-confía-en-el-número-de-serie) 🔒 | ADMS confía en el número de serie | Alta | Seguridad |
@@ -341,6 +342,16 @@ ficha. Lo que ya se corrigió en otra rama lo dice su ficha.
   el [manual de RH](../manual-rh/manual-rh.md).
 - **Solución temporal:** tomar la versión de *Agregar o quitar programas* o del instalador.
 - **Corrección recomendada:** leer la versión del ensamblado.
+
+### D25 El alta de empleado muestra 0 en Sexo
+
+- **Gravedad:** Baja. **Afecta a:** quien da de alta empleados en el sitio.
+- **Qué pasa:** `Gender` vale 0 al abrir el alta ([EmployeeDialog.razor:317](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Dialogs/EmployeeDialog.razor#L317)),
+  pero la enumeración sólo tiene 1 y 2 ([Gender.cs:5-6](../../src/Core/AttendanceSystem.Domain/Enumerations/Gender.cs#L5-L6)),
+  así que la lista muestra `0` en lugar de quedar vacía ([EmployeeDialog.razor:75-78](../../src/Presentation/AttendanceSystem.Blazor.Server/Components/Dialogs/EmployeeDialog.razor#L75-L78)).
+  Visto en la captura del [manual de RH, 2.1](../manual-rh/manual-rh.md#21-dar-de-alta-un-empleado).
+- **Solución temporal:** elegir *Masculino* o *Femenino*.
+- **Corrección recomendada:** usar `Gender?` en el diálogo, para que empiece vacío y el campo obligatorio lo exija.
 
 ---
 
