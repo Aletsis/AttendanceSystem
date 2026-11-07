@@ -8,7 +8,12 @@
     <UseWPF>true</UseWPF>
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <RestoreProjectStyle>PackageReference</RestoreProjectStyle>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="app.ico" />
+  </ItemGroup>
 
   <ItemGroup>
     <None Update="appsettings.json">

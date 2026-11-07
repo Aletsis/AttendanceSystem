@@ -86,6 +86,10 @@ OutputBaseFilename=AttendanceSystem_Setup
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
+; Icono del instalador y del desinstalador (Agregar o quitar programas)
+SetupIconFile=Assets\app.ico
+; Se copia siempre a {app} (ver [Files]): con sólo el sitio web no existe el .exe de escritorio
+UninstallDisplayIcon={app}\app.ico
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"
@@ -121,6 +125,8 @@ Name: "{app}\Desktop\Backups"; Permissions: users-modify; Components: desktop
 Name: "{app}\Web\Backups"; Permissions: users-modify; Components: web and desktop
 
 [Files]
+; Icono del desinstalador (UninstallDisplayIcon)
+Source: "Assets\app.ico"; DestDir: "{app}"; Flags: ignoreversion
 ; 1. Archivos de la Aplicación Web
 ; appsettings.Production.json NO se copia: lo genera el instalador la primera vez (cadena de conexión y
 ; ApiKey propias del equipo) y una actualización lo conserva, junto con lo que el cliente haya cambiado en él.
