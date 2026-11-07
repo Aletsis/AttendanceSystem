@@ -18,7 +18,8 @@ código que la respalda, y se puede comprobar con las consultas y scripts que in
 | [tecnico/04-dispositivos.md](tecnico/04-dispositivos.md) | Relojes: servicio ZKTeco por SDK, protocolo ADMS mensaje por mensaje, cola de comandos, Hikvision (experimental), zona horaria, resincronización y cuarentena de marcajes |
 | [tecnico/05-instalacion-configuracion.md](tecnico/05-instalacion-configuracion.md) | Instalador paso a paso, instalación manual, equipo de desarrollo, cada clave de `appsettings` y la configuración guardada en la base |
 | [tecnico/06-operacion.md](tecnico/06-operacion.md) | Respaldo y restauración, mantenimiento, usuarios, roles y permisos, bitácoras, panel de tareas, alertas, scripts de diagnóstico e índice de síntomas |
-| [tecnico/07-limitaciones.md](tecnico/07-limitaciones.md) | Lista de seguimiento: 23 defectos, 19 limitaciones de diseño (incluida la revisión de seguridad) y 8 reglas de cálculo por confirmar, cada uno con gravedad, cómo comprobarlo, solución temporal y corrección recomendada |
+| [tecnico/07-limitaciones.md](tecnico/07-limitaciones.md) | Lista de seguimiento: 25 defectos, 19 limitaciones de diseño (incluida la revisión de seguridad) y 8 reglas de cálculo por confirmar, cada uno con gravedad, cómo comprobarlo, solución temporal y corrección recomendada |
+| [manual-rh/manual-rh.md](manual-rh/manual-rh.md) | Manual de Recursos Humanos por tareas, en el sitio y en el programa de escritorio: empleados, horarios, checadas, revisión del día, periodos, reportes y nómina, permisos por rol y reglas de cálculo en revisión. Lista de capturas en [manual-rh/capturas.md](manual-rh/capturas.md) |
 
 Herramientas: `python Docs/tools/generar_esquema.py [--check]` regenera (o comprueba) el detalle de columnas;
 `python Docs/tools/verificar_referencias.py` comprueba que las citas al código existan;
