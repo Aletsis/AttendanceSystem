@@ -24,6 +24,9 @@ public sealed class DeleteUserCommandHandler : IRequestHandler<DeleteUserCommand
             throw new Exception($"Usuario con ID {request.UserId} no encontrado.");
         }
 
+        if (BuiltInAdmin.Is(user.UserName))
+            throw new InvalidOperationException($"El usuario '{user.UserName}' es el administrador del sistema y no se puede eliminar.");
+
         var result = await _userManager.DeleteAsync(user);
         if (!result.Succeeded)
         {

@@ -161,6 +161,33 @@ try
 
     var app = builder.Build();
 
+    // ===== RECUPERACIÓN DEL ADMINISTRADOR =====
+    // AttendanceSystem.Blazor.Server.exe --reset-admin-password: se ejecuta en el servidor (quien puede hacerlo ya tiene
+    // acceso a la configuración y a la base), restablece al administrador del sistema y termina sin levantar el sitio.
+    if (args.Any(a => string.Equals(a, AttendanceSystem.Application.Authorization.BuiltInAdmin.ResetPasswordArgument, StringComparison.OrdinalIgnoreCase)))
+    {
+        var recoveryLogger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("AdminRecovery");
+        try
+        {
+            var (userName, password, path) = await AttendanceSystem.Infrastructure.Persistence.IdentityDataSeeder.ResetBuiltInAdminAsync(app.Services, recoveryLogger);
+            Console.WriteLine();
+            Console.WriteLine("========================================");
+            Console.WriteLine(" Administrador restablecido");
+            Console.WriteLine($" Usuario:              {userName}");
+            Console.WriteLine($" Contraseña temporal:  {password}");
+            Console.WriteLine($" También se guardó en: {path}");
+            Console.WriteLine(" Inicie sesión, cámbiela en 'Cambiar mi contraseña' y borre ese archivo.");
+            Console.WriteLine("========================================");
+        }
+        catch (Exception ex)
+        {
+            recoveryLogger.LogError(ex, "No se pudo restablecer al administrador");
+            Console.Error.WriteLine($"No se pudo restablecer al administrador: {ex.Message}");
+            Environment.ExitCode = 1;
+        }
+        return;
+    }
+
     // ===== ESTADO DE MANTENIMIENTO, MIGRACIONES Y DATOS INICIALES =====
     // Común con el cliente WPF sin sitio web (ver ServerStartup). Sólo con el esquema al día se puede leer la
     // configuración para programar las tareas.

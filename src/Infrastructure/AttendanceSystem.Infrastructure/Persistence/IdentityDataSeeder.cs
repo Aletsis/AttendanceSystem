@@ -36,22 +36,14 @@ public static class IdentityDataSeeder
             }
 
             // Crear usuario administrador por defecto si no existe
-            var adminEmail = "admin";
+            var adminEmail = AttendanceSystem.Application.Authorization.BuiltInAdmin.UserName;
             var adminUser = await userManager.FindByNameAsync(adminEmail);
 
             if (adminUser == null)
             {
                 logger.LogInformation("Creando usuario administrador inicial...");
 
-                adminUser = new ApplicationUser
-                {
-                    UserName = adminEmail,
-                    Email = "admin@attendance.com",
-                    FullName = "Administrador del Sistema",
-                    EmailConfirmed = true,
-                    IsActive = true,
-                    CreatedAt = DateTime.UtcNow
-                };
+                adminUser = NewAdmin();
 
                 var config = scope.ServiceProvider.GetService<Microsoft.Extensions.Configuration.IConfiguration>();
                 var initialPassword = config?["InitialAdmin:Password"] ?? Environment.GetEnvironmentVariable("INITIAL_ADMIN_PASSWORD");
@@ -71,8 +63,7 @@ public static class IdentityDataSeeder
                     logger.LogInformation("Usuario administrador inicial ('{AdminEmail}') creado exitosamente.", adminEmail);
                     if (isGenerated)
                     {
-                        var credentialsPath = Path.Combine(AppContext.BaseDirectory, ".initial_admin_credentials.txt");
-                        await File.WriteAllTextAsync(credentialsPath, $"Usuario: {adminEmail}\nContraseña: {initialPassword}\nFecha: {DateTime.UtcNow:o}\nElimine este archivo después de configurar su cuenta.\n");
+                        var credentialsPath = await WriteCredentialsAsync(adminEmail, initialPassword);
                         logger.LogWarning("⚠️ Se ha generado una contraseña temporal para '{AdminEmail}' y se ha guardado en '{Path}'. Por favor inicie sesión y cámbiela inmediatamente.", adminEmail, credentialsPath);
                     }
                 }
@@ -88,6 +79,75 @@ public static class IdentityDataSeeder
             logger.LogError(ex, "Error al inicializar datos de Identity");
             throw;
         }
+    }
+
+    private static ApplicationUser NewAdmin() => new()
+    {
+        UserName = AttendanceSystem.Application.Authorization.BuiltInAdmin.UserName,
+        Email = "admin@attendance.com",
+        FullName = "Administrador del Sistema",
+        EmailConfirmed = true,
+        IsActive = true,
+        CreatedAt = DateTime.UtcNow
+    };
+
+    private static async Task<string> WriteCredentialsAsync(string userName, string password)
+    {
+        var credentialsPath = Path.Combine(AppContext.BaseDirectory, CredentialsFileName);
+        await File.WriteAllTextAsync(credentialsPath, $"Usuario: {userName}\nContraseña: {password}\nFecha: {DateTime.UtcNow:o}\nElimine este archivo después de configurar su cuenta.\n");
+        return credentialsPath;
+    }
+
+    public const string CredentialsFileName = ".initial_admin_credentials.txt";
+
+    /// <summary>
+    /// Recuperación del administrador del sistema (se ejecuta en el servidor, fuera del sitio): le asigna una contraseña
+    /// temporal nueva, lo reactiva, le devuelve el rol de administrador y lo desbloquea; si lo borraron, lo vuelve a crear.
+    /// Revoca sus sesiones abiertas. Devuelve la contraseña temporal y la guarda en <see cref="CredentialsFileName"/>.
+    /// </summary>
+    public static async Task<(string UserName, string Password, string CredentialsPath)> ResetBuiltInAdminAsync(
+        IServiceProvider serviceProvider, ILogger logger, CancellationToken cancellationToken = default)
+    {
+        using var scope = serviceProvider.CreateScope();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+        var adminRole = AttendanceSystem.Application.Authorization.AppRoles.Administrator;
+
+        if (!await roleManager.RoleExistsAsync(adminRole))
+            Check(await roleManager.CreateAsync(new IdentityRole(adminRole)), "crear el rol de administrador");
+
+        var password = GenerateSecurePassword();
+        var admin = await userManager.FindByNameAsync(AttendanceSystem.Application.Authorization.BuiltInAdmin.UserName);
+        if (admin == null)
+        {
+            admin = NewAdmin();
+            Check(await userManager.CreateAsync(admin, password), "crear el administrador");
+            logger.LogWarning("El administrador del sistema no existía; se volvió a crear.");
+        }
+        else
+        {
+            var token = await userManager.GeneratePasswordResetTokenAsync(admin);
+            Check(await userManager.ResetPasswordAsync(admin, token, password), "restablecer la contraseña");
+        }
+
+        admin.IsActive = true;
+        admin.LastModifiedAt = DateTime.UtcNow;
+        Check(await userManager.UpdateAsync(admin), "reactivar el administrador");
+        if (!await userManager.IsInRoleAsync(admin, adminRole))
+            Check(await userManager.AddToRoleAsync(admin, adminRole), "asignar el rol de administrador");
+        Check(await userManager.SetLockoutEndDateAsync(admin, null), "desbloquear el administrador");
+        Check(await userManager.ResetAccessFailedCountAsync(admin), "reiniciar los intentos fallidos");
+        Check(await userManager.UpdateSecurityStampAsync(admin), "cerrar sus sesiones abiertas");
+
+        var path = await WriteCredentialsAsync(admin.UserName!, password);
+        logger.LogWarning("Contraseña del administrador '{User}' restablecida; la temporal se guardó en '{Path}'.", admin.UserName, path);
+        return (admin.UserName!, password, path);
+    }
+
+    private static void Check(IdentityResult result, string action)
+    {
+        if (!result.Succeeded)
+            throw new InvalidOperationException($"No se pudo {action}: {string.Join(", ", result.Errors.Select(e => e.Description))}");
     }
 
     private static string GenerateSecurePassword(int length = 16)
