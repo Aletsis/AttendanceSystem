@@ -1,4 +1,4 @@
-﻿; Script generado para Inno Setup
+; Script generado para Inno Setup
 ; Este script crea un instalador "Todo en Uno" para AttendanceSystem + PostgreSQL
 ; Sistemas soportados: Windows 10 / 11 y Windows Server 2019 o posterior, x64 (MinVersion 10.0.17763 = 1809 / Server 2019)
 
@@ -7,7 +7,7 @@
 #endif
 
 #ifndef MyAppVersion
-#define MyAppVersion "2.3.0"
+#define MyAppVersion "2.3.1"
 #endif
 
 #ifndef MyAppPublisher
