@@ -51,23 +51,17 @@ public class CloudLogSyncService : ICloudLogSyncService
             var dataSource = _dataSourceProvider.GetDataSource(connStr);
             await using var conn = await dataSource.OpenConnectionAsync(cancellationToken);
 
-            // Asegurar que las columnas de reclamo concurrente existan solo una vez
-            if (!_dataSourceProvider.IsSchemaEnsured(connStr + "_claim"))
+            // Asegurar esquema de la nube (columnas de reclamo, check_time_utc e índice/trigger compatible con v2.2.x)
+            if (!_dataSourceProvider.IsSchemaEnsured(connStr))
             {
-                const string ddlSql = @"
-                    ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_token VARCHAR(64);
-                    ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP;
-                    ALTER TABLE IF EXISTS external_attendance_logs ADD COLUMN IF NOT EXISTS download_attempts INT NOT NULL DEFAULT 0;
-                    CREATE INDEX IF NOT EXISTS ix_ext_logs_claim ON external_attendance_logs (branch_code, is_downloaded, claim_expires_at);";
                 try
                 {
-                    await using var ddlCmd = new NpgsqlCommand(ddlSql, conn);
-                    await ddlCmd.ExecuteNonQueryAsync(cancellationToken);
-                    _dataSourceProvider.MarkSchemaEnsured(connStr + "_claim");
+                    await LogTransferService.EnsureSchemaAsync(conn, cancellationToken);
+                    _dataSourceProvider.MarkSchemaEnsured(connStr);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "No se pudo verificar o aplicar esquema de reclamo en la nube (continuando con consulta estándar)");
+                    _logger.LogWarning(ex, "No se pudo verificar o aplicar esquema en la nube (continuando con consulta estándar)");
                 }
             }
 
@@ -87,7 +81,7 @@ public class CloudLogSyncService : ICloudLogSyncService
                     LIMIT 200
                     FOR UPDATE SKIP LOCKED
                 )
-                RETURNING id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at;";
+                RETURNING id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at, check_time_utc;";
 
             await using var cmd = new NpgsqlCommand(sql, conn);
             cmd.Parameters.AddWithValue("branchCode", branchCode.ToUpperInvariant());
@@ -97,11 +91,18 @@ public class CloudLogSyncService : ICloudLogSyncService
             await using var reader = await cmd.ExecuteReaderAsync(cancellationToken);
             while (await reader.ReadAsync(cancellationToken))
             {
+                // Si check_time_utc tiene valor, el registro fue subido por v2.3.x con instante UTC real.
+                // Si check_time_utc es NULL, fue subido por v2.2.x (que guarda la hora civil etiquetada como +00):
+                // se entrega como Unspecified para que RecordAttendanceCommand la convierta una sola vez según la zona local.
+                var effectiveCheckTime = reader.IsDBNull(8)
+                    ? DateTime.SpecifyKind(reader.GetDateTime(3), DateTimeKind.Unspecified)
+                    : reader.GetDateTime(8);
+
                 items.Add(new CloudLogItemDto(
                     reader.GetGuid(0),
                     reader.GetString(1),
                     reader.GetString(2),
-                    reader.GetDateTime(3),
+                    effectiveCheckTime,
                     reader.GetInt32(4),
                     reader.GetInt32(5),
                     reader.IsDBNull(6) ? null : reader.GetString(6),

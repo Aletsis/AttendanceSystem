@@ -196,4 +196,60 @@ public class PostgresExternalLogSyncTests : IClassFixture<PostgresTestDatabaseFi
         var next = await sync.FetchPendingLogsAsync("A01");
         next.Value.Select(l => l.EmployeeId).Should().Contain(new[] { "NEW", "BAD" });
     }
+
+    [Fact]
+    public async Task Compatibility_V223Upload_IgnoresDuplicatesWithoutOnConflict_AndPreservesCivilHourInV23()
+    {
+        if (!_fixture.IsAvailable) return;
+        await ResetAsync();
+
+        // v2.2.3 inserta sin ON CONFLICT DO NOTHING, sin check_time_utc y con la hora civil (08:00) etiquetada como +00.
+        // Si redescarga el reloj, vuelve a ejecutar el mismo INSERT con otro UUID: el trigger debe ignorarlo sin lanzar 23505.
+        const string v223Insert = @"
+            INSERT INTO external_attendance_logs
+            (id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at, is_downloaded)
+            VALUES (gen_random_uuid(), 'B01', '123', '2026-10-01 08:00:00+00', 1, 0, 'SN1', NOW(), FALSE);";
+
+        await ExecuteAsync(v223Insert);
+        await ExecuteAsync(v223Insert);
+
+        (await ScalarAsync("SELECT COUNT(*) FROM external_attendance_logs WHERE branch_code = 'B01' AND employee_id = '123'"))
+            .Should().Be(1, "el trigger en la nube ignora el duplicado de v2.2.3 sin lanzar error 23505");
+
+        var sync = new CloudLogSyncService(Config(_fixture.ConnectionString).Object, new Mock<ISender>().Object, _dataSources, NullLogger<CloudLogSyncService>.Instance);
+        var fetched = await sync.FetchPendingLogsAsync("B01");
+
+        var item = fetched.Value.Should().ContainSingle().Subject;
+        item.CheckTime.Should().Be(new DateTime(2026, 10, 1, 8, 0, 0));
+        item.CheckTime.Kind.Should().Be(DateTimeKind.Unspecified, "al tener check_time_utc NULL se entrega como hora civil para que v2.3 no la recorra 6 horas");
+        DefaultTimeNormalizer.Instance.ToUtc(item.CheckTime).Should().Be(Eight);
+    }
+
+    [Fact]
+    public async Task Compatibility_V23Upload_WritesCivilTimeForV223_AndRealUtcForV23()
+    {
+        if (!_fixture.IsAvailable) return;
+        await ResetAsync();
+
+        // Eight = 14:00 UTC = 08:00 hora civil de Ciudad de México.
+        await SeedLocalAsync(Log("123", Eight));
+        await using var context = _fixture.CreateDbContext();
+        (await Transfer(context).RetryPendingTransfersAsync()).IsSuccess.Should().BeTrue();
+
+        // Lo que lee una sucursal v2.2.3 (columna check_time): 08:00.
+        await using (var conn = new NpgsqlConnection(_fixture.ConnectionString))
+        {
+            await conn.OpenAsync();
+            await using var cmd = new NpgsqlCommand("SELECT check_time FROM external_attendance_logs WHERE employee_id = '123';", conn);
+            var v223Read = (DateTime)(await cmd.ExecuteScalarAsync())!;
+            v223Read.Should().Be(new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc), "v2.2.3 toma check_time directo como hora de checada (08:00)");
+        }
+
+        // Lo que lee una sucursal v2.3.x (usa check_time_utc): 14:00 UTC.
+        var sync = new CloudLogSyncService(Config(_fixture.ConnectionString).Object, new Mock<ISender>().Object, _dataSources, NullLogger<CloudLogSyncService>.Instance);
+        var fetched = await sync.FetchPendingLogsAsync("B01");
+        var item = fetched.Value.Should().ContainSingle().Subject;
+        item.CheckTime.Should().Be(Eight);
+        item.CheckTime.Kind.Should().Be(DateTimeKind.Utc);
+    }
 }

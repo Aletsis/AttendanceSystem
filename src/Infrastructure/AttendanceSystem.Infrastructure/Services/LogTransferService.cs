@@ -183,19 +183,31 @@ public class LogTransferService : ILogTransferService
         string? sourceDevice,
         CancellationToken cancellationToken)
     {
+        // Compatibilidad con v2.2.x:
+        // - check_time se guarda con los dígitos de la hora civil (etiquetada UTC para timestamptz), que es lo que
+        //   v2.2.x escribe y espera leer al descargar.
+        // - check_time_utc guarda el instante UTC real para v2.3.x. Si una fila tiene check_time_utc NULL, fue subida
+        //   por v2.2.x y al descargarla en v2.3.x se interpreta como hora civil.
+        var utcCheckTime = _timeNormalizer.ToUtc(checkTime);
+        var civilCheckTime = checkTime.Kind == DateTimeKind.Utc
+            ? _timeNormalizer.ToCivilTime(utcCheckTime)
+            : checkTime;
+        var legacyCivilAsUtc = DateTime.SpecifyKind(civilCheckTime, DateTimeKind.Utc);
+
         // Sin destino en ON CONFLICT: un reenvío del mismo id o la misma checada (sucursal, empleado, hora)
         // con otro id se ignora en lugar de fallar para siempre.
         const string insertSql = @"
             INSERT INTO external_attendance_logs 
-            (id, branch_code, employee_id, check_time, verify_method, check_type, source_device, created_at, is_downloaded)
-            VALUES (@id, @branchCode, @employeeId, @checkTime, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE)
+            (id, branch_code, employee_id, check_time, check_time_utc, verify_method, check_type, source_device, created_at, is_downloaded)
+            VALUES (@id, @branchCode, @employeeId, @checkTime, @checkTimeUtc, @verifyMethod, @checkType, @sourceDevice, NOW(), FALSE)
             ON CONFLICT DO NOTHING;";
 
         await using var cmd = new NpgsqlCommand(insertSql, conn);
         cmd.Parameters.AddWithValue("id", id);
         cmd.Parameters.AddWithValue("branchCode", branchCode.ToUpperInvariant());
         cmd.Parameters.AddWithValue("employeeId", employeeId);
-        cmd.Parameters.AddWithValue("checkTime", _timeNormalizer.ToUtc(checkTime));
+        cmd.Parameters.AddWithValue("checkTime", legacyCivilAsUtc);
+        cmd.Parameters.AddWithValue("checkTimeUtc", utcCheckTime);
         cmd.Parameters.AddWithValue("verifyMethod", verifyMethod);
         cmd.Parameters.AddWithValue("checkType", checkType);
         cmd.Parameters.AddWithValue("sourceDevice", (object?)sourceDevice ?? DBNull.Value);
@@ -235,7 +247,7 @@ public class LogTransferService : ILogTransferService
         }
     }
 
-    private static async Task EnsureSchemaAsync(NpgsqlConnection conn, CancellationToken cancellationToken)
+    internal static async Task EnsureSchemaAsync(NpgsqlConnection conn, CancellationToken cancellationToken)
     {
         const string ddl = @"
             CREATE TABLE IF NOT EXISTS external_attendance_logs (
@@ -243,6 +255,7 @@ public class LogTransferService : ILogTransferService
                 branch_code VARCHAR(10) NOT NULL,
                 employee_id VARCHAR(50) NOT NULL,
                 check_time TIMESTAMP WITH TIME ZONE NOT NULL,
+                check_time_utc TIMESTAMP WITH TIME ZONE,
                 verify_method INT NOT NULL,
                 check_type INT NOT NULL,
                 source_device VARCHAR(100),
@@ -251,12 +264,15 @@ public class LogTransferService : ILogTransferService
                 is_downloaded BOOLEAN NOT NULL DEFAULT FALSE,
                 downloaded_at TIMESTAMP WITH TIME ZONE,
                 downloaded_by_branch VARCHAR(10),
-                claim_token VARCHAR(50),
+                claim_token VARCHAR(64),
                 claim_expires_at TIMESTAMP WITH TIME ZONE,
                 download_attempts INT NOT NULL DEFAULT 0
             );
 
+            ALTER TABLE external_attendance_logs ADD COLUMN IF NOT EXISTS claim_token VARCHAR(64);
+            ALTER TABLE external_attendance_logs ADD COLUMN IF NOT EXISTS claim_expires_at TIMESTAMP WITH TIME ZONE;
             ALTER TABLE external_attendance_logs ADD COLUMN IF NOT EXISTS download_attempts INT NOT NULL DEFAULT 0;
+            ALTER TABLE external_attendance_logs ADD COLUMN IF NOT EXISTS check_time_utc TIMESTAMP WITH TIME ZONE;
 
             -- Tablas creadas antes del índice único pueden tener la misma checada repetida, y entonces el
             -- índice no se puede crear y ningún log sube. Se deja una por checada: la ya descargada si la hay
@@ -278,8 +294,35 @@ public class LogTransferService : ILogTransferService
                 END IF;
             END $$;
 
+            -- Compatibilidad con sucursales en v2.2.x: su INSERT no incluye ON CONFLICT DO NOTHING, por lo que
+            -- una redescarga en v2.2.x chocaría con uq_ext_logs_branch_emp_time y atascaría su cola local.
+            -- Este trigger ignora silenciosamente los duplicados antes de que disparen 23505.
+            CREATE OR REPLACE FUNCTION fn_ext_logs_ignore_duplicates()
+            RETURNS TRIGGER AS $fn$
+            BEGIN
+                IF EXISTS (
+                    SELECT 1 FROM external_attendance_logs
+                    WHERE id = NEW.id
+                       OR (branch_code = NEW.branch_code
+                           AND employee_id = NEW.employee_id
+                           AND check_time = NEW.check_time)
+                ) THEN
+                    RETURN NULL;
+                END IF;
+                RETURN NEW;
+            END;
+            $fn$ LANGUAGE plpgsql;
+
+            DROP TRIGGER IF EXISTS trg_ext_logs_ignore_duplicates ON external_attendance_logs;
+            CREATE TRIGGER trg_ext_logs_ignore_duplicates
+                BEFORE INSERT ON external_attendance_logs
+                FOR EACH ROW
+                EXECUTE FUNCTION fn_ext_logs_ignore_duplicates();
+
             CREATE INDEX IF NOT EXISTS idx_ext_logs_branch_downloaded 
-                ON external_attendance_logs(branch_code, is_downloaded);";
+                ON external_attendance_logs(branch_code, is_downloaded);
+            CREATE INDEX IF NOT EXISTS ix_ext_logs_claim
+                ON external_attendance_logs(branch_code, is_downloaded, claim_expires_at);";
 
         await using var cmd = new NpgsqlCommand(ddl, conn);
         await cmd.ExecuteNonQueryAsync(cancellationToken);
