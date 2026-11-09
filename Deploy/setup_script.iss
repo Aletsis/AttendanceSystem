@@ -88,6 +88,8 @@ SolidCompression=yes
 WizardStyle=modern
 ; Icono del instalador y del desinstalador (Agregar o quitar programas)
 SetupIconFile=Assets\app.ico
+; Log de Inno Setup siempre en %TEMP% ("Setup Log <fecha> #NNN.txt"), aunque no se ejecute con /LOG
+SetupLogging=yes
 ; Se copia siempre a {app} (ver [Files]): con sólo el sitio web no existe el .exe de escritorio
 UninstallDisplayIcon={app}\app.ico
 
@@ -663,22 +665,6 @@ begin
   Result := Value <> '';
 end;
 
-// Cadena de conexión y ApiKey de una instalación ya configurada, para configurar la parte que se agrega ahora
-function LoadExistingSettings: Boolean;
-var
-  AppDir: String;
-begin
-  AppDir := ExpandConstant('{app}');
-  AppConnection := '';
-  if not ReadJsonString(WebConfigFile(AppDir), 'AttendanceDb', AppConnection) then
-    ReadJsonString(DesktopConfigFile(AppDir), 'AttendanceDb', AppConnection);
-  // La ApiKey que valida el servicio (en instalaciones anteriores, la de su appsettings.json)
-  if not ReadJsonString(ServiceConfigFile(AppDir), 'ApiKey', GrpcApiKey) then
-    ReadJsonString(AppDir + '\Service\appsettings.json', 'ApiKey', GrpcApiKey);
-  Result := (AppConnection <> '') and (GrpcApiKey <> '');
-  Log(Format('Configuración existente: conexión leída %d, ApiKey leída %d', [Ord(AppConnection <> ''), Ord(GrpcApiKey <> '')]));
-end;
-
 // "Database=X" de una cadena de conexión
 function DbNameFromConnection(Connection: String): String;
 var
@@ -871,7 +857,7 @@ begin
     Log('Serilog:WriteTo (sin appsettings.json base) quitado de ' + FileName);
 end;
 
-// --- Edición mínima de JSON (sólo lo que necesita EnsureWebZKTecoSettings) ---
+// --- Edición mínima de JSON (sólo lo que necesitan EnsureApiKey y LoadExistingSettings) ---
 
 // Posición de la llave que cierra el objeto que abre Text[OpenPos]; 0 si no cierra
 function MatchingBrace(Text: String; OpenPos: Integer): Integer;
@@ -934,82 +920,231 @@ begin
   Insert(#13#10 + Indent + Member + Separator, Text, OpenPos + 1);
 end;
 
-// --- ZKTecoService del sitio: la misma ApiKey que valida el servicio, y el tiempo real por SDK ---
-// Una actualización conserva el appsettings.Production.json del sitio, pero uno escrito a mano o por una versión
-// anterior puede no traer ZKTecoService:ApiKey. El sitio tomaba entonces la de un appsettings.json viejo (la clave de
-// ejemplo) y el servicio rechazaba cada llamada ("x-api-key inválida"). La ApiKey del servicio manda: se agrega si
-// falta y se corrige si no coincide. Realtime:Enabled sólo se agrega si falta; un "false" puesto a mano se respeta.
-procedure EnsureWebZKTecoSettings(FileName: String);
+// --- db_setup.log y lectura de valores de la configuración ---
+
+function DbLogFile: String;
+begin
+  Result := ExpandConstant('{app}\Logs\db_setup.log');
+end;
+
+// Línea con fecha en db_setup.log (y en el log de Inno Setup)
+procedure DbLog(LogFile, Text: String);
+begin
+  Log(Text);
+  SaveStringToFile(LogFile, GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '  ' + Text + #13#10, True);
+end;
+
+// "Section": { ... "Key": "valor" } (sin comillas escapadas en el valor)
+function ReadJsonSectionString(FileName, Section, Key: String; var Value: String): Boolean;
 var
   Content: AnsiString;
-  Text, Original, Current: String;
-  TopPos, OpenPos, ClosePos, ValuePos, EndQuote: Integer;
+  Text, Current: String;
+  OpenPos, ClosePos, ValuePos, EndQuote: Integer;
+begin
+  Result := False;
+  if not LoadStringFromFile(FileName, Content) then Exit;
+  Text := String(Content);
+  OpenPos := 0;
+  if not FindJsonMember(Text, Section, 1, Length(Text), OpenPos) or (Text[OpenPos] <> '{') then Exit;
+  ClosePos := MatchingBrace(Text, OpenPos);
+  if ClosePos = 0 then Exit;
+  if not FindJsonMember(Text, Key, OpenPos, ClosePos, ValuePos) or (Text[ValuePos] <> '"') then Exit;
+  Current := Copy(Text, ValuePos + 1, ClosePos - ValuePos);
+  EndQuote := Pos('"', Current);
+  if EndQuote = 0 then Exit;
+  Value := Copy(Current, 1, EndQuote - 1);
+  Result := Value <> '';
+end;
+
+// Las claves de ejemplo de las plantillas y del repositorio son públicas: no sirven como ApiKey del equipo
+function IsUsableApiKey(Value: String): Boolean;
+begin
+  Result := (Value <> '') and (Value <> '__API_KEY__') and (Value <> 'LA_API_KEY_DEL_SERVICIO_ZKTECO') and
+    (Value <> 'REEMPLAZAR_CON_UNA_CLAVE_SEGURA_DURANTE_LA_INSTALACION') and (Value <> 'AttendanceSystemSecretApiKey123!');
+end;
+
+// ZKTecoService:Url apunta al servicio de este equipo. Sin Url (o con una que no es texto) se usa el valor por
+// defecto, http://localhost:5001, así que también cuenta como local.
+function UsesLocalService(FileName: String): Boolean;
+var
+  Url: String;
+begin
+  Result := True;
+  Url := '';
+  if not ReadJsonSectionString(FileName, 'ZKTecoService', 'Url', Url) then Exit;
+  Url := Lowercase(Url);
+  Result := (Pos('://localhost', Url) > 0) or (Pos('://127.0.0.1', Url) > 0) or (Pos('://[::1]', Url) > 0);
+end;
+
+// --- La misma ApiKey en el servicio, el sitio y el programa (y el tiempo real por SDK en el sitio) ---
+// Una actualización conserva los archivos de configuración, pero uno escrito a mano o por una versión anterior puede
+// no traer la ApiKey. El sitio tomaba entonces la de un appsettings.json viejo (la clave de ejemplo) y el servicio
+// rechazaba cada llamada ("x-api-key inválida"). GrpcApiKey manda: se agrega si falta y se corrige si no coincide.
+// Section vacía es la raíz (el "ApiKey" del servicio); si no, ZKTecoService (el sitio y el programa).
+// Realtime:Enabled sólo se agrega si falta (AddRealtime, el sitio); un "false" puesto a mano se respeta.
+// Si ZKTecoService:Url apunta a otro equipo, su ApiKey es la de ese servicio: no se toca (queda anotado).
+// Cada ApiKey agregada o cambiada queda en db_setup.log (el archivo, nunca la clave).
+procedure EnsureApiKey(FileName, Section: String; AddRealtime: Boolean);
+var
+  Content: AnsiString;
+  Text, Original, Current, Name, Extra: String;
+  OpenPos, ClosePos, ValuePos, EndQuote: Integer;
+  KeepKey: Boolean;
 begin
   if GrpcApiKey = '' then Exit;
   if not LoadStringFromFile(FileName, Content) then Exit;
   Text := String(Content);
   Original := Text;
   OpenPos := 0;
+  if Section = '' then Name := 'ApiKey' else Name := Section + ':ApiKey';
 
-  if not FindJsonMember(Text, 'ZKTecoService', 1, Length(Text), OpenPos) or (Text[OpenPos] <> '{') then
+  if Section = '' then
   begin
-    TopPos := Pos('{', Text);
-    if TopPos = 0 then
+    OpenPos := Pos('{', Text);
+    if OpenPos = 0 then
     begin
-      AddWarning('No se pudo agregar la sección ZKTecoService a ' + FileName + '. Agréguela a mano con la ApiKey del servicio.');
+      AddWarning('No se pudo leer ' + FileName + '. Ponga a mano su ApiKey (la del sitio y el programa).');
       Exit;
     end;
-    InsertJsonMember(Text, TopPos,
-      '"ZKTecoService": {' + #13#10 +
+  end
+  else if not FindJsonMember(Text, Section, 1, Length(Text), OpenPos) or (Text[OpenPos] <> '{') then
+  begin
+    OpenPos := Pos('{', Text);
+    if OpenPos = 0 then
+    begin
+      AddWarning('No se pudo agregar la sección ' + Section + ' a ' + FileName + '. Agréguela a mano con la ApiKey del servicio.');
+      Exit;
+    end;
+    Extra := '';
+    if AddRealtime then Extra := ',' + #13#10 + '    "Realtime": { "Enabled": true }';
+    InsertJsonMember(Text, OpenPos,
+      '"' + Section + '": {' + #13#10 +
       '    "Url": "http://localhost:5001",' + #13#10 +
-      '    "ApiKey": "' + GrpcApiKey + '",' + #13#10 +
-      '    "Realtime": { "Enabled": true }' + #13#10 +
+      '    "ApiKey": "' + GrpcApiKey + '"' + Extra + #13#10 +
       '  }', '  ');
-    Log('Sección ZKTecoService agregada a ' + FileName);
+    if SaveStringToFile(FileName, AnsiString(Text), False) then
+      DbLog(DbLogFile, 'Sección ' + Section + ' (con la ApiKey del servicio) agregada a ' + FileName)
+    else
+      AddWarning('No se pudo escribir la sección ' + Section + ' en ' + FileName + '. Ponga a mano la ApiKey del servicio.');
+    Exit;
+  end;
+
+  ClosePos := MatchingBrace(Text, OpenPos);
+  if ClosePos = 0 then
+  begin
+    AddWarning('No se pudo leer ' + Name + ' de ' + FileName + '. Revise que sea la del servicio.');
+    Exit;
+  end;
+
+  KeepKey := (Section <> '') and not UsesLocalService(FileName);
+  if KeepKey then
+    DbLog(DbLogFile, Name + ' de ' + FileName + ' no se revisó: su ' + Section + ':Url apunta a otro equipo.')
+  else if FindJsonMember(Text, 'ApiKey', OpenPos, ClosePos, ValuePos) then
+  begin
+    Current := Copy(Text, ValuePos + 1, ClosePos - ValuePos);
+    EndQuote := Pos('"', Current);
+    if (Text[ValuePos] <> '"') or (EndQuote = 0) then
+    begin
+      AddWarning(Name + ' de ' + FileName + ' no es un texto. Cámbiela a mano por la del servicio.');
+      Exit;
+    end;
+    if Copy(Current, 1, EndQuote - 1) <> GrpcApiKey then
+    begin
+      Delete(Text, ValuePos + 1, EndQuote - 1);
+      Insert(GrpcApiKey, Text, ValuePos + 1);
+      DbLog(DbLogFile, Name + ' de ' + FileName + ' no coincidía; se cambió por la del servicio.');
+    end;
   end
   else
   begin
-    ClosePos := MatchingBrace(Text, OpenPos);
-    if ClosePos = 0 then
-    begin
-      AddWarning('No se pudo leer la sección ZKTecoService de ' + FileName + '. Revise que su ApiKey sea la del servicio.');
-      Exit;
-    end;
-
-    if FindJsonMember(Text, 'ApiKey', OpenPos, ClosePos, ValuePos) then
-    begin
-      Current := Copy(Text, ValuePos + 1, ClosePos - ValuePos);
-      EndQuote := Pos('"', Current);
-      if (Text[ValuePos] <> '"') or (EndQuote = 0) then
-      begin
-        AddWarning('ZKTecoService:ApiKey de ' + FileName + ' no es un texto. Cámbiela a mano por la del servicio.');
-        Exit;
-      end;
-      if Copy(Current, 1, EndQuote - 1) <> GrpcApiKey then
-      begin
-        Delete(Text, ValuePos + 1, EndQuote - 1);
-        Insert(GrpcApiKey, Text, ValuePos + 1);
-        Log('ZKTecoService:ApiKey de ' + FileName + ' no coincidía con la del servicio; se cambió por la del servicio.');
-      end;
-    end
+    if Section = '' then
+      InsertJsonMember(Text, OpenPos, '"ApiKey": "' + GrpcApiKey + '"', '  ')
     else
-    begin
       InsertJsonMember(Text, OpenPos, '"ApiKey": "' + GrpcApiKey + '"', '    ');
-      Log('ZKTecoService:ApiKey agregada a ' + FileName);
-    end;
+    DbLog(DbLogFile, Name + ' agregada a ' + FileName);
+  end;
 
-    // Las ediciones de arriba quedan después de OpenPos: sólo se mueve el cierre
+  // Las ediciones de arriba quedan después de OpenPos: sólo se mueve el cierre
+  if AddRealtime then
+  begin
     ClosePos := MatchingBrace(Text, OpenPos);
     if (ClosePos > 0) and not FindJsonMember(Text, 'Realtime', OpenPos, ClosePos, ValuePos) then
     begin
       InsertJsonMember(Text, OpenPos, '"Realtime": { "Enabled": true }', '    ');
-      Log('ZKTecoService:Realtime:Enabled agregado a ' + FileName);
+      Log(Section + ':Realtime:Enabled agregado a ' + FileName);
     end;
   end;
 
   if Text = Original then Exit;
   if not SaveStringToFile(FileName, AnsiString(Text), False) then
-    AddWarning('No se pudo escribir la sección ZKTecoService en ' + FileName + '. Ponga a mano la ApiKey del servicio.');
+    AddWarning('No se pudo escribir ' + Name + ' en ' + FileName + '. Póngala a mano (la del servicio).');
+end;
+
+// --- Lectura de la configuración de una instalación existente ---
+
+// Cadena de conexión y ApiKey de una instalación ya configurada, para configurar la parte que se agrega ahora.
+// Instalaciones hechas con versiones anteriores pueden no tener Service\appsettings.Production.json: la ApiKey se toma
+// entonces del sitio o del programa (los que ya hablan con el servicio) y, si ninguno tiene una válida, se genera una
+// nueva. WriteMissingConfigs la escribe en el servicio y la iguala en el sitio y el programa.
+// Si falla, deja el motivo en DbConfigError y en db_setup.log.
+function LoadExistingSettings(LogFile: String): Boolean;
+var
+  AppDir, Value, Source: String;
+begin
+  Result := False;
+  AppDir := ExpandConstant('{app}');
+  AppConnection := '';
+  GrpcApiKey := '';
+
+  Source := '';
+  if ReadJsonString(WebConfigFile(AppDir), 'AttendanceDb', AppConnection) then
+    Source := WebConfigFile(AppDir)
+  else if ReadJsonString(DesktopConfigFile(AppDir), 'AttendanceDb', AppConnection) then
+    Source := DesktopConfigFile(AppDir)
+  else if ReadJsonString(AppDir + '\Web\appsettings.json', 'AttendanceDb', AppConnection) then
+    Source := AppDir + '\Web\appsettings.json';
+  if Source = '' then
+  begin
+    AppConnection := '';
+    DbConfigError := 'No se encontró la cadena de conexión (ConnectionStrings:AttendanceDb) de la instalación existente.';
+    DbLog(LogFile, 'Se buscó ConnectionStrings:AttendanceDb en ' + WebConfigFile(AppDir) + ', ' + DesktopConfigFile(AppDir) +
+      ' y ' + AppDir + '\Web\appsettings.json (que falten, no tengan la clave o su valor no sea un texto).');
+    Exit;
+  end;
+  DbLog(LogFile, 'Cadena de conexión existente tomada de ' + Source);
+
+  // La ApiKey que valida el servicio y, si no la tiene, la que ya usan el sitio o el programa con este servicio
+  // (la de uno que apunta a otro equipo es la de ese servicio)
+  Source := '';
+  Value := '';
+  if ReadJsonString(ServiceConfigFile(AppDir), 'ApiKey', Value) and IsUsableApiKey(Value) then
+    Source := ServiceConfigFile(AppDir)
+  else if ReadJsonString(AppDir + '\Service\appsettings.json', 'ApiKey', Value) and IsUsableApiKey(Value) then
+    Source := AppDir + '\Service\appsettings.json'
+  else if UsesLocalService(WebConfigFile(AppDir)) and
+    ReadJsonSectionString(WebConfigFile(AppDir), 'ZKTecoService', 'ApiKey', Value) and IsUsableApiKey(Value) then
+    Source := WebConfigFile(AppDir) + ' (ZKTecoService)'
+  else if UsesLocalService(DesktopConfigFile(AppDir)) and
+    ReadJsonSectionString(DesktopConfigFile(AppDir), 'ZKTecoService', 'ApiKey', Value) and IsUsableApiKey(Value) then
+    Source := DesktopConfigFile(AppDir) + ' (ZKTecoService)';
+
+  if Source <> '' then
+  begin
+    GrpcApiKey := Value;
+    DbLog(LogFile, 'ApiKey existente tomada de ' + Source);
+  end
+  else
+  begin
+    GrpcApiKey := GenerateSecret(32);
+    if GrpcApiKey = '' then
+    begin
+      DbConfigError := 'La instalación existente no tiene una ApiKey válida y no se pudo generar una nueva (se requiere PowerShell).';
+      Exit;
+    end;
+    DbLog(LogFile, 'Ni el servicio, ni el sitio, ni el programa tenían una ApiKey válida: se generó una nueva ' +
+      'y se escribe en los tres.');
+  end;
+  Result := True;
 end;
 
 // --- Escribe la configuración que falte de cada parte instalada ---
@@ -1023,7 +1158,9 @@ begin
   WebInstalled := IsWebInstalledAt(AppDir);
 
   if not FileExists(ServiceConfigFile(AppDir)) then
-    Result := WriteConfigFromTemplate('appsettings.Service.Production.template.json', ServiceConfigFile(AppDir), False) and Result;
+    Result := WriteConfigFromTemplate('appsettings.Service.Production.template.json', ServiceConfigFile(AppDir), False) and Result
+  else
+    EnsureApiKey(ServiceConfigFile(AppDir), '', False);
   if WebInstalled and not FileExists(WebConfigFile(AppDir)) then
     Result := WriteConfigFromTemplate('appsettings.Web.Production.template.json', WebConfigFile(AppDir), False) and Result
   // Actualización de v2.3.0-beta.1. Con un appsettings.json base (instalaciones hechas con un Release local) el
@@ -1035,13 +1172,16 @@ begin
         '; el sitio web no arrancará hasta quitarlo a mano.');
   end;
   if WebInstalled and FileExists(WebConfigFile(AppDir)) then
-    EnsureWebZKTecoSettings(WebConfigFile(AppDir));
+    EnsureApiKey(WebConfigFile(AppDir), 'ZKTecoService', True);
   if IsDesktopInstalledAt(AppDir) then
   begin
     if not FileExists(DesktopConfigFile(AppDir)) then
       Result := WriteConfigFromTemplate('appsettings.Desktop.template.json', DesktopConfigFile(AppDir), not WebInstalled) and Result
     else
+    begin
       SetDesktopStandalone(DesktopConfigFile(AppDir), not WebInstalled);
+      EnsureApiKey(DesktopConfigFile(AppDir), 'ZKTecoService', False);
+    end;
   end;
 end;
 
@@ -1061,11 +1201,9 @@ begin
   OldConnection := '';
   if Configured then
   begin
-    if not LoadExistingSettings then
-    begin
-      DbConfigError := 'No se pudo leer la cadena de conexión o la ApiKey de la instalación existente.';
+    // El motivo de un fallo queda en DbConfigError y en db_setup.log
+    if not LoadExistingSettings(LogFile) then
       Exit;
-    end;
     OldConnection := AppConnection;
     PreviousDbName := DbNameFromConnection(OldConnection);
   end;
@@ -1175,7 +1313,11 @@ begin
   WizardForm.StatusLabel.Caption := 'Verificando la instalación...';
 
   if DbConfigError <> '' then
+  begin
+    // Algunos fallos ocurren antes de correr psql: sin esto, el log al que remite el aviso podía no existir
+    DbLog(ExpandConstant('{app}\Logs\db_setup.log'), 'ERROR: ' + DbConfigError);
     AddWarning('La base de datos NO quedó configurada: ' + DbConfigError + ' Detalle en ' + ExpandConstant('{app}\Logs\db_setup.log') + '.');
+  end;
 
   if IsDesktopInstalledAt(ExpandConstant('{app}')) and not FileExists(DesktopConfigFile(ExpandConstant('{app}'))) then
     AddWarning('El programa de escritorio no tiene su archivo de configuración (' + DesktopConfigFile(ExpandConstant('{app}')) + ').');
