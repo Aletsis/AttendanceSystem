@@ -114,9 +114,9 @@ ficha. Lo que ya se corrigió en otra rama lo dice su ficha.
   detalle en [instalación, 13.1](05-instalacion-configuracion.md#13-comportamientos-verificados-que-conviene-revisar).
 - **Solución temporal:** en `Web\appsettings.Production.json`, borrar el bloque `"WriteTo"` de `Serilog` y reciclar el
   grupo de aplicaciones.
-- **Corrección recomendada:** en curso en
-  [Aletsis/AttendanceSystem#33](https://github.com/Aletsis/AttendanceSystem/pull/33) (abierto). Al fusionarlo, invertir
-  `I01` e `I02` y actualizar el documento 05.
+- **Corrección recomendada:** resuelto en
+  [Aletsis/AttendanceSystem#33](https://github.com/Aletsis/AttendanceSystem/pull/33) (`e704926`), con `I01` e `I02`
+  invertidas.
 
 ### D03 🔒 La `ApiKey` del servicio ZKTeco abre dos rutas del sitio
 

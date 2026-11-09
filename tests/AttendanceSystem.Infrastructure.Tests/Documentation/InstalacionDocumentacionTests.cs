@@ -31,9 +31,8 @@ public class InstalacionDocumentacionTests
             .AddJsonFile(Repo("Deploy", "appsettings.Web.Production.template.json"))
             .Build();
 
-        // La plantilla sólo fija Args de Serilog:WriteTo:3, que debe existir (con su Name) en appsettings.json.
-        ConfigureLogging(configuration).Should().Throw<InvalidOperationException>()
-            .WithMessage("*Serilog:WriteTo:3:Name*");
+        // Desde PR #33 la plantilla ya no fija Serilog:WriteTo:3 sin Name y basta por sí sola para configurar Serilog.
+        ConfigureLogging(configuration).Should().NotThrow();
     }
 
     [Fact]
@@ -44,8 +43,7 @@ public class InstalacionDocumentacionTests
             .AddJsonFile(Repo("Deploy", "appsettings.Web.Production.template.json"))
             .Build();
 
-        ConfigureLogging(configuration).Should().Throw<InvalidOperationException>()
-            .WithMessage("*Serilog:WriteTo:3:Name*");
+        ConfigureLogging(configuration).Should().NotThrow();
     }
 
     [Fact]

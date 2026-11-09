@@ -570,19 +570,17 @@ grep -rn "LateTolerance\|StandardWorkHours\|AutoClearDevicesAfterDownload\|AutoD
 
 Se confirmaron con pruebas o con la lectura del código; se tratarán en la fase de limitaciones.
 
-1. **El sitio web instalado desde un instalador compilado en CI no arranca.** La plantilla del sitio fija
-   `Serilog:WriteTo:3:Args:connectionString` ([appsettings.Web.Production.template.json:10-16](../../Deploy/appsettings.Web.Production.template.json#L10-L16))
-   y supone un `appsettings.json` con cuatro sinks, donde el cuarto es el de PostgreSQL. Ese archivo está en
+1. **El sitio web instalado desde v2.3.0-beta.1 no arrancaba (resuelto en PR #33).** La plantilla del sitio fijaba
+   `Serilog:WriteTo:3:Args:connectionString` ([appsettings.Web.Production.template.json](../../Deploy/appsettings.Web.Production.template.json))
+   y suponía un `appsettings.json` con cuatro sinks, donde el cuarto era el de PostgreSQL. Ese archivo está en
    `.gitignore`, así que CI no lo tiene: el sitio publicado sólo trae el `appsettings.Production.json` del instalador.
-   Con eso, Serilog lanza `The configuration value in Serilog:WriteTo:3:Name has no 'Name' element`
-   (prueba `I01`, [InstalacionDocumentacionTests.cs:28](../../tests/AttendanceSystem.Infrastructure.Tests/Documentation/InstalacionDocumentacionTests.cs#L28)).
-   También falla sobre el `appsettings.example.json` del repositorio, que tiene un solo sink (`I02`, línea 41); el
-   ejemplo solo sí funciona (`I03`, línea 53). La configuración de Serilog se aplica al construir el host
+   En v2.3.0-beta.1 Serilog lanzaba `The configuration value in Serilog:WriteTo:3:Name has no 'Name' element`; desde PR #33 la plantilla y el ejemplo configuran sin error
+   (pruebas `I01`, `I02` e `I03`, [InstalacionDocumentacionTests.cs:28](../../tests/AttendanceSystem.Infrastructure.Tests/Documentation/InstalacionDocumentacionTests.cs#L28)).
+   La configuración de Serilog se aplica al construir el host
    ([Program.cs:66-67](../../src/Presentation/AttendanceSystem.Blazor.Server/Program.cs#L66-L67),
-   [línea 162](../../src/Presentation/AttendanceSystem.Blazor.Server/Program.cs#L162)), y el error termina el proceso
-   ([líneas 305-309](../../src/Presentation/AttendanceSystem.Blazor.Server/Program.cs#L305-L309)). La plantilla existe
-   desde el commit `ae14fca` (3 de noviembre de 2026), así que de las versiones publicadas sólo afecta a
-   **v2.3.0-beta.1**. No se reprodujo en IIS.
+   [línea 162](../../src/Presentation/AttendanceSystem.Blazor.Server/Program.cs#L162)), y el error terminaba el proceso
+   ([líneas 305-309](../../src/Presentation/AttendanceSystem.Blazor.Server/Program.cs#L305-L309)). De las versiones
+   publicadas sólo afectó a **v2.3.0-beta.1**.
 2. **Un `appsettings.json` local se incluye en el instalador.** `dotnet publish` copia el `appsettings.json` del
    proyecto si existe, y el instalador sólo excluye `appsettings.Production.json` del sitio y del servicio
    ([setup_script.iss:127](../../Deploy/setup_script.iss#L127), [línea 133](../../Deploy/setup_script.iss#L133)). Un
