@@ -30,6 +30,14 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
             throw new Exception($"Usuario con ID {request.UserId} no encontrado.");
         }
 
+        if (BuiltInAdmin.Is(user.UserName))
+        {
+            if (!request.IsActive)
+                throw new InvalidOperationException($"El usuario '{user.UserName}' es el administrador del sistema y no se puede desactivar.");
+            if (!request.Roles.Contains(AppRoles.Administrator, StringComparer.OrdinalIgnoreCase))
+                throw new InvalidOperationException($"El usuario '{user.UserName}' es el administrador del sistema y debe conservar el rol {AppRoles.Administrator}.");
+        }
+
         user.Email = request.Email;
         user.FullName = request.FullName;
         user.IsActive = request.IsActive;
