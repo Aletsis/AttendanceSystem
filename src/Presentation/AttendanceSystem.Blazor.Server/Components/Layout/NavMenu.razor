@@ -31,6 +31,9 @@
         <AuthorizeView Policy="@Permissions.DevicesDownload">
             <MudNavLink Href="/attendance/download" Icon="@Icons.Material.Filled.Download">Descargas e Historial</MudNavLink>
         </AuthorizeView>
+        <AuthorizeView Policy="@Permissions.AttendanceView">
+            <MudNavLink Href="/attendance/lunch-board" Icon="@Icons.Material.Filled.Restaurant">Tablero de comidas</MudNavLink>
+        </AuthorizeView>
         <AuthorizeView Policy="@Permissions.AttendanceManualPunch">
             <MudNavLink Href="/attendance/manual-logs" Icon="@Icons.Material.Filled.EditNote">Registros manuales</MudNavLink>
         </AuthorizeView>

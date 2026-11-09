@@ -1,0 +1,253 @@
+@page "/attendance/lunch-board"
+@using AttendanceSystem.Application.Features.Attendance.Queries.GetLunchBoard
+@attribute [Authorize(Policy = Permissions.AttendanceView)]
+@implements IAsyncDisposable
+@inject CircuitMediator Sender
+@inject ISnackbar Snackbar
+
+<style>
+    .lunch-card { animation: lunch-card-in .35s ease-out; border-left: 6px solid var(--mud-palette-success); }
+    .lunch-card.near { border-left-color: var(--mud-palette-warning); }
+    .lunch-card.over { border-left-color: var(--mud-palette-error); }
+    .lunch-elapsed { font-variant-numeric: tabular-nums; font-weight: 700; font-size: 2rem; line-height: 1.1; }
+    @@keyframes lunch-card-in { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+</style>
+
+<div class="d-flex flex-wrap align-center gap-3 mb-1">
+    <MudText Typo="Typo.h5">Tablero de comidas</MudText>
+    <MudSpacer />
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+        @(_lastRefreshUtc is { } t ? $"Actualizado {t.ToLocalTime():HH:mm:ss}" : "")
+    </MudText>
+    <MudTooltip Text="Actualizar ahora">
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_refreshing" OnClick="RefreshNowAsync" />
+    </MudTooltip>
+</div>
+<MudText Typo="Typo.body2" Class="mb-4">
+    Empleados que salieron a comer y aún no regresan, según los marcajes que llegan de los relojes. La tarjeta aparece con la
+    salida a comida y desaparece con el regreso; se actualiza cada @RefreshSeconds segundos.
+</MudText>
+
+<MudGrid Spacing="2" Class="mb-3">
+    <MudItem xs="12" sm="6" md="4">
+        <MudTextField @bind-Value="_search" Label="Buscar" Placeholder="Nombre o número de empleado" Immediate="true" Clearable="true"
+                      Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" Margin="Margin.Dense" />
+    </MudItem>
+    <MudItem xs="12" sm="6" md="3">
+        <MudSelect T="string" @bind-Value="_branch" Label="Sucursal" Clearable="true" Margin="Margin.Dense">
+            @foreach (var name in BranchOptions)
+            {
+                <MudSelectItem Value="@name">@name</MudSelectItem>
+            }
+        </MudSelect>
+    </MudItem>
+    <MudItem xs="12" md="5" Class="d-flex flex-wrap align-center gap-2">
+        <MudChip T="string" Color="Color.Primary" Variant="Variant.Outlined" Icon="@Icons.Material.Filled.Restaurant">En comida: @Visible.Count()</MudChip>
+        <MudChip T="string" Color="Color.Warning" Variant="Variant.Outlined">Por terminar: @Visible.Count(e => State(e) == LunchState.Near)</MudChip>
+        <MudChip T="string" Color="Color.Error" Variant="Variant.Outlined">Excedidos: @Visible.Count(e => State(e) == LunchState.Over)</MudChip>
+    </MudItem>
+</MudGrid>
+
+@if (_loading)
+{
+    <MudProgressCircular Color="Color.Primary" Indeterminate="true" Class="mt-16 mx-auto d-block" />
+}
+else if (!Visible.Any())
+{
+    <MudPaper Outlined="true" Class="pa-8 d-flex flex-column align-center">
+        <MudIcon Icon="@Icons.Material.Filled.Restaurant" Size="Size.Large" Color="Color.Default" />
+        <MudText Typo="Typo.subtitle1" Class="mt-2">Nadie está en su comida en este momento.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudGrid Spacing="3">
+        @foreach (var entry in Visible)
+        {
+            var state = State(entry);
+            var elapsed = Elapsed(entry);
+            <MudItem xs="12" sm="6" md="4" lg="3" @key="@($"{entry.EmployeeId}|{entry.LunchStartCivil:O}")">
+                <MudCard Elevation="2" Class="@($"lunch-card {StateClass(state)}")">
+                    <MudCardContent>
+                        <div class="d-flex align-center gap-3">
+                            @if (entry.Photo != null)
+                            {
+                                <MudAvatar Size="Size.Large"><MudImage Src="@($"data:image/jpeg;base64,{entry.Photo}")" /></MudAvatar>
+                            }
+                            else
+                            {
+                                <MudAvatar Size="Size.Large" Color="Color.Primary">@Initials(entry.EmployeeName)</MudAvatar>
+                            }
+                            <div style="min-width: 0">
+                                <MudText Typo="Typo.subtitle1" Style="font-weight: 600" Class="text-truncate">@entry.EmployeeName</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                                    #@entry.EmployeeId@(entry.DepartmentName != null ? $" · {entry.DepartmentName}" : "")
+                                </MudText>
+                                @if (entry.BranchName != null)
+                                {
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">@entry.BranchName</MudText>
+                                }
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-space-between align-end mt-4">
+                            <div>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Salió a comer</MudText>
+                                <MudText Typo="Typo.h6">@entry.LunchStartCivil.ToString("HH:mm")</MudText>
+                            </div>
+                            <div style="text-align: right">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Lleva</MudText>
+                                <div class="lunch-elapsed" style="color: @StateColorVar(state)">@FormatElapsed(elapsed)</div>
+                            </div>
+                        </div>
+
+                        <MudProgressLinear Class="mt-3" Rounded="true" Size="Size.Medium" Color="@StateColor(state)"
+                                           Value="@Math.Min(100, Percent(entry, elapsed))" />
+                        <MudText Typo="Typo.caption" Class="mt-1 d-block">
+                            @if (state == LunchState.Over)
+                            {
+                                <span style="color: var(--mud-palette-error)">Excedido por @((int)(elapsed.TotalMinutes - entry.AllowedMinutes)) min</span>
+                            }
+                            else if (entry.AllowedMinutes > 0)
+                            {
+                                <span>Le quedan @Math.Max(0, (int)Math.Ceiling(entry.AllowedMinutes - elapsed.TotalMinutes)) min · debe regresar @entry.LunchStartCivil.AddMinutes(entry.AllowedMinutes).ToString("HH:mm")</span>
+                            }
+                            <span class="mud-text-secondary"> · @entry.AllowedMinutes min con goce</span>
+                        </MudText>
+                        @if (entry.ShiftName != null || entry.DeviceName != null)
+                        {
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary d-block">
+                                @string.Join(" · ", new[] { entry.ShiftName, entry.DeviceName }.Where(s => s != null))
+                            </MudText>
+                        }
+                    </MudCardContent>
+                </MudCard>
+            </MudItem>
+        }
+    </MudGrid>
+}
+
+@code {
+    private const int RefreshSeconds = 15;
+    /// <summary>Minutos antes del límite en que la tarjeta pasa a "por terminar".</summary>
+    private const int NearMinutes = 5;
+
+    private enum LunchState { Ok, Near, Over }
+
+    private IReadOnlyList<LunchBoardEntryDto> _entries = Array.Empty<LunchBoardEntryDto>();
+    private DateTime? _lastRefreshUtc;
+    private bool _loading = true;
+    private bool _refreshing;
+    private bool _errorShown;
+    private string? _search;
+    private string? _branch;
+    private CancellationTokenSource? _cts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _loading = false;
+        _cts = new CancellationTokenSource();
+        _ = RunTimersAsync(_cts.Token);
+    }
+
+    /// <summary>Cada segundo vuelve a pintar el tiempo transcurrido; cada <see cref="RefreshSeconds"/> consulta los marcajes.</summary>
+    private async Task RunTimersAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        var ticks = 0;
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+            {
+                if (++ticks % RefreshSeconds == 0) await LoadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Esperado al salir de la página
+        }
+    }
+
+    private async Task RefreshNowAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (_refreshing) return;
+        _refreshing = true;
+        try
+        {
+            _entries = await Sender.Send(new GetLunchBoardQuery());
+            _lastRefreshUtc = DateTime.UtcNow;
+            _errorShown = false;
+        }
+        catch (Exception ex)
+        {
+            // Se conserva el último tablero; el aviso sale una vez hasta que vuelva a funcionar.
+            if (!_errorShown) await InvokeAsync(() => Snackbar.Add($"No se pudo actualizar el tablero: {ex.Message}", Severity.Error));
+            _errorShown = true;
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private IEnumerable<LunchBoardEntryDto> Visible => _entries
+        .Where(e => string.IsNullOrWhiteSpace(_branch) || e.BranchName == _branch)
+        .Where(e => string.IsNullOrWhiteSpace(_search)
+                    || e.EmployeeName.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || e.EmployeeId.Contains(_search, StringComparison.OrdinalIgnoreCase));
+
+    private IEnumerable<string> BranchOptions => _entries
+        .Select(e => e.BranchName)
+        .Append(_branch)
+        .Where(n => !string.IsNullOrWhiteSpace(n))
+        .Select(n => n!)
+        .Distinct()
+        .OrderBy(n => n);
+
+    /// <summary>Tiempo en comida: el del servidor al consultar más lo que ha pasado desde entonces.</summary>
+    private TimeSpan Elapsed(LunchBoardEntryDto entry)
+    {
+        var sinceRefresh = _lastRefreshUtc is { } t ? DateTime.UtcNow - t : TimeSpan.Zero;
+        var elapsed = entry.NowCivil - entry.LunchStartCivil + sinceRefresh;
+        return elapsed < TimeSpan.Zero ? TimeSpan.Zero : elapsed;
+    }
+
+    private LunchState State(LunchBoardEntryDto entry)
+    {
+        var minutes = Elapsed(entry).TotalMinutes;
+        if (minutes >= entry.AllowedMinutes) return LunchState.Over;
+        return minutes >= entry.AllowedMinutes - NearMinutes ? LunchState.Near : LunchState.Ok;
+    }
+
+    private static double Percent(LunchBoardEntryDto entry, TimeSpan elapsed) =>
+        entry.AllowedMinutes <= 0 ? 100 : elapsed.TotalMinutes * 100 / entry.AllowedMinutes;
+
+    private static string FormatElapsed(TimeSpan elapsed) =>
+        elapsed.TotalHours >= 1 ? $"{(int)elapsed.TotalHours}:{elapsed.Minutes:00}:{elapsed.Seconds:00}" : $"{elapsed.Minutes:00}:{elapsed.Seconds:00}";
+
+    private static string StateClass(LunchState state) => state switch { LunchState.Over => "over", LunchState.Near => "near", _ => "" };
+    private static Color StateColor(LunchState state) => state switch { LunchState.Over => Color.Error, LunchState.Near => Color.Warning, _ => Color.Success };
+    private static string StateColorVar(LunchState state) => state switch
+    {
+        LunchState.Over => "var(--mud-palette-error)",
+        LunchState.Near => "var(--mud-palette-warning)",
+        _ => "var(--mud-palette-success)"
+    };
+
+    private static string Initials(string name) =>
+        string.Concat(name.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(p => char.ToUpperInvariant(p[0])));
+
+    public ValueTask DisposeAsync()
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+}
