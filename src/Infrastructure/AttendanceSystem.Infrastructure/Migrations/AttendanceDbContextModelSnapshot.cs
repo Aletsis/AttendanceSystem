@@ -960,8 +960,7 @@ namespace AttendanceSystem.Infrastructure.Migrations
 
                     b.Property<string>("CommandText")
                         .IsRequired()
-                        .HasMaxLength(2000)
-                        .HasColumnType("character varying(2000)");
+                        .HasColumnType("text");
 
                     b.Property<DateTime?>("ConfirmedAtUtc")
                         .HasColumnType("timestamp with time zone");
