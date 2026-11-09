@@ -4,6 +4,38 @@ Bienvenido al centro de documentación técnica y operativa de **Attendance Syst
 
 ---
 
+## ✅ Documentación verificada (en construcción)
+
+La documentación se está reescribiendo por fases. Cada afirmación de estos documentos cita el archivo y la línea del
+código que la respalda, y se puede comprobar con las consultas y scripts que incluyen.
+
+| Documento | Contenido |
+|---|---|
+| [tecnico/01-arquitectura.md](tecnico/01-arquitectura.md) | Proyectos, procesos, formas de instalación, puertos, recorrido de una checada, tareas en segundo plano, arranque y mantenimiento |
+| [tecnico/02-base-de-datos.md](tecnico/02-base-de-datos.md) | Esquemas, convenciones, relaciones e integridad, tablas por área, enumeraciones, migraciones, bloqueos, problemas y consultas de verificación |
+| [tecnico/02b-esquema-columnas.md](tecnico/02b-esquema-columnas.md) | Detalle columna por columna, generado desde el modelo de EF Core |
+| [tecnico/03-motor-de-calculo.md](tecnico/03-motor-de-calculo.md) | Cómo se calcula cada jornada: horario del día, marcajes, fórmulas de retardo, trabajado, comida, salidas y horas extra, y 68 ejemplos numéricos por tipo de turno que son pruebas automáticas |
+| [tecnico/04-dispositivos.md](tecnico/04-dispositivos.md) | Relojes: servicio ZKTeco por SDK, protocolo ADMS mensaje por mensaje, cola de comandos, Hikvision (experimental), zona horaria, resincronización y cuarentena de marcajes |
+| [tecnico/05-instalacion-configuracion.md](tecnico/05-instalacion-configuracion.md) | Instalador paso a paso, instalación manual, equipo de desarrollo, cada clave de `appsettings` y la configuración guardada en la base |
+| [tecnico/06-operacion.md](tecnico/06-operacion.md) | Respaldo y restauración, mantenimiento, usuarios, roles y permisos, bitácoras, panel de tareas, alertas, scripts de diagnóstico e índice de síntomas |
+| [tecnico/07-limitaciones.md](tecnico/07-limitaciones.md) | Lista de seguimiento: 25 defectos, 19 limitaciones de diseño (incluida la revisión de seguridad) y 8 reglas de cálculo por confirmar, cada uno con gravedad, cómo comprobarlo, solución temporal y corrección recomendada |
+| [manual-rh/manual-rh.md](manual-rh/manual-rh.md) | Manual de Recursos Humanos por tareas, en el sitio y en el programa de escritorio: empleados, horarios, checadas, revisión del día, periodos, reportes y nómina, permisos por rol y reglas de cálculo en revisión. Lista de capturas en [manual-rh/capturas.md](manual-rh/capturas.md) |
+
+Herramientas: `python Docs/tools/generar_esquema.py [--check]` regenera (o comprueba) el detalle de columnas;
+`python Docs/tools/verificar_referencias.py` comprueba que las citas al código existan;
+`dotnet test tests/AttendanceSystem.Application.UnitTests --filter "FullyQualifiedName~MotorCalculoEjemplosTests"` ejecuta los ejemplos del motor de cálculo;
+`DispositivosEjemplosTests` (mismo proyecto) y `AdmsStampDocumentacionTests` (`tests/AttendanceSystem.Blazor.UnitTests`)
+fijan los comportamientos de los relojes que cita el documento 04;
+`InstalacionDocumentacionTests` (`tests/AttendanceSystem.Infrastructure.Tests`) los de la configuración del instalador (documento 05).
+
+> ⚠️ Los documentos del índice siguiente son anteriores a esta revisión y **pueden no coincidir con el código**
+> (por ejemplo, la versión y la contraseña inicial del checklist de abajo ya no son correctas: el usuario `admin` se
+> crea con `InitialAdmin:Password` o una contraseña generada, ver
+> [arquitectura, sección 9](tecnico/01-arquitectura.md#9-arranque-y-modo-mantenimiento)). Se reemplazarán en las
+> siguientes fases.
+
+---
+
 ## 📑 Índice General de Documentos
 
 ### 🏛️ Arquitectura e Infraestructura
@@ -31,7 +63,7 @@ Bienvenido al centro de documentación técnica y operativa de **Attendance Syst
 
 ### 🔍 [Diagnose-AttendanceSystem.ps1](Diagnose-AttendanceSystem.ps1)
 **Script de Diagnóstico Automatizado**
-Verifica el estado del servicio Windows, puerto gRPC (5001), puerto Web (8081/80), conectividad a PostgreSQL (5432), registro de librerías COM (`zkemkeeper.dll`), reglas de firewall y eventos recientes.
+Sólo lee. Revisa el servicio ZKTeco y su `ApiKey`, el puerto gRPC, el registro COM de 32 bits del SDK, el sitio en IIS, la configuración del programa de escritorio, los puertos ADMS y de PostgreSQL, las reglas de firewall y los últimos errores de cada bitácora. Detalle en [tecnico/06-operacion.md](tecnico/06-operacion.md#41-scripts).
 
 **Ejecutar:**
 ```powershell
@@ -43,7 +75,7 @@ Set-ExecutionPolicy -ExecutionPolicy Bypass -Scope Process -Force
 
 ### 🔄 [Reinstall-ZKTecoService.ps1](Reinstall-ZKTecoService.ps1)
 **Script de Reinstalación del Servicio ZKTeco**
-Detiene el servicio actual, elimina el registro previo en Windows, copia y registra las DLLs de 32 bits en `SysWOW64`, recrea el servicio e inicia la validación en el puerto 5001.
+Hace lo mismo que el instalador: detiene y elimina el servicio, registra `zkemkeeper.dll` con el `regsvr32` de 32 bits desde la carpeta del servicio (sin copiar DLL a `SysWOW64`), lo recrea, lo inicia y comprueba su puerto gRPC.
 
 **Ejecutar** (en PowerShell como Administrador):
 ```powershell
