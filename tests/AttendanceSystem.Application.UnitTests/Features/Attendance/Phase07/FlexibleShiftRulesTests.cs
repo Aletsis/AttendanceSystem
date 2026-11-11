@@ -33,15 +33,22 @@ public class FlexibleShiftRulesTests
         Shift.Create("Flexible 8h libre", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(8), ShiftType.Flexible,
             hasEntryWindow: false, punchTrackingMode: mode);
 
-    private static AttendanceRecalculationHarness Harness(Shift shift, params WeekDay[] restDays)
+    private static AttendanceRecalculationHarness Harness(
+        Shift shift,
+        OvertimeCalculationMethod rounding = OvertimeCalculationMethod.NoRounding,
+        params WeekDay[] restDays)
     {
         var h = new AttendanceRecalculationHarness();
         h.Store.Shifts.Add(shift);
         h.Store.Employees.Add(Employee.Create(Emp, "Empleado", "Flexible", null, null, new DateTime(2024, 1, 1), Gender.Male,
             AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
-            shift.ShiftType, shift.Id, restDays: restDays.Length > 0 ? restDays : new[] { WeekDay.Domingo }, overtimeAuthorized: true));
+            shift.ShiftType, shift.Id, restDays: restDays.Length > 0 ? restDays : new[] { WeekDay.Domingo },
+            overtimeAuthorized: true, overtimeCalculationMethod: rounding));
         return h;
     }
+
+    private static AttendanceRecalculationHarness Harness(Shift shift, params WeekDay[] restDays) =>
+        Harness(shift, OvertimeCalculationMethod.NoRounding, restDays);
 
     /// <summary>Horas relativas al lunes: 22 = lunes 22:00, 30 = martes 06:00.</summary>
     private static AttendanceRecord[] Punches(AttendanceRecalculationHarness h, params double[] hours) =>
@@ -190,5 +197,81 @@ public class FlexibleShiftRulesTests
         var day = await MondayAsync(h);
 
         day.TotalWorkedMinutes.Should().Be(480, "sólo un tramo abierto busca su salida en el día siguiente");
+    }
+
+    [Fact]
+    public async Task WeeklyBag_WithHalfHourRounding_AccumulatesRoundedMinutesWhileKeepingActualWorkedMinutes()
+    {
+        var h = Harness(AttendanceRegressionFixtures.CreateWeeklyOvertimeShift(40), OvertimeCalculationMethod.RoundByHalfHour,
+            WeekDay.Sabado, WeekDay.Domingo);
+        for (int d = 0; d < 5; d++)
+        {
+            // 8h 23m (503 min) diarios -> en bolsa acumulan 8h 00m (480 min) cada uno = 40h exactas
+            Punches(h, d * 24 + 8, d * 24 + 16 + 23 / 60.0);
+        }
+
+        await h.RecalculateAsync(Monday, Monday.AddDays(6));
+
+        var week = h.Store.Dailies.Where(d => d.EmployeeId == Emp && !d.IsRestDay).ToList();
+        week.Should().OnlyContain(d => d.TotalWorkedMinutes == 503, "el tiempo trabajado real de la jornada no se altera");
+        week.Sum(d => d.RawOvertimeMinutes).Should().Be(0, "5 × 480 min redondeados = 2400 min (meta de 40h sin excedente)");
+        week.Sum(d => d.OvertimeMinutes).Should().Be(0);
+        h.Store.Dailies.Where(d => d.EmployeeId == Emp).Sum(d => d.WeeklyShortfallMinutes).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task WeeklyBag_WithHalfHourRounding_ShortfallReflectsDailyRoundedAccumulation()
+    {
+        var h = Harness(AttendanceRegressionFixtures.CreateWeeklyOvertimeShift(40), OvertimeCalculationMethod.RoundByHalfHour,
+            WeekDay.Sabado, WeekDay.Domingo);
+        for (int d = 0; d < 5; d++)
+        {
+            // 7h 23m (443 min) diarios -> en bolsa acumulan 7h 00m (420 min) cada uno = 35h; faltan 5h (300 min)
+            Punches(h, d * 24 + 8, d * 24 + 15 + 23 / 60.0);
+        }
+
+        await h.RecalculateAsync(Monday, Monday.AddDays(6));
+
+        var week = h.Store.Dailies.Where(d => d.EmployeeId == Emp).ToList();
+        week.Where(d => !d.IsRestDay).Should().OnlyContain(d => d.TotalWorkedMinutes == 443);
+        week.Sum(d => d.WeeklyShortfallMinutes).Should().Be(300, "5 × 420 min = 2100 min vs meta de 2400 min");
+    }
+
+    [Fact]
+    public async Task WeeklyBag_WithHourRounding_AccumulatesFullHoursOnly()
+    {
+        var h = Harness(AttendanceRegressionFixtures.CreateWeeklyOvertimeShift(40), OvertimeCalculationMethod.RoundByHour,
+            WeekDay.Sabado, WeekDay.Domingo);
+        for (int d = 0; d < 5; d++)
+        {
+            // 8h 45m (525 min) diarios -> en bolsa acumulan 8h 00m (480 min) cada uno = 40h exactas
+            Punches(h, d * 24 + 8, d * 24 + 16 + 45 / 60.0);
+        }
+
+        await h.RecalculateAsync(Monday, Monday.AddDays(6));
+
+        var week = h.Store.Dailies.Where(d => d.EmployeeId == Emp && !d.IsRestDay).ToList();
+        week.Should().OnlyContain(d => d.TotalWorkedMinutes == 525);
+        week.Sum(d => d.OvertimeMinutes).Should().Be(0);
+        h.Store.Dailies.Where(d => d.EmployeeId == Emp).Sum(d => d.WeeklyShortfallMinutes).Should().Be(0);
+    }
+
+    [Fact]
+    public async Task WeeklyBag_WithNoRounding_AccumulatesExactMinutes()
+    {
+        var h = Harness(AttendanceRegressionFixtures.CreateWeeklyOvertimeShift(40), OvertimeCalculationMethod.NoRounding,
+            WeekDay.Sabado, WeekDay.Domingo);
+        for (int d = 0; d < 5; d++)
+        {
+            // 8h 23m (503 min) diarios -> acumulan 5 × 503 = 2515 min = 40h + 115 min extras
+            Punches(h, d * 24 + 8, d * 24 + 16 + 23 / 60.0);
+        }
+
+        await h.RecalculateAsync(Monday, Monday.AddDays(6));
+
+        var friday = h.Store.Dailies.Single(d => d.EmployeeId == Emp && d.Date == Monday.AddDays(4));
+        friday.TotalWorkedMinutes.Should().Be(503);
+        friday.RawOvertimeMinutes.Should().Be(115);
+        friday.OvertimeMinutes.Should().Be(115);
     }
 }

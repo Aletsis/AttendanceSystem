@@ -22,7 +22,8 @@ public readonly record struct ExpectedDay(bool Workable, bool Employed, bool Wee
 /// Motor único de horas extra efectivas (F06-06 / F06-07 / F06-09). Reglas:
 /// <list type="number">
 /// <item>Bruto: bolsa diaria = excedente calculado por la jornada (<see cref="DailyAttendance.RawOvertimeMinutes"/>);
-/// bolsa semanal = lo trabajado por encima de la meta semanal desde el día en que se cruza (D-01: excedente del día).</item>
+/// bolsa semanal = cada jornada con bolsa aporta su tiempo trabajado redondeado según el método de tiempo extra del
+/// empleado (<see cref="DailyAttendance.ApplyOvertimeRounding"/>) y genera excedente desde el día en que se cruza la meta (D-01).</item>
 /// <item>Semana partida (decisión de cierre F06-06): la meta de la bolsa es proporcional a los días laborables del
 /// empleado que estuvieron con bolsa (meta × días con bolsa ÷ días laborables). Si la semana mezcla bolsa y horario
 /// diario, todo lo trabajado en sus días laborables se compara con la meta combinada (bolsa proporcional + minutos
@@ -76,7 +77,7 @@ public static class WeeklyHoursCalculationHelper
         var sorted = attendances.OrderBy(a => a.Date).ThenBy(a => a.Id.Value).ToList();
         periodStartOf ??= date => GetWeekStart(date, weeklyStartDay);
 
-        var rawById = WeeklyRaw(sorted, weeklyStartDay, expectedDay, out var shortfallById);
+        var rawById = WeeklyRaw(sorted, weeklyStartDay, expectedDay, employee.OvertimeCalculationMethod, out var shortfallById);
         var accumulatedByPeriod = new Dictionary<DateTime, double>();
 
         foreach (var att in sorted)
@@ -115,6 +116,7 @@ public static class WeeklyHoursCalculationHelper
         IReadOnlyList<DailyAttendance> sorted,
         DayOfWeek weeklyStartDay,
         Func<DateTime, ExpectedDay>? expectedDay,
+        OvertimeCalculationMethod roundingMethod,
         out Dictionary<DailyAttendanceId, int> shortfall)
     {
         var raw = new Dictionary<DailyAttendanceId, double>();
@@ -168,7 +170,9 @@ public static class WeeklyHoursCalculationHelper
                     continue;
                 }
 
-                var worked = WorkedMinutes(att);
+                // El redondeo diario de la bolsa aplica únicamente a las jornadas con bolsa semanal;
+                // los días de turno diario en una semana partida conservan sus minutos reales.
+                var worked = WorkedMinutes(att, IsWeeklyBag(att) ? roundingMethod : OvertimeCalculationMethod.NoRounding);
                 var prior = cumulative;
                 cumulative += worked;
                 raw[att.Id] = prior >= goal ? worked : Math.Max(0, prior + worked - goal);
@@ -198,6 +202,7 @@ public static class WeeklyHoursCalculationHelper
         return 0;
     }
 
-    /// <summary>Tiempo trabajado guardado por la jornada (única fuente).</summary>
-    private static double WorkedMinutes(DailyAttendance att) => att.TotalWorkedMinutes;
+    /// <summary>Tiempo trabajado guardado por la jornada, redondeado según el método indicado.</summary>
+    private static double WorkedMinutes(DailyAttendance att, OvertimeCalculationMethod roundingMethod) =>
+        DailyAttendance.ApplyOvertimeRounding(att.TotalWorkedMinutes, roundingMethod);
 }

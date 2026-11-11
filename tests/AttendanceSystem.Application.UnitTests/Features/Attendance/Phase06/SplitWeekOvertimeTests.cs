@@ -108,4 +108,24 @@ public class SplitWeekOvertimeTests
 
         (await WeekOvertimeAsync(h)).Should().Be(0, "36 h contra la meta completa de 40 h: la falta del viernes no la reduce");
     }
+
+    [Fact]
+    public async Task SplitWeek_WithHalfHourRounding_RoundsOnlyBagDaysAtAccumulation()
+    {
+        // L–Mié con bolsa (meta 24 h): trabaja 8h 23m (503 min) diarios -> en bolsa acumula 3 × 480 = 1440 min (24 h)
+        // Jue–Vie turno diario 8 h (meta 16 h): Jue trabaja 8h 15m (495 min, sin redondear al acumular), Vie 8h 30m (510 min)
+        // Total acumulado = 1440 + 495 + 510 = 2445 min vs 2400 min -> bruto = 45 min -> efectivo (media hora) = 30 min.
+        var employee = Employee.Create(Emp, "Empleado", "Bolsa", null, null, new DateTime(2024, 1, 1), Gender.Male,
+            AttendanceRegressionFixtures.BranchNorthId, AttendanceRegressionFixtures.DeptOpsId, AttendanceRegressionFixtures.PosOperatorId,
+            Bag.ShiftType, Bag.Id, restDays: SatSun,
+            overtimeAuthorized: true, overtimeCalculationMethod: OvertimeCalculationMethod.RoundByHalfHour);
+        employee.RecordAssignment(Monday.AddDays(3), Daily.Id, ShiftType.Matutino, employee.BranchId);
+
+        var h = Harness(employee);
+        for (int d = 0; d < 3; d++) Work(h, d, 8 + 23 / 60.0);
+        Work(h, 3, 8 + 15 / 60.0);
+        Work(h, 4, 8.5);
+
+        (await WeekOvertimeAsync(h)).Should().Be(30);
+    }
 }
