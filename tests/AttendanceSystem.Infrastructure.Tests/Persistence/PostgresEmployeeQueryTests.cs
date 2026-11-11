@@ -50,6 +50,14 @@ public class PostgresEmployeeQueryTests : IClassFixture<PostgresTestDatabaseFixt
         total.Should().Be(4, "la búsqueda por ID se traduce a SQL");
         sorted.Select(e => e.Id.Value).Should().Equal(new[] { "PG92", "PG93", "PG910", "PG9100" }, "orden natural: longitud y luego valor");
 
+        var (lowerId, totalLowerId) = await repository.GetPaginatedAsync(0, 10, "pg9", null, 0);
+        totalLowerId.Should().Be(4, "la búsqueda por ID ignora mayúsculas/minúsculas");
+        lowerId.Select(e => e.Id.Value).Should().Equal(new[] { "PG92", "PG93", "PG910", "PG9100" });
+
+        var (byName, totalByName) = await repository.GetPaginatedAsync(0, 10, "ana paginacion pg9100", null, 0);
+        totalByName.Should().Be(1, "la búsqueda por nombre ignora mayúsculas y acentos en PostgreSQL");
+        byName.Single().Id.Value.Should().Be("PG9100");
+
         var (descending, _) = await repository.GetPaginatedAsync(0, 10, null, "ID", 2, idFilter: "PG9");
         descending.Select(e => e.Id.Value).Should().Equal(new[] { "PG9100", "PG910", "PG93", "PG92" });
     }

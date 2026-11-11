@@ -33,15 +33,17 @@ public sealed class GetExternalEmployeesQueryHandler : IRequestHandler<GetExtern
 
         var query = employees.AsEnumerable();
 
-        if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+        var searchTokens = SearchTextHelper.Tokenize(request.SearchTerm);
+        if (searchTokens.Length > 0)
         {
-            var term = request.SearchTerm.Trim().ToLowerInvariant();
-            query = query.Where(e =>
-                e.EmployeeNumber.ToLowerInvariant().Contains(term) ||
-                e.FirstName.ToLowerInvariant().Contains(term) ||
-                e.LastName.ToLowerInvariant().Contains(term) ||
-                (e.Position != null && e.Position.ToLowerInvariant().Contains(term)) ||
-                (e.Department != null && e.Department.ToLowerInvariant().Contains(term)));
+            query = query.Where(e => SearchTextHelper.MatchesAllTokens(
+                searchTokens,
+                e.EmployeeNumber,
+                e.FirstName,
+                e.LastName,
+                e.GetFullName(),
+                e.Position,
+                e.Department));
         }
 
         var dtos = query.Select(e =>

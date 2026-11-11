@@ -42,7 +42,7 @@ else
                 <MudItem xs="12" sm="6" md="3">
                     <MudTextField T="string" Value="_searchString" ValueChanged="OnSearch" Label="Buscar" 
                                   Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary"
-                                  Clearable="true" Immediate="false" />
+                                  Clearable="true" Immediate="true" DebounceInterval="350" Placeholder="Código/ID o nombre..." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="3">
                     <MudSelect T="string" Label="Sucursal" MultiSelection="true" @bind-SelectedValues="_selectedBranches" 
@@ -75,7 +75,7 @@ else
                 <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
                     <MudButton Variant="Variant.Filled" Color="Color.Secondary" StartIcon="@Icons.Material.Filled.Upload" OnClick="ImportEmployees">Importar</MudButton>
                     <MudButton Variant="Variant.Filled" Color="Color.Tertiary" StartIcon="@Icons.Material.Filled.Download" OnClick="ExportToExcel">Exportar</MudButton>
-                    <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="LoadEmployees">Filtrar</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Info" OnClick="FilterEmployees">Filtrar</MudButton>
                 </MudItem>
             </MudGrid>
 
@@ -164,7 +164,7 @@ else
                 <MudItem xs="12" sm="6" md="4">
                     <MudTextField T="string" Value="_externalSearchString" ValueChanged="OnExternalSearch" Label="Buscar" 
                                   Adornment="Adornment.End" AdornmentIcon="@Icons.Material.Filled.Search" AdornmentColor="Color.Primary"
-                                  Clearable="true" Immediate="false" Placeholder="Nombre, número, puesto..." />
+                                  Clearable="true" Immediate="true" DebounceInterval="350" Placeholder="Nombre, número, puesto..." />
                 </MudItem>
                 <MudItem xs="12" sm="6" md="4">
                     <MudSelect T="Guid?" @bind-Value="_selectedExternalBranchId" Label="Sucursal Externa" Clearable="true" AnchorOrigin="Origin.BottomCenter">
@@ -184,7 +184,7 @@ else
                 </MudItem>
                 
                 <MudItem xs="12" Class="d-flex flex-wrap align-center justify-end gap-2">
-                    <MudButton Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="LoadExternalEmployees">Filtrar</MudButton>
+                    <MudButton Variant="Variant.Filled" Color="Color.Info" StartIcon="@Icons.Material.Filled.FilterAlt" OnClick="FilterExternalEmployees">Filtrar</MudButton>
                 </MudItem>
             </MudGrid>
 
@@ -193,7 +193,7 @@ else
                 <MudProgressLinear Color="Color.Primary" Indeterminate="true" Class="my-4" />
             }
 
-            <MudDataGrid T="ExternalEmployeeDto" Items="@_externalEmployees" Filterable="false" Hideable="true" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
+            <MudDataGrid T="ExternalEmployeeDto" Items="@_externalEmployees" @ref="_externalDataGrid" Filterable="false" Hideable="true" Dense="true" Hover="true" Breakpoint="Breakpoint.Sm">
                 <Columns>
                     <PropertyColumn Property="x => x.BranchName" Title="Sucursal Externa">
                         <CellTemplate>
@@ -298,6 +298,7 @@ else
     private List<EmployeeStatus> _availableStatuses = Enum.GetValues(typeof(EmployeeStatus)).Cast<EmployeeStatus>().ToList();
 
     // External employees state
+    private MudDataGrid<ExternalEmployeeDto>? _externalDataGrid;
     private List<ExternalEmployeeDto> _externalEmployees = new();
     private bool _loadingExternal = false;
     private bool _externalEmployeesLoaded = false;
@@ -360,16 +361,16 @@ else
         }
     }
 
-    private void OnSearch(string text)
+    private async Task OnSearch(string text)
     {
-        _searchString = text;
-        _dataGrid.ReloadServerData();
+        _searchString = text ?? string.Empty;
+        await FilterEmployees();
     }
 
     private async Task OnExternalSearch(string text)
     {
-        _externalSearchString = text;
-        await LoadExternalEmployees();
+        _externalSearchString = text ?? string.Empty;
+        await FilterExternalEmployees();
     }
 
     private async Task<GridData<EmployeeDto>> ServerReload(GridState<EmployeeDto> state, CancellationToken cancellationToken)
@@ -412,9 +413,30 @@ else
         }
     }
 
+    private async Task FilterEmployees()
+    {
+        if (_dataGrid is not null)
+        {
+            _dataGrid.CurrentPage = 0;
+            await _dataGrid.ReloadServerData();
+        }
+    }
+
     private async Task LoadEmployees()
     {
-        await _dataGrid.ReloadServerData();
+        if (_dataGrid is not null)
+        {
+            await _dataGrid.ReloadServerData();
+        }
+    }
+
+    private async Task FilterExternalEmployees()
+    {
+        if (_externalDataGrid is not null)
+        {
+            _externalDataGrid.CurrentPage = 0;
+        }
+        await LoadExternalEmployees();
     }
 
     private async Task LoadExternalEmployees()

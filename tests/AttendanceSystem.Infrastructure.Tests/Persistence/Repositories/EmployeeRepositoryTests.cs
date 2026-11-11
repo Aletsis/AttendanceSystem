@@ -139,4 +139,86 @@ public class EmployeeRepositoryTests
         items.Should().HaveCount(5);
         items.All(x => x.BranchId == branchA.Id).Should().BeTrue();
     }
+
+    [Theory]
+    [InlineData("juan perez", "EMP-101")]
+    [InlineData("PEREZ JUAN", "EMP-101")]
+    [InlineData("jose", "EMP-102")]
+    [InlineData("emp-101", "EMP-101")]
+    [InlineData("EMP 102", "EMP-102")]
+    [InlineData("angél muñoz", "EMP-102")]
+    [InlineData("angel munoz", "EMP-102")]
+    public async Task GetPaginatedAsync_SearchShouldIgnoreCaseAccentsAndWordOrder(string searchTerm, string expectedId)
+    {
+        using var context = CreateInMemoryDbContext();
+        var repository = new EmployeeRepository(context);
+        var branchId = BranchId.CreateNew();
+        var deptId = DepartmentId.CreateNew();
+        var posId = PositionId.CreateNew();
+
+        repository.Add(Employee.Create(
+            EmployeeId.From("EMP-101"),
+            "JUAN CARLOS",
+            "PÉREZ LÓPEZ",
+            null,
+            null,
+            new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            Gender.Male,
+            branchId,
+            deptId,
+            posId,
+            ShiftType.Matutino,
+            cardNumber: "CARD-999"));
+
+        repository.Add(Employee.Create(
+            EmployeeId.From("EMP-102"),
+            "José Ángel",
+            "Muñoz",
+            null,
+            null,
+            new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            Gender.Male,
+            branchId,
+            deptId,
+            posId,
+            ShiftType.Matutino));
+
+        await context.SaveChangesAsync();
+
+        var (items, total) = await repository.GetPaginatedAsync(0, 10, searchTerm, null, 0);
+
+        total.Should().Be(1);
+        items.Should().ContainSingle(e => e.Id.Value == expectedId);
+    }
+
+    [Fact]
+    public async Task GetPaginatedAsync_ShouldNotMatchCardNumber_AndShouldSupportCaseInsensitiveNameFilter()
+    {
+        using var context = CreateInMemoryDbContext();
+        var repository = new EmployeeRepository(context);
+
+        repository.Add(Employee.Create(
+            EmployeeId.From("EMP-201"),
+            "MARÍA",
+            "GÓMEZ",
+            null,
+            null,
+            new DateTime(2025, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            Gender.Female,
+            BranchId.CreateNew(),
+            DepartmentId.CreateNew(),
+            PositionId.CreateNew(),
+            ShiftType.Matutino,
+            cardNumber: "CARD-777"));
+
+        await context.SaveChangesAsync();
+
+        var (byCard, totalCard) = await repository.GetPaginatedAsync(0, 10, "CARD-777", null, 0);
+        totalCard.Should().Be(0);
+        byCard.Should().BeEmpty();
+
+        var (byNameFilter, totalName) = await repository.GetPaginatedAsync(0, 10, null, null, 0, nameFilter: "maria gomez");
+        totalName.Should().Be(1);
+        byNameFilter.Should().ContainSingle(e => e.Id.Value == "EMP-201");
+    }
 }

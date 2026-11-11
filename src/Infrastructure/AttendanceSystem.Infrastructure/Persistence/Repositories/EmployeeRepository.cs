@@ -1,3 +1,4 @@
+using AttendanceSystem.Application.Common;
 using AttendanceSystem.Domain.Aggregates.EmployeeAggregate;
 using AttendanceSystem.Domain.Repositories;
 using AttendanceSystem.Domain.ValueObjects;
@@ -83,12 +84,6 @@ public class EmployeeRepository : IEmployeeRepository
             .AnyAsync(e => e.PositionId == positionId, cancellationToken);
     }
 
-    private async Task<List<EmployeeId>> IdsContainingAsync(string text, CancellationToken cancellationToken)
-    {
-        var ids = await _dbContext.Set<Employee>().AsNoTracking().Select(e => e.Id).ToListAsync(cancellationToken);
-        return ids.Where(id => id.Value.Contains(text, StringComparison.OrdinalIgnoreCase)).ToList();
-    }
-
     public async Task<(IReadOnlyList<Employee> Items, int TotalCount)> GetPaginatedAsync(
         int pageNumber,
         int pageSize,
@@ -104,39 +99,13 @@ public class EmployeeRepository : IEmployeeRepository
         CancellationToken cancellationToken = default)
     {
         // El Id es un objeto de valor convertido a texto: EF no traduce e.Id.Value a SQL (la consulta fallaba y la
-        // lista de empleados quedaba vacía). Búsqueda: se resuelven primero los Id que coinciden (sólo la columna Id)
-        // y se filtra con Contains; el orden natural por Id se calcula sobre la lista de Id. Funciona en SQL y en memoria.
+        // lista de empleados quedaba vacía). Cuando hay búsqueda por texto o filtros de nombre/Id, se proyectan sólo
+        // (Id, FirstName, LastName) tras aplicar los filtros SQL de catálogos/estado para evaluar coincidencias sin
+        // distinguir mayúsculas ni acentos de forma uniforme entre PostgreSQL y pruebas InMemory.
         // Consulta base sin seguimiento (AsNoTracking) y sin cargar huellas/plantillas pesadas
         var query = _dbContext.Set<Employee>().AsNoTracking();
 
-        // 1. Filtrado Global en base de datos
-        if (!string.IsNullOrWhiteSpace(searchString))
-        {
-            var search = searchString.Trim();
-            var matchingIds = await IdsContainingAsync(search, cancellationToken);
-            query = query.Where(e =>
-                e.FirstName.Contains(search) ||
-                e.LastName.Contains(search) ||
-                (e.FirstName + " " + e.LastName).Contains(search) ||
-                matchingIds.Contains(e.Id));
-        }
-
-        // 2. Filtros por columna
-        if (!string.IsNullOrWhiteSpace(idFilter))
-        {
-            var idMatches = await IdsContainingAsync(idFilter.Trim(), cancellationToken);
-            query = query.Where(e => idMatches.Contains(e.Id));
-        }
-
-        if (!string.IsNullOrWhiteSpace(nameFilter))
-        {
-            var nameF = nameFilter.Trim();
-            query = query.Where(e =>
-                e.FirstName.Contains(nameF) ||
-                e.LastName.Contains(nameF) ||
-                (e.FirstName + " " + e.LastName).Contains(nameF));
-        }
-
+        // 1. Filtros SQL por catálogos y estado
         if (branchFilter != null && branchFilter.Any())
         {
             var branchList = branchFilter.ToList();
@@ -190,6 +159,43 @@ public class EmployeeRepository : IEmployeeRepository
             }
         }
 
+        // 2. Búsqueda global y filtros de texto (insensible a mayúsculas, acentos y orden de palabras)
+        var searchTokens = SearchTextHelper.Tokenize(searchString);
+        var idTokens = SearchTextHelper.Tokenize(idFilter);
+        var nameTokens = SearchTextHelper.Tokenize(nameFilter);
+
+        List<EmployeeId>? matchedIds = null;
+        if (searchTokens.Length > 0 || idTokens.Length > 0 || nameTokens.Length > 0)
+        {
+            var candidates = await query
+                .Select(e => new { e.Id, e.FirstName, e.LastName })
+                .ToListAsync(cancellationToken);
+
+            matchedIds = candidates
+                .Where(c =>
+                    (searchTokens.Length == 0 || SearchTextHelper.MatchesAllTokens(
+                        searchTokens,
+                        c.Id.Value,
+                        c.FirstName,
+                        c.LastName,
+                        $"{c.FirstName} {c.LastName}")) &&
+                    (idTokens.Length == 0 || SearchTextHelper.MatchesAllTokens(idTokens, c.Id.Value)) &&
+                    (nameTokens.Length == 0 || SearchTextHelper.MatchesAllTokens(
+                        nameTokens,
+                        c.FirstName,
+                        c.LastName,
+                        $"{c.FirstName} {c.LastName}")))
+                .Select(c => c.Id)
+                .ToList();
+
+            if (matchedIds.Count == 0)
+            {
+                return (Array.Empty<Employee>(), 0);
+            }
+
+            query = query.Where(e => matchedIds.Contains(e.Id));
+        }
+
         var safePageSize = pageSize > 0 ? pageSize : 20;
         var safePageNumber = Math.Max(0, pageNumber);
         bool ascending = sortDirection == 1;
@@ -208,7 +214,7 @@ public class EmployeeRepository : IEmployeeRepository
 
         // 4. Orden por ID (el predeterminado), natural: longitud y luego valor ("2" antes que "10"). Se ordena la lista
         //    de Id ya filtrada en SQL (sólo esa columna) y se cargan únicamente los empleados de la página.
-        var filteredIds = await query.Select(e => e.Id).ToListAsync(cancellationToken);
+        var filteredIds = matchedIds ?? await query.Select(e => e.Id).ToListAsync(cancellationToken);
         var descending = !string.IsNullOrEmpty(sortLabel) && !ascending;
         var orderedIds = descending
             ? filteredIds.OrderByDescending(id => id.Value.Length).ThenByDescending(id => id.Value, StringComparer.Ordinal)
