@@ -134,12 +134,11 @@ public class ReportExportService : IReportExportService
             // Prima dominical: todo domingo con al menos un marcaje, aunque le falte alguno.
             var sundayPremium = group.Count(x => x.Date.DayOfWeek == DayOfWeek.Sunday && x.HasPunches);
 
-            var schedIn = group.FirstOrDefault(x => x.ScheduledCheckIn.HasValue)?.ScheduledCheckIn;
             var schedOut = group.FirstOrDefault(x => x.ScheduledCheckOut.HasValue)?.ScheduledCheckOut;
 
             SetCell(worksheet, currentRow, 1, emp.EmployeeId);
             SetCell(worksheet, currentRow, 2, emp.EmployeeName);
-            SetCell(worksheet, currentRow, 3, schedIn?.ToString(@"hh\:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, 3, FormatPeriodScheduledIn(group));
             SetCell(worksheet, currentRow, 4, schedOut?.ToString(@"hh\:mm") ?? "--:--");
             SetCell(worksheet, currentRow, 5, FormatTimespan(totalWorked));
             SetCell(worksheet, currentRow, 6, FormatMinutes(totalOvertimeMinutes));
@@ -221,7 +220,6 @@ public class ReportExportService : IReportExportService
             var dict = group.ToDictionary(x => x.Date.Date);
 
             // Fixed Data
-            var schedIn = group.FirstOrDefault(x => x.ScheduledCheckIn.HasValue)?.ScheduledCheckIn;
             var schedOut = group.FirstOrDefault(x => x.ScheduledCheckOut.HasValue)?.ScheduledCheckOut;
 
             col = 1;
@@ -230,7 +228,7 @@ public class ReportExportService : IReportExportService
             SetCell(worksheet, currentRow, col++, emp.PositionName);
             SetCell(worksheet, currentRow, col++, emp.DepartmentName);
             SetCell(worksheet, currentRow, col++, emp.BranchName);
-            SetCell(worksheet, currentRow, col++, schedIn?.ToString(@"hh\:mm") ?? "--:--");
+            SetCell(worksheet, currentRow, col++, FormatPeriodScheduledIn(group));
             SetCell(worksheet, currentRow, col++, schedOut?.ToString(@"hh\:mm") ?? "--:--");
 
             // Date Data
@@ -325,6 +323,14 @@ public class ReportExportService : IReportExportService
         cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         cell.Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
         cell.Style.Border.OutsideBorderColor = XLColor.White;
+    }
+
+    private static string FormatPeriodScheduledIn(IGrouping<string, AttendanceReportViewDto> group)
+    {
+        if (group.Any(x => x.ShiftType == ShiftType.Flexible))
+            return "Flexible";
+
+        return group.FirstOrDefault(x => x.ScheduledCheckIn.HasValue)?.ScheduledCheckIn?.ToString(@"hh\:mm") ?? "--:--";
     }
 
     private string FormatTimespan(TimeSpan ts)

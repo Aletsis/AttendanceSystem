@@ -125,7 +125,7 @@ public class GetAttendanceReportQueryHandler : IRequestHandler<GetAttendanceRepo
                     BranchName = branchName,
                     DepartmentName = (emp.DepartmentId != null && deptDict.TryGetValue(emp.DepartmentId, out var dName)) ? dName : "N/A",
                     PositionName = (emp.PositionId != null && posDict.TryGetValue(emp.PositionId, out var pName)) ? pName : "N/A",
-                    ScheduledCheckIn = att.ScheduledCheckIn,
+                    ScheduledCheckIn = att.EffectiveScheduledCheckIn,
                     ScheduledCheckOut = att.ScheduledCheckOut,
                     // Hora civil de la sucursal: ActualCheckIn/Out son instantes UTC (F01).
                     ActualCheckIn = att.CivilCheckIn,

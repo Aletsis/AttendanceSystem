@@ -104,4 +104,36 @@ public class ReportExportServiceTests
 
         PageCount(pdf).Should().Be(expectedPages, "una tarjeta que no cabe se parte en otra hoja");
     }
+
+    [Theory]
+    [InlineData(false, 3)]
+    [InlineData(true, 6)]
+    public void PeriodExcel_FlexibleShift_ShowsFlexibleAsScheduledCheckIn(bool detailed, int scheduledInColumn)
+    {
+        var day1 = new AttendanceReportViewDto
+        {
+            EmployeeId = "200",
+            EmployeeName = "Empleado Flex",
+            Date = Sunday4,
+            ShiftType = ShiftType.Flexible,
+            ScheduledCheckIn = new TimeSpan(8, 25, 0),
+            ScheduledCheckOut = new TimeSpan(16, 0, 0),
+            ActualCheckIn = Sunday4.AddHours(8).AddMinutes(25),
+            ActualCheckOut = Sunday4.AddHours(16).AddMinutes(25),
+            TotalWorkedMinutes = 480
+        };
+        var day2 = day1 with
+        {
+            Date = Sunday4.AddDays(1),
+            ScheduledCheckIn = new TimeSpan(9, 0, 0),
+            ActualCheckIn = Sunday4.AddDays(1).AddHours(9),
+            ActualCheckOut = Sunday4.AddDays(1).AddHours(17)
+        };
+
+        var bytes = new ReportExportService().GenerateExcel(
+            new[] { day1, day2 }, Sunday4, Sunday4.AddDays(1), "Empresa", null, detailed);
+        var sheet = Sheet(bytes);
+
+        sheet.Cell(5, scheduledInColumn).GetString().Should().Be("Flexible");
+    }
 }

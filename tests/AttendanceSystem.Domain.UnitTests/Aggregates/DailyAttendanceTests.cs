@@ -929,4 +929,71 @@ public class DailyAttendanceTests
         da.GetReferenceEntry().Should().Be(_date.AddHours(refH).AddMinutes(refM));
         da.TotalWorkedMinutes.Should().Be((int)(_date.AddHours(16) - _date.AddHours(refH).AddMinutes(refM)).TotalMinutes);
     }
+
+    [Theory]
+    [InlineData(7, 45, 8, 0)]   // llega antes de la ventana -> inicio de la ventana
+    [InlineData(8, 0, 8, 0)]    // inicio exacto de la ventana
+    [InlineData(8, 37, 8, 37)]  // dentro de la ventana -> hora de llegada
+    [InlineData(9, 30, 9, 30)]  // fin exacto de la ventana
+    [InlineData(9, 45, 9, 30)]  // llega después de la ventana -> fin de la ventana
+    public void EffectiveScheduledCheckIn_FlexibleWithWindow_ClampsArrivalToWindow(int inH, int inM, int expectedH, int expectedM)
+    {
+        var flexShift = Shift.Create(
+            name: "Flexible Ventana",
+            startTime: new TimeSpan(8, 0, 0),
+            toleranceMinutes: 5,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            flexWindowEndTime: new TimeSpan(9, 30, 0),
+            hasEntryWindow: true);
+
+        var da = DailyAttendance.Create(_employeeId, _date, flexShift, _date.AddHours(inH).AddMinutes(inM), _date.AddHours(17), isRestDay: false);
+
+        da.EffectiveScheduledCheckIn.Should().Be(new TimeSpan(expectedH, expectedM, 0));
+    }
+
+    [Fact]
+    public void EffectiveScheduledCheckIn_FlexibleWithRounding_UsesReferenceEntryWithinWindow()
+    {
+        var flexShift = Shift.Create(
+            name: "Flexible Redondeado",
+            startTime: new TimeSpan(8, 0, 0),
+            toleranceMinutes: 5,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            roundingsEnabled: true,
+            roundingInterval: 15,
+            flexWindowEndTime: new TimeSpan(9, 30, 0),
+            hasEntryWindow: true);
+
+        // Llega 08:21 (dentro de la ventana); supera tolerancia 5 min del bloque 08:15, cuenta desde 08:30
+        var daInside = DailyAttendance.Create(_employeeId, _date, flexShift, _date.AddHours(8).AddMinutes(21), _date.AddHours(17), isRestDay: false);
+        daInside.EffectiveScheduledCheckIn.Should().Be(new TimeSpan(8, 30, 0));
+
+        // Llega 08:03 (dentro de la ventana); con tolerancia 5 cuenta desde 08:00
+        var daGrace = DailyAttendance.Create(_employeeId, _date, flexShift, _date.AddHours(8).AddMinutes(3), _date.AddHours(17), isRestDay: false);
+        daGrace.EffectiveScheduledCheckIn.Should().Be(new TimeSpan(8, 0, 0));
+    }
+
+    [Fact]
+    public void EffectiveScheduledCheckIn_FlexibleWithoutWindow_UsesReferenceEntryOrBaseOnAbsence()
+    {
+        var flexOpen = Shift.Create(
+            name: "Flexible Abierto",
+            startTime: TimeSpan.Zero,
+            toleranceMinutes: 5,
+            workHours: new TimeSpan(8, 0, 0),
+            shiftType: ShiftType.Flexible,
+            roundingsEnabled: true,
+            roundingInterval: 15,
+            hasEntryWindow: false);
+
+        // Llega 10:19 (<=5 min sobre 10:15 -> redondea a 10:15)
+        var da = DailyAttendance.Create(_employeeId, _date, flexOpen, _date.AddHours(10).AddMinutes(19), _date.AddHours(19), isRestDay: false);
+        da.EffectiveScheduledCheckIn.Should().Be(new TimeSpan(10, 15, 0));
+
+        // Falta (sin entrada) conserva el valor base del turno
+        var daAbsent = DailyAttendance.Create(_employeeId, _date, flexOpen, null, null, isRestDay: false);
+        daAbsent.EffectiveScheduledCheckIn.Should().Be(TimeSpan.Zero);
+    }
 }

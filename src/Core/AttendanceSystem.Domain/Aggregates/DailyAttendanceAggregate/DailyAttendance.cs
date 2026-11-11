@@ -60,6 +60,38 @@ public sealed class DailyAttendance : AggregateRoot<DailyAttendanceId>
     public DateTime? CivilBlock1CheckOut => ActualBlock1CheckOut.HasValue ? ToCivil(ActualBlock1CheckOut.Value) : null;
     public DateTime? CivilBlock2CheckIn => ActualBlock2CheckIn.HasValue ? ToCivil(ActualBlock2CheckIn.Value) : null;
 
+    /// <summary>
+    /// Horario de entrada efectivo para reportes y tarjetas. En turnos flexibles con entrada registrada, devuelve
+    /// la hora civil desde la que cuenta el tiempo (<see cref="GetReferenceEntry"/>), acotada a la ventana de llegada
+    /// cuando ésta existe.
+    /// </summary>
+    public TimeSpan? EffectiveScheduledCheckIn
+    {
+        get
+        {
+            if (ShiftType != Enumerations.ShiftType.Flexible ||
+                CivilCheckIn is not { } checkInCivil ||
+                GetReferenceEntry() is not { } referenceEntry)
+            {
+                return ScheduledCheckIn;
+            }
+
+            if (!HasEntryWindow || ScheduledCheckIn is not { } windowStartTime)
+            {
+                return referenceEntry.TimeOfDay;
+            }
+
+            var windowEndTime = FlexWindowEndTime ?? windowStartTime;
+            var checkInNoSeconds = TruncateSeconds(checkInCivil);
+            var windowStart = Date.Date.Add(windowStartTime);
+            var windowEnd = Date.Date.Add(windowEndTime);
+
+            if (checkInNoSeconds < windowStart) return windowStartTime;
+            if (checkInNoSeconds > windowEnd) return windowEndTime;
+            return referenceEntry.TimeOfDay;
+        }
+    }
+
     /// <summary>La jornada tiene al menos un marcaje en alguna posición (asistió aunque le falte alguno).</summary>
     public bool HasPunches => ActualCheckIn.HasValue || ActualCheckOut.HasValue || ActualBlock1CheckOut.HasValue || ActualBlock2CheckIn.HasValue;
 
