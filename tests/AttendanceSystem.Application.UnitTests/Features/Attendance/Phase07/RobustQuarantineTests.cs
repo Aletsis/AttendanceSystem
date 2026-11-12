@@ -12,6 +12,7 @@ using AttendanceSystem.Application.Features.Devices.Quarantine;
 using AttendanceSystem.Application.UnitTests.Features.Attendance.Phase02;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
+using AttendanceSystem.Domain.Aggregates.PeriodClosureAggregate;
 using AttendanceSystem.Domain.Aggregates.SystemAlertAggregate;
 using AttendanceSystem.Domain.Aggregates.SystemConfigurationAggregate;
 using AttendanceSystem.Domain.Enumerations;
@@ -58,6 +59,13 @@ public class RobustQuarantineTests
         public Task<QuarantinedPunch?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) => Task.FromResult(Items.FirstOrDefault(p => p.Id == id));
         public Task<IReadOnlyList<QuarantinedPunch>> GetAsync(QuarantineStatus? status, int take, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlyList<QuarantinedPunch>>(Items.Where(p => status == null || p.Status == status).Take(take).ToList());
+        public Task<IReadOnlyList<QuarantinedPunch>> GetPendingByDeviceAsync(DeviceId deviceId, IReadOnlyCollection<Guid>? ids = null, CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<QuarantinedPunch>>(Items
+                .Where(p => p.Status == QuarantineStatus.Pending && p.DeviceId == deviceId && (ids == null || ids.Contains(p.Id)))
+                .OrderBy(p => p.ReportedTime)
+                .ToList());
+        public Task<int> CountAsync(QuarantineStatus? status, CancellationToken cancellationToken = default) =>
+            Task.FromResult(Items.Count(p => status == null || p.Status == status));
         public Task<IReadOnlySet<(string EmployeeId, DateTime ReportedTime)>> GetExistingAsync(DeviceId deviceId, IReadOnlyCollection<(string EmployeeId, DateTime ReportedTime)> keys, CancellationToken cancellationToken = default) =>
             Task.FromResult<IReadOnlySet<(string, DateTime)>>(Items.Where(p => p.DeviceId == deviceId).Select(p => (p.EmployeeId, p.ReportedTime)).Where(keys.Contains).ToHashSet());
     }
@@ -355,6 +363,56 @@ public class RobustQuarantineTests
         rig.Quarantine.Items.Should().OnlyContain(p => p.ReleasedTime == p.ReportedTime.AddMinutes(p.SuggestedOffsetMinutes!.Value),
             "cada marcaje se corrige con el atraso que se le sugirió");
         rig.H.Store.Records.Select(r => r.GetCivilTime()).Should().BeEquivalentTo(rig.Quarantine.Items.Select(p => p.ReleasedTime!.Value));
+    }
+
+    [Fact]
+    public async Task BulkRelease_IngestsBatchOnce_AndMarksInBatchDuplicatesAsDuplicate()
+    {
+        var rig = new Rig();
+        var t1 = Now.AddDays(-2).Date.AddHours(8);
+        var t2 = t1.AddHours(-1);
+        rig.Quarantine.Items.Add(QuarantinedPunch.Create("200", rig.Device.Id, Civil(t1), Zone, 1, 0, "ADMS", "Atraso", "R4", 0));
+        rig.Quarantine.Items.Add(QuarantinedPunch.Create("200", rig.Device.Id, Civil(t2), Zone, 1, 0, "ADMS", "Atraso", "R4", 60));
+        var savesBefore = rig.H.Store.SaveChangesCount;
+        var handler = new QuarantinedPunchDecisionHandler(rig.Quarantine, rig.H.AttendanceRepository, rig.H.UnitOfWork, DefaultTimeNormalizer.Instance, rig.Service);
+
+        var result = await handler.Handle(new ReleaseQuarantinedPunchesCommand(rig.Device.Id.Value, null, "Corrección en bloque"), CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Released.Should().Be(1);
+        result.Value.Duplicates.Should().Be(1);
+        (rig.H.Store.SaveChangesCount - savesBefore).Should().Be(2, "ingesta del lote en una sola operación y guardado de cuarentena");
+        rig.H.Store.Records.Should().ContainSingle(r => r.EmployeeId == EmployeeId.From("200") && r.GetCivilTime() == Civil(t1));
+        rig.Quarantine.Items.Should().OnlyContain(p => p.Status == QuarantineStatus.Released);
+    }
+
+    [Fact]
+    public async Task Releasing_RejectsOrSkipsPunchesWhoseCorrectedDateFallsInAClosedPeriod()
+    {
+        var rig = new Rig();
+        var closedDay = Now.AddDays(-10).Date;
+        var openDay = Now.AddDays(-1).Date;
+        rig.H.ClosureRepository.Items.Add(AttendancePeriodClosure.Close(closedDay.AddDays(-1), closedDay.AddDays(1), "rh", automatic: false));
+
+        var closedPunch = QuarantinedPunch.Create("200", rig.Device.Id, Civil(closedDay.AddHours(8)), Zone, 1, 0, "ADMS", "Atraso", "R4", 60);
+        var openPunch = QuarantinedPunch.Create("200", rig.Device.Id, Civil(openDay.AddHours(8)), Zone, 1, 0, "ADMS", "Atraso", "R4", 60);
+        rig.Quarantine.Items.Add(closedPunch);
+        rig.Quarantine.Items.Add(openPunch);
+        var handler = new QuarantinedPunchDecisionHandler(rig.Quarantine, rig.H.AttendanceRepository, rig.H.UnitOfWork, DefaultTimeNormalizer.Instance, rig.Service,
+            closures: rig.H.PeriodClosures);
+
+        var singleClosed = await handler.Handle(new ReleaseQuarantinedPunchCommand(closedPunch.Id, 60, "Intento en cierre"), CancellationToken.None);
+        singleClosed.IsFailure.Should().BeTrue();
+        singleClosed.Error.Should().Contain("cerrado");
+        closedPunch.Status.Should().Be(QuarantineStatus.Pending);
+
+        var bulk = await handler.Handle(new ReleaseQuarantinedPunchesCommand(rig.Device.Id.Value, null, "Liberación mixta"), CancellationToken.None);
+        bulk.IsSuccess.Should().BeTrue();
+        bulk.Value.Released.Should().Be(1);
+        bulk.Value.Skipped.Should().Be(1);
+        bulk.Value.Errors.Should().ContainSingle(e => e.Contains("cerrado"));
+        closedPunch.Status.Should().Be(QuarantineStatus.Pending);
+        openPunch.Status.Should().Be(QuarantineStatus.Released);
     }
 
     // ---------- Reloj SDK atrasado en tiempo real ----------

@@ -5,17 +5,20 @@ using System.Threading;
 using System.Threading.Tasks;
 using AttendanceSystem.Application.Abstractions;
 using AttendanceSystem.Application.Features.Attendance.Commands.RecordAttendance;
+using AttendanceSystem.Application.Features.Attendance.EventHandlers;
 using AttendanceSystem.Application.Features.Devices.Quarantine;
 using AttendanceSystem.Domain.Aggregates.AttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 using AttendanceSystem.Domain.Aggregates.DeviceAggregate;
 using AttendanceSystem.Domain.Enumerations;
+using AttendanceSystem.Domain.Events;
 using AttendanceSystem.Domain.ValueObjects;
 using AttendanceSystem.Infrastructure.Common;
 using AttendanceSystem.Infrastructure.Persistence;
 using AttendanceSystem.Infrastructure.Persistence.Repositories;
 using AttendanceSystem.Infrastructure.Services;
 using FluentAssertions;
+using MediatR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -196,5 +199,91 @@ public class PostgresClockTimeCorrectionTests : IClassFixture<PostgresTestDataba
         (await reverted.AttendanceRecords.Where(r => r.EmployeeId == ana && r.VoidedAt == null).OrderBy(r => r.CheckTime).Select(r => r.CheckTime).ToListAsync())
             .Should().Equal(anaPunches.Select(p => p.CheckTime));
         (await reverted.AttendanceRecords.CountAsync(r => r.EmployeeId == ana)).Should().Be(9, "cada corrección agrega marcajes y conserva los anteriores");
+    }
+
+    [Fact]
+    public async Task ReleasingFromQuarantine_IndividualAndBulk_CreatesConsolidationRequests()
+    {
+        if (!_fixture.IsAvailable) return;
+        var device = await DeviceAsync("Reloj consolidación cuarentena");
+        var day = DateTime.UtcNow.Date.AddDays(-2);
+        var singleEmp = $"QC-S-{Guid.NewGuid():N}"[..16];
+        var bulkEmp = $"QC-B-{Guid.NewGuid():N}"[..16];
+
+        var singlePunch = QuarantinedPunch.Create(singleEmp, device.Id, day.AddHours(7), Zone, 1, 0, "ADMS", "Atraso", "R4", 60);
+        var bulkIn = QuarantinedPunch.Create(bulkEmp, device.Id, day.AddHours(7), Zone, 1, 0, "ADMS", "Atraso", "R4", 60);
+        var bulkOut = QuarantinedPunch.Create(bulkEmp, device.Id, day.AddHours(16), Zone, 1, 1, "ADMS", "Atraso", "R4", 60);
+
+        await using (var seed = _fixture.CreateDbContext())
+        {
+            seed.QuarantinedPunches.AddRange(singlePunch, bulkIn, bulkOut);
+            await seed.SaveChangesAsync();
+        }
+
+        var wakeup = new Mock<IConsolidationWakeup>();
+        await using (var context = CreateContextWithConsolidationHandlers(wakeup.Object))
+        {
+            var decisions = new QuarantinedPunchDecisionHandler(
+                new QuarantinedPunchRepository(context), new AttendanceRepository(context), new UnitOfWork(context),
+                DefaultTimeNormalizer.Instance, Quarantine(context));
+
+            var singleResult = await decisions.Handle(new ReleaseQuarantinedPunchCommand(singlePunch.Id, 60, "Individual"), CancellationToken.None);
+            singleResult.IsSuccess.Should().BeTrue();
+
+            var bulkResult = await decisions.Handle(
+                new ReleaseQuarantinedPunchesCommand(device.Id.Value, null, "Bloque", new[] { bulkIn.Id, bulkOut.Id }),
+                CancellationToken.None);
+            bulkResult.IsSuccess.Should().BeTrue();
+            bulkResult.Value.Released.Should().Be(2);
+        }
+
+        await using var verify = _fixture.CreateDbContext();
+        var singleReq = await verify.AttendanceConsolidationRequests.SingleOrDefaultAsync(r => r.EmployeeId == EmployeeId.From(singleEmp));
+        singleReq.Should().NotBeNull("la liberación individual solicita consolidación");
+        singleReq!.StartDate.Date.Should().Be(day);
+        singleReq.EndDate.Date.Should().Be(day);
+
+        var bulkReq = await verify.AttendanceConsolidationRequests.SingleOrDefaultAsync(r => r.EmployeeId == EmployeeId.From(bulkEmp));
+        bulkReq.Should().NotBeNull("la liberación en bloque solicita consolidación en lote");
+        bulkReq!.StartDate.Date.Should().Be(day);
+        bulkReq.EndDate.Date.Should().Be(day);
+        wakeup.Verify(w => w.Signal(), Times.AtLeast(2));
+    }
+
+    private AttendanceDbContext CreateContextWithConsolidationHandlers(IConsolidationWakeup wakeup)
+    {
+        AttendanceDbContext? context = null;
+        var tracker = new ConsolidationRequestTracker();
+        var publisher = new ConsolidationEventPublisher(() => context!, wakeup, tracker);
+        context = _fixture.CreateDbContext(publisher);
+        return context;
+    }
+
+    private sealed class ConsolidationEventPublisher : IPublisher
+    {
+        private readonly Func<AttendanceDbContext> _contextFactory;
+        private readonly IConsolidationWakeup _wakeup;
+        private readonly IConsolidationRequestTracker _tracker;
+
+        public ConsolidationEventPublisher(Func<AttendanceDbContext> contextFactory, IConsolidationWakeup wakeup, IConsolidationRequestTracker tracker)
+        {
+            _contextFactory = contextFactory;
+            _wakeup = wakeup;
+            _tracker = tracker;
+        }
+
+        public Task Publish(object notification, CancellationToken cancellationToken = default)
+        {
+            var repo = new AttendanceConsolidationRepository(_contextFactory());
+            return notification switch
+            {
+                AttendanceRecordedBatch batch => new AttendanceRecordedBatchHandler(repo, _tracker).Handle(batch, cancellationToken),
+                AttendanceRecordedEvent single => new AttendanceRecordedEventHandler(repo, _wakeup, NullLogger<AttendanceRecordedEventHandler>.Instance, _tracker).Handle(single, cancellationToken),
+                _ => Task.CompletedTask
+            };
+        }
+
+        public Task Publish<TNotification>(TNotification notification, CancellationToken cancellationToken = default) where TNotification : INotification =>
+            Publish((object)notification!, cancellationToken);
     }
 }

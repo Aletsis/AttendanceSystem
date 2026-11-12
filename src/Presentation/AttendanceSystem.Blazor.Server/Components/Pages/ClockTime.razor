@@ -70,14 +70,17 @@
         {
             <MudPaper Outlined="true" Class="pa-3 mb-3 d-flex flex-wrap align-center gap-3">
                 <MudText Typo="Typo.body2"><b>@group.Key.DeviceName</b>: @group.Count() pendiente(s)@(group.Any(p => p.SuggestedOffsetMinutes.HasValue) ? $", {group.Count(p => p.SuggestedOffsetMinutes.HasValue)} con corrección sugerida" : "")</MudText>
-                <MudTextField @bind-Value="_bulkNote" Label="Motivo" Margin="Margin.Dense" Style="max-width: 280px" />
+                <MudTextField @bind-Value="_bulkNote" Label="Motivo" Margin="Margin.Dense" Style="max-width: 240px" />
                 @if (group.Any(p => p.SuggestedOffsetMinutes.HasValue))
                 {
                     <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_bulkNote))"
                                OnClick="@(() => ReleaseDeviceAsync(group.Key.DeviceId, null))">Liberar con la corrección sugerida</MudButton>
                 }
+                <MudNumericField @bind-Value="_bulkDays" Label="Días" Margin="Margin.Dense" Style="max-width: 80px" />
+                <MudNumericField @bind-Value="_bulkHours" Label="Horas" Margin="Margin.Dense" Style="max-width: 80px" />
+                <MudNumericField @bind-Value="_bulkMinutes" Label="Min" Margin="Margin.Dense" Style="max-width: 80px" />
                 <MudButton Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_bulkNote))"
-                           OnClick="@(() => ReleaseDeviceAsync(group.Key.DeviceId, ReleaseOffset))">Liberar todos con el desfase de abajo (@FormatOffset(ReleaseOffset))</MudButton>
+                           OnClick="@(() => ReleaseDeviceAsync(group.Key.DeviceId, BulkReleaseOffset))">Liberar todos con desfase (@(BulkReleaseOffset == 0 ? "0 min" : FormatOffset(BulkReleaseOffset)))</MudButton>
                 <MudText Typo="Typo.caption" Color="Color.Secondary" Style="flex-basis: 100%">
                     La corrección sugerida supone que el reloj estuvo desfasado todo el periodo. Si el desfase empezó a mitad (corte de luz,
                     cambio manual de hora), los marcajes anteriores al evento estaban bien: revíselos y libérelos uno por uno.
@@ -266,6 +269,7 @@
     private List<PunchTimeCorrectionDto> _history = new();
 
     private int ReleaseOffset => (_releaseDays * 24 + _releaseHours) * 60 + _releaseMinutes;
+    private int BulkReleaseOffset => (_bulkDays * 24 + _bulkHours) * 60 + _bulkMinutes;
     private int FixOffset => (_fixDays * 24 + _fixHours) * 60 + _fixMinutes;
 
     protected override async Task OnInitializedAsync()
@@ -280,9 +284,7 @@
     {
         _alerts = (await Sender.Send(new GetClockAlertsQuery())).ToList();
         _quarantine = (await Sender.Send(new GetQuarantinedPunchesQuery(_statusFilter))).ToList();
-        _pendingCount = _statusFilter == QuarantineStatus.Pending
-            ? _quarantine.Count
-            : (await Sender.Send(new GetQuarantinedPunchesQuery(QuarantineStatus.Pending))).Count;
+        _pendingCount = await Sender.Send(new GetQuarantinedPunchCountQuery(QuarantineStatus.Pending));
         _history = (await Sender.Send(new GetPunchTimeCorrectionsQuery())).ToList();
         if (_selected != null) _selected = _quarantine.FirstOrDefault(q => q.Id == _selected.Id);
     }
@@ -306,6 +308,7 @@
     }
 
     private string _bulkNote = string.Empty;
+    private int _bulkDays, _bulkHours, _bulkMinutes;
 
     private async Task ReleaseDeviceAsync(string deviceId, int? offsetMinutes)
     {
@@ -321,6 +324,7 @@
         Snackbar.Add($"{r.Released} ingresado(s), {r.Duplicates} ya existían, {r.Skipped} omitido(s).", r.Skipped > 0 ? Severity.Warning : Severity.Success);
         foreach (var error in r.Errors) Snackbar.Add(error, Severity.Warning);
         _bulkNote = string.Empty;
+        _bulkDays = _bulkHours = _bulkMinutes = 0;
         await LoadAsync();
     }
 

@@ -24,6 +24,27 @@ public sealed class QuarantinedPunchRepository : IQuarantinedPunchRepository
         return await query.OrderByDescending(q => q.ReceivedAtUtc).Take(take).ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<QuarantinedPunch>> GetPendingByDeviceAsync(
+        DeviceId deviceId, IReadOnlyCollection<Guid>? ids = null, CancellationToken cancellationToken = default)
+    {
+        var query = _context.QuarantinedPunches
+            .Where(q => q.Status == QuarantineStatus.Pending && q.DeviceId == deviceId);
+        if (ids != null)
+        {
+            if (ids.Count == 0) return Array.Empty<QuarantinedPunch>();
+            var idSet = ids.ToHashSet();
+            query = query.Where(q => idSet.Contains(q.Id));
+        }
+        return await query.OrderBy(q => q.ReportedTime).ToListAsync(cancellationToken);
+    }
+
+    public Task<int> CountAsync(QuarantineStatus? status, CancellationToken cancellationToken = default)
+    {
+        var query = _context.QuarantinedPunches.AsNoTracking();
+        if (status.HasValue) query = query.Where(q => q.Status == status.Value);
+        return query.CountAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlySet<(string EmployeeId, DateTime ReportedTime)>> GetExistingAsync(
         DeviceId deviceId, IReadOnlyCollection<(string EmployeeId, DateTime ReportedTime)> keys, CancellationToken cancellationToken = default)
     {

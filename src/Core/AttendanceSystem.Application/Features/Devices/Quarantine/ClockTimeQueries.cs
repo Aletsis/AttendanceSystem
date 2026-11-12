@@ -18,6 +18,7 @@ public sealed record PunchTimeCorrectionDto(
 public sealed record ClockAlertDto(Guid Id, AlertType Type, string DeviceName, DateTime TimestampUtc, string Message);
 
 public sealed record GetQuarantinedPunchesQuery(QuarantineStatus? Status = QuarantineStatus.Pending, int Take = 500) : IRequest<IReadOnlyList<QuarantinedPunchDto>>;
+public sealed record GetQuarantinedPunchCountQuery(QuarantineStatus? Status = QuarantineStatus.Pending) : IRequest<int>;
 public sealed record GetPunchTimeCorrectionsQuery(int Take = 50) : IRequest<IReadOnlyList<PunchTimeCorrectionDto>>;
 public sealed record GetClockAlertsQuery : IRequest<IReadOnlyList<ClockAlertDto>>;
 [RequiresPermission(Permissions.ClockAlertsResolve)]
@@ -25,6 +26,7 @@ public sealed record ResolveClockAlertCommand(Guid Id) : IRequest<Result>;
 
 public sealed class ClockTimeQueryHandler :
     IRequestHandler<GetQuarantinedPunchesQuery, IReadOnlyList<QuarantinedPunchDto>>,
+    IRequestHandler<GetQuarantinedPunchCountQuery, int>,
     IRequestHandler<GetPunchTimeCorrectionsQuery, IReadOnlyList<PunchTimeCorrectionDto>>,
     IRequestHandler<GetClockAlertsQuery, IReadOnlyList<ClockAlertDto>>,
     IRequestHandler<ResolveClockAlertCommand, Result>
@@ -63,6 +65,9 @@ public sealed class ClockTimeQueryHandler :
             p.TimeZoneId, p.Reason, p.ReceivedAtUtc, p.Status, p.ReleasedTime is { } r ? DateTime.SpecifyKind(r, DateTimeKind.Unspecified) : null,
             p.ResolvedBy, p.ResolutionNote, p.Rule, p.SuggestedOffsetMinutes)).ToList();
     }
+
+    public Task<int> Handle(GetQuarantinedPunchCountQuery request, CancellationToken cancellationToken) =>
+        _quarantine.CountAsync(request.Status, cancellationToken);
 
     public async Task<IReadOnlyList<PunchTimeCorrectionDto>> Handle(GetPunchTimeCorrectionsQuery request, CancellationToken cancellationToken)
     {

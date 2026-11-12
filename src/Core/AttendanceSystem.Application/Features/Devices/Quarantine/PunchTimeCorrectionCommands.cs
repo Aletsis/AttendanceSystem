@@ -258,6 +258,7 @@ public sealed class QuarantinedPunchDecisionHandler :
     private readonly PunchQuarantineService _service;
     private readonly IPersistenceFailureClassifier _classifier;
     private readonly ICurrentUserService? _currentUser;
+    private readonly AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? _closures;
     private readonly ILogger<QuarantinedPunchDecisionHandler> _logger;
 
     public QuarantinedPunchDecisionHandler(
@@ -268,7 +269,8 @@ public sealed class QuarantinedPunchDecisionHandler :
         PunchQuarantineService service,
         IPersistenceFailureClassifier? classifier = null,
         ICurrentUserService? currentUser = null,
-        ILogger<QuarantinedPunchDecisionHandler>? logger = null)
+        ILogger<QuarantinedPunchDecisionHandler>? logger = null,
+        AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService? closures = null)
     {
         _quarantine = quarantine;
         _attendance = attendance;
@@ -278,6 +280,7 @@ public sealed class QuarantinedPunchDecisionHandler :
         _classifier = classifier ?? DefaultPersistenceFailureClassifier.Instance;
         _currentUser = currentUser;
         _logger = logger ?? NullLogger<QuarantinedPunchDecisionHandler>.Instance;
+        _closures = closures;
     }
 
     private string Author => _currentUser is { IsAuthenticated: true, UserName: { Length: > 0 } name } ? name : "Sistema";
@@ -289,25 +292,19 @@ public sealed class QuarantinedPunchDecisionHandler :
         if (punch.Status != QuarantineStatus.Pending) return Result<string>.Failure("El marcaje ya fue resuelto.");
         if (string.IsNullOrWhiteSpace(request.Note)) return Result<string>.Failure("Indique el motivo de la decisión.");
 
-        var corrected = DateTime.SpecifyKind(punch.ReportedTime, DateTimeKind.Unspecified).AddMinutes(request.OffsetMinutes);
-        var problem = await _service.ImpossibleTimeAsync(punch.DeviceId, corrected, punch.TimeZoneId, cancellationToken);
-        if (problem != null) return Result<string>.Failure($"La hora corregida sigue siendo imposible: {problem}");
+        var denyClosed = await BuildClosedDayCheckerAsync(cancellationToken);
+        var (corrected, record, prepError) = await PrepareRecordAsync(punch, request.OffsetMinutes, denyClosed, cancellationToken);
+        if (prepError != null) return Result<string>.Failure(prepError);
 
         try
         {
-            var utc = _timeNormalizer.ToUtc(corrected, punch.TimeZoneId);
-            var record = AttendanceRecord.Create(EmployeeId.From(punch.EmployeeId), punch.DeviceId, utc,
-                VerifyMethod.FromValue(punch.VerifyMethodCode), CheckType.FromValue(punch.CheckTypeCode),
-                workDate: _timeNormalizer.ToWorkDate(utc, punch.TimeZoneId), originalCheckTime: corrected,
-                timeZoneId: punch.TimeZoneId, source: punch.Source);
-
-            var outcome = await new AttendanceRecordIngestion(_attendance, _unitOfWork, _classifier, _logger).IngestAsync(new[] { record }, cancellationToken);
+            var outcome = await new AttendanceRecordIngestion(_attendance, _unitOfWork, _classifier, _logger).IngestAsync(new[] { record! }, cancellationToken);
             if (!outcome.IsSuccess) return Result<string>.Failure($"No se pudo ingresar el marcaje: {outcome.Failure!.Message}");
 
             string message;
             if (outcome.Inserted.Count == 1)
             {
-                punch.Release(corrected, record.Id, Author, request.Note);
+                punch.Release(corrected, record!.Id, Author, request.Note);
                 message = $"Marcaje ingresado a las {corrected:dd/MM/yyyy HH:mm}; su jornada se recalculará.";
             }
             else
@@ -328,15 +325,17 @@ public sealed class QuarantinedPunchDecisionHandler :
     public async Task<Result<BulkReleaseResultDto>> Handle(ReleaseQuarantinedPunchesCommand request, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(request.Note)) return Result<BulkReleaseResultDto>.Failure("Indique el motivo de la decisión.");
-        var ids = request.Ids?.ToHashSet();
-        var pending = (await _quarantine.GetAsync(QuarantineStatus.Pending, 100_000, cancellationToken))
-            .Where(p => p.DeviceId.Value == request.DeviceId && (ids == null || ids.Contains(p.Id)))
+        var deviceId = DeviceId.From(request.DeviceId);
+        var pending = (await _quarantine.GetPendingByDeviceAsync(deviceId, request.Ids, cancellationToken))
             .OrderBy(p => p.ReportedTime)
             .ToList();
         if (pending.Count == 0) return Result<BulkReleaseResultDto>.Failure("No hay marcajes pendientes de ese reloj.");
 
+        var denyClosed = await BuildClosedDayCheckerAsync(cancellationToken);
         int released = 0, duplicates = 0, skipped = 0;
         var errors = new List<string>();
+        var prepared = new List<(QuarantinedPunch Punch, DateTime Corrected, AttendanceRecord Record)>();
+
         foreach (var punch in pending)
         {
             var offset = request.OffsetMinutes ?? punch.SuggestedOffsetMinutes;
@@ -345,18 +344,85 @@ public sealed class QuarantinedPunchDecisionHandler :
                 skipped++;
                 continue;
             }
-            var result = await Handle(new ReleaseQuarantinedPunchCommand(punch.Id, minutes, request.Note), cancellationToken);
-            if (result.IsFailure)
+
+            var (corrected, record, prepError) = await PrepareRecordAsync(punch, minutes, denyClosed, cancellationToken);
+            if (prepError != null)
             {
                 skipped++;
-                if (errors.Count < 10) errors.Add($"{punch.EmployeeId} {punch.ReportedTime:dd/MM/yyyy HH:mm}: {result.Error}");
+                if (errors.Count < 10) errors.Add($"{punch.EmployeeId} {punch.ReportedTime:dd/MM/yyyy HH:mm}: {prepError}");
+                continue;
             }
-            else if (result.Value.StartsWith("Ya existía", StringComparison.Ordinal)) duplicates++;
-            else released++;
+            prepared.Add((punch, corrected, record!));
         }
+
+        if (prepared.Count > 0)
+        {
+            // Se ingiere el lote completo de una vez para que los eventos viajen juntos en el outbox y no se pierda
+            // ninguna solicitud de consolidación por el tracker de ámbito entre iteraciones.
+            var outcome = await new AttendanceRecordIngestion(_attendance, _unitOfWork, _classifier, _logger)
+                .IngestAsync(prepared.Select(p => p.Record).ToList(), cancellationToken);
+            if (!outcome.IsSuccess)
+            {
+                return Result<BulkReleaseResultDto>.Failure($"No se pudieron ingresar los marcajes: {outcome.Failure!.Message}");
+            }
+
+            var insertedIds = outcome.Inserted.Select(r => r.Id).ToHashSet();
+            foreach (var (punch, corrected, record) in prepared)
+            {
+                if (insertedIds.Contains(record.Id))
+                {
+                    punch.Release(corrected, record.Id, Author, request.Note);
+                    released++;
+                }
+                else
+                {
+                    punch.ReleaseAsDuplicate(corrected, Author, $"{request.Note.Trim()} (ya existía un marcaje a esa hora)");
+                    duplicates++;
+                }
+            }
+
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
         _logger.LogInformation("Liberación en bloque del reloj {Device} por {Author}: {Released} ingresados, {Duplicates} duplicados, {Skipped} omitidos.",
             request.DeviceId, Author, released, duplicates, skipped);
         return Result<BulkReleaseResultDto>.Success(new BulkReleaseResultDto(released, duplicates, skipped, errors));
+    }
+
+    private async Task<Func<DateTime, string?>> BuildClosedDayCheckerAsync(CancellationToken cancellationToken)
+    {
+        if (_closures == null) return _ => null;
+        var closures = await _closures.ActiveAsync(cancellationToken);
+        return date => closures.FirstOrDefault(c => c.Contains(date)) is { } closure
+            ? string.Format(AttendanceSystem.Application.Features.Attendance.PeriodClosure.PeriodClosureService.ClosedDayMessage,
+                $"del {closure.StartDate:dd/MM/yyyy} al {closure.EndDate:dd/MM/yyyy}")
+            : null;
+    }
+
+    private async Task<(DateTime Corrected, AttendanceRecord? Record, string? Error)> PrepareRecordAsync(
+        QuarantinedPunch punch, int offsetMinutes, Func<DateTime, string?> denyClosed, CancellationToken cancellationToken)
+    {
+        var corrected = DateTime.SpecifyKind(punch.ReportedTime, DateTimeKind.Unspecified).AddMinutes(offsetMinutes);
+        var problem = await _service.ImpossibleTimeAsync(punch.DeviceId, corrected, punch.TimeZoneId, cancellationToken);
+        if (problem != null) return (corrected, null, $"La hora corregida sigue siendo imposible: {problem}");
+
+        var utc = _timeNormalizer.ToUtc(corrected, punch.TimeZoneId);
+        var workDate = _timeNormalizer.ToWorkDate(utc, punch.TimeZoneId);
+        if (denyClosed(workDate.ToDateTime(TimeOnly.MinValue)) is { } closedError)
+            return (corrected, null, closedError);
+
+        try
+        {
+            var record = AttendanceRecord.Create(EmployeeId.From(punch.EmployeeId), punch.DeviceId, utc,
+                VerifyMethod.FromValue(punch.VerifyMethodCode), CheckType.FromValue(punch.CheckTypeCode),
+                workDate: workDate, originalCheckTime: corrected,
+                timeZoneId: punch.TimeZoneId, source: punch.Source);
+            return (corrected, record, null);
+        }
+        catch (DomainException ex)
+        {
+            return (corrected, null, ex.Message);
+        }
     }
 
     public async Task<Result> Handle(DiscardQuarantinedPunchCommand request, CancellationToken cancellationToken)
