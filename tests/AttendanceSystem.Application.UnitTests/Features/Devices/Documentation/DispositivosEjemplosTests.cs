@@ -67,7 +67,7 @@ public class DispositivosEjemplosTests
     // ---------- SDK: borrar tras descargar ----------
 
     [Fact]
-    public async Task D01_Sdk_BorrarTrasDescargar_MandaAlRelojElRangoEnUtc_NoEnSuHoraCivil()
+    public async Task D01_Sdk_BorrarTrasDescargar_MandaAlRelojElRangoEnSuHoraCivil_NoEnUtc()
     {
         var device = Device.Create("1", "Reloj SDK", "192.168.0.60", 4370, DeviceBrand.ZKTeco,
             shouldClearAfterDownload: true, downloadMethod: DeviceDownloadMethod.Sdk);
@@ -84,10 +84,10 @@ public class DispositivosEjemplosTests
         var result = await Handler(device).Handle(new DownloadFromDeviceCommand("1"), CancellationToken.None);
 
         result.IsSuccess.Should().BeTrue();
-        // El rango es el de los marcajes guardados, pero en UTC (+6 h): el reloj recibe 14:00 a 00:00 en lugar de 08:00 a 18:00.
-        from.Should().Be(new DateTime(2026, 10, 17, 14, 0, 0, DateTimeKind.Utc));
-        to.Should().Be(new DateTime(2026, 10, 18, 0, 0, 0, DateTimeKind.Utc));
-        from!.Value.Kind.Should().Be(DateTimeKind.Utc);
+        // El rango debe enviarse en la hora civil del reloj (08:00 a 18:00), no en UTC (+6 h).
+        from.Should().Be(first);
+        to.Should().Be(last);
+        from!.Value.Kind.Should().Be(DateTimeKind.Unspecified);
     }
 
     // ---------- ADMS: la descarga es una consulta encolada ----------

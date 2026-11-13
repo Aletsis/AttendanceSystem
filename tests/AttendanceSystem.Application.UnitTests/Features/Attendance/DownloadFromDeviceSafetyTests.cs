@@ -58,9 +58,9 @@ public class DownloadFromDeviceSafetyTests
             .ReturnsAsync(true);
 
         _timeNormalizerMock.Setup(t => t.ToUtc(It.IsAny<DateTime>(), It.IsAny<string>()))
-            .Returns<DateTime, string?>((dt, _) => DateTime.SpecifyKind(dt, DateTimeKind.Utc));
+            .Returns<DateTime, string?>((dt, tz) => DefaultTimeNormalizer.Instance.ToUtc(dt, tz));
         _timeNormalizerMock.Setup(t => t.ToWorkDate(It.IsAny<DateTime>(), It.IsAny<string>()))
-            .Returns<DateTime, string?>((dt, _) => DateOnly.FromDateTime(dt));
+            .Returns<DateTime, string?>((dt, tz) => DefaultTimeNormalizer.Instance.ToWorkDate(dt, tz));
 
         _device = Device.Create(
             "1",
@@ -160,8 +160,10 @@ public class DownloadFromDeviceSafetyTests
     public async Task Handle_WhenReadStatusIsSuccessWithData_ClearsLogsOnlyWithBoundedRange_H03()
     {
         // Arrange
-        var minDate = new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Utc);
-        var maxDate = new DateTime(2026, 10, 17, 18, 0, 0, DateTimeKind.Utc);
+        // Los relojes entregan los marcajes en hora civil (sin zona). En UTC-6, 08:00 y 18:00 civil
+        // se guardan como 14:00 y 00:00 UTC, pero la limpieza del reloj debe enviarse en su hora civil.
+        var minDate = new DateTime(2026, 10, 17, 8, 0, 0, DateTimeKind.Unspecified);
+        var maxDate = new DateTime(2026, 10, 17, 18, 0, 0, DateTimeKind.Unspecified);
         var rawRecords = new List<RawAttendanceRecord>
         {
             new("101", minDate, 1, 0, 0),
@@ -184,7 +186,7 @@ public class DownloadFromDeviceSafetyTests
         result.Value.ReadStatus.Should().Be(DeviceReadStatus.SuccessWithData);
         result.Value.LogsCleared.Should().BeTrue();
 
-        // H03: Verifica que ClearLogsAsync fue invocado estrictamente con el rango acotado [minDate, maxDate]
+        // H03: Verifica que ClearLogsAsync fue invocado estrictamente con el rango acotado en la hora civil del reloj [minDate, maxDate], no en UTC
         _deviceClientMock.Verify(c => c.ClearLogsAsync("1", minDate, maxDate, It.IsAny<CancellationToken>()), Times.Once());
     }
 

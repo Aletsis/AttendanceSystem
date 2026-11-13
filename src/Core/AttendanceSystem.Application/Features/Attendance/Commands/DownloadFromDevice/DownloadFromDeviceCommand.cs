@@ -430,6 +430,8 @@ public sealed class DownloadFromDeviceCommandHandler
 
             DateTime? minDate = null;
             DateTime? maxDate = null;
+            DateTime? minCivilDate = null;
+            DateTime? maxCivilDate = null;
             int newRecordsCount = 0;
             var affectedEmployeeIds = new List<string>();
 
@@ -438,6 +440,8 @@ public sealed class DownloadFromDeviceCommandHandler
                 // Verificar existencia en base de datos para el rango
                 minDate = domainRecords.Min(r => r.CheckTime);
                 maxDate = domainRecords.Max(r => r.CheckTime);
+                minCivilDate = domainRecords.Min(r => r.OriginalCheckTime ?? r.CheckTime);
+                maxCivilDate = domainRecords.Max(r => r.OriginalCheckTime ?? r.CheckTime);
 
                 // Deduplicar el lote leído del dispositivo
                 var candidates = _deduplicationService.FilterNewRecords(domainRecords, Array.Empty<AttendanceRecord>());
@@ -501,14 +505,14 @@ public sealed class DownloadFromDeviceCommandHandler
             if (shouldClear)
             {
                 // Regla de seguridad: SOLO limpiar si la lectura fue completamente exitosa con datos persistidos
-                if (readResult.Status == DeviceReadStatus.SuccessWithData && domainRecords.Any() && minDate.HasValue && maxDate.HasValue)
+                if (readResult.Status == DeviceReadStatus.SuccessWithData && domainRecords.Any() && minCivilDate.HasValue && maxCivilDate.HasValue)
                 {
                     try
                     {
-                        _logger.LogInformation("Ejecutando limpieza segura acotada en {DeviceId} para el rango confirmado: {Min} - {Max}",
-                            deviceIdValue, minDate.Value, maxDate.Value);
+                        _logger.LogInformation("Ejecutando limpieza segura acotada en {DeviceId} para el rango confirmado en hora civil del reloj: {Min} - {Max}",
+                            deviceIdValue, minCivilDate.Value, maxCivilDate.Value);
 
-                        logsCleared = await deviceClient.ClearLogsAsync(deviceIdValue, minDate.Value, maxDate.Value, cancellationToken);
+                        logsCleared = await deviceClient.ClearLogsAsync(deviceIdValue, minCivilDate.Value, maxCivilDate.Value, cancellationToken);
                         if (!logsCleared)
                         {
                             clearErrorMessage = "El dispositivo no soporta borrado acotado por rango o la operación fue rechazada.";

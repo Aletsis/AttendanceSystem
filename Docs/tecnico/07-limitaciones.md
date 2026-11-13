@@ -102,6 +102,7 @@ ficha. Lo que ya se corrigió en otra rama lo dice su ficha.
   [línea 507](../../src/Core/AttendanceSystem.Application/Features/Attendance/Commands/DownloadFromDevice/DownloadFromDeviceCommand.cs#L507)),
   e invertir `D01`. Cambiar también la prueba `DownloadFromDeviceSafetyTests`, que simula la conversión de zona como
   identidad y por eso no lo detecta.
+- **Estado:** Corregido. Se envía a `ClearLogsAsync` el rango acotado en la hora civil del reloj (`OriginalCheckTime`). La prueba `D01` y `DownloadFromDeviceSafetyTests` verifican ahora que se envíe la hora civil y no UTC.
 
 ### D02 El sitio web de v2.3.0-beta.1 no arranca
 
@@ -555,3 +556,4 @@ Si lo que hace el código es lo que RH espera, quedan como reglas documentadas; 
 | `Diagnose-AttendanceSystem.ps1` no se podía ejecutar y buscaba el SDK y los errores donde no están | Fase 5 ([operación, 6.6](06-operacion.md#6-comportamientos-verificados-que-conviene-revisar)) |
 | `Reinstall-ZKTecoService.ps1` copiaba las DLL del SDK a `SysWOW64` | Fase 5 |
 | Documentos anteriores con datos falsos: versión 2.1.6, contraseña `Admin123!`, tabla de bitácoras en PostgreSQL | Fase 1 (aviso en [Docs/README.md](../README.md)); se reemplazan en la fase de limpieza |
+| D01: Borrado tras descarga por SDK borraba rango en UTC en vez de hora civil | [04-dispositivos.md](04-dispositivos.md#9-comportamientos-verificados-que-conviene-revisar) y [DownloadFromDeviceCommand.cs](../../src/Core/AttendanceSystem.Application/Features/Attendance/Commands/DownloadFromDevice/DownloadFromDeviceCommand.cs) |

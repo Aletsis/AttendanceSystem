@@ -700,20 +700,13 @@ Por eso, un reloj que vuelve tras un corte y envía su atraso no cae en R4
 
 Se confirmaron con pruebas o con la lectura del código; se tratarán en la fase de limitaciones.
 
-1. **Borrar tras descargar por SDK manda el rango en UTC.** La descarga pasa al servicio el primer y el último
-   marcaje convertidos a UTC ([DownloadFromDeviceCommand.cs:381](../../src/Core/AttendanceSystem.Application/Features/Attendance/Commands/DownloadFromDevice/DownloadFromDeviceCommand.cs#L381),
-   [435-436](../../src/Core/AttendanceSystem.Application/Features/Attendance/Commands/DownloadFromDevice/DownloadFromDeviceCommand.cs#L435-L436),
-   [507](../../src/Core/AttendanceSystem.Application/Features/Attendance/Commands/DownloadFromDevice/DownloadFromDeviceCommand.cs#L507)),
-   y el servicio escribe esas fechas tal cual en `DeleteAttlogBetweenTheDate`, que compara con la hora civil del reloj
-   ([ZKTecoDeviceClient.cs:207-215](../../src/Infrastructure/AttendanceSystem.ZKTeco/Adapters/ZKTecoDeviceClient.cs#L207-L215)).
-   En UTC−6, si se leyeron marcajes de 08:00 a 18:00, el reloj borra de 14:00 a 00:00. Consecuencias: quedan sin
-   borrar los marcajes de las primeras 6 horas del rango; y se borran marcajes hechos hasta 6 horas después del
-   último leído. Como el reloj vuelve a aceptar checadas al terminar la lectura y antes del borrado, una checada en ese
-   intervalo se borra sin haberse descargado. Prueba: `D01`
-   ([DispositivosEjemplosTests.cs:70](../../tests/AttendanceSystem.Application.UnitTests/Features/Devices/Documentation/DispositivosEjemplosTests.cs#L70)).
-   La prueba existente `Handle_WhenReadStatusIsSuccessWithData_ClearsLogsOnlyWithBoundedRange_H03` no lo detecta porque
-   simula la conversión de zona como identidad
-   ([DownloadFromDeviceSafetyTests.cs:60-61](../../tests/AttendanceSystem.Application.UnitTests/Features/Attendance/DownloadFromDeviceSafetyTests.cs#L60-L61)).
+1. **Borrar tras descargar por SDK manda el rango en hora civil.** (Corregido, antes defecto `D01`). Anteriormente,
+   la descarga pasaba al servicio el primer y el último marcaje convertidos a UTC, y el servicio escribía esas fechas
+   tal cual en `DeleteAttlogBetweenTheDate`, que compara con la hora civil del reloj. Ahora se pasa el rango confirmado
+   en la hora civil del reloj (`OriginalCheckTime`), garantizando que coincida con la hora del reloj. Pruebas: `D01`
+   ([DispositivosEjemplosTests.cs:70](../../tests/AttendanceSystem.Application.UnitTests/Features/Devices/Documentation/DispositivosEjemplosTests.cs#L70))
+   y `Handle_WhenReadStatusIsSuccessWithData_ClearsLogsOnlyWithBoundedRange_H03`
+   ([DownloadFromDeviceSafetyTests.cs:160](../../tests/AttendanceSystem.Application.UnitTests/Features/Attendance/DownloadFromDeviceSafetyTests.cs#L160)).
 2. **El `Stamp` de ADMS mezcla hora civil y UTC** (sección 3.6, pruebas `S01` a `S04`). Si el firmware usa el
    `Stamp` para decidir qué ya entregó, un `Stamp` 6 horas adelantado podría hacer que no reenvíe marcajes de esas
    horas. No está comprobado con un reloj.
