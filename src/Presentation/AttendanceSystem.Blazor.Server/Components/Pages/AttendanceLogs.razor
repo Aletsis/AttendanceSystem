@@ -15,6 +15,7 @@
 @using AttendanceSystem.Application.Features.Attendance.Commands.UpdateDailyShift
 @using AttendanceSystem.Application.Features.Attendance.Decisions
 @using AttendanceSystem.Domain.ValueObjects
+@using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate
 @inject IDialogService DialogService
 @inject IReportExportService ExportService
 @inject IJSRuntime JS
@@ -113,13 +114,48 @@
                             <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Text">Manual</MudChip>
                         </MudTooltip>
                     }
-                    <MudChip Size="Size.Small" Color="@GetEntryTypeColor(context.Item.EntryType)" Variant="Variant.Text">
-                        @context.Item.EntryType
-                        @if (context.Item.AssignedDate.HasValue)
-                        {
-                            <span class="ml-1" style="font-size: 0.8rem; opacity: 0.8;">(@context.Item.AssignedDate.Value.ToString("dd/MM"))</span>
-                        }
-                    </MudChip>
+                    @if (context.Item.IsTemporaryExit)
+                    {
+                        var statusLabel = GetExitStatusLabel(context.Item.TemporaryExitStatus);
+                        var tooltip = $"Salida temporal ({context.Item.TemporaryExitMinutes} min) — {statusLabel}"
+                            + (context.Item.TemporaryExitReturnTime.HasValue ? $" · Regreso: {context.Item.TemporaryExitReturnTime.Value:HH:mm}" : "")
+                            + (!string.IsNullOrWhiteSpace(context.Item.TemporaryExitNote) ? $" · Auditoría: {context.Item.TemporaryExitNote}" : "");
+                        <MudTooltip Text="@tooltip">
+                            <MudChip T="string" Size="Size.Small" Color="@GetEntryTypeColor(context.Item)" Variant="Variant.Outlined"
+                                     Icon="@(context.Item.TemporaryExitStatus == TemporaryExitStatus.Pending ? Icons.Material.Filled.Warning : Icons.Material.Filled.ExitToApp)">
+                                @context.Item.EntryType
+                                @if (context.Item.AssignedDate.HasValue)
+                                {
+                                    <span class="ml-1" style="font-size: 0.8rem; opacity: 0.8;">(@context.Item.AssignedDate.Value.ToString("dd/MM"))</span>
+                                }
+                            </MudChip>
+                        </MudTooltip>
+                    }
+                    else if (context.Item.IsTemporaryExitReturn)
+                    {
+                        var statusLabel = GetExitStatusLabel(context.Item.TemporaryExitStatus);
+                        var tooltip = $"Regreso de salida ({context.Item.TemporaryExitMinutes} min) — {statusLabel}";
+                        <MudTooltip Text="@tooltip">
+                            <MudChip T="string" Size="Size.Small" Color="@GetEntryTypeColor(context.Item)" Variant="Variant.Text"
+                                     Icon="@Icons.Material.Filled.KeyboardReturn">
+                                @context.Item.EntryType
+                                @if (context.Item.AssignedDate.HasValue)
+                                {
+                                    <span class="ml-1" style="font-size: 0.8rem; opacity: 0.8;">(@context.Item.AssignedDate.Value.ToString("dd/MM"))</span>
+                                }
+                            </MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Color="@GetEntryTypeColor(context.Item)" Variant="Variant.Text">
+                            @context.Item.EntryType
+                            @if (context.Item.AssignedDate.HasValue)
+                            {
+                                <span class="ml-1" style="font-size: 0.8rem; opacity: 0.8;">(@context.Item.AssignedDate.Value.ToString("dd/MM"))</span>
+                            }
+                        </MudChip>
+                    }
                     @if (_canAdjust)
                     {
                     <MudMenu Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Dense="true">
@@ -137,6 +173,43 @@
                         }
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar (dejar vacío)</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Restaurar"))">Restaurar cálculo automático</MudMenuItem>
+
+                        <MudDivider Class="my-1" />
+
+                        @* Clasificación de salidas temporales e intermedias por RH (Caso 11) *@
+                        <MudMenuItem Icon="@Icons.Material.Filled.Restaurant"
+                                     OnClick="@(() => ClassifyTemporaryExit(context.Item, TemporaryExitStatus.Lunch))">
+                            Clasificar como Comida
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.CheckCircle"
+                                     OnClick="@(() => ClassifyTemporaryExit(context.Item, TemporaryExitStatus.ApprovedPaid))">
+                            Clasificar como Permiso con goce
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.RemoveCircle"
+                                     OnClick="@(() => ClassifyTemporaryExit(context.Item, TemporaryExitStatus.ApprovedUnpaid))">
+                            Clasificar como Permiso sin goce
+                        </MudMenuItem>
+                        <MudMenuItem Icon="@Icons.Material.Filled.Cancel"
+                                     OnClick="@(() => ClassifyTemporaryExit(context.Item, TemporaryExitStatus.Dismissed))">
+                            Clasificar como Error de checada
+                        </MudMenuItem>
+
+                        @if (context.Item.IsTemporaryExit && context.Item.TemporaryExitStatus != (context.Item.IsAutomaticLunch ? TemporaryExitStatus.Lunch : TemporaryExitStatus.Pending))
+                        {
+                            <MudMenuItem Icon="@Icons.Material.Filled.Undo"
+                                         OnClick="@(() => ClassifyTemporaryExit(context.Item, null))">
+                                Quitar clasificación (Restaurar)
+                            </MudMenuItem>
+                        }
+
+                        @if (_canViewHistory)
+                        {
+                            <MudDivider Class="my-1" />
+                            <MudMenuItem Icon="@Icons.Material.Filled.History"
+                                         OnClick="@(() => OpenHistoryForRecord(context.Item))">
+                                Ver historial del día
+                            </MudMenuItem>
+                        }
                     </MudMenu>
                     }
                     }
@@ -193,14 +266,80 @@
         return Task.FromResult(result);
     }
 
-    private Color GetEntryTypeColor(string type)
+    private Color GetEntryTypeColor(AttendanceLogViewDto item)
     {
-        return type switch
+        if (item.IsTemporaryExit)
+        {
+            return item.TemporaryExitStatus switch
+            {
+                TemporaryExitStatus.Lunch => Color.Tertiary,
+                TemporaryExitStatus.ApprovedPaid => Color.Success,
+                TemporaryExitStatus.ApprovedUnpaid => Color.Error,
+                TemporaryExitStatus.Dismissed => Color.Dark,
+                _ => Color.Warning
+            };
+        }
+
+        if (item.IsTemporaryExitReturn)
+        {
+            return Color.Info;
+        }
+
+        return item.EntryType switch
         {
             "Entrada" or "Entrada B1" or "Entrada B2" => Color.Success,
             "Salida" or "Salida B1" or "Salida B2" => Color.Info,
             _ => Color.Default
         };
+    }
+
+    private static string GetExitStatusLabel(TemporaryExitStatus? status) => status switch
+    {
+        TemporaryExitStatus.Lunch => "Comida",
+        TemporaryExitStatus.ApprovedPaid => "Con goce",
+        TemporaryExitStatus.ApprovedUnpaid => "Sin goce",
+        TemporaryExitStatus.Dismissed => "Error de checada",
+        _ => "Pendiente"
+    };
+
+    private async Task ClassifyTemporaryExit(AttendanceLogViewDto record, TemporaryExitStatus? status)
+    {
+        string? reason = null;
+        if (status != null)
+        {
+            var actionLabel = status switch
+            {
+                TemporaryExitStatus.Lunch => "comida",
+                TemporaryExitStatus.ApprovedPaid => "permiso con goce",
+                TemporaryExitStatus.ApprovedUnpaid => "permiso sin goce",
+                TemporaryExitStatus.Dismissed => "error de checada",
+                _ => "salida temporal"
+            };
+            reason = await ReasonDialog.AskAsync(
+                DialogService,
+                $"Clasificar como {actionLabel}",
+                $"Marcaje de las {record.CheckTime:HH:mm} ({record.EmployeeName})");
+            if (reason == null) return;
+        }
+
+        var targetDate = DateOnly.FromDateTime(record.AssignedDate ?? SelectedDate ?? record.CheckTime);
+        var command = new ClassifyTemporaryExitCommand(
+            record.EmployeeId,
+            targetDate,
+            record.Id,
+            status,
+            Note: reason,
+            ExpectedRevision: record.DayRevision ?? (SelectedEmployeeObj?.Id == record.EmployeeId ? _dayState?.Revision : null));
+
+        var result = await Mediator.Send(command);
+        ShowDecision(result);
+        await LoadData();
+    }
+
+    private Task OpenHistoryForRecord(AttendanceLogViewDto record)
+    {
+        var date = DateOnly.FromDateTime(record.AssignedDate ?? SelectedDate ?? record.CheckTime);
+        return AttendanceHistoryDialog.ShowAsync(DialogService, record.EmployeeId, record.EmployeeName, date);
     }
 
     private async Task OpenManualLogDialog()

@@ -1,4 +1,5 @@
 using System;
+using AttendanceSystem.Domain.Aggregates.DailyAttendanceAggregate;
 
 namespace AttendanceSystem.Application.DTOs;
 
@@ -16,6 +17,16 @@ public sealed record AttendanceLogViewDto
     public DateTime? AssignedDate { get; init; }
     /// <summary>Indica si la jornada correspondiente al marcaje es de horario partido / doble bloque (ShiftType.Partido).</summary>
     public bool IsSplitShift { get; init; }
+
+    /// <summary>Caso 11: Información de salidas intermedias y comida.</summary>
+    public bool IsTemporaryExit { get; init; }
+    public bool IsTemporaryExitReturn { get; init; }
+    public TemporaryExitStatus? TemporaryExitStatus { get; init; }
+    public int? TemporaryExitMinutes { get; init; }
+    public DateTime? TemporaryExitReturnTime { get; init; }
+    public bool IsAutomaticLunch { get; init; }
+    public string? TemporaryExitNote { get; init; }
+    public int? DayRevision { get; init; }
 
     /// <summary>Caso 14: marcaje anulado (no cuenta en el cálculo), con quién, por qué y si lo reemplaza uno corregido.</summary>
     public bool IsVoided { get; init; }
