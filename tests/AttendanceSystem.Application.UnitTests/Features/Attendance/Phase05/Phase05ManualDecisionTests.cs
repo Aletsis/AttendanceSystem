@@ -330,10 +330,27 @@ public class Phase05ManualDecisionTests
 
         // Una salida anterior a la entrada vigente rompe la secuencia.
         var early = Punch(h, Emp, Tuesday.AddHours(7));
-        var result = await Assign(h, early, Tuesday, "Salida B1");
+        var result = await Assign(h, early, Tuesday, "Salida");
         result.IsSuccess.Should().BeFalse();
         result.Error.Should().Contain("secuencia");
         _ = late;
+
+        // En turno partido, una Salida B1 anterior a la entrada también rompe la secuencia.
+        var hSplit = new AttendanceRecalculationHarness();
+        var split = Shift.Create("Partido 9-13 y 15-19", new TimeSpan(9, 0, 0), 10, TimeSpan.FromHours(4), ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(15, 0, 0), secondBlockEndTime: new TimeSpan(19, 0, 0));
+        hSplit.Store.Shifts.Add(split);
+        hSplit.Store.Employees.Add(CreateEmployee(Emp, split));
+        Punch(hSplit, Emp, Tuesday.AddHours(8).AddMinutes(55));
+        Punch(hSplit, Emp, Tuesday.AddHours(13).AddMinutes(5));
+        Punch(hSplit, Emp, Tuesday.AddHours(14).AddMinutes(55));
+        Punch(hSplit, Emp, Tuesday.AddHours(19).AddMinutes(5));
+        await hSplit.RecalculateAsync(Tuesday, Tuesday);
+
+        var earlySplit = Punch(hSplit, Emp, Tuesday.AddHours(8));
+        var resultSplit = await Assign(hSplit, earlySplit, Tuesday, "Salida B1");
+        resultSplit.IsSuccess.Should().BeFalse();
+        resultSplit.Error.Should().Contain("secuencia");
     }
 
     #endregion
