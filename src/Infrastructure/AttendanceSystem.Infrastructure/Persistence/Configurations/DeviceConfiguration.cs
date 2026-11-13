@@ -53,6 +53,8 @@ public class DeviceConfiguration : IEntityTypeConfiguration<Device>
 
         builder.Property(x => x.LastDownloadAt);
 
+        builder.Property(x => x.AdmsStamp);
+
         builder.Property(x => x.TotalDownloadCount)
             .IsRequired();
 

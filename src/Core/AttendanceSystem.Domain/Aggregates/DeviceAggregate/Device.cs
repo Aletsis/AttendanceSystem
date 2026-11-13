@@ -12,6 +12,13 @@ public class Device : AggregateRoot<DeviceId>
     public bool ShouldClearAfterDownload { get; private set; }
     public DateTime CreatedAt { get; private set; }
     public DateTime? LastDownloadAt { get; private set; }
+
+    /// <summary>
+    /// Cursor temporal enviado al reloj ADMS en el bloque de opciones (Stamp, TransStamp, ATTLOGStamp).
+    /// Se conserva siempre en la hora civil del reloj (sin zona horaria).
+    /// </summary>
+    public DateTime? AdmsStamp { get; private set; }
+
     public int TotalDownloadCount { get; private set; }
     public DeviceStatus Status { get; private set; } = null!;
     public DeviceDownloadMethod DownloadMethod { get; private set; }
@@ -74,7 +81,8 @@ public class Device : AggregateRoot<DeviceId>
         string? serialNumber = null,
         string? username = null,
         string? password = null,
-        string? timeZoneId = null)
+        string? timeZoneId = null,
+        DateTime? admsStamp = null)
     {
         // Validaciones
         if (string.IsNullOrWhiteSpace(name))
@@ -116,7 +124,8 @@ public class Device : AggregateRoot<DeviceId>
             HardwareInfo = DeviceHardwareInfo.Empty,
             Username = username,
             Password = password,
-            TimeZoneId = timeZoneId
+            TimeZoneId = timeZoneId,
+            AdmsStamp = admsStamp.HasValue ? DateTime.SpecifyKind(admsStamp.Value, DateTimeKind.Unspecified) : null
         };
 
         if (!string.IsNullOrWhiteSpace(serialNumber))
@@ -143,7 +152,8 @@ public class Device : AggregateRoot<DeviceId>
         string? serialNumber = null,
         string? username = null,
         string? password = null,
-        string? timeZoneId = null)
+        string? timeZoneId = null,
+        DateTime? admsStamp = null)
     {
         if (string.IsNullOrWhiteSpace(name))
             throw new DomainException("El nombre del dispositivo es requerido");
@@ -234,6 +244,16 @@ public class Device : AggregateRoot<DeviceId>
     public void UpdateLastDownloadAt(DateTime timestamp)
     {
         LastDownloadAt = timestamp;
+    }
+
+    public void UpdateAdmsStamp(DateTime civilTimestamp)
+    {
+        AdmsStamp = DateTime.SpecifyKind(civilTimestamp, DateTimeKind.Unspecified);
+    }
+
+    public void ResetAdmsStamp()
+    {
+        AdmsStamp = null;
     }
 
     public void MarkAsOnline()

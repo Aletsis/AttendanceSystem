@@ -73,6 +73,15 @@ public class AttendanceDbContext : IdentityDbContext<ApplicationUser>, IUnitOfWo
         {
             foreach (var property in entityType.GetProperties())
             {
+                if (entityType.ClrType == typeof(Device) && property.Name == nameof(Device.AdmsStamp))
+                {
+                    property.SetValueConverter(
+                        new Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<DateTime, DateTime>(
+                            v => v.Kind == DateTimeKind.Utc ? v : (v.Kind == DateTimeKind.Local ? v.ToUniversalTime() : DateTime.SpecifyKind(v, DateTimeKind.Utc)),
+                            v => DateTime.SpecifyKind(v, DateTimeKind.Unspecified)));
+                    continue;
+                }
+
                 if (property.ClrType == typeof(DateTime) || property.ClrType == typeof(DateTime?))
                 {
                     property.SetValueConverter(

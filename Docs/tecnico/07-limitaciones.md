@@ -137,16 +137,19 @@ ficha. Lo que ya se corrigió en otra rama lo dice su ficha.
 ### D04 El `Stamp` de ADMS mezcla hora civil y UTC
 
 - **Gravedad:** Media (impacto no comprobado). **Afecta a:** relojes ADMS.
-- **Qué pasa:** `Devices.LastDownloadAt`, que se envía al reloj como `Stamp`, queda con la hora civil del último
+- **Qué pasa:** `Devices.LastDownloadAt`, que se envía al reloj como `Stamp`, quedaba con la hora civil del último
   marcaje tras un lote limpio, pero en UTC tras un lote con una línea mala o tras el acuse de una descarga. En UTC−6
-  queda 6 horas adelantado. Si el firmware usa el `Stamp` para decidir qué ya entregó, podría no reenviar marcajes.
-- **Cómo comprobarlo:** pruebas `S01` a `S04`
+  quedaba 6 horas adelantado. Si el firmware usa el `Stamp` para decidir qué ya entregó, podría no reenviar marcajes.
+- **Cómo comprobarlo:** pruebas `S01` a `S06`
   ([AdmsStampDocumentacionTests.cs](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs));
   detalle en [relojes, 3.6](04-dispositivos.md#36-qué-pasa-con-un-lote-de-marcajes).
 - **Solución temporal:** si faltan marcajes de un reloj ADMS, descargarlo con fechas (consulta `DATA QUERY` con rango),
   que no depende del `Stamp`.
 - **Corrección recomendada:** guardar el cursor ADMS en su propia columna, siempre en la hora civil del reloj, y no
   reutilizar `LastDownloadAt`. Probar con un reloj real qué hace el firmware con el `Stamp`.
+- **Estado:** Corregido. Se agregó la columna `AdmsStamp` en `Devices`, la cual guarda exclusivamente la hora civil del
+  reloj. `LastDownloadAt` se mantiene como registro operacional/auditoría en UTC sin alterar el cursor del reloj. Las
+  pruebas `S01` a `S06` verifican el desacoplamiento de ambos campos en lotes limpios, lotes con fallas, acuses de consultas y registros.
 
 ### D05 El estado en línea de ADMS depende del proceso
 

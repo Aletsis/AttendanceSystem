@@ -205,7 +205,7 @@ public class AdmsController : ControllerBase
 
         device.SetDeviceType(deviceType ?? "att");
         device.MarkAsOnline();
-        device.ResetLastDownloadAt();
+        device.ResetAdmsStamp();
         await _deviceRepository.UpdateAsync(device);
         await _unitOfWork.SaveChangesAsync();
 

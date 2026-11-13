@@ -186,4 +186,23 @@ public class DeviceTests
         device.UpdateConfiguration("ADMS", "10.0.0.1", 4370, DeviceBrand.ZKTeco, null, false, DeviceDownloadMethod.Adms, serialNumber: "SN");
         device.RealtimeEnabled.Should().BeFalse();
     }
+
+    [Fact]
+    public void AdmsStamp_CanBeUpdatedAndReset_WithoutAffectingLastDownloadAt()
+    {
+        var device = Device.Create("DEV-001", "Lector 1", "192.168.1.200", 4370);
+        var downloadTime = new DateTime(2026, 9, 17, 10, 0, 0, DateTimeKind.Utc);
+        device.RecordSuccessfulDownload(5, downloadTime);
+
+        var civilTime = new DateTime(2026, 9, 17, 4, 0, 0, DateTimeKind.Unspecified);
+        device.UpdateAdmsStamp(civilTime);
+
+        device.AdmsStamp.Should().Be(civilTime);
+        device.AdmsStamp!.Value.Kind.Should().Be(DateTimeKind.Unspecified);
+        device.LastDownloadAt.Should().Be(downloadTime);
+
+        device.ResetAdmsStamp();
+        device.AdmsStamp.Should().BeNull();
+        device.LastDownloadAt.Should().Be(downloadTime);
+    }
 }

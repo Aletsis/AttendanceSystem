@@ -54,7 +54,7 @@ public class DeviceRepository : IDeviceRepository
         CancellationToken cancellationToken = default)
     {
         var device = await GetBySerialNumberAsync(serialNumber, cancellationToken);
-        return device?.LastDownloadAt;
+        return device?.AdmsStamp;
     }
 
     public async Task ResetAttLogTimestampAsync(
@@ -64,7 +64,7 @@ public class DeviceRepository : IDeviceRepository
         var device = await GetBySerialNumberAsync(serialNumber, cancellationToken);
         if (device != null)
         {
-            device.ResetLastDownloadAt();
+            device.ResetAdmsStamp();
             await UpdateAsync(device, cancellationToken);
         }
     }
@@ -77,7 +77,7 @@ public class DeviceRepository : IDeviceRepository
         var device = await GetBySerialNumberAsync(serialNumber, cancellationToken);
         if (device != null)
         {
-            device.UpdateLastDownloadAt(lastLogTime);
+            device.UpdateAdmsStamp(lastLogTime);
             await UpdateAsync(device, cancellationToken);
         }
     }

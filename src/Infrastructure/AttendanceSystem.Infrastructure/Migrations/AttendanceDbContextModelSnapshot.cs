@@ -1077,6 +1077,9 @@ namespace AttendanceSystem.Infrastructure.Migrations
                     b.Property<DateTime?>("LastDownloadAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("AdmsStamp")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("Location")
                         .HasMaxLength(200)
                         .HasColumnType("character varying(200)");

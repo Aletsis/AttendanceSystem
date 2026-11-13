@@ -96,4 +96,39 @@ public class DeviceRepositoryTests
         found.Should().NotBeNull();
         found!.Id.Should().Be(device.Id);
     }
+
+    [Fact]
+    public async Task UpdateAndResetAttLogTimestampAsync_OperatesOnAdmsStamp_WithoutAlteringLastDownloadAt()
+    {
+        using var context = CreateInMemoryDbContext();
+        var repository = new DeviceRepository(context);
+
+        var device = Device.Create("DEV-ADMS", "Reloj ADMS", "192.168.1.160", 4370,
+            downloadMethod: DeviceDownloadMethod.Adms, serialNumber: "SN-ADMS-001");
+        var downloadTime = new DateTime(2026, 11, 10, 15, 0, 0, DateTimeKind.Utc);
+        device.RecordSuccessfulDownload(5, downloadTime);
+        await repository.AddAsync(device);
+        await context.SaveChangesAsync();
+
+        var punchTime = new DateTime(2026, 11, 10, 9, 30, 0, DateTimeKind.Unspecified);
+        await repository.UpdateLastAttLogTimestampAsync("SN-ADMS-001", punchTime);
+        await context.SaveChangesAsync();
+
+        var stamp = await repository.GetLastAttLogTimestampAsync("SN-ADMS-001");
+        stamp.Should().Be(punchTime);
+
+        var retrieved = await repository.GetByIdAsync(device.Id);
+        retrieved!.AdmsStamp.Should().Be(punchTime);
+        retrieved.LastDownloadAt.Should().Be(downloadTime);
+
+        await repository.ResetAttLogTimestampAsync("SN-ADMS-001");
+        await context.SaveChangesAsync();
+
+        var resetStamp = await repository.GetLastAttLogTimestampAsync("SN-ADMS-001");
+        resetStamp.Should().BeNull();
+
+        var retrievedAfterReset = await repository.GetByIdAsync(device.Id);
+        retrievedAfterReset!.AdmsStamp.Should().BeNull();
+        retrievedAfterReset.LastDownloadAt.Should().Be(downloadTime);
+    }
 }

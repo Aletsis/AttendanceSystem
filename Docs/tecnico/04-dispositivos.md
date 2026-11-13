@@ -246,7 +246,7 @@ sequenceDiagram
 | Ruta | Qué envía el reloj | Qué hace el servidor | Qué responde | Código |
 |---|---|---|---|---|
 | `GET cdata` | `SN`, y opcionalmente `options`, `PushOptionsFlag`, `pushver`, `DeviceType` | Guarda `pushver` y `DeviceType` si cambiaron; marca el reloj en línea | Con `options` o `PushOptionsFlag`: el bloque de opciones (3.4). Si no: `registry=ok` | [AdmsController.cs:126-177](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L126-L177) |
-| `POST registry` | Cuerpo `clave=valor,…` con `DeviceType` | Fija el tipo (`att` si no lo dice), lo marca en línea y **borra `LastDownloadAt`** | `RegistryCode=` y 10 caracteres al azar | [AdmsController.cs:180-212](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L180-L212) |
+| `POST registry` | Cuerpo `clave=valor,…` con `DeviceType` | Fija el tipo (`att` si no lo dice), lo marca en línea y **borra `AdmsStamp`** (preservando `LastDownloadAt`) | `RegistryCode=` y 10 caracteres al azar | [AdmsController.cs:180-212](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L180-L212) |
 | `POST push` | Cuerpo (no se interpreta) | — | El bloque de opciones (3.4) | [AdmsController.cs:215-232](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L215-L232) |
 | `POST cdata` | `table=` y líneas en el cuerpo | `ATTLOG`, `rtlog`, `Transaction`: marcajes (3.5). `USER`, `USERINFO`, `USERPIC`, `BIOPHOTO`, `BIODATA`, `TEMPLATEV10`, `FINGERPRINT`, `FINGERTMP`, `TEMPLATE`: datos de empleados (3.9). `options`, `tabledata`: información técnica (3.8). Otras: nada | Marcajes: `OK: n` o `500` si el lote no se guardó. Resto: `OK` | [AdmsController.cs:302-358](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L302-L358) |
 | `POST querydata` | `tablename` (o `table`), `type`, `cmdid`, `count`; líneas en el cuerpo | Lo mismo que `cdata`, más `User Transaction` y `USERTRANSACTION` como marcajes; asocia el lote a la descarga del `cmdid` | `OK` (sin conteo: el reloj espera exactamente `OK` para mandar el paquete siguiente) o `500` | [AdmsController.cs:361-426](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L361-L426) |
@@ -300,7 +300,7 @@ ServerName=ADMS
 PushVersion=3.1.2
 ```
 
-- `Stamp`, `TransStamp` y `ATTLOGStamp` valen `Devices.LastDownloadAt` con formato `yyyy-MM-dd HH:mm:ss`, o
+- `Stamp`, `TransStamp` y `ATTLOGStamp` valen `Devices.AdmsStamp` con formato `yyyy-MM-dd HH:mm:ss`, o
   `1970-01-01 00:00:00` si está vacío ([AdmsController.cs:247-250](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L247-L250),
   [DeviceRepository.cs:52-58](../../src/Infrastructure/AttendanceSystem.Infrastructure/Persistence/Repositories/DeviceRepository.cs#L52-L58)).
   Cómo se llena ese campo está en la sección 3.6.
@@ -311,8 +311,9 @@ PushVersion=3.1.2
 
 Pruebas: `Handshake_SendsTheClockZone_NotTheServerZone`
 ([AdmsDeviceTimeZoneTests.cs:59](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsDeviceTimeZoneTests.cs#L59)),
-`S04` y `S05` ([AdmsStampDocumentacionTests.cs:103](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L103),
-[116](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L116)).
+`S04` a `S06` ([AdmsStampDocumentacionTests.cs:103](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L103),
+[116](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L116),
+[126](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L126)).
 
 ### 3.5 Líneas de marcaje
 
@@ -373,21 +374,15 @@ Reglas:
    queda una alerta ([líneas 897-920](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L897-L920)).
    Prueba: `PunchFromTheFuture_QueuesTheClockZoneAndTime`
    ([AdmsDeviceTimeZoneTests.cs:88](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsDeviceTimeZoneTests.cs#L88)).
-7. **El cursor (`LastDownloadAt`, que se envía como `Stamp`).** Lo escriben tres caminos, con valores de distinta
-   naturaleza:
+7. **El cursor (`AdmsStamp`, que se envía como `Stamp`).** Se guarda en su propia columna en la hora civil del reloj,
+   desacoplado de `LastDownloadAt`:
 
 | Camino | Valor que queda | Código | Prueba |
 |---|---|---|---|
-| Lote sin fallas | Hora **civil** del marcaje más reciente (o la hora actual del reloj si el lote venía del futuro) | [AdmsController.cs:918-925](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L918-L925) | `S01` ([AdmsStampDocumentacionTests.cs:62](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L62)) |
-| Lote con alguna línea mala | La hora **UTC** de recepción: `RecordSuccessfulDownload` ya la escribió antes de decidir no avanzar | [AdmsController.cs:894](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L894), [Device.cs:207-209](../../src/Core/AttendanceSystem.Domain/Aggregates/DeviceAggregate/Device.cs#L207-L209) | `S02` ([línea 73](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L73)) |
-| Acuse de una consulta de descarga | El "hasta" de la descarga, en **UTC** | [AdmsController.cs:584-589](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L584-L589) | `S03` ([línea 88](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L88)) |
-| `POST registry` | Vacío (el siguiente `Stamp` es 1970) | [AdmsController.cs:203](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L203) | `S05` ([línea 116](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L116)) |
-
-   La base guarda cualquier fecha sin zona como si fuera UTC
-   ([AttendanceDbContext.cs:80-81](../../src/Infrastructure/AttendanceSystem.Infrastructure/Persistence/AttendanceDbContext.cs#L80-L81)),
-   así que después no se distingue cuál de los dos es. En una zona UTC−6, un `Stamp` escrito por los dos caminos UTC
-   queda 6 horas por delante de la hora del reloj. Qué hace el firmware con ese valor no está comprobado (ver la
-   sección 9, punto 2).
+| Lote sin fallas | Hora **civil** del marcaje más reciente (o la hora actual del reloj si el lote venía del futuro) en `AdmsStamp` | [AdmsController.cs:928-931](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L928-L931) | `S01` ([AdmsStampDocumentacionTests.cs:62](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L62)) |
+| Lote con alguna línea mala | No avanza `AdmsStamp`: se conserva su valor anterior sin contaminarse con UTC (`RecordSuccessfulDownload` actualiza `LastDownloadAt` en UTC para auditoría) | [AdmsController.cs:900](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L900), [932-935](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L932-L935) | `S02` ([línea 73](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L73)) |
+| Acuse de una consulta de descarga | El "hasta" de la descarga se guarda en `LastDownloadAt` en **UTC**, sin alterar `AdmsStamp` | [AdmsController.cs:589-594](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L589-L594) | `S03` ([línea 88](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L88)) |
+| `POST registry` | Vacío en `AdmsStamp` (el siguiente `Stamp` es 1970), preservando `LastDownloadAt` intacto | [AdmsController.cs:208](../../src/Presentation/AttendanceSystem.Adms/AdmsController.cs#L208) | `S05`, `S06` ([líneas 116, 126](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs#L116)) |
 
 ### 3.7 Cola de comandos
 
@@ -707,9 +702,11 @@ Se confirmaron con pruebas o con la lectura del código; se tratarán en la fase
    ([DispositivosEjemplosTests.cs:70](../../tests/AttendanceSystem.Application.UnitTests/Features/Devices/Documentation/DispositivosEjemplosTests.cs#L70))
    y `Handle_WhenReadStatusIsSuccessWithData_ClearsLogsOnlyWithBoundedRange_H03`
    ([DownloadFromDeviceSafetyTests.cs:160](../../tests/AttendanceSystem.Application.UnitTests/Features/Attendance/DownloadFromDeviceSafetyTests.cs#L160)).
-2. **El `Stamp` de ADMS mezcla hora civil y UTC** (sección 3.6, pruebas `S01` a `S04`). Si el firmware usa el
-   `Stamp` para decidir qué ya entregó, un `Stamp` 6 horas adelantado podría hacer que no reenvíe marcajes de esas
-   horas. No está comprobado con un reloj.
+2. **El `Stamp` de ADMS guarda siempre hora civil.** (Corregido, antes defecto `D04`). Anteriormente, `Devices.LastDownloadAt`
+   se reutilizaba como `Stamp`, quedando con hora civil tras un lote limpio pero en UTC tras fallas o consultas,
+   adelantando el cursor 6 horas en UTC−6. Ahora el cursor ADMS se guarda en su propia columna (`AdmsStamp`) exclusivamente
+   en hora civil del reloj, y `LastDownloadAt` se mantiene independiente en UTC como historial de descargas. Pruebas:
+   `S01` a `S06` ([AdmsStampDocumentacionTests.cs](../../tests/AttendanceSystem.Blazor.UnitTests/Controllers/AdmsStampDocumentacionTests.cs)).
 3. **El estado en línea de ADMS depende del proceso.** La actividad se guarda en memoria del proceso que recibe al
    reloj, pero la tarea de monitoreo es de Hangfire y la puede tomar cualquier proceso con servidor de Hangfire,
    también el WPF ([WpfBackendHost.cs:85-88](../../src/Presentation/AttendanceSystem.WPF/Services/WpfBackendHost.cs#L85-L88)).
