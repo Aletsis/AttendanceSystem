@@ -332,15 +332,28 @@ namespace AttendanceSystem.WPF.ViewModels.Attendance
             // Un marcaje anulado ya no cuenta: no se reasigna.
             if (canAdjust && !source.IsVoided)
             {
-                Actions = new[]
+                if (source.IsSplitShift)
                 {
-                    Action("Asignar como entrada (B1)", "Entrada"),
-                    Action("Asignar como salida B1", "Salida B1"),
-                    Action("Asignar como entrada B2", "Entrada B2"),
-                    Action("Asignar como salida (B2)", "Salida"),
-                    Action("Desasignar (no usar en el cálculo)", "None"),
-                    Action("Restaurar el cálculo automático", "Restaurar")
-                };
+                    Actions = new[]
+                    {
+                        Action("Asignar como entrada (B1)", "Entrada"),
+                        Action("Asignar como salida B1", "Salida B1"),
+                        Action("Asignar como entrada B2", "Entrada B2"),
+                        Action("Asignar como salida (B2)", "Salida"),
+                        Action("Desasignar (no usar en el cálculo)", "None"),
+                        Action("Restaurar el cálculo automático", "Restaurar")
+                    };
+                }
+                else
+                {
+                    Actions = new[]
+                    {
+                        Action("Asignar como entrada", "Entrada"),
+                        Action("Asignar como salida", "Salida"),
+                        Action("Desasignar (no usar en el cálculo)", "None"),
+                        Action("Restaurar el cálculo automático", "Restaurar")
+                    };
+                }
             }
 
             RowAction Action(string header, string type) => new(header, new DelegateCommand(async () => await assign(source, type)));

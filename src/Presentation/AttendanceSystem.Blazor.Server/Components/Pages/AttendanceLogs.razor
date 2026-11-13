@@ -123,10 +123,18 @@
                     @if (_canAdjust)
                     {
                     <MudMenu Icon="@Icons.Material.Filled.Edit" Size="Size.Small" Dense="true">
-                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada (B1)</MudMenuItem>
-                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida B1"))">Asignar como Salida B1</MudMenuItem>
-                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada B2"))">Asignar como Entrada B2</MudMenuItem>
-                        <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida"))">Asignar como Salida (B2)</MudMenuItem>
+                        @if (context.Item.IsSplitShift)
+                        {
+                            <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada (B1)</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida B1"))">Asignar como Salida B1</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada B2"))">Asignar como Entrada B2</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida"))">Asignar como Salida (B2)</MudMenuItem>
+                        }
+                        else
+                        {
+                            <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Entrada"))">Asignar como Entrada</MudMenuItem>
+                            <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Salida"))">Asignar como Salida</MudMenuItem>
+                        }
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "None"))">Desasignar (dejar vacío)</MudMenuItem>
                         <MudMenuItem OnClick="@(() => AssignLog(context.Item, "Restaurar"))">Restaurar cálculo automático</MudMenuItem>
                     </MudMenu>

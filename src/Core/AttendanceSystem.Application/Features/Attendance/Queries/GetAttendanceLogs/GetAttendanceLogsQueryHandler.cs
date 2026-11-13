@@ -16,17 +16,20 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
     private readonly IDailyAttendanceRepository _dailyAttendanceRepository;
     private readonly IEmployeeRepository _employeeRepository;
     private readonly IDeviceRepository _deviceRepository;
+    private readonly IShiftRepository? _shiftRepository;
 
     public GetAttendanceLogsQueryHandler(
         IAttendanceRepository attendanceRepository,
         IDailyAttendanceRepository dailyAttendanceRepository,
         IEmployeeRepository employeeRepository,
-        IDeviceRepository deviceRepository)
+        IDeviceRepository deviceRepository,
+        IShiftRepository? shiftRepository = null)
     {
         _attendanceRepository = attendanceRepository;
         _dailyAttendanceRepository = dailyAttendanceRepository;
         _employeeRepository = employeeRepository;
         _deviceRepository = deviceRepository;
+        _shiftRepository = shiftRepository;
     }
 
     public async Task<IEnumerable<AttendanceLogViewDto>> Handle(GetAttendanceLogsQuery request, CancellationToken cancellationToken)
@@ -57,23 +60,54 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
         var empDict = employees.ToDictionary(e => e.Id, e => e.GetFullName());
         var devDict = devices.ToDictionary(d => d.Id, d => d.Name);
 
-        // 4. Mapear tipos de entrada por ID de registro
-        var assignmentMap = new Dictionary<AttendanceRecordId, (string Type, DateTime Date)>();
+        // 4. Mapear tipos de entrada e información de turno por ID de registro
+        var assignmentMap = new Dictionary<AttendanceRecordId, (string Type, DateTime Date, bool IsSplit)>();
         foreach (var da in processed)
         {
-            if (da.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido)
+            var isSplit = da.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido;
+            if (isSplit)
             {
-                if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada B1", da.Date);
-                if (da.Block1CheckOutRecordId != null) assignmentMap[da.Block1CheckOutRecordId] = ("Salida B1", da.Date);
-                if (da.Block2CheckInRecordId != null) assignmentMap[da.Block2CheckInRecordId] = ("Entrada B2", da.Date);
-                if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida B2", da.Date);
+                if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada B1", da.Date, true);
+                if (da.Block1CheckOutRecordId != null) assignmentMap[da.Block1CheckOutRecordId] = ("Salida B1", da.Date, true);
+                if (da.Block2CheckInRecordId != null) assignmentMap[da.Block2CheckInRecordId] = ("Entrada B2", da.Date, true);
+                if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida B2", da.Date, true);
             }
             else
             {
-                if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada", da.Date);
-                if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida", da.Date);
-                if (da.Block1CheckOutRecordId != null) assignmentMap[da.Block1CheckOutRecordId] = ("Salida B1", da.Date);
-                if (da.Block2CheckInRecordId != null) assignmentMap[da.Block2CheckInRecordId] = ("Entrada B2", da.Date);
+                if (da.CheckInRecordId != null) assignmentMap[da.CheckInRecordId] = ("Entrada", da.Date, false);
+                if (da.CheckOutRecordId != null) assignmentMap[da.CheckOutRecordId] = ("Salida", da.Date, false);
+                if (da.Block1CheckOutRecordId != null) assignmentMap[da.Block1CheckOutRecordId] = ("Salida B1", da.Date, false);
+                if (da.Block2CheckInRecordId != null) assignmentMap[da.Block2CheckInRecordId] = ("Entrada B2", da.Date, false);
+            }
+        }
+
+        var dailyByEmp = processed
+            .Where(da => da.Date.Date == request.Date.Date)
+            .GroupBy(da => da.EmployeeId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        IReadOnlyDictionary<ShiftId, AttendanceSystem.Domain.Aggregates.ShiftAggregate.Shift>? shiftDict = null;
+        if (_shiftRepository != null)
+        {
+            var allShifts = await _shiftRepository.GetAllAsync(cancellationToken);
+            shiftDict = allShifts.ToDictionary(s => s.Id);
+        }
+
+        var empAssignments = new Dictionary<EmployeeId, bool>();
+        foreach (var emp in employees)
+        {
+            var assignment = emp.AssignmentOn(request.Date.Date);
+            if (assignment.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido)
+            {
+                empAssignments[emp.Id] = true;
+            }
+            else if (assignment.ScheduleId != null && shiftDict != null && shiftDict.TryGetValue(assignment.ScheduleId, out var s))
+            {
+                empAssignments[emp.Id] = s.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido;
+            }
+            else
+            {
+                empAssignments[emp.Id] = false;
             }
         }
 
@@ -82,11 +116,21 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
         {
             string entryType = "No Válida";
             DateTime? assignedDate = null;
+            bool isSplit = false;
 
             if (assignmentMap.TryGetValue(r.Id, out var assignment))
             {
                 entryType = assignment.Type;
                 assignedDate = assignment.Date;
+                isSplit = assignment.IsSplit;
+            }
+            else if (dailyByEmp.TryGetValue(r.EmployeeId, out var empDaily))
+            {
+                isSplit = empDaily.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido;
+            }
+            else if (empAssignments.TryGetValue(r.EmployeeId, out var empIsSplit))
+            {
+                isSplit = empIsSplit;
             }
 
             string empName = empDict.TryGetValue(r.EmployeeId, out var name) ? name : r.EmployeeId.Value;
@@ -103,6 +147,7 @@ public class GetAttendanceLogsQueryHandler : IRequestHandler<GetAttendanceLogsQu
                 DeviceName = devName,
                 Status = r.Status.ToString(),
                 AssignedDate = r.IsVoided ? null : assignedDate,
+                IsSplitShift = isSplit,
                 IsVoided = r.IsVoided,
                 VoidedBy = r.VoidedBy,
                 VoidReason = r.VoidReason,

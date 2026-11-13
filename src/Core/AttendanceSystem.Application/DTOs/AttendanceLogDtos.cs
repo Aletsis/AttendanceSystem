@@ -14,6 +14,8 @@ public sealed record AttendanceLogViewDto
     public string DeviceName { get; init; } = string.Empty;
     public string Status { get; init; } = string.Empty;
     public DateTime? AssignedDate { get; init; }
+    /// <summary>Indica si la jornada correspondiente al marcaje es de horario partido / doble bloque (ShiftType.Partido).</summary>
+    public bool IsSplitShift { get; init; }
 
     /// <summary>Caso 14: marcaje anulado (no cuenta en el cálculo), con quién, por qué y si lo reemplaza uno corregido.</summary>
     public bool IsVoided { get; init; }

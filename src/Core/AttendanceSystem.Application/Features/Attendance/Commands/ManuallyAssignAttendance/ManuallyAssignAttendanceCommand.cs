@@ -39,17 +39,20 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
     private readonly IAttendanceRepository _attendanceRepo;
     private readonly IPunchAssignmentRepository _assignmentRepo;
     private readonly AttendanceDecisionService _decisions;
+    private readonly IShiftRepository? _shiftRepo;
 
     public ManuallyAssignAttendanceCommandHandler(
         IDailyAttendanceRepository dailyRepo,
         IAttendanceRepository attendanceRepo,
         IPunchAssignmentRepository assignmentRepo,
-        AttendanceDecisionService decisions)
+        AttendanceDecisionService decisions,
+        IShiftRepository? shiftRepo = null)
     {
         _dailyRepo = dailyRepo;
         _attendanceRepo = attendanceRepo;
         _assignmentRepo = assignmentRepo;
         _decisions = decisions;
+        _shiftRepo = shiftRepo;
     }
 
     public static AttendancePosition? PositionFor(string assignmentType) => assignmentType switch
@@ -157,6 +160,30 @@ public sealed class ManuallyAssignAttendanceCommandHandler : IRequestHandler<Man
         }
 
         // Asignación: compatibilidad temporal, uso por otra jornada y secuencia de posiciones.
+        if (position is AttendancePosition.Block1CheckOut or AttendancePosition.Block2CheckIn)
+        {
+            var isSplit = false;
+            if (adjustment.ShiftIdOverride is { } overrideShiftId && _shiftRepo != null)
+            {
+                var overrideShift = await _shiftRepo.GetByIdAsync(overrideShiftId, cancellationToken);
+                isSplit = overrideShift?.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido;
+            }
+            else if (daily?.ShiftType != null)
+            {
+                isSplit = daily.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido;
+            }
+            else if (daily?.ShiftId != null && _shiftRepo != null)
+            {
+                var shift = await _shiftRepo.GetByIdAsync(daily.ShiftId, cancellationToken);
+                isSplit = shift?.ShiftType == AttendanceSystem.Domain.Enumerations.ShiftType.Partido;
+            }
+
+            if (!isSplit)
+            {
+                return Result.Failure("No se puede asignar marcaje de Bloque 1 o Bloque 2 a una jornada que no es de horario partido.");
+            }
+        }
+
         var recordWorkDate = record.GetWorkDate(record.TimeZoneId);
         if (recordWorkDate < workDate.AddDays(-PunchAssignmentPolicy.MaxManualDaysBeforeWorkDate) ||
             recordWorkDate > workDate.AddDays(PunchAssignmentPolicy.MaxDaysAfterWorkDate))

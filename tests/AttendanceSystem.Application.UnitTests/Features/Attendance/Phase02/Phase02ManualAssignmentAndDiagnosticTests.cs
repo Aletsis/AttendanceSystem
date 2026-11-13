@@ -106,6 +106,22 @@ public class Phase02ManualAssignmentAndDiagnosticTests
     }
 
     [Fact]
+    public async Task ManualAssignment_RejectsBlockPositions_WhenShiftIsNotSplit()
+    {
+        var h = await NightThenRegularAsync();
+        var exit16 = h.Punch(EmployeeA, Tuesday.AddHours(16));
+        var handler = CreateHandler(h);
+
+        // Tuesday has regular shift (not partido). Trying to assign Salida B1 should fail.
+        var result = await handler.Handle(
+            new ManuallyAssignAttendanceCommand(EmployeeA.Value, DateOnly.FromDateTime(Tuesday), exit16.Id.Value.ToString(), "Salida B1", Reason: "Prueba"),
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeFalse();
+        result.Error.Should().Contain("no es de horario partido");
+    }
+
+    [Fact]
     public async Task Diagnostic_DetectsLegacyInconsistencies_AndRepairIsReviewableAndIdempotent()
     {
         var h = new AttendanceRecalculationHarness();

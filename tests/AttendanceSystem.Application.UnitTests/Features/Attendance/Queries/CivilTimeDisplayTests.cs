@@ -84,6 +84,38 @@ public class CivilTimeDisplayTests
         row.ActualCheckOut.Should().Be(Day.AddHours(16));
     }
 
+    [Fact]
+    public async Task AttendanceLog_IsSplitShift_ReflectsShiftType()
+    {
+        var record = Punch(8);
+        var attendance = new Mock<IAttendanceRepository>();
+        attendance.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateOnly>(), It.IsAny<DateOnly>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<AttendanceRecord> { record });
+        var employees = new Mock<IEmployeeRepository>();
+        employees.Setup(r => r.GetAllAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<Employee> { _employee });
+        var devices = new Mock<IDeviceRepository>();
+        devices.Setup(r => r.GetAllDevicesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(new List<AttendanceSystem.Domain.Aggregates.DeviceAggregate.Device>());
+        var daily = new Mock<IDailyAttendanceRepository>();
+
+        // Caso regular: IsSplitShift = false
+        daily.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<DailyAttendance>());
+
+        var handler = CreateLogsHandler(attendance.Object, employees.Object, devices.Object, daily.Object);
+        var logs = (await handler.Handle(new GetAttendanceLogsQuery(Day), CancellationToken.None)).ToList();
+        logs.Should().ContainSingle().Which.IsSplitShift.Should().BeFalse();
+
+        // Caso partido: IsSplitShift = true
+        var splitShift = Shift.Create("Partido", new TimeSpan(8, 0, 0), 10, TimeSpan.FromHours(4), ShiftType.Partido,
+            secondBlockStartTime: new TimeSpan(14, 0, 0), secondBlockEndTime: new TimeSpan(18, 0, 0));
+        var splitDay = DailyAttendance.Create(_employee.Id, Day, splitShift, record.CheckTime, null, false, record.Id, null, timeZoneId: Zone);
+        daily.Setup(r => r.GetByDateRangeAsync(It.IsAny<DateTime>(), It.IsAny<DateTime>(), It.IsAny<BranchId?>(), It.IsAny<EmployeeId?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new List<DailyAttendance> { splitDay });
+
+        var splitLogs = (await handler.Handle(new GetAttendanceLogsQuery(Day), CancellationToken.None)).ToList();
+        splitLogs.Should().ContainSingle().Which.IsSplitShift.Should().BeTrue();
+    }
+
     private static GetAttendanceLogsQueryHandler CreateLogsHandler(IAttendanceRepository attendance, IEmployeeRepository employees, IDeviceRepository devices, IDailyAttendanceRepository daily) =>
         new(attendance, daily, employees, devices);
 }
